@@ -25,3 +25,9 @@ Real footage under `samples/real/` is gitignored and used for local testing only
 
 ## D-8 (2026-09-22) — Git conventions
 Commit message: `<feat|fix|chore>: one-line message`. Subagents never run git; the orchestrator commits per stage.
+
+## D-9 (2026-09-22) — `game.json` is owned by courtcam during a run
+courtcam rewrites `game.json` after every stage. The API writes it only at job creation (schema-valid stub) and completion; per-stage progress lives in the job record (`data/jobs.json`) and is merged into `GET /games/{id}` responses. Fake pipeline mode copies the fixture tree except `game.json`. Library index is a glob over `data/games/*/game.json` — no SQLite in Phase 1 (one process, tens of games).
+
+## D-10 (2026-09-22) — H.264 encoder selection
+Dev box ffmpeg has no `libx264`; encoders are tried in order `libx264` → `h264_vaapi`/`h264_qsv` (if available) → `libopenh264` → stream copy. Any tool that encodes must go through this fallback, never hardcode `libx264`.

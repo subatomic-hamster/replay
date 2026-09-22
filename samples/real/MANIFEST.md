@@ -8,7 +8,7 @@ gitignored except this file). All clips were downloaded with `yt-dlp` and
 cut/re-encoded with `ffmpeg`. Every accepted clip below was verified by
 extracting and looking at real frames, not just judged from the title.
 
-Downloaded 2026-09-22. Total corpus size: ~696 MB (13 clips + 13 frame
+Downloaded 2026-09-22. Total corpus size: ~855 MB (15 clips + 15 frame
 JPGs). All full source downloads were deleted after cutting.
 
 **2026-09-22 second pass (elevated whole-court basketball):** the first pass's
@@ -22,6 +22,22 @@ recreational-basketball videographer using a fixed ultra-wide/panoramic
 stitched camera mounted high in a gym corner. See rejected list below for the
 ~25 candidates (Pixellot, Veo, drone, intramural, church-league, etc.) that
 were probed and did not qualify.
+
+**2026-09-22 third pass (ultra-wide/fisheye lens footage, per D-22):** D-22
+found the existing badminton clip (`russiaclub`) has no lens distortion
+problem — it fails on *resolution* (168 px far-baseline height), not barrel
+distortion — and that no `distortion.py` undistortion model is planned unless
+a genuinely wide-angle clip is found and fails the reprojection gate with
+radius-dependent residuals. This pass specifically searched for phone
+0.5x-ultra-wide or GoPro wide/superview footage — strong visible barrel
+distortion (straight court lines curved) — from an elevated fixed camera
+framing one whole court with the far baseline ≥ ~250 px wide and the court
+≥ ~350 px tall, to give that undistortion-path decision a real clip to test
+against. One badminton clip and one basketball clip were found and accepted;
+no pickleball clip meeting the distortion bar was found (see rejects below —
+plenty of elevated, clean, single-court pickleball footage exists, but nearly
+all of it is shot on standard GoPro wide, which shows negligible barrel
+curvature at the frame edges, not the strong fisheye the brief asked for).
 
 Naming: `<sport>_<venue-slug>_<NNN>s.mp4` = a continuous stream-copied
 segment of live play (`ffmpeg -c copy`, cut on the nearest keyframe).
@@ -123,6 +139,32 @@ matching `.jpg` — one representative extracted frame.
 - **Players on court:** 4 (doubles)
 - **Issues:** camera is at floor/low height rather than elevated, so vertical FOV is a bit tight near the net; fisheye distortion at the extreme edges. Otherwise clean — no overlays, no cuts.
 
+### 7. `badminton_auditorium_240s.mp4` + `badminton_auditorium_smoke.mp4` — **strong barrel-distortion candidate, primary for the D-22 undistortion test**
+
+- **Source:** https://www.youtube.com/watch?v=HOxJxhcPfqg — "GoPro 📸 Badminton Full Game 💯✨"
+- **Uploader:** Internet scholar (https://www.youtube.com/@internetscholar)
+- **License/terms:** Standard YouTube License (as observed; no CC marking). Local testing only, per D-7.
+- **Resolution/fps:** 1920x1080, 29.97 fps, H.264 (GoPro-style wide/superview lens — letterboxed to a narrower vertical FOV inside the 16:9 container, consistent with a superview capture)
+- **Duration:** source 557.5 s; main clip cut from source t=60–300 (240 s); smoke cut from t=60–110 (50 s)
+- **Sport:** badminton doubles, indoor — a converted auditorium/assembly hall (real venue signage on the stage proscenium reads "...SARAN DASS AUDITORIUM"; brick side walls hung with large framed portraits, clearly a repurposed hall, not a dedicated badminton venue — amateur/informal play)
+- **Camera:** fixed, mounted high and set well back from one baseline (elevated, above head height, looking down the length of the court) — **strong visible barrel distortion**: the near and far baselines and the auditorium's straight ceiling/wall lines are all visibly curved (bowed) across the frame, especially near the edges. Verified fixed (not panning/zooming) by comparing frames at source t=30 s, t=100 s, and t=480 s — identical framing throughout.
+- **Framing measurements (measured on the cut clip via pixel-grid overlay crops):** far baseline ≈ **1050 px** wide; near baseline ≈ **1800 px** wide (near lines appear widest under this lens); whole-court height (far baseline to near baseline) ≈ **450 px**. Comfortably clears the ~250 px far-baseline / ~350 px court-height bar.
+- **Players on court:** 4 (doubles), casual dress (no matching kit), no scoreboard/referee — amateur pickup game
+- **Issues:** none significant. No overlays, no cuts, no commentary (ambient hall/gym audio only). The image is letterboxed top and bottom (black bars baked into the source, consistent with a GoPro superview/wide capture placed in a 16:9 container) — the playable-court region is the full 1920 px width but a reduced vertical band of the 1080 px height; this does not affect the width-based far-baseline measurement above.
+
+### 8. `basketball_ceilingcam_240s.mp4` + `basketball_ceilingcam_smoke.mp4` — **extreme fisheye, ceiling/backboard-structure-mounted**
+
+- **Source:** https://www.youtube.com/watch?v=ll8od7ZLySI — "GoPro: Pick Up Basketball"
+- **Uploader:** Naoki Murayama (https://www.youtube.com/@naokimurayama6397)
+- **License/terms:** Standard YouTube License (as observed; no CC marking). Local testing only, per D-7.
+- **Resolution/fps:** 1280x720 (720p60 was the highest format YouTube served for this video — no 1080p source exists), H.264. Below the corpus's usual 1080p floor, kept anyway because the distortion and full-court elevated framing are otherwise an excellent match for the D-22 test case and the measured pixel counts clear the bar even unscaled (see below).
+- **Duration:** source 602.1 s; main clip cut from source t=90–330 (240 s); smoke cut from t=90–140 (50 s)
+- **Sport:** basketball, indoor gym, full-court pickup game (shared multi-sport floor markings, single basketball setup in use)
+- **Camera:** fixed, mounted extremely high and close to/above the backboard structure at one end (appears ceiling- or backboard-frame-mounted, looking almost straight down the court) — **extreme barrel/fisheye distortion**: gym sideline boundary tape bows dramatically outward, the glass safety barrier at the bottom of frame curves into a wide arc, both baskets (near, large, bottom-center; far, small, top-center) are visible in one shot. Verified fixed by comparing frames at source t=30 s and t=200 s — identical framing (same glass-barrier and boundary-line geometry).
+- **Framing measurements (native 1280x720, measured via pixel-grid overlay crop):** far baseline/boundary line ≈ **1150 px** wide (≈1725 px equivalent scaled to a 1920-wide/1080p frame); near baseline ≈ full frame width; whole-court height (far to near boundary line) ≈ **510 px** native (≈765 px equivalent at 1080p scale). Clears both thresholds by a wide margin even without upscaling.
+- **Players on court:** ~8–10 (pickup game, mixed clothing, no uniforms/referee — amateur)
+- **Issues:** two small wall-mounted electronic scoreboards are visible top-left and top-right of frame — confirmed static/non-live-updating across the two sampled timestamps, consistent with real physical venue scoreboards (as elsewhere in this manifest), not a video overlay. Native resolution is 720p, not 1080p — flagged above. No cuts, no software overlay, no commentary (ambient gym audio only).
+
 ---
 
 ## Rejected candidates
@@ -158,9 +200,32 @@ matching `.jpg` — one representative extracted frame.
 
 **Verdict on this pass:** genuine elevated, whole-court, fixed-camera, overlay-free amateur basketball footage **does exist on YouTube and is findable** — but it is a narrow niche. The two accepted clips come from a single hobbyist videographer (same channel, same custom ultra-wide panoramic camera rig) filming a Georgia recreational league; most other "elevated"-looking candidates turned out to be auto-production systems (Pixellot/Veo) with baked-in scorebug overlays that violate the "no overlay" requirement, or were mislabeled (wrong sport, dodgeball, intramural livestream chapters), or had cameras that were elevated but not truly whole-court. Expect to spend real search time (or accept a persistent-scorebug clip as a documented compromise) if more than 2 such clips are needed.
 
+**2026-09-22 third pass (ultra-wide/fisheye lens) — rejected candidates:**
+
+Badminton:
+- `72e6bA-MlrI` "GoPro Badminton Interhub Friendly Nov 2016" — only 1280x720; camera at floor/net-post height aimed diagonally across several adjacent courts, not a clean single-court framing.
+- `rGVDqvn0s_k` "Badminton match doubles warm up match || gopro hero9" — 1920x1080 and visibly wide-angle, but has a persistent "Prash vlogs" text watermark and a YouTube-subscribe-button graphic burned into the frame throughout; also frames the net at a shallow diagonal across multiple courts rather than one court squarely.
+- `oh5MXJYb5fw` "Badminton Game - GoPro perspective - @ KCBC" — only 1280x720; camera at near-net/low height, not elevated.
+- `qtCz3aaQ6t4` "GOPRO badminton game #1" — only 960x720; rejected on resolution.
+- `h7k6pEYOHbs` "Insta360 Wide angle Badminton" — 1906x1080, but a 360-camera reframe showing 4–5 adjacent courts across a whole gymnasium in one fisheye shot, not isolated to a single court.
+
+Pickleball (no accept this pass — see verdict below):
+- `bOynMUEGkgY` "Tony&Robert vs David&Jimmy Part 2... GoPro 8 1080p 120fps" — 1920x1080, cleanly elevated fence-post mount, single court, but edge crops show negligible barrel curvature (near-straight lines even at frame edges) — doesn't meet the "strong distortion" bar.
+- `nz_0v_6FPSQ` "6/30/21 Shaw A Final GoPro (2nd half)" — same profile and same rejection reason: elevated fence mount, clean single court, but essentially straight lines edge-to-edge.
+- `fIlyGME7QgY` "PBC Phil/Dave vs Tommy/Steve 04292024 Montebello Park" — persistent "Pickleball Chumps" logo overlay burned into the top-left corner throughout.
+- `dip4UwR3eI4` "3-20-17 Monday Night Pickleball Rec Play - Yi 4k Action Cam" — shared gym floor with basketball/volleyball lines heavily overlapping the pickleball court, confusing multi-line surface, not a clean dedicated court.
+- `HEsxWFXAt6c` "3.0 Pickleball Match" — camera close/low right behind the near baseline (not clearly elevated), tight FOV covering only ~1.5 courts, faces blurred (privacy post-processing).
+- `t6CK3Yw-MNU` "Americano Doubles Fixed Partner, Live from Kampus Bali" — StreamYard-produced live-stream recording: persistent software logo overlay plus a permanent split-screen multi-camera layout (each pane far below 1080p-equivalent width).
+- Dead-end search phrasings that returned no usable results (camera-gear reviews, vlogging tutorials, product comparisons instead of match footage): "pickleball ultra wide iphone tripod full game", "pickleball tripod balcony fixed camera", "pickleball GoPro superview full match", "pickleball fisheye camera fence post", "pickleball action cam elevated fence full match", "pickleball court camera high angle full game fisheye", "pickleball GoPro wide angle doubles full game no music".
+
+Basketball:
+- `n3eVq_FppeM` "YMCA - GoPro - 2/3/17 - full court" — 1280x720 max, elevated with some distortion, but not pursued further once `ll8od7ZLySI` was confirmed as a stronger (more distorted, more clearly whole-court) candidate within the time-box.
+
+**Verdict on this pass:** strongly barrel-distorted (fisheye/superview) footage that also satisfies the elevated-fixed-camera, single-court, overlay-free framing bar **exists for badminton and basketball** but is rare and took real search effort to isolate — most "GoPro badminton/basketball" results are POV/head-mounted, multi-court gym-wide shots, or have channel-branding overlays. For **pickleball specifically, no qualifying clip was found in this pass**: clean, elevated, single-court, overlay-free pickleball footage is comparatively easy to find, but essentially all of it is shot on a standard (not ultra-wide/superview) GoPro or phone lens with negligible barrel distortion at the frame edges — the distortion requirement, not the framing requirement, is the bottleneck for this sport. Revisit with a dedicated search for phone-native 0.5x-lens pickleball uploads (e.g. TikTok/Instagram re-uploads) if a distorted pickleball clip is still needed.
+
 ---
 
 ## Disk usage
 
-- `samples/real/` total: **~696 MB** (15 video clips + 15 JPEG frames)
+- `samples/real/` total: **~855 MB** (19 video clips + 19 JPEG frames)
 - All intermediate/full source downloads were deleted after cutting.

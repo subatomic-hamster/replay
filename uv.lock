@@ -766,6 +766,16 @@ dev = [
 name = "replay-workspace"
 version = "0.0.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "courtcam" },
+    { name = "replay-api" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "courtcam", editable = "courtcam" },
+    { name = "replay-api", editable = "services/api" },
+]
 
 [[package]]
 name = "requests"

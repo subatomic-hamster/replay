@@ -2,13 +2,14 @@
 name = "replay-workspace"
 version = "0.0.0"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = ["courtcam", "replay-api"]
 
 [tool.uv.workspace]
 members = ["courtcam", "services/api"]
 
 [tool.uv.sources]
 courtcam = { workspace = true }
+replay-api = { workspace = true }
 
 [tool.ruff]
 line-length = 100

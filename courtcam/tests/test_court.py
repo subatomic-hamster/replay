@@ -1,0 +1,51 @@
+from __future__ import annotations
+
+import numpy as np
+
+from courtcam.court import inside, moving_average, on_court
+from courtcam.profiles import load_profile
+from courtcam.track import Tracklet
+
+PROFILE = load_profile("basketball")
+TEMPLATE = PROFILE.template("half")
+IDENTITY = np.eye(3)  # keep the test in court metres: "pixels" are already metres
+
+
+def _tracklet(tid: int, x: float, y: float, *, duration_s: float = 3.0, fps: int = 15) -> Tracklet:
+    n = int(duration_s * fps)
+    times = np.arange(n) / fps
+    # foot point (bottom-centre of the box) must land on (x, y)
+    boxes = np.column_stack(
+        [np.full(n, x - 0.25), np.full(n, y - 1.8), np.full(n, 0.5), np.full(n, 1.8)]
+    )
+    return Tracklet(
+        track_id=tid, frames=np.arange(n) * 2, times=times, boxes=boxes, confs=np.full(n, 0.9)
+    )
+
+
+def test_inside_respects_the_profile_margin():
+    poly = TEMPLATE.polygon
+    pts = np.array([[0.0, 7.0], [8.0, 7.0], [9.0, 7.0]])  # on court, 0.5 m out, 1.5 m out
+    assert list(inside(pts, poly, 1.0)) == [True, True, False]
+
+
+def test_on_court_drops_spectators_and_caps_at_max_players():
+    on = [_tracklet(i, x=-6 + 1.2 * i, y=3.0 + 0.5 * i) for i in range(12)]
+    spectators = [_tracklet(100 + j, x=9.6 + j, y=4.0 + 3 * j) for j in range(3)]
+    kept = on_court(on + spectators, IDENTITY, PROFILE, TEMPLATE.polygon)
+
+    assert len(kept) == PROFILE.players.max == 10
+    assert all(t.track_id < 100 for t in kept), "spectators must not survive the filter"
+    assert all(t.inside_fraction >= PROFILE.tracking.oncourt_min_fraction for t in kept)
+
+
+def test_short_lived_tracklets_are_dropped():
+    blip = _tracklet(1, 0.0, 5.0, duration_s=0.4)
+    assert on_court([blip], IDENTITY, PROFILE, TEMPLATE.polygon) == []
+
+
+def test_moving_average_smooths_without_shifting_or_shrinking():
+    pts = np.column_stack([np.arange(20.0), np.zeros(20)])
+    out = moving_average(pts, 5)
+    assert out.shape == pts.shape
+    assert np.allclose(out[5:-5], pts[5:-5])  # a straight line survives a centred average

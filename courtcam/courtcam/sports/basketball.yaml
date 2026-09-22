@@ -1,0 +1,37 @@
+id: basketball
+display_name: Basketball
+tier: 2
+court:
+  # Plan §4.9 shows a single `template:`; basketball needs one per variant, so the
+  # loader accepts `templates: {variant: file}` as well. See README "Profile format".
+  templates:
+    half: basketball_half.json
+    full: basketball_full.json
+  variants: [half, full]
+  landmarks: [corner_nl, corner_nr, corner_fl, corner_fr, rim]
+  margin_m: 1.0
+players: {min: 2, max: 10}
+team_rule: jersey_color
+detection: {classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25}
+tracking:
+  oncourt_min_fraction: 0.6
+  min_lifetime_s: 1.0
+  merge_max_gap_s: 1.5
+  merge_max_dist_m: 2.0
+  smooth_window: 5
+events: [shot]
+shot:
+  rim_radius_m: 7.0
+  roi_px: 96
+  min_gap_s: 2.0
+  burst_sigma: 2.5
+  pre_s: 3.0
+  post_s: 2.0
+followcam: {zoom: 2.0, lead_s: 0.3, stiffness: 7.0}
+query_vocab:
+  shots: {type: shot}
+  makes: {type: shot, made: true}
+  misses: {type: shot, made: false}
+sport_ui:
+  chips: ["My shots", "Makes", "Last 2 minutes"]
+  review: [shot_chart, heatmap]

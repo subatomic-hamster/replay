@@ -1,0 +1,143 @@
+"""Sport profiles: a YAML file plus a court template JSON, both in `courtcam/sports/`.
+
+Everything sport-specific in the pipeline comes from here. Core modules must never
+branch on the sport id (REPLAY_PLAN.md §12 rule 6).
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import yaml
+from pydantic import BaseModel, ConfigDict, Field
+
+SPORTS_DIR = Path(__file__).parent / "sports"
+
+
+class _Cfg(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class CourtTemplate(_Cfg):
+    """Court geometry in metres, in the profile's origin convention (§4.5)."""
+
+    name: str
+    standard: str = "unknown"
+    units: str = "m"
+    origin: str = ""
+    size: tuple[float, float]
+    court: list[tuple[float, float]]
+    rim: tuple[float, float] | None = None
+    rims: list[tuple[float, float]] = Field(default_factory=list)
+    landmarks: dict[str, tuple[float, float]] = Field(default_factory=dict)
+    features: dict[str, list[tuple[float, float]]] = Field(default_factory=dict)
+
+    @property
+    def polygon(self) -> np.ndarray:
+        """Court outline as an (N, 2) float array of metres."""
+        return np.asarray(self.court, dtype=np.float64)
+
+    def landmark_array(self, names: list[str]) -> np.ndarray:
+        missing = [n for n in names if n not in self.landmarks]
+        if missing:
+            raise KeyError(f"template {self.name} has no landmark(s) {missing}")
+        return np.asarray([self.landmarks[n] for n in names], dtype=np.float64)
+
+
+class CourtCfg(_Cfg):
+    template: str | None = None
+    templates: dict[str, str] = Field(default_factory=dict)
+    variants: list[str] = Field(default_factory=list)
+    landmarks: list[str] = Field(default_factory=list)
+    margin_m: float = 1.0
+
+
+class PlayersCfg(_Cfg):
+    min: int = 2
+    max: int = 10
+
+
+class DetectionCfg(_Cfg):
+    classes: list[str] = Field(default_factory=lambda: ["person"])
+    stride: int = 2
+    model: str = "yolo11n.pt"
+    imgsz: int = 960
+    conf: float = 0.25
+
+
+class TrackingCfg(_Cfg):
+    oncourt_min_fraction: float = 0.6
+    min_lifetime_s: float = 1.0
+    merge_max_gap_s: float = 1.5
+    merge_max_dist_m: float = 2.0
+    smooth_window: int = 5
+
+
+class FollowCamCfg(_Cfg):
+    zoom: float = 2.0
+    lead_s: float = 0.3
+    stiffness: float = 7.0
+
+
+class ShotCfg(_Cfg):
+    rim_radius_m: float = 7.0
+    roi_px: int = 96
+    min_gap_s: float = 2.0
+    burst_sigma: float = 2.5
+    pre_s: float = 3.0
+    post_s: float = 2.0
+
+
+class Profile(_Cfg):
+    id: str
+    display_name: str
+    tier: int = 1
+    court: CourtCfg
+    players: PlayersCfg = Field(default_factory=PlayersCfg)
+    team_rule: str = "jersey_color"
+    detection: DetectionCfg = Field(default_factory=DetectionCfg)
+    tracking: TrackingCfg = Field(default_factory=TrackingCfg)
+    events: list[str] = Field(default_factory=list)
+    shot: ShotCfg = Field(default_factory=ShotCfg)
+    followcam: FollowCamCfg = Field(default_factory=FollowCamCfg)
+    query_vocab: dict[str, Any] = Field(default_factory=dict)
+    sport_ui: dict[str, Any] = Field(default_factory=dict)
+
+    _dir: Path = Path(".")
+
+    def default_variant(self) -> str:
+        return self.court.variants[0] if self.court.variants else "default"
+
+    def template(self, variant: str | None = None) -> CourtTemplate:
+        variant = variant or self.default_variant()
+        if self.court.variants and variant not in self.court.variants:
+            raise ValueError(f"{self.id}: unknown variant {variant!r}; have {self.court.variants}")
+        name = self.court.templates.get(variant) or self.court.template
+        if not name:
+            raise ValueError(f"{self.id}: no court template for variant {variant!r}")
+        return load_template(self._dir / name)
+
+
+@lru_cache(maxsize=16)
+def load_template(path: Path) -> CourtTemplate:
+    return CourtTemplate.model_validate(yaml.safe_load(Path(path).read_text(encoding="utf-8")))
+
+
+@lru_cache(maxsize=16)
+def load_profile(sport: str, sports_dir: Path = SPORTS_DIR) -> Profile:
+    """Load `<sports_dir>/<sport>.yaml`. `sport` may also be a path to a YAML file."""
+    path = Path(sport)
+    if not path.is_file():
+        path = sports_dir / f"{sport}.yaml"
+    if not path.is_file():
+        raise FileNotFoundError(f"no sport profile at {path}")
+    profile = Profile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    profile._dir = path.parent
+    return profile
+
+
+def available_sports(sports_dir: Path = SPORTS_DIR) -> list[str]:
+    return sorted(p.stem for p in sports_dir.glob("*.yaml"))

@@ -1,0 +1,51 @@
+[project]
+name = "courtcam"
+version = "0.1.0"
+description = "Sport-profile driven video pipeline: calibrate a court, track players, cut follow-cam crop paths."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12,<3.13"
+authors = [{ name = "Replay" }]
+dependencies = [
+    "ultralytics>=8.3",
+    "opencv-python-headless>=4.10",
+    "numpy>=1.26",
+    "pyyaml>=6",
+    "pydantic>=2",
+    "typer>=0.12",
+    "tqdm>=4.66",
+    # ultralytics' ByteTrack needs it and would otherwise pip-install it mid-run
+    "lap>=0.5",
+    # pinned to the CPU wheels: the dev box and CI have no NVIDIA GPU (D-5)
+    "torch>=2.4",
+    "torchvision>=0.19",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+courtcam = "courtcam.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["courtcam"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

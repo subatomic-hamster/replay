@@ -162,33 +162,39 @@ export function Highlights({ gameId }: { gameId: string }) {
       ) : null}
 
       {clips && clips.length > 0 ? (
-        <>
+        <div className="reel-layout">
           <PlayerSurface
             ref={setHandle}
             src={api.mediaUrl(game, game.renditions.wide)}
             muted
           />
-          <p className="clip-counter" data-testid="clip-counter">
-            clip {index + 1}/{clips.length}
-          </p>
-          <ol className="reel">
-            {clips.map((c, i) => (
-              <li
-                key={`${c.event_id ?? i}`}
-                className={`reel-clip${i === index ? " focused" : ""}`}
-                data-testid="reel-clip"
-                data-event-id={c.event_id}
-                data-t-start={c.t_start}
-                data-focused={row === 1 && i === index ? "true" : "false"}
-              >
-                {i + 1}. {c.label ?? "clip"} · {fmtDuration(c.t_start)}
-              </li>
-            ))}
-          </ol>
-        </>
+          <div>
+            <span className="clip-counter" data-testid="clip-counter">
+              clip <b>{index + 1}</b>/<b>{clips.length}</b>
+            </span>
+            <ol className="reel">
+              {clips.map((c, i) => (
+                <li
+                  key={`${c.event_id ?? i}`}
+                  className={`reel-clip${i === index ? " focused" : ""}`}
+                  data-testid="reel-clip"
+                  data-event-id={c.event_id}
+                  data-t-start={c.t_start}
+                  data-focused={row === 1 && i === index ? "true" : "false"}
+                >
+                  <span className="reel-index">{i + 1}</span>
+                  <span className="reel-label">{c.label ?? "clip"}</span>
+                  <span className="reel-time">{fmtDuration(c.t_start)}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
       ) : null}
 
-      <p className="hint">Arrows move · Enter plays · p pairs a phone · Escape goes back</p>
+      <p className="hint">
+        <b>Arrows</b> move · <b>Enter</b> plays · <b>p</b> pairs a phone · <b>Escape</b> goes back
+      </p>
 
       {asking ? (
         <TextEntryDialog

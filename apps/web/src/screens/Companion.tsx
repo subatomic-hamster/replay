@@ -100,9 +100,9 @@ export function Companion({ code }: { code?: string }) {
   return (
     <div className="screen phone companion">
       <h1>Replay companion</h1>
-      <p>
+      <p className="status-line">
         Code {code} ·{" "}
-        <span data-testid="companion-status" data-state={status}>
+        <span className="conn" data-testid="companion-status" data-state={status}>
           {status === "open" ? "connected" : status === "closed" ? "not connected" : "connecting…"}
         </span>
       </p>
@@ -119,19 +119,26 @@ export function Companion({ code }: { code?: string }) {
           placeholder="Marcus — all shots"
           autoFocus
         />
-        <button type="submit" data-testid="companion-send" disabled={status !== "open" || !text.trim()}>
-          Send
-        </button>
-        {Speech ? (
+        <div className="actions">
           <button
-            type="button"
-            data-testid="companion-mic"
-            data-listening={listening ? "true" : "false"}
-            onClick={listen}
+            type="submit"
+            data-testid="companion-send"
+            disabled={status !== "open" || !text.trim()}
           >
-            {listening ? "Listening…" : "🎤 Speak"}
+            Send
           </button>
-        ) : null}
+          {Speech ? (
+            <button
+              type="button"
+              className="secondary"
+              data-testid="companion-mic"
+              data-listening={listening ? "true" : "false"}
+              onClick={listen}
+            >
+              {listening ? "Listening…" : "Speak"}
+            </button>
+          ) : null}
+        </div>
       </form>
       {sent ? <p data-testid="companion-sent">Sent: {sent}</p> : null}
       {status === "closed" ? (

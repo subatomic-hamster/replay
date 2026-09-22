@@ -49,7 +49,10 @@ export function Watch({ gameId }: { gameId: string }) {
 
   const clock = handle?.clock ?? null;
   const t = useClockTime(clock);
-  const duration = handle?.duration() ?? game?.video.duration_s ?? 0;
+  // `||`, not `??`: an element with no metadata yet reports NaN, and the clock does not
+  // tick while paused, so a `??` here left the seek bar stuck at a zero-length timeline
+  // until some unrelated state change forced a re-render.
+  const duration = handle?.duration() || game?.video.duration_s || 0;
 
   const tracks = useMemo(() => (game ? createTracksCache(game) : null), [game]);
 
@@ -149,8 +152,11 @@ export function Watch({ gameId }: { gameId: string }) {
     [handle, sorted],
   );
 
+  const [chrome, setChrome] = useState(true);
+
   const onAction = useCallback(
     (a: DpadAction) => {
+      setChrome(true);
       if (!handle || !game) return;
       // Top nav row: reachable with ArrowUp, so every screen is D-pad reachable (NF-03).
       if (navFocus !== null) {
@@ -247,6 +253,19 @@ export function Watch({ gameId }: { gameId: string }) {
   );
   useDpad(onAction, !tagging);
 
+  // The transport fades out a few seconds into playback and comes back on the next key, so
+  // a lean-back watch is just the game. Paused (and so all of select mode) keeps it up.
+  // The wake-up rides on `onAction` rather than its own window listener: a second listener
+  // that sets state re-registers useDpad's handler mid-dispatch, and the DOM then skips the
+  // removed entry — the keypress that woke the chrome would be eaten.
+  useEffect(() => {
+    if (!chrome || !handle) return;
+    const timer = setInterval(() => {
+      if (!handle.paused()) setChrome(false);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [chrome, handle]);
+
   // Entering select mode with nothing focused: start at the leftmost box.
   useEffect(() => {
     if (mode !== "select" || focusId || players.length === 0) return;
@@ -261,68 +280,96 @@ export function Watch({ gameId }: { gameId: string }) {
 
   return (
     <div className="screen watch" data-mode={mode}>
-      <nav className="topnav">
-        {NAV.map((n, i) => (
-          <span
-            key={n.label}
-            className={`navitem${navFocus === i ? " focused" : ""}`}
-            data-testid={`nav-${n.label.toLowerCase()}`}
-            data-focused={navFocus === i ? "true" : "false"}
-          >
-            {n.label}
-          </span>
-        ))}
-        <span className="title">{game.title}</span>
-      </nav>
-
-      {/* Muted: Phase 1 has no audio design and an unmuted autoplay is blocked. */}
-      <PlayerSurface
-        ref={setHandle}
-        src={source.src}
-        crop={source.useCrop ? crop : null}
-        muted
-      >
-        {mode === "select" ? (
-          <SelectOverlay players={players} roster={roster} focusId={focusId} spotlight={spotlightOn} />
-        ) : null}
-        {mode === "follow" ? (
-          <>
+      <div className="watch-stage">
+        {/* Muted: Phase 1 has no audio design and an unmuted autoplay is blocked. */}
+        <PlayerSurface
+          ref={setHandle}
+          src={source.src}
+          crop={source.useCrop ? crop : null}
+          muted
+        >
+          {mode === "select" ? (
             <SelectOverlay
-              players={players.filter((p) => p.id === pid)}
+              players={players}
               roster={roster}
-              focusId={pid}
+              focusId={focusId}
               spotlight={spotlightOn}
-              showBoxes={false}
             />
-            <div className="followcam-badge" data-testid="followcam-active" data-player-id={pid}>
-              Following {followName?.name ?? pid}
-            </div>
-            {rendering ? (
-              <div className="rendering-badge" data-testid="rendering-badge">
-                rendering…
+          ) : null}
+          {mode === "follow" ? (
+            <>
+              <SelectOverlay
+                players={players.filter((p) => p.id === pid)}
+                roster={roster}
+                focusId={pid}
+                spotlight={spotlightOn}
+                showBoxes={false}
+              />
+              <div className="followcam-badge" data-testid="followcam-active" data-player-id={pid}>
+                FOLLOW • {followName?.name ?? pid}
               </div>
-            ) : null}
-          </>
-        ) : null}
-      </PlayerSurface>
+              {rendering ? (
+                <div className="rendering-badge" data-testid="rendering-badge">
+                  rendering…
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </PlayerSurface>
 
-      <SeekBarEvents duration={duration} current={t} events={sorted} focused={mode === "wide"} />
+        <div className="watch-chrome" data-hidden={chrome ? "false" : "true"}>
+          <nav className="topnav">
+            {NAV.map((n, i) => (
+              <span
+                key={n.label}
+                className={`navitem${navFocus === i ? " focused" : ""}`}
+                data-testid={`nav-${n.label.toLowerCase()}`}
+                data-focused={navFocus === i ? "true" : "false"}
+              >
+                {n.label}
+              </span>
+            ))}
+            <span className="title">{game.title}</span>
+          </nav>
 
-      <div className="watch-side">
-        <CourtInset
-          court={game.sport_ui?.court}
-          variant={game.court.variant}
-          players={players}
-          roster={roster}
-          selectedId={mode === "follow" ? pid : focusId}
-        />
-        <p className="hint">
-          {mode === "select"
-            ? "Arrows pick a player · Enter follows · t tags · s spotlight · Escape exits"
-            : mode === "follow"
-              ? "Space plays · Escape returns to the wide shot"
-              : "Space pauses to select · , / . ±10 s · [ / ] events · b bookmark · ↑ menu"}
-        </p>
+          {mode !== "follow" ? (
+            <div className={`mode-pill ${mode}`}>{mode === "select" ? "SELECT" : "WIDE"}</div>
+          ) : null}
+
+          <CourtInset
+            court={game.sport_ui?.court}
+            variant={game.court.variant}
+            players={players}
+            roster={roster}
+            selectedId={mode === "follow" ? pid : focusId}
+          />
+
+          <div className="watch-transport">
+            <SeekBarEvents
+              duration={duration}
+              current={t}
+              events={sorted}
+              focused={mode === "wide"}
+            />
+            <p className="hint">
+              {mode === "select" ? (
+                <>
+                  <b>Arrows</b> pick a player · <b>Enter</b> follows · <b>t</b> tags ·{" "}
+                  <b>s</b> spotlight · <b>Escape</b> exits
+                </>
+              ) : mode === "follow" ? (
+                <>
+                  <b>Space</b> plays · <b>Escape</b> returns to the wide shot
+                </>
+              ) : (
+                <>
+                  <b>Space</b> pauses to select · <b>,</b> / <b>.</b> ±10 s · <b>[</b> /{" "}
+                  <b>]</b> events · <b>b</b> bookmark · <b>↑</b> menu
+                </>
+              )}
+            </p>
+          </div>
+        </div>
       </div>
 
       {tagging ? (

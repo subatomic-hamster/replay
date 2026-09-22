@@ -57,7 +57,9 @@ export function Pair() {
           ? "Type or speak a query on the phone — the TV jumps to the results."
           : "Open a game first so phone queries have something to search."}
       </p>
-      <p className="hint">Escape goes back</p>
+      <p className="hint">
+        <b>Escape</b> goes back
+      </p>
     </div>
   );
 }

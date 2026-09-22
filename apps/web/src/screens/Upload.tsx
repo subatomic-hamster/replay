@@ -120,9 +120,12 @@ export function UploadFile({ gameId }: { gameId: string }) {
         }}
       />
       {pct !== null ? (
-        <progress data-testid="upload-progress" max={100} value={pct}>
-          {pct}%
-        </progress>
+        <>
+          <progress data-testid="upload-progress" max={100} value={pct}>
+            {pct}%
+          </progress>
+          <p className="upload-pct">{Math.round(pct)}% uploaded</p>
+        </>
       ) : null}
       {done ? <p data-testid="upload-done">Upload complete.</p> : null}
       {failure ? (
@@ -281,8 +284,10 @@ export function Calibrate({ gameId }: { gameId: string }) {
         ))}
       </div>
 
-      <p data-testid="calib-prompt">
-        {next ? `Click ${next.replace(/_/g, " ")}…` : "All landmarks placed."}
+      <p className="calib-prompt" data-testid="calib-prompt">
+        {next
+          ? `Tap ${next.replace(/_/g, " ")} — point ${clicks.length + 1} of ${landmarks.length}`
+          : "All landmarks placed."}
       </p>
 
       <div className="calib-frame">
@@ -323,29 +328,31 @@ export function Calibrate({ gameId }: { gameId: string }) {
         })}
       </div>
 
-      <button
-        type="button"
-        data-testid="calib-undo"
-        disabled={clicks.length === 0}
-        onClick={() => {
-          setClicks((c) => c.slice(0, -1));
-          setResult(null);
-        }}
-      >
-        Undo
-      </button>
-
-      <p
-        className={`calib-error${result && !valid ? " bad" : ""}`}
-        data-testid="calib-error"
-        data-ok={valid ? "true" : "false"}
-      >
-        {result?.ok
-          ? `${result.px?.toFixed(1) ?? "?"} px`
-          : result
-            ? result.msg
-            : `need ${landmarks.length - clicks.length} more points`}
-      </p>
+      <div className="calib-actions">
+        <p
+          className={`calib-error${result && !valid ? " bad" : ""}`}
+          data-testid="calib-error"
+          data-ok={valid ? "true" : "false"}
+        >
+          {result?.ok
+            ? `${result.px?.toFixed(1) ?? "?"} px`
+            : result
+              ? result.msg
+              : `need ${landmarks.length - clicks.length} more points`}
+        </p>
+        <button
+          type="button"
+          className="secondary"
+          data-testid="calib-undo"
+          disabled={clicks.length === 0}
+          onClick={() => {
+            setClicks((c) => c.slice(0, -1));
+            setResult(null);
+          }}
+        >
+          Undo
+        </button>
+      </div>
 
       <button
         type="button"
@@ -398,7 +405,8 @@ export function UploadStatus({ gameId }: { gameId: string }) {
           const state = game?.stages?.[s] ?? "pending";
           return (
             <li key={s} className={`stage ${state}`} data-testid={`stage-${s}`} data-state={state}>
-              {s}: {state}
+              <span className="stage-name">{s}</span>
+              <span className="stage-state">{state}</span>
             </li>
           );
         })}

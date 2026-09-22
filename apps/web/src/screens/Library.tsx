@@ -53,19 +53,21 @@ export function Library() {
           >
             <div className="thumb">
               {g.thumb_url ? <img src={g.thumb_url} alt="" /> : null}
+              <span className={`status-pill ${g.status === "ready" ? "ready" : "working"}`}>
+                <span data-testid="game-status">{statusText(g)}</span>
+              </span>
             </div>
             <div className="card-title" data-testid="game-card-title">
               {g.title}
             </div>
             <div className="card-meta">
-              {fmtDate(g.recorded_at)} · {fmtDuration(g.duration_s)} ·{" "}
-              <span data-testid="game-status">{statusText(g)}</span>
+              {fmtDate(g.recorded_at)} · {fmtDuration(g.duration_s)}
             </div>
           </div>
         ))}
       </div>
       <p className="hint">
-        Arrows move · Enter opens · Space play/pause · , / . seek · [ / ] events · b bookmark
+        <b>Arrows</b> move · <b>Enter</b> opens a game
       </p>
     </div>
   );

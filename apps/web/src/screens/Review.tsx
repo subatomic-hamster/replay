@@ -12,10 +12,11 @@ type HeatGrid = NonNullable<Stats["heatmap"]>[number];
 
 /** R2 (S-34) — one SVG rect per occupied cell, opacity proportional to the count, drawn
  *  in court metres so it lines up with the same court outline the shot chart uses. */
-function Heatmap({ grid, viewBox, size }: {
+function Heatmap({ grid, viewBox, size, polygons }: {
   grid: HeatGrid;
   viewBox: { x: number; y: number; attr: string };
   size: [number, number];
+  polygons?: Record<string, [number, number][]>;
 }) {
   const [x0, x1] = grid.x_range ?? [viewBox.x, viewBox.x + size[0]];
   const [y0, y1] = grid.y_range ?? [viewBox.y, viewBox.y + size[1]];
@@ -46,6 +47,14 @@ function Heatmap({ grid, viewBox, size }: {
           />
         ) : null,
       )}
+      {/* Drawn last so the court outline stays readable through the densest cells. */}
+      {Object.entries(polygons ?? {}).map(([name, pts]) => (
+        <polygon
+          key={name}
+          className="court-line"
+          points={pts.map((p) => p.join(",")).join(" ")}
+        />
+      ))}
     </svg>
   );
 }
@@ -169,7 +178,8 @@ export function Review({ gameId }: { gameId: string }) {
         )}
       </section>
 
-      <section className="stats">
+      <section className="stats stats-grid">
+        <div className="stats-panel">
         <h2>Shot chart</h2>
         <svg className="shot-chart" data-testid="shot-chart" viewBox={viewBox.attr}>
           <rect x={viewBox.x} y={viewBox.y} width={cw} height={ch} className="court-bg" />
@@ -192,9 +202,10 @@ export function Review({ gameId }: { gameId: string }) {
             />
           ))}
         </svg>
+        </div>
 
         {heatmap.length ? (
-          <>
+          <div className="stats-panel">
             <h2>Position heatmap</h2>
             <div className="heat-players" role="listbox" aria-label="Heatmap player">
               {heatmap.map((h, i) => (
@@ -216,10 +227,12 @@ export function Review({ gameId }: { gameId: string }) {
               grid={heatmap[Math.min(heatFocus, heatmap.length - 1)]}
               viewBox={viewBox}
               size={[cw, ch]}
+              polygons={polygons}
             />
-          </>
+          </div>
         ) : null}
 
+        <div className="stats-panel">
         <h2>Box score lite</h2>
         <table className="box-score">
           <thead>
@@ -241,10 +254,12 @@ export function Review({ gameId }: { gameId: string }) {
             ))}
           </tbody>
         </table>
+        </div>
       </section>
 
       <p className="hint">
-        Arrows pick an answer · ↓ switches the heatmap player · Enter confirms · Escape goes back
+        <b>Arrows</b> pick an answer · <b>↓</b> switches the heatmap player · <b>Enter</b> confirms
+        · <b>Escape</b> goes back
       </p>
     </div>
   );

@@ -1,6 +1,8 @@
 import { API_BASE, API_KEY, MOCK_API } from "../config";
 import { mockApi } from "./mock";
 import type {
+  AutoCalibration,
+  AutoCalibrationJob,
   CalibrationResult,
   CreateGameResult,
   CropPath,
@@ -36,6 +38,10 @@ export interface ReplayApi {
   createGame(title: string, sport: string): Promise<CreateGameResult>;
   upload(uploadUrl: string, file: File, onProgress: (pct: number) => void): Promise<void>;
   calibrate(gameId: string, payload: CalibrationPayload): Promise<CalibrationResult>;
+  /** D-23: queue a landmark proposal for this game's calibration frame. */
+  startAutoCalibration(gameId: string, sport: string, variant: string): Promise<AutoCalibrationJob>;
+  /** Poll it — the model call takes tens of seconds. */
+  getAutoCalibration(gameId: string): Promise<AutoCalibration>;
   startProcessing(gameId: string): Promise<void>;
   listGames(): Promise<GameSummary[]>;
   getGame(gameId: string): Promise<Game>;
@@ -150,6 +156,12 @@ export const httpApi: ReplayApi = {
       (r): CalibrationResult => ({ ok: true, reprojection_error_px: r.reprojection_error_px ?? undefined }),
       (e: Error) => ({ ok: false, error: e.message }),
     ),
+  startAutoCalibration: (gameId, sport, variant) =>
+    req<AutoCalibrationJob>(`/games/${gameId}/calibration/auto`, {
+      method: "POST",
+      json: { sport, variant },
+    }),
+  getAutoCalibration: (gameId) => req<AutoCalibration>(`/games/${gameId}/calibration/auto`),
   startProcessing: (gameId) => req<void>(`/games/${gameId}/process`, { method: "POST" }),
   listGames: () => req<GameSummary[]>("/games"),
   getGame: (gameId) => req<Game>(`/games/${gameId}`),

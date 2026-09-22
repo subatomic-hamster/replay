@@ -37,6 +37,8 @@ EVENTS_REL = "events.json"
 STAGE_ORDER = ("ingest", "detect", "track", "render", "label")
 THUMB_REL = "media/thumb.jpg"
 CALIB_REL = "media/calib.jpg"
+# D-23: the *proposal*, not the calibration. POST /calibration is still the commit.
+AUTOCALIB_REL = "autocalib.json"
 SOURCE_REL = "source.mp4"
 EVENT_FIELDS = {
     "type",
@@ -73,6 +75,14 @@ class Calibration(BaseModel):
     sport: str
     variant: str
     landmarks_px: dict[str, tuple[float, float]]
+
+
+class AutoCalibration(BaseModel):
+    """D-23: ask a vision model where the landmarks are. Nothing is committed by this."""
+
+    sport: str
+    variant: str
+    backend: str | None = None
 
 
 class PlayerPatch(BaseModel):
@@ -160,6 +170,21 @@ def _active_job(jobs: LocalJobs, game_id: str) -> dict | None:
         if j.get("kind") == "process" and j.get("status") in ("queued", "running")
     ]
     return max(live, key=lambda j: j.get("created_at") or 0.0) if live else None
+
+
+def _autocalib_job(jobs: LocalJobs, game_id: str) -> dict | None:
+    """The newest `autocalib` job for this game, running or finished."""
+    mine = [j for j in jobs.for_game(game_id) if j.get("kind") == "autocalib"]
+    return max(mine, key=lambda j: j.get("created_at") or 0.0) if mine else None
+
+
+def _autocalib_backend(settings: Settings, requested: str | None) -> str:
+    """`fake` in fake-pipeline mode unless something explicitly asked for otherwise."""
+    if requested:
+        return requested
+    if settings.autocalib_backend != "auto":
+        return settings.autocalib_backend
+    return "fake" if settings.pipeline == "fake" else "auto"
 
 
 def _with_job_progress(game: dict, jobs: LocalJobs) -> dict:
@@ -375,6 +400,57 @@ def _register_routes(app: FastAPI) -> None:
         _ctx(request).index.save(game)
         return {"id": game_id, "court": game["court"], "reprojection_error_px": error_px}
 
+    @app.post("/games/{game_id}/calibration/auto", status_code=202)
+    def calibrate_auto(request: Request, game_id: str, body: AutoCalibration):
+        """D-23: queue a landmark proposal. 10-180 s, so the client polls the GET.
+
+        This never becomes the game's calibration on its own — the client still POSTs
+        `/calibration` with the points it accepted, edits included.
+        """
+        ctx = _ctx(request)
+        _game_or_404(request, game_id)
+        if not ctx.storage.path(game_id, CALIB_REL).is_file():
+            raise HTTPException(400, "no calibration frame yet — upload the video first")
+        if adapter.get_profile(body.sport) is None:
+            raise HTTPException(400, f"unknown sport {body.sport!r}")
+        live = _autocalib_job(ctx.jobs, game_id)
+        if live is not None and live["status"] in ("queued", "running"):
+            return {"job_id": live["id"], "status": live["status"], "game_id": game_id}
+        ctx.storage.path(game_id, AUTOCALIB_REL).unlink(missing_ok=True)
+        job = ctx.jobs.submit(
+            "autocalib",
+            game_id,
+            _autocalib_task(
+                ctx.settings,
+                ctx.storage,
+                game_id,
+                body.sport,
+                body.variant,
+                _autocalib_backend(ctx.settings, body.backend),
+            ),
+        )
+        return {"job_id": job["id"], "status": job["status"], "game_id": game_id}
+
+    @app.get("/games/{game_id}/calibration/auto")
+    def calibrate_auto_status(request: Request, game_id: str):
+        ctx = _ctx(request)
+        _game_or_404(request, game_id)
+        job = _autocalib_job(ctx.jobs, game_id)
+        result = ctx.storage.path(game_id, AUTOCALIB_REL)
+        if result.is_file():
+            proposal = json.loads(result.read_text())
+            return {
+                "status": "done",
+                "proposal": proposal,
+                "ok": bool(proposal.get("ok")),
+                "reprojection_error_px": proposal.get("reprojection_error_px"),
+            }
+        if job is None:
+            return {"status": "idle", "ok": False}
+        if job["status"] == "failed":
+            return {"status": "failed", "ok": False, "error": job.get("error")}
+        return {"status": job["status"], "ok": False}
+
     @app.post("/games/{game_id}/process", status_code=202)
     def process(request: Request, game_id: str):
         ctx = _ctx(request)
@@ -555,6 +631,34 @@ def _register_routes(app: FastAPI) -> None:
 
 
 # --------------------------------------------------------------------------- jobs
+
+
+def _autocalib_task(
+    settings: Settings,
+    storage: LocalStorage,
+    game_id: str,
+    sport: str,
+    variant: str,
+    backend: str,
+):
+    """Runs on the jobs worker thread — the model call is 10-180 s of waiting."""
+
+    def task(job_id: str) -> None:
+        del job_id
+        storage.write_json(
+            game_id,
+            AUTOCALIB_REL,
+            adapter.autocalibrate(
+                storage.path(game_id, CALIB_REL),
+                sport,
+                variant,
+                backend=backend,
+                fake_dir=settings.fake_pipeline_dir,
+                fake_delay_s=settings.fake_pipeline_delay_s,
+            ),
+        )
+
+    return task
 
 
 def _process_task(

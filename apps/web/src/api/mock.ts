@@ -4,6 +4,8 @@
 // ponytail: in-memory only — state resets on reload. Good enough; the real API is the
 // persistence story.
 import type {
+  AutoCalibration,
+  AutoCalibrationJob,
   CalibrationResult,
   CreateGameResult,
   CropPath,
@@ -36,6 +38,26 @@ function log(method: string, path: string, body?: unknown) {
 
 const DURATION = 20;
 const FPS = 30;
+
+/** D-23. Deliberately a few px off the fixture court so "Adjust" has something to do,
+ *  and `rim` sits under the 0.5 bar so the hollow-dot path is exercised. */
+const AUTOCALIB_MS = 600;
+const autoStartedAt: Record<string, number> = {};
+const PROPOSAL = {
+  landmarks_px: {
+    corner_nl: [126, 634],
+    corner_nr: [1154, 637],
+    corner_fl: [433, 213],
+    corner_fr: [847, 208],
+    rim: [636, 254],
+  } as Record<string, [number, number]>,
+  confidence: { corner_nl: 0.93, corner_nr: 0.9, corner_fl: 0.84, corner_fr: 0.79, rim: 0.42 },
+  snapped: { corner_nl: true, corner_nr: true, corner_fl: true, corner_fr: false, rim: false },
+  source: "claude-cli",
+  notes: "",
+  ok: true,
+  reprojection_error_px: 3.4,
+};
 
 const BASKETBALL: SportProfile = {
   id: "basketball",
@@ -285,6 +307,28 @@ export const mockApi: ReplayApi = {
     });
   },
 
+  startAutoCalibration(gameId, sport, variant) {
+    log("POST", `/games/${gameId}/calibration/auto`, { sport, variant });
+    needGame(gameId);
+    autoStartedAt[gameId] = Date.now();
+    return delay<AutoCalibrationJob>({ job_id: "j_autocalib", status: "queued" });
+  },
+
+  getAutoCalibration(gameId) {
+    needGame(gameId);
+    const started = autoStartedAt[gameId];
+    if (!started) return delay<AutoCalibration>({ status: "idle", ok: false });
+    if (Date.now() - started < AUTOCALIB_MS) {
+      return delay<AutoCalibration>({ status: "running", ok: false });
+    }
+    return delay<AutoCalibration>({
+      status: "done",
+      ok: true,
+      reprojection_error_px: PROPOSAL.reprojection_error_px,
+      proposal: { ...PROPOSAL, landmarks_px: { ...PROPOSAL.landmarks_px } },
+    });
+  },
+
   calibrate(gameId, payload: CalibrationPayload) {
     log("POST", `/games/${gameId}/calibration`, payload);
     const g = needGame(gameId);
@@ -306,7 +350,13 @@ export const mockApi: ReplayApi = {
     if (area < 500) return delay<CalibrationResult>({ ok: false, error: "invalid points" });
     g.court.variant = payload.court_variant;
     g.court.landmarks_px = payload.landmarks_px;
-    return delay<CalibrationResult>({ ok: true, reprojection_error_px: 3.2 });
+    // Not a homography — just something that moves when a point moves, so the UI can
+    // prove it re-validates after a drag (S-04b).
+    const spread = pts.reduce((a, [x, y]) => a + x + y, 0);
+    return delay<CalibrationResult>({
+      ok: true,
+      reprojection_error_px: Math.round((1 + (spread % 290) / 100) * 10) / 10,
+    });
   },
 
   startProcessing(gameId) {

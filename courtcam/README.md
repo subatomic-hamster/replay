@@ -232,11 +232,40 @@ Both lost to plain PyTorch here; measure before switching on another box.
 2. Write `courtcam/sports/<sport>.yaml` with the fields above.
 3. Check it: `uv run courtcam synth --out /tmp/<sport> --sport <sport>` renders the
    template through a camera, then run the pipeline on it with `--detector synthetic`.
+   `synth` is fully profile-driven: the camera auto-frames the template, spectators are
+   placed just outside `court.margin_m`, and a template with no `rim` gets no shot
+   choreography. `courtcam/tests/test_net_sports.py` is that check as a test.
 4. If the sport needs a new event type, add a detector function to
    `events.DETECTORS`. Do not add a branch on the sport id anywhere else.
 
-`team_rule: net_side` raises `NotImplementedError` — the net-side split needs the net
-line from the template and per-rally re-evaluation, and no net sport ships yet.
+### Team rules
+
+`jersey_color` (basketball, futsal) is k-means over per-tracklet HSV torso histograms.
+
+`net_side` (pickleball, badminton, and any other net sport) is the side of the net the
+player's **median court y** falls on, re-evaluated in fixed `identity.NET_WINDOW_S`
+(60 s) windows and majority-voted, so an end change between games is picked up coarsely.
+The net line comes from the template's `net_y`, or the court's mid-y if it is absent —
+which is the geometry of every net sport. Because the split needs the *variant's*
+template, `identity.identify()` and `pipeline.stage_identity()` take the variant.
+
+A net sport has no jersey signal (four people, four shirts), so its profile fixes the
+two team colours in `teams.colors` and `identity` never decodes the clip for torso
+crops at all.
+
+The plan wants the side re-evaluated **per rally**; `events.detect_rallies` is still a
+stub, so the fixed window stands in — see the `# ponytail:` note on `identity.net_side`.
+
+### Installed profiles
+
+| profile | variants | tier | team rule | court (m) | notes |
+|---|---|---|---|---|---|
+| `basketball` | half, full | 2 | jersey_color | 15 × 14 / 15 × 28 | shot events |
+| `pickleball` | doubles | 1 | net_side | 6.10 × 13.41 | kitchen 2.13 m from the net |
+| `badminton` | doubles, singles | 1 | net_side | 6.10 × 13.40 / 5.18 × 13.40 | short service line 1.98 m from the net |
+
+`/sports` serves these ordered by tier (highest first), because the uploader's picker
+defaults to the first entry.
 
 ## Tests
 

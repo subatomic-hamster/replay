@@ -24,6 +24,9 @@ class Settings:
     # fake mode finishes in seconds; a delay per stage makes `running` observable (S-08)
     fake_pipeline_delay_s: float = 0.0
     detector: str = "yolo"
+    # D-23: "auto" | "vlm" | "claude-cli" | "lines" | "fake". Left at "auto",
+    # `pipeline="fake"` downgrades it to "fake" so tests never call a model.
+    autocalib_backend: str = "auto"
 
     @property
     def games_dir(self) -> Path:
@@ -50,5 +53,6 @@ def from_env(**overrides) -> Settings:
         ).expanduser(),
         fake_pipeline_delay_s=float(env("REPLAY_FAKE_PIPELINE_DELAY_S") or 0.0),
         detector=env("REPLAY_DETECTOR", "yolo"),
+        autocalib_backend=env("REPLAY_AUTOCALIB_BACKEND", "auto"),
     )
     return s if not overrides else Settings(**{**s.__dict__, **overrides})

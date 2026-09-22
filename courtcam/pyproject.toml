@@ -23,6 +23,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+# `courtcam autocalib --backend vlm`. The `claude-cli` backend needs neither.
+vlm = ["anthropic>=0.40"]
 
 [project.scripts]
 courtcam = "courtcam.cli:app"

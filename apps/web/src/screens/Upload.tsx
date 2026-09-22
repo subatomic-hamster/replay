@@ -5,11 +5,14 @@ import { api } from "../api/client";
 import { API_BASE } from "../config";
 import { navigate, useLocation } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
-import type { Game, SportProfile } from "../api/types";
+import type { AutoCalibration, Game, SportProfile } from "../api/types";
 
 const STAGES = ["ingest", "detect", "track", "render", "label"] as const;
 // What courtcam's homography needs; the API enforces the same floor (D-19).
 const MIN_LANDMARKS = 4;
+// D-23: below this a proposed landmark is drawn hollow and is not committed until
+// the user moves it. Same bar courtcam.autocalib uses before it fits a homography.
+const MIN_CONFIDENCE = 0.5;
 
 /** `/upload` — create a game (S-02, S-09). */
 export function UploadCreate() {
@@ -216,9 +219,14 @@ function Roster({ game, onChange }: { game: Game; onChange: () => void }) {
   );
 }
 
-/** `/upload/:id/calibrate` — I2 (S-04, S-05, S-06, E-05..E-08).
+/** `/upload/:id/calibrate` — I2 (S-04, S-05, S-06, S-04b, E-05..E-08).
  *
- * The walk is `profile.landmarks`, plus `landmarks_optional` behind "more points".
+ * Two ways in. D-23: on arrival the page asks the API to *propose* the landmarks with a
+ * vision model and draws them as dots the user can accept or drag. Underneath, unchanged,
+ * is the manual walk of `profile.landmarks` plus `landmarks_optional` behind "more
+ * points" — the proposal is an accelerator, never a gate, and the busy overlay is
+ * deliberately click-through so the walk stays usable while the model thinks.
+ *
  * Real wide footage routinely puts a corner off-frame (D-18) and guessing at it wrecks
  * the fit far worse than leaving it out (~20 px vs 0.3 px on the Kennesaw clip), so any
  * single point can be skipped — the API only needs 4 points the template knows (D-19).
@@ -234,6 +242,18 @@ export function Calibrate({ gameId }: { gameId: string }) {
   const [step, setStep] = useState(0);
   const [result, setResult] = useState<{ ok: boolean; px?: number; msg?: string } | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+
+  // D-23 state. `weak` are proposed points below the confidence bar: drawn hollow, not
+  // committed until the user moves one.
+  const [auto, setAuto] = useState<AutoCalibration | null>(null);
+  const [weak, setWeak] = useState<Record<string, [number, number]>>({});
+  const [taken, setTaken] = useState<"none" | "applied" | "manual">("none");
+  const [adjust, setAdjust] = useState(false);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
+  const variantRef = useRef(variant);
+  variantRef.current = variant;
 
   const game = data?.[0];
   const profile = data?.[1].find((s) => s.id === game?.sport) ?? data?.[1][0];
@@ -251,7 +271,11 @@ export function Calibrate({ gameId }: { gameId: string }) {
         return;
       }
       api
-        .calibrate(game.id, { sport: profile.id, court_variant: variant, landmarks_px: pts })
+        .calibrate(game.id, {
+          sport: profile.id,
+          court_variant: variantRef.current,
+          landmarks_px: pts,
+        })
         .then((r) =>
           setResult(
             r.ok
@@ -261,7 +285,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
         )
         .catch((e: Error) => setResult({ ok: false, msg: e.message }));
     },
-    [game, profile, variant],
+    [game, profile],
   );
 
   // Re-validate when the variant changes, once the required walk is behind us.
@@ -269,6 +293,46 @@ export function Calibrate({ gameId }: { gameId: string }) {
     if (step >= required.length) submit(marks);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variant]);
+
+  // D-23: ask for a proposal as soon as the page has a game and a sport, and poll for
+  // it. The model call is 10-180 s, so this is a queue + poll, not a request.
+  const gid = game?.id;
+  const sportId = profile?.id;
+  useEffect(() => {
+    if (!gid || !sportId) return;
+    let live = true;
+    let timer = 0;
+    const poll = () =>
+      api.getAutoCalibration(gid).then(
+        (r) => {
+          if (!live) return;
+          setAuto(r);
+          if (r.status !== "done" && r.status !== "failed") timer = window.setTimeout(poll, 1200);
+        },
+        () => live && setAuto({ status: "failed", ok: false }),
+      );
+    api
+      .startAutoCalibration(gid, sportId, variantRef.current)
+      .then(() => live && void poll())
+      .catch(() => live && setAuto({ status: "failed", ok: false }));
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [gid, sportId]);
+
+  /** Image-space pixel for a pointer position, clamped to the frame (E-07). */
+  const pointAt = useCallback((clientX: number, clientY: number): [number, number] | null => {
+    const img = imgRef.current;
+    if (!img) return null;
+    const r = img.getBoundingClientRect();
+    const w = img.naturalWidth || r.width;
+    const h = img.naturalHeight || r.height;
+    return [
+      Math.max(0, Math.min(w, Math.round(((clientX - r.left) / r.width) * w))),
+      Math.max(0, Math.min(h, Math.round(((clientY - r.top) / r.height) * h))),
+    ];
+  }, []);
 
   if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
   if (!game || !profile) return <div className="screen phone">Loading…</div>;
@@ -284,6 +348,50 @@ export function Calibrate({ gameId }: { gameId: string }) {
     setMarks(pts);
     setStep(step + 1);
     if (step + 1 >= required.length) submit(pts);
+  };
+
+  const proposal = auto?.status === "done" ? auto.proposal : undefined;
+  const pending =
+    taken === "none" && (auto === null || auto.status === "queued" || auto.status === "running");
+  // Only draw the proposal while the user has not started clicking — once they have,
+  // their points are the truth and two sets of dots would be a lie about which is which.
+  const offering = !!proposal && taken === "none" && placed.length === 0;
+  const dots: [string, [number, number], number][] = offering
+    ? Object.entries(proposal.landmarks_px).map(([n, p]) => [n, p, proposal.confidence[n] ?? 0])
+    : [
+        ...placed.map((n): [string, [number, number], number] => [n, marks[n], 1]),
+        ...Object.keys(weak).map((n): [string, [number, number], number] => [n, weak[n], 0]),
+      ];
+
+  /** Take the proposal: confident points become the calibration, weak ones stay hollow. */
+  const applyProposal = (intoAdjust: boolean) => {
+    if (!proposal) return;
+    const strong: Record<string, [number, number]> = {};
+    const hollow: Record<string, [number, number]> = {};
+    for (const [n, p] of Object.entries(proposal.landmarks_px)) {
+      ((proposal.confidence[n] ?? 0) >= MIN_CONFIDENCE ? strong : hollow)[n] = p;
+    }
+    setMarks(strong);
+    marksRef.current = strong;
+    setWeak(hollow);
+    setStep(names.length);
+    setTaken("applied");
+    setAdjust(intoAdjust);
+    submit(strong);
+  };
+
+  const moveHandle = (name: string, clientX: number, clientY: number) => {
+    const px = pointAt(clientX, clientY);
+    if (!px) return;
+    setWeak((w) => {
+      if (!(name in w)) return w;
+      const rest = { ...w };
+      delete rest[name];
+      return rest;
+    });
+    const next = { ...marksRef.current, [name]: px };
+    marksRef.current = next;
+    setMarks(next);
   };
 
   return (
@@ -304,6 +412,62 @@ export function Calibrate({ gameId }: { gameId: string }) {
         ))}
       </div>
 
+      <div className="autocalib">
+        <p
+          data-testid="autocalib-status"
+          data-state={taken !== "none" ? taken : (auto?.status ?? "queued")}
+        >
+          {taken === "manual"
+            ? "Placing the points by hand."
+            : taken === "applied"
+              ? adjust
+                ? "Drag any point that looks wrong."
+                : "Using the proposed points."
+              : pending
+                ? "Finding the court…"
+                : proposal && Object.keys(proposal.landmarks_px).length > 0
+                  ? `Found ${Object.keys(proposal.landmarks_px).length} points` +
+                    (proposal.reprojection_error_px != null
+                      ? ` · ${proposal.reprojection_error_px.toFixed(1)} px`
+                      : "") +
+                    (proposal.ok ? "" : " · needs a check")
+                  : "Could not find the court — place the points yourself."}
+        </p>
+        {offering ? (
+          <>
+            <button type="button" data-testid="autocalib-accept" onClick={() => applyProposal(false)}>
+              Looks right — continue
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              data-testid="autocalib-adjust"
+              onClick={() => applyProposal(true)}
+            >
+              Adjust
+            </button>
+          </>
+        ) : null}
+        {taken === "none" ? (
+          <button
+            type="button"
+            className="secondary"
+            data-testid="autocalib-manual"
+            onClick={() => {
+              setTaken("manual");
+              setAdjust(false);
+              setStep(0);
+              setMarks({});
+              marksRef.current = {};
+              setWeak({});
+              setResult(null);
+            }}
+          >
+            Place points myself
+          </button>
+        ) : null}
+      </div>
+
       <p className="calib-prompt" data-testid="calib-prompt">
         {next
           ? `Tap ${next.replace(/_/g, " ")} — point ${step + 1} of ${names.length}`
@@ -319,33 +483,69 @@ export function Calibrate({ gameId }: { gameId: string }) {
           onClick={(e) => {
             // E-07: coordinates are derived from the image rect, so a click can never
             // land outside [0,naturalWidth] x [0,naturalHeight].
-            const img = e.currentTarget;
             if (!next) return;
-            const r = img.getBoundingClientRect();
-            const px: [number, number] = [
-              Math.round(((e.clientX - r.left) / r.width) * (img.naturalWidth || r.width)),
-              Math.round(((e.clientY - r.top) / r.height) * (img.naturalHeight || r.height)),
-            ];
-            advance({ ...marks, [next]: px });
+            const px = pointAt(e.clientX, e.clientY);
+            if (px) advance({ ...marks, [next]: px });
           }}
         />
-        {placed.map((name) => {
+        {dots.map(([name, p, conf]) => {
           const img = imgRef.current;
           const w = img?.naturalWidth || 1;
           const h = img?.naturalHeight || 1;
-          const p = marks[name];
+          const hollow = conf < MIN_CONFIDENCE;
+          const at = { left: `${(p[0] / w) * 100}%`, top: `${(p[1] / h) * 100}%` };
           return (
-            <span
-              key={name}
-              className="landmark"
-              data-testid={`landmark-${name}`}
-              style={{ left: `${(p[0] / w) * 100}%`, top: `${(p[1] / h) * 100}%` }}
-              title={name.replace(/_/g, " ")}
-            >
-              {names.indexOf(name) + 1}
+            <span key={name} style={{ display: "contents" }}>
+              <span
+                className={`landmark${hollow ? " hollow" : ""}`}
+                data-testid={`landmark-${name}`}
+                data-confidence={conf.toFixed(2)}
+                style={{
+                  ...at,
+                  // Confidence-tinted ring: red at 0, green at 1.
+                  boxShadow: offering
+                    ? `0 0 0 4px hsl(${Math.round(conf * 120)} 85% 45%)`
+                    : undefined,
+                }}
+                title={name.replace(/_/g, " ")}
+              >
+                {names.indexOf(name) + 1}
+              </span>
+              {adjust ? (
+                <button
+                  type="button"
+                  className="landmark-handle"
+                  data-testid={`landmark-handle-${name}`}
+                  aria-label={`Move ${name.replace(/_/g, " ")}`}
+                  style={at}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    setDragging(name);
+                  }}
+                  onPointerMove={(e) => {
+                    if (dragging === name) moveHandle(name, e.clientX, e.clientY);
+                  }}
+                  onPointerUp={(e) => {
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                    if (dragging !== name) return;
+                    setDragging(null);
+                    moveHandle(name, e.clientX, e.clientY);
+                    submit(marksRef.current);
+                  }}
+                />
+              ) : null}
             </span>
           );
         })}
+        {pending ? (
+          <div className="autocalib-busy" data-testid="autocalib-busy">
+            <span className="autocalib-spin" />
+            Finding the court…
+          </div>
+        ) : null}
       </div>
 
       <div className="calib-actions">
@@ -383,6 +583,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
             const pts = { ...marks };
             delete pts[names[step - 1]];
             setMarks(pts);
+            marksRef.current = pts;
             setStep(step - 1);
             setResult(null);
           }}
@@ -417,6 +618,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
     </div>
   );
 }
+
 
 /** `/upload/:id/status` — I3 (S-07, S-08). */
 export function UploadStatus({ gameId }: { gameId: string }) {

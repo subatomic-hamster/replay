@@ -565,3 +565,63 @@ synthetic generator (plan §7.4) and by filming (plan §5, footage schedule).
 Real clips are never committed; each one referenced above must have a corresponding entry in
 `samples/real/MANIFEST.md` (source, license/consent note, why it matches target framing) per D-7
 before it is used in any check in this spec.
+
+---
+
+## 9. Auto-calibration (D-23) — appended
+
+`POST /games/{id}/calibration/auto` asks a Claude vision model where the court landmarks
+are and the calibration page draws the answer as dots the user accepts or drags. The
+proposal is **never** the calibration: `POST /games/{id}/calibration` stays the commit
+step, and the manual walk of §4 (S-04..S-06) stays reachable and unchanged. Everything
+below therefore tests an *accelerator*, and every failure mode of it must land the user
+back on the manual path with the gate shut.
+
+### 9.1 Scenarios
+
+| ID | Scenario | Steps | Expected | Priority |
+|---|---|---|---|---|
+| S-04b-1 | A proposal appears by itself | Upload a clip, open `/upload/:id/calibrate` | `[data-testid=autocalib-status]` reads "Finding the court…" with a spinner over the frame; `[data-testid=autocalib-busy]` is click-through so the manual walk still works underneath; when the proposal lands the status names how many points were found and the reprojection error | P1 |
+| S-04b-2 | Accept | With a proposal on screen, press `[data-testid=autocalib-accept]` | Exactly one `POST /calibration` is sent, carrying only the landmarks at confidence >= 0.5; `[data-testid=calib-error]` goes `data-ok="true"` and `start-processing` is enabled | P1 |
+| S-04b-3 | Adjust and drag | Press `[data-testid=autocalib-adjust]`, drag `[data-testid=landmark-handle-corner_nl]` 30 px | Every landmark gets a >= 44 px handle; the dot follows the pointer; releasing re-POSTs `/calibration` and the error text changes | P1 |
+| S-04b-4 | Low-confidence points are the user's job | Inspect the dots of a proposal with a landmark under 0.5 | That dot renders hollow (`.landmark.hollow`), is excluded from the accepted set, and can be dragged into place | P1 |
+| S-04b-5 | Opt out | Press `[data-testid=autocalib-manual]` | The proposed dots disappear, the walk restarts at the first landmark, and S-04's flow passes unchanged | P1 |
+| S-04b-6 | Nothing is committed until the user says so | Wait for a proposal, then `GET /games/{id}` | `court` is still absent and `POST /process` is still 400 | P0 |
+
+### 9.2 API checks
+
+| ID | Check | Expected |
+|---|---|---|
+| AC-17 | `POST /games/{id}/calibration/auto` before any upload | 400, "no calibration frame yet — upload the video first" |
+| AC-18 | `POST .../calibration/auto` with an unknown sport | 400; a missing `variant` is 422 |
+| AC-19 | `POST .../calibration/auto` while one is queued or running | 202 with the *same* `job_id` — one model call per game at a time |
+| AC-20 | `GET .../calibration/auto` before anything was asked | `{"status": "idle", "ok": false}` |
+| AC-21 | `GET .../calibration/auto` after it finishes | `{"status": "done", "ok": …, "proposal": {landmarks_px, confidence, snapped, source, notes}, "reprojection_error_px": …}` |
+| AC-22 | Either call on a game that does not exist | 404 |
+
+### 9.3 Pipeline checks (`courtcam/tests/test_autocalib.py`, no model call)
+
+| ID | Check | Expected |
+|---|---|---|
+| PC-12 | `gridded()` on a 2560x960 frame | Long side is 1568 px, aspect preserved, grid labelled in *source* pixels |
+| PC-13 | Prompt construction | Carries the profile's `landmark_descriptions` and `orientation_hint`; asks only for `court.landmarks` unless `--ask-optional`; never names a landmark the variant's template lacks |
+| PC-14 | Two-pass agreement | Landmarks the straight and mirrored passes agree on within 3 % of the image width survive with `confidence = 1 - d/tol`; the rest are dropped, with the disagreement distance in `notes` |
+| PC-15 | Model failure | A backend that raises returns an empty `Proposal` with a note — never an exception |
+| PC-16 | `LineSnapper.snap` | Pulls a point onto the nearest line intersection within 40 px; returns the point untouched when there is no line |
+| PC-17 | Handedness | A globally left/right-swapped labelling (which the court's own mirror symmetry makes fit *equally well*) is detected from the winding of three landmarks and corrected |
+| PC-18 | `--backend auto` resolution | `ANTHROPIC_API_KEY` -> `vlm`; else a `claude` on PATH -> `claude-cli`; else `lines` |
+
+### 9.4 Accuracy check (manual, real footage)
+
+`courtcam autocalib-eval` scores the proposal against the hand-made
+`samples/real/*.landmarks.json` ground truth and prints per-landmark pixel error, the mean,
+and the fraction within 20 px. It is **not** a CI gate: it costs money, takes minutes per
+clip, and `samples/real/` is gitignored (D-7). It writes an overlay per clip to
+`samples/real/frames/autocalib_<clip>.jpg` and caches each proposal next to it, so
+`--reuse` re-scores for free.
+
+### 9.5 New test hooks
+
+Added to `apps/web`: `autocalib-status` (with `data-state` = `queued|running|done|failed|applied|manual`),
+`autocalib-busy`, `autocalib-accept`, `autocalib-adjust`, `autocalib-manual`,
+`landmark-handle-{name}`, and `data-confidence` on the existing `landmark-{name}`.

@@ -194,6 +194,38 @@ export interface CreateGameResult {
   upload_url: string;
 }
 
+/** D-23: what the vision model thinks the landmarks are. Not a calibration yet — the
+ *  client still POSTs /calibration with the points the user accepted. */
+export interface LandmarkProposal {
+  landmarks_px: Record<string, [number, number]>;
+  /** 0..1 per landmark; below 0.5 the dot is drawn hollow and is not committed. */
+  confidence: Record<string, number>;
+  /** Whether the point was pulled onto a detected court line. */
+  snapped?: Record<string, boolean>;
+  source: string;
+  notes?: string;
+  ok: boolean;
+  reprojection_error_px?: number | null;
+}
+
+export type AutoCalibrationState = "idle" | "queued" | "running" | "done" | "failed";
+
+/** GET /games/{id}/calibration/auto */
+export interface AutoCalibration {
+  status: AutoCalibrationState;
+  proposal?: LandmarkProposal;
+  ok: boolean;
+  reprojection_error_px?: number | null;
+  error?: string;
+}
+
+/** POST /games/{id}/calibration/auto — 202 with the queued job. */
+export interface AutoCalibrationJob {
+  job_id: string;
+  status: string;
+  game_id?: string;
+}
+
 export interface CalibrationResult {
   ok: boolean;
   /** Reprojection error in pixels; gate is < 5 (§4.4 stage 2). */

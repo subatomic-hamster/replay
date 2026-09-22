@@ -111,6 +111,172 @@ def calibrate(
 
 
 @app.command()
+def autocalib(
+    frame: Annotated[Path, typer.Option("--frame", help="Calibration frame (JPEG/PNG)")],
+    out: Annotated[Path | None, typer.Option("--out", "-o", help="Write landmarks.json")] = None,
+    sport: str = "basketball",
+    variant: str | None = None,
+    backend: Annotated[str, typer.Option(help="auto | vlm | claude-cli | lines")] = "auto",
+    overlay: Annotated[Path | None, typer.Option(help="Draw the proposal onto a JPEG")] = None,
+    ask_optional: Annotated[
+        bool, typer.Option(help="Also ask for the profile's landmarks_optional")
+    ] = False,
+) -> None:
+    """Propose the landmark clicks with a vision model and snap them to the court lines."""
+    from . import autocalib as auto_mod
+
+    img = auto_mod.read_frame(frame)
+    profile = load_profile(sport)
+    proposal = auto_mod.autocalibrate(
+        img, profile, variant, backend=backend, optional=ask_optional
+    )
+    if overlay:
+        auto_mod.draw_overlay(img, proposal, overlay)
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps(
+                {
+                    "variant": variant or profile.default_variant(),
+                    "landmarks_px": proposal.as_dict()["landmarks_px"],
+                    "autocalib": {
+                        k: v for k, v in proposal.as_dict().items() if k != "landmarks_px"
+                    },
+                },
+                indent=1,
+            ),
+            encoding="utf-8",
+        )
+    err = proposal.reprojection_error_px
+    typer.secho(
+        f"{proposal.source}: {len(proposal.landmarks_px)} landmarks, "
+        f"ok={proposal.ok} reproj={err:.1f}px"
+        if err is not None
+        else f"{proposal.source}: {len(proposal.landmarks_px)} landmarks, ok={proposal.ok}",
+        fg=typer.colors.GREEN if proposal.ok else typer.colors.YELLOW,
+    )
+    if proposal.notes:
+        typer.echo(f"  notes: {proposal.notes}")
+    for name, (x, y) in sorted(proposal.landmarks_px.items()):
+        snap = " snapped" if proposal.snapped.get(name) else ""
+        typer.echo(f"  {name:<10} {x:8.1f} {y:8.1f}  conf {proposal.confidence[name]:.2f}{snap}")
+
+
+HEADLINE = ("corner_nl", "corner_nr", "corner_fl", "corner_fr", "rim")
+NEAR_PX = 20.0
+
+
+@app.command("autocalib-eval")
+def autocalib_eval(
+    samples: Annotated[Path, typer.Option(help="Directory of *_240s.jpg frames")] = Path(
+        "samples/real"
+    ),
+    sport: Annotated[
+        str | None, typer.Option(help="Override the sport; default: the clip's filename prefix")
+    ] = None,
+    backend: Annotated[str, typer.Option(help="auto | vlm | claude-cli | lines")] = "auto",
+    clips: Annotated[str | None, typer.Option(help="Comma-separated clip stems to run")] = None,
+    reuse: Annotated[bool, typer.Option(help="Score cached proposals, no model calls")] = False,
+    ask_optional: Annotated[bool, typer.Option(help="Also ask for landmarks_optional")] = False,
+) -> None:
+    """Per-landmark pixel error against the hand-made `*.landmarks.json` ground truth."""
+    from . import autocalib as auto_mod
+
+    frames_dir = samples / "frames"
+    wanted = {c.strip() for c in clips.split(",")} if clips else None
+    rows: list[tuple[str, dict[str, float], float]] = []
+    for jpg in sorted(samples.glob("*_240s.jpg")):
+        stem = jpg.stem
+        if wanted and stem not in wanted and stem.split("_")[1] not in wanted:
+            continue
+        truth_path = samples / f"{stem}.landmarks.json"
+        if not truth_path.is_file():
+            continue
+        truth_doc = json.loads(truth_path.read_text(encoding="utf-8"))
+        truth = {k: tuple(v) for k, v in truth_doc["landmarks_px"].items()}
+        cache = frames_dir / f"autocalib_{stem}.json"
+        if reuse and cache.is_file():
+            doc = json.loads(cache.read_text(encoding="utf-8"))
+            proposal = auto_mod.Proposal(
+                landmarks_px={k: tuple(v) for k, v in doc["landmarks_px"].items()},
+                confidence=doc.get("confidence", {}),
+                snapped=doc.get("snapped", {}),
+                source=doc.get("source", "cache"),
+                notes=doc.get("notes", ""),
+                ok=doc.get("ok", False),
+                reprojection_error_px=doc.get("reprojection_error_px"),
+            )
+        else:
+            img = auto_mod.read_frame(jpg)
+            t0 = time.perf_counter()
+            # `samples/real` mixes sports: basketball_*, pickleball_*, badminton_*.
+            profile = load_profile(sport or stem.split("_")[0])
+            proposal = auto_mod.autocalibrate(
+                img,
+                profile,
+                truth_doc.get("variant"),
+                backend=backend,
+                optional=ask_optional,
+            )
+            proposal.notes = f"{proposal.notes} [{time.perf_counter() - t0:.0f}s]".strip()
+            frames_dir.mkdir(parents=True, exist_ok=True)
+            cache.write_text(json.dumps(proposal.as_dict(), indent=1), encoding="utf-8")
+            auto_mod.draw_overlay(img, proposal, frames_dir / f"autocalib_{stem}.jpg", truth)
+        errors = {
+            name: float(
+                (
+                    (proposal.landmarks_px[name][0] - p[0]) ** 2
+                    + (proposal.landmarks_px[name][1] - p[1]) ** 2
+                )
+                ** 0.5
+            )
+            for name, p in truth.items()
+            if name in proposal.landmarks_px
+        }
+        rows.append((stem, errors, proposal.reprojection_error_px or float("nan")))
+        typer.echo(f"\n{stem}  source={proposal.source} ok={proposal.ok}")
+        if proposal.notes:
+            typer.echo(f"  {proposal.notes}")
+        for name in sorted(truth):
+            got = errors.get(name)
+            mark = "" if got is None else ("ok " if got <= NEAR_PX else "BAD")
+            head = "*" if name in HEADLINE else " "
+            typer.echo(
+                f" {head}{name:<10} "
+                + ("       missing" if got is None else f"{got:8.1f} px  {mark}")
+            )
+
+    if not rows:
+        typer.echo("no clips with ground truth found")
+        raise typer.Exit(1)
+    typer.echo("\n== summary (* = headline: 4 corners + rim) ==")
+    typer.echo(f"{'clip':<32}{'n':>4}{'mean px':>10}{'<20px':>8}{'head<20':>9}{'reproj':>9}")
+    for stem, errors, reproj in rows:
+        head = [errors[n] for n in HEADLINE if n in errors]
+        want = [
+            n
+            for n in HEADLINE
+            if n
+            in json.loads((samples / f"{stem}.landmarks.json").read_text(encoding="utf-8"))[
+                "landmarks_px"
+            ]
+        ]
+        values = list(errors.values())
+        typer.echo(
+            f"{stem:<32}{len(values):>4}"
+            f"{(sum(values) / len(values) if values else float('nan')):>10.1f}"
+            f"{(sum(v <= NEAR_PX for v in values) / max(len(values), 1)):>8.0%}"
+            f"{sum(v <= NEAR_PX for v in head):>5}/{len(want):<3}"
+            f"{reproj:>9.1f}"
+        )
+    allv = [v for _, e, _ in rows for v in e.values()]
+    typer.echo(
+        f"{'ALL':<32}{len(allv):>4}{(sum(allv) / max(len(allv), 1)):>10.1f}"
+        f"{(sum(v <= NEAR_PX for v in allv) / max(len(allv), 1)):>8.0%}"
+    )
+
+
+@app.command()
 def synth(
     out: Annotated[Path, typer.Option("--out", "-o", help="Directory for the clip + truth")],
     sport: str = "basketball",

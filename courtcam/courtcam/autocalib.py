@@ -56,6 +56,9 @@ MIN_CONFIDENCE = 0.5
 #: 0.61-0.74. It is a floor, not a guarantee — `basketball_pavilion` scores 0.89 with a
 #: badly wrong court — but it is the only signal the backend has that is not circular.
 MIN_TEMPLATE_SCORE = 0.90
+#: A fit with most of the template off-frame is unconstrained — badminton_auditorium
+#: scored 0.94 for a court 858 px wrong at 65 % in frame.
+MIN_INFRAME_FRAC = 0.85
 SNAP_RADIUS_PX = 40.0
 #: Barrel pre-step for the template fit (D-24's "next", D-25's model). `templatefit`
 #: searches over STRAIGHT lines; on an ultra-wide or panoramic camera a court edge is a
@@ -711,12 +714,18 @@ def propose_template(
         # the same homography, so it measures nothing at all. The line score is the only
         # honest quality signal, so `ok` (which the uploader reads as "offer Accept")
         # rides on that instead.
-        proposal.ok = best.score >= MIN_TEMPLATE_SCORE
+        proposal.ok = best.score >= MIN_TEMPLATE_SCORE and best.inframe_frac >= MIN_INFRAME_FRAC
         if not proposal.ok:
-            notes.append(
+            note = (
                 f"score {best.score:.2f} < {MIN_TEMPLATE_SCORE}: the court template does "
                 "not sit on the paint, so these are dots to drag, not dots to accept"
             )
+            if best.inframe_frac < MIN_INFRAME_FRAC:
+                note += (
+                    f"; only {best.inframe_frac:.0%} of the template is in frame "
+                    f"(< {MIN_INFRAME_FRAC:.0%})"
+                )
+            notes.append(note)
     proposal.notes = "; ".join(n for n in notes if n)
     return proposal
 

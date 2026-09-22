@@ -649,3 +649,123 @@ after the change they are gone from `pickleball-select.png`.
 Overlay evidence for the same thing at 240 s: `frames/pickleball_legacypark_overlay_t140.jpg`
 — yellow court polygon exactly on the paint, blue boxes only on the three people on this
 court, and the adjacent game left as grey unpromoted tracklets (#2472, #2521, #2568).
+
+## Auto-calibration, second attempt — the `template` backend
+
+D-23's first attempt asked a vision model where the corners were and got 0 of 3
+basketball clips within 20 px. This attempt asks nothing: `courtcam/courtcam/templatefit.py`
+finds the painted lines, builds every quadrilateral two pairs of them can make, matches
+each one against a rectangle the sport template knows (the court outline, the key, the
+kitchen box) and keeps the homography under which the *whole* template — every sideline,
+arc and service line, sampled every 10 cm — lands on painted pixels. Run it with
+`courtcam autocalib --backend template` (or just `auto`, which is now the same thing) and
+score it with `courtcam autocalib-eval --backend template`.
+
+### The numbers
+
+`uv run courtcam autocalib-eval --backend template`, 16-core CPU, no GPU, no model call.
+Ground-truth landmarks that fall outside the frame are **skipped, not counted as misses**
+(`northsidewide.corner_fl` is at x = 2709 on a 2560 px frame, and neither 2560 px clip has
+a `corner_fr` at all) — the eval command was changed to do that and says so per clip.
+
+| clip | frame | runtime | line score | `ok` | landmarks < 20 px | mean px |
+|---|---|---|---|---|---|---|
+| `pickleball_legacypark` | 1920×1080 | **4 s** | **0.922** | **true** | **10 / 10** | **3.9** |
+| `basketball_powellgym` | 1920×1080 | 12 s | 0.690 | false | 3 / 14 | 108.5 |
+| `basketball_kennesawwide` | 2560×960 | 8 s | 0.739 | false | 0 / 13 | 759.2 |
+| `basketball_northsidewide` | 2560×960 | 12 s | 0.919 | false | 0 / 11 | 664.9 |
+| `badminton_russiaclub` (no truth) | 1920×1080 | 12 s | 0.610 | false | — | — |
+| `basketball_pavilion` (no truth) | 1920×1080 | 6 s | 0.815 | false | — | — |
+
+Per-landmark, `pickleball_legacypark`: `corner_fl` 2.9, `corner_fr` 2.4, `corner_nl` 9.0,
+`corner_nr` 12.2, `net_post_l` 2.4, `net_post_r` 2.0, `kitchen_nl` 2.6, `kitchen_nr` 2.0,
+`centre_n` 1.5, `centre_kn` 1.7 px. `basketball_powellgym`: `rim` 14.2, `key_nl` 12.7,
+`centre_l` 14.6, `ft_nl` 22.1, `corner_nl` 25.0, `key_nr` 20.6, `corner_nr` 55.6 and then
+it falls apart down the court — `key_fl` 174, `ft_fr` 261, `corner_fl` 394, `centre_r` 159.
+
+On the SYNTHETIC CI fixture (`samples/synthetic/basketball_half`) the fit lands every
+landmark within **1.8 px** in 1.9 s, which is the unit test
+(`test_template_backend_lands_on_the_synthetic_court`).
+
+`reproj` is **0.0 px on every clip and means nothing here**: all the landmarks come out of
+one homography, so feeding them back to `calibrate.calibrate` can only confirm arithmetic.
+The line score is the quality signal, and `ok` rides on it (`MIN_TEMPLATE_SCORE = 0.90`).
+
+**Target missed.** The brief wanted on-frame required landmarks within 20 px on ≥ 3 of the
+4 clips with ground truth. It is 1 of 4, and the failure is not a tuning problem.
+
+### Why the basketball clips cannot work, measured
+
+For each true court edge, the closest straight line the detector can produce, as
+(perpendicular offset at the edge midpoint, angle):
+
+| clip | near baseline | far sideline | far baseline | near sideline |
+|---|---|---|---|---|
+| `pickleball_legacypark` | 2 px, 0.3° | 0 px, 0.2° | 6 px, 1.2° | 0 px, 0.0° |
+| `basketball_kennesawwide` | 27 px, 4.2° | 24 px, **57.3°** | 42 px, 3.9° | 24 px, 1.2° |
+| `basketball_powellgym` | 13 px, 4.0° | **191 px, 6.6°** | 19 px, **51.2°** | 2 px, 0.2° |
+| `basketball_northsidewide` | 28 px, 3.1° | **442 px, 16.6°** | **428 px, 13.5°** | 100 px, 5.2° |
+
+On the pickleball clip all four court edges *are* detected lines, to a pixel. On the three
+basketball clips at least two edges have no straight line within hundreds of pixels and
+tens of degrees, at 30, 45 or 60 candidate lines. These cameras are ultra-wide or
+panoramic-stitched (D-18): a court edge is a **curve** in the image, so it fragments into
+short chords pointing in different directions and no `HoughLinesP` line represents it. A
+quad search over straight lines cannot reach the right answer, so scoring, refinement and
+priors are all downstream of a candidate set that does not contain the truth.
+
+Second measurement, same conclusion from the other side: the *ground-truth* homography
+scores **0.267 / 0.230 / 0.266** on kennesaw / northside / powellgym and **0.884** on
+pickleball. The hand-made basketball landmark sets do not sit on the paint either — they
+are exact-fit homographies (all 15 residuals are 0.0 px), i.e. one plane fitted through a
+barrel-distorted image, which D-18 already described as "contains the play area but does
+not sit on the lines". See `frames/autocalib_template_basketball_powellgym_240s.jpg`: the
+proposal and the blue ground-truth rings agree to 13-25 px at the near basket and diverge
+to 400 px at the far one, which is what lens distortion looks like.
+
+`basketball_pavilion` fails differently and is worth naming: the fitter latches onto the
+**roof beams**, which are longer, straighter and more contrasty than the court paint.
+`badminton_russiaclub` latches onto the **window frames** on the hall wall. Both are
+"the mask has no idea where the floor is" — the cheap fix is a horizon/playing-surface
+prior, not a better scorer.
+
+### Overlays
+
+Every fit is drawn with the full projected template in green (ground truth, where it
+exists, as blue rings):
+
+- `frames/autocalib_template_pickleball_legacypark_240s.jpg` — sits exactly on the paint.
+- `frames/autocalib_template_basketball_powellgym_240s.jpg` — right at the near basket,
+  swings off the court by the far one.
+- `frames/autocalib_template_basketball_kennesawwide_240s.jpg`,
+  `..._northsidewide_240s.jpg` — a squashed court crammed into the right quarter of the
+  panorama.
+- `frames/autocalib_template_basketball_pavilion_240s.jpg` — the roof.
+- `frames/autocalib_template_badminton_russiaclub_240s.jpg` — the windows.
+
+### What `auto` does now
+
+`autocalib._resolve_backend("auto")` returns `"template"`. It used to return `vlm` /
+`claude-cli` / `lines` depending on what was installed. The model backends stay available
+by name and their answer can be handed to the template fit as `prior=` (CLI: `--prior
+some.landmarks.json`), which leashes the quad search to within 15 % of the frame width of
+the prior's court and adds the prior itself as a candidate for the corner refinement to
+start from; if the leash leaves nothing the search runs unrestricted. Nothing else in the
+proposal contract moved: `Proposal.as_dict()` is unchanged and the API/UI still read
+`landmarks_px`, `confidence`, `ok`, `reprojection_error_px`.
+
+Why `template` is the right default even at 1 of 4:
+
+- the model backends were **0 of 4**, cost $0.26 and 3-14 minutes a clip, and timed out
+  outright on two of the four;
+- `template` costs nothing, runs in 4-12 s, needs no key and no network;
+- it is exact (2-12 px, 10/10 landmarks) on the one clip in the corpus shot the way the
+  product tells users to shoot — a 1× phone lens on a tripod (D-22) — and within 1.8 px on
+  the synthetic fixture;
+- it now refuses to claim `ok` on 5 of the 6 clips it gets wrong, so the uploader shows
+  draggable dots rather than an Accept button on a wrong court. It does *not* catch all of
+  them, and the one it misses (`pavilion`, score 0.89) is a fit on the roof.
+
+The next real step for the panoramic corpus is D-18's upgrade path — estimate `k1`/`k2`
+from the curvature of the detected court lines, undistort, then run this fitter — not more
+scoring heuristics.

@@ -11,10 +11,14 @@ D-23 (proposal). Two backends, used together:
 * `lines` — OpenCV. Its own corner candidates are weak, but `LineSnapper.snap` pulls a
   proposed landmark onto the nearest real line intersection within 40 px, which is where
   the pixel accuracy actually comes from.
+* `template` — `courtcam.templatefit`, no model at all. It fits the sport's court
+  template to the painted lines and reads every landmark off the one homography, so the
+  proposal is self-consistent by construction. This is what `auto` runs.
 
-`autocalibrate(..., backend="auto")` runs the VLM, snaps, drops low-confidence points and
-hands the rest to `calibrate.calibrate`. `ok=False` means "show the user the dots but make
-them fix it" — the manual click path is never removed.
+`autocalibrate(..., backend="auto")` fits the template; pass `prior=<landmark pixels>`
+(from a model backend, or from a previous calibration) and the fit is leashed to it.
+`ok=False` means "show the user the dots but make them fix it" — the manual click path
+is never removed.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ import cv2
 import numpy as np
 
 from . import calibrate as calib_mod
+from . import templatefit as tfit
 from .profiles import Profile
 
 #: Claude's image budget — anything longer on the long side is downscaled before sending.
@@ -43,6 +48,12 @@ GRID_STEP_PX = 100
 #: Two answers count as agreeing if they are this close, as a fraction of image width.
 AGREE_FRAC = 0.03
 MIN_CONFIDENCE = 0.5
+#: How much of the template's visible line length must land on paint before the
+#: `template` backend calls a fit `ok`. Measured over the six corpus clips: the two fits
+#: that are right score 0.92 and 0.94, and four of the five that are wrong score
+#: 0.61-0.74. It is a floor, not a guarantee — `basketball_pavilion` scores 0.89 with a
+#: badly wrong court — but it is the only signal the backend has that is not circular.
+MIN_TEMPLATE_SCORE = 0.90
 SNAP_RADIUS_PX = 40.0
 #: Wall clock per model call. The brief's 90 s is not survivable through the
 #: `claude` CLI — a measured pass on a 2560 px panorama is 100-240 s — so the default
@@ -72,6 +83,9 @@ class Proposal:
     ok: bool = False
     reprojection_error_px: float | None = None
     snapped: dict[str, bool] = field(default_factory=dict)
+    #: metres -> pixels, when the backend fitted one. Deliberately NOT in `as_dict`:
+    #: the API contract is landmark pixels, and the uploader commits those.
+    h_inv: np.ndarray | None = field(default=None, repr=False)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -525,6 +539,95 @@ class LineSnapper:
         )
 
 
+# ----------------------------------------------------------------- the template backend
+
+
+def _prior_quad(
+    prior: dict[str, tuple[float, float]], profile: Profile, variant: str | None
+) -> np.ndarray | None:
+    """Where a model proposal thinks the court outline is, as 4 image points."""
+    template = profile.template(variant)
+    known = {n: p for n, p in prior.items() if n in template.landmarks}
+    if len(known) < 4:
+        return None
+    try:
+        h, _ = calib_mod.homography(known, template)
+    except (calib_mod.CalibrationError, np.linalg.LinAlgError, cv2.error):
+        return None
+    return tfit.project(tfit.rectangles(template)[0], np.linalg.inv(h))
+
+
+def propose_template(
+    frame_bgr: np.ndarray,
+    profile: Profile,
+    variant: str | None = None,
+    *,
+    prior: dict[str, tuple[float, float]] | None = None,
+) -> Proposal:
+    """Fit the court template to the painted lines and read the landmarks off the fit.
+
+    Every landmark comes from one homography, so the proposal is self-consistent by
+    construction — which the two-pass model proposal never was. Landmarks that project
+    outside the frame are left out rather than guessed at; `landmarks_optional` are
+    included, because they cost nothing here and a clip with a corner off-frame needs
+    them (D-19).
+    """
+    template = profile.template(variant)
+    quad = _prior_quad(prior, profile, variant) if prior else None
+    fits, note = tfit.fit(frame_bgr, template, prior_quad=quad)
+    notes = [note] if note else []
+    if quad is not None and prior:
+        notes.append(f"seeded from a {len(prior)}-landmark prior")
+    if not fits:
+        return Proposal(source="template", notes="; ".join(notes))
+
+    best = fits[0]
+    runner = fits[1].score if len(fits) > 1 else 0.0
+    margin = best.score - runner
+    # Two numbers the user can act on: is the fit good in absolute terms, and was it
+    # the only good one? A clip with two equally good answers is a clip to check.
+    confidence = round(float(min(1.0, best.score) * (0.6 + 0.4 * min(1.0, margin / 0.03))), 3)
+    h, w = frame_bgr.shape[:2]
+    names = [n for n in template.landmarks]
+    points = tfit.project(template.landmark_array(names), best.h_inv)
+    landmarks = {
+        n: (float(x), float(y))
+        for n, (x, y) in zip(names, points, strict=True)
+        if 0 <= x < w and 0 <= y < h
+    }
+    notes.append(
+        f"score {best.score:.3f} (runner-up {runner:.3f}), "
+        f"{best.inframe_frac:.0%} of the template in frame, "
+        f"{len(template.landmarks) - len(landmarks)} landmark(s) off-frame"
+    )
+    proposal = Proposal(
+        landmarks_px=landmarks,
+        confidence=dict.fromkeys(landmarks, confidence),
+        source="template",
+        h_inv=best.h_inv,
+    )
+    try:
+        calib = calib_mod.calibrate(landmarks, profile, variant)
+    except calib_mod.CalibrationError as exc:
+        notes.append(str(exc))
+    except Exception as exc:  # noqa: BLE001 - a bad fit is a UI state, not a crash
+        notes.append(f"homography failed: {exc}")
+    else:
+        proposal.reprojection_error_px = float(calib["reproj_error_px"])
+        # The reprojection error is ~0 here BY CONSTRUCTION — every landmark came out of
+        # the same homography, so it measures nothing at all. The line score is the only
+        # honest quality signal, so `ok` (which the uploader reads as "offer Accept")
+        # rides on that instead.
+        proposal.ok = best.score >= MIN_TEMPLATE_SCORE
+        if not proposal.ok:
+            notes.append(
+                f"score {best.score:.2f} < {MIN_TEMPLATE_SCORE}: the court template does "
+                "not sit on the paint, so these are dots to drag, not dots to accept"
+            )
+    proposal.notes = "; ".join(n for n in notes if n)
+    return proposal
+
+
 # ---------------------------------------------------------------------- handedness fix
 
 
@@ -573,9 +676,12 @@ def autocalibrate(
     min_confidence: float = MIN_CONFIDENCE,
     timeout_s: int = TIMEOUT_S,
     optional: bool = False,
+    prior: dict[str, tuple[float, float]] | None = None,
 ) -> Proposal:
     """Propose landmarks, snap them to the painted lines, and try to fit a homography."""
     model_backend = _resolve_backend(backend)
+    if model_backend == "template":
+        return propose_template(frame_bgr, profile, variant, prior=prior)
     if model_backend == "lines":
         return LineSnapper(frame_bgr).propose(frame_bgr, profile, variant)
 
@@ -618,12 +724,16 @@ def autocalibrate(
 
 
 def _resolve_backend(backend: str) -> str:
-    """`auto` = the SDK when there is a key, the CLI when there is a `claude` on PATH."""
-    if backend != "auto":
-        return backend
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return "vlm"
-    return "claude-cli" if shutil.which("claude") else "lines"
+    """`auto` is `template`.
+
+    It used to be "the SDK when there is a key, the CLI when there is a `claude` on
+    PATH". Measured (samples/real/RESULTS.md, "Auto-calibration, second attempt"): the
+    model backends got 0 of 4 clips within 20 px, cost $0.26 and 3-14 minutes a clip,
+    and timed out outright on two of them. `template` is free, takes 3-20 s, and is
+    exact on the footage the product actually targets (a 1x phone lens). The model is
+    still available by name, and its answer can be handed to `template` as `prior=`.
+    """
+    return "template" if backend == "auto" else backend
 
 
 # ------------------------------------------------------------------------------ extras
@@ -637,10 +747,24 @@ def read_frame(path: Path) -> np.ndarray:
 
 
 def draw_overlay(
-    frame_bgr: np.ndarray, proposal: Proposal, dest: Path, truth: dict | None = None
+    frame_bgr: np.ndarray,
+    proposal: Proposal,
+    dest: Path,
+    truth: dict | None = None,
+    template: Any | None = None,
 ) -> Path:
-    """Debug render: proposed dots (green = confident, amber = shaky), truth as blue rings."""
+    """Debug render: proposed dots (green = confident, amber = shaky), truth as blue rings.
+
+    With a `template` and a fitted `h_inv` the whole court — every sideline, arc and
+    service line — is drawn in green, which is the only way to see whether a fit is
+    right or merely scored well.
+    """
     img = frame_bgr.copy()
+    if template is not None and proposal.h_inv is not None:
+        for poly in tfit.template_segments(template):
+            pts = tfit.project(poly, proposal.h_inv)
+            if np.isfinite(pts).all():
+                cv2.polylines(img, [pts.astype(np.int32)], False, (0, 200, 0), 2, cv2.LINE_AA)
     for name, (x, y) in (truth or {}).items():
         cv2.circle(img, (round(x), round(y)), 11, (255, 128, 0), 2)
         del name

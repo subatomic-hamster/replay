@@ -29,6 +29,9 @@ court:
     Many venues use PORTABLE nets whose posts stand on the floor OUTSIDE the
     sidelines. Never click the physical post: click where the net crosses the
     sideline.
+    "NEAR = closer to the camera = lower in the picture" is also the rule
+    `templatefit.near_end_is_left` applies mechanically (a template with a `net_y` is a
+    net sport, filmed from behind a baseline), so keep the two in step if either moves.
   landmark_descriptions:
     corner_nl: the court corner where the NEAR baseline meets the `l` sideline.
     corner_nr: the court corner where the NEAR baseline meets the `r` sideline.

@@ -40,6 +40,11 @@ court:
     (further from the camera); the `r` sideline is the one LOWER in the picture
     (nearer the camera). Use that rule even if it feels backwards — the software
     corrects a whole-court left/right swap on its own, but only if you are consistent.
+    The "further LEFT" rule above is not only prose: `templatefit.near_end_is_left`
+    applies it mechanically to pick between the two otherwise identical ways of laying
+    a 180-degree-symmetric full court onto the same four corners. A court sport is
+    filmed from the SIDE, so both ends are the same distance from the camera and which
+    one is "near" is pure convention — this is the convention.
   landmark_descriptions:
     corner_nl: the court corner where the NEAR baseline meets the `l` sideline.
     corner_nr: the court corner where the NEAR baseline meets the `r` sideline.

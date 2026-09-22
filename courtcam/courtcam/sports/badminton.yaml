@@ -28,6 +28,9 @@ court:
     Which sideline is "l" and which is "r": `l` is further LEFT in the picture, `r`
     further RIGHT. A whole-court left/right swap is corrected by the software as long
     as you are consistent.
+    "NEAR = closer to the camera = lower in the picture" is also the rule
+    `templatefit.near_end_is_left` applies mechanically (a template with a `net_y` is a
+    net sport, filmed from behind a baseline), so keep the two in step if either moves.
   landmark_descriptions:
     corner_nl: the court corner where the NEAR back boundary line meets the `l` sideline.
     corner_nr: the court corner where the NEAR back boundary line meets the `r` sideline.

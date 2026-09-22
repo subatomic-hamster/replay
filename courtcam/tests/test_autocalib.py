@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 
-from courtcam import autocalib
+from courtcam import autocalib, templatefit
 from courtcam.profiles import load_profile
 
 # The conftest/fixture click set: projects from the basketball_half template with a
@@ -234,12 +237,121 @@ def test_too_few_confident_landmarks_is_not_ok_but_still_returns_them(profile, m
     assert "above confidence" in out.notes
 
 
-def test_backend_auto_falls_back_to_lines_without_a_key_or_a_cli(monkeypatch):
+# --------------------------------------------------------------------- the template fit
+
+SYNTHETIC = Path(__file__).resolve().parents[2] / "samples/synthetic/basketball_half"
+
+
+def synthetic_frame() -> tuple[np.ndarray, dict[str, tuple[float, float]]]:
+    """First frame of the CI fixture clip and the landmarks it was rendered from."""
+    import cv2
+
+    cap = cv2.VideoCapture(str(SYNTHETIC / "clip.mp4"))
+    ok, frame = cap.read()
+    cap.release()
+    assert ok, f"could not read a frame from {SYNTHETIC / 'clip.mp4'}"
+    doc = json.loads((SYNTHETIC / "landmarks.json").read_text(encoding="utf-8"))
+    return frame, {k: (float(v[0]), float(v[1])) for k, v in doc["landmarks_px"].items()}
+
+
+def test_template_backend_lands_on_the_synthetic_court(profile):
+    """No model, no prior: the court template is fitted to the painted lines alone."""
+    frame, truth = synthetic_frame()
+    out = autocalib.autocalibrate(frame, profile, "half", backend="template")
+    assert out.ok is True and out.source == "template"
+    for name, point in truth.items():
+        got = out.landmarks_px[name]
+        assert np.hypot(got[0] - point[0], got[1] - point[1]) < 3.0, f"{name} at {got}"
+    # Every landmark the template knows, not only the five a human is asked for.
+    assert set(out.landmarks_px) == set(profile.template("half").landmarks)
+
+
+def test_backend_auto_is_the_template_fit_and_needs_no_key(monkeypatch):
+    """D-23 second attempt: `auto` no longer spends four minutes and $0.26 on a model."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setattr(autocalib.shutil, "which", lambda _name: None)
-    assert autocalib._resolve_backend("auto") == "lines"
-    monkeypatch.setattr(autocalib.shutil, "which", lambda _name: "/usr/bin/claude")
-    assert autocalib._resolve_backend("auto") == "claude-cli"
+    assert autocalib._resolve_backend("auto") == "template"
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
-    assert autocalib._resolve_backend("auto") == "vlm"
+    assert autocalib._resolve_backend("auto") == "template"
+    assert autocalib._resolve_backend("vlm") == "vlm"
     assert autocalib._resolve_backend("lines") == "lines"
+
+
+def test_the_true_court_outscores_a_random_quad(profile):
+    """The score has to be a discriminator, not just a number that comes out of a fit."""
+    frame, truth = synthetic_frame()
+    template = profile.template("half")
+    mask = templatefit.line_mask(frame)
+    dist = templatefit.distance_map(mask)
+    samples, link = templatefit.template_samples(template)
+    outline = templatefit.rectangles(template)[0]
+    true_quad = np.asarray(
+        [truth["corner_nl"], truth["corner_nr"], truth["corner_fr"], truth["corner_fl"]]
+    )
+    # The template's outline order is nl, nr, fr, fl for a half court; assert it, or the
+    # "truth" quad below is quietly the wrong labelling and the test proves nothing.
+    corners = ["corner_nl", "corner_nr", "corner_fr", "corner_fl"]
+    assert np.allclose(outline, template.landmark_array(corners))
+
+    rng = np.random.default_rng(7)
+    h, w = frame.shape[:2]
+    decoys = []
+    while len(decoys) < 25:
+        quad = np.stack([rng.uniform(0, w, 4), rng.uniform(0, h, 4)], axis=1)
+        centre = quad.mean(0)
+        quad = quad[np.argsort(np.arctan2(quad[:, 1] - centre[1], quad[:, 0] - centre[0]))]
+        if np.linalg.norm(np.roll(quad, -1, axis=0) - quad, axis=1).min() > 0.1 * max(h, w):
+            decoys.append(quad)
+
+    quads = np.asarray([true_quad, *decoys])
+    rects = np.repeat(outline[None], len(quads), axis=0)
+    scores, _ = templatefit.score(
+        templatefit._batch_homography(rects, quads), samples, link, dist, outline
+    )
+    assert scores[0] > 0.8, f"the true court only scored {scores[0]:.3f}"
+    assert scores[0] > scores[1:].max() + 0.1, f"a random quad scored {scores[1:].max():.3f}"
+
+
+def test_a_prior_leashes_the_search_and_is_ignored_when_it_is_nonsense(profile):
+    frame, truth = synthetic_frame()
+    good = autocalib.autocalibrate(frame, profile, "half", backend="template", prior=truth)
+    assert good.ok and "prior" in good.notes
+    for name, point in truth.items():
+        got = good.landmarks_px[name]
+        assert np.hypot(got[0] - point[0], got[1] - point[1]) < 3.0
+
+    # A prior that points at nothing must not be able to return an empty proposal.
+    nowhere = {k: (v[0] * 0.05, v[1] * 0.05) for k, v in truth.items()}
+    out = autocalib.autocalibrate(frame, profile, "half", backend="template", prior=nowhere)
+    assert out.landmarks_px, "an unusable prior must fall back to the free search"
+
+
+def test_near_end_convention_follows_the_template_not_the_sport_id():
+    """A net sport's near end is the one nearer the camera; a court sport's is the
+    leftmost, because both of its ends are the same distance away (see the YAMLs)."""
+    assert templatefit.near_end_is_left(load_profile("basketball").template("full")) is True
+    assert templatefit.near_end_is_left(load_profile("pickleball").template("doubles")) is False
+    assert templatefit.near_end_is_left(load_profile("badminton").template("doubles")) is False
+
+
+def test_template_rectangles_start_with_the_court_and_include_the_key():
+    rects = templatefit.rectangles(load_profile("basketball").template("full"))
+    assert np.allclose(rects[0], [[-7.5, 0.0], [7.5, 0.0], [7.5, 28.0], [-7.5, 28.0]])
+    # The near key is the quad a camera can still see when a corner is off-frame.
+    key = [[-2.45, 0.0], [2.45, 0.0], [2.45, 5.8], [-2.45, 5.8]]
+    assert any(np.allclose(r, key) for r in rects)
+    # Pickleball has no `features` rectangle at all; the kitchen box comes from landmarks.
+    pb = templatefit.rectangles(load_profile("pickleball").template("doubles"))
+    assert any(
+        np.allclose(r, [[-3.05, 4.575], [3.05, 4.575], [3.05, 8.835], [-3.05, 8.835]]) for r in pb
+    )
+
+
+def test_line_mask_finds_a_dark_line_on_a_pale_floor():
+    """A gym floor's boundary is often a BLACK line on blond wood — a top-hat misses it."""
+    import cv2
+
+    frame = np.full((720, 1280, 3), 210, dtype=np.uint8)
+    cv2.line(frame, (100, 300), (1180, 340), (20, 20, 20), 4)
+    mask = templatefit.line_mask(frame)
+    assert mask[320, 640] > 0
+    assert mask.mean() / 255 < 0.02, "the mask should be the line, not the floor"

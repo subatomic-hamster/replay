@@ -27,6 +27,16 @@ def _landmarks(value: str | None) -> dict[str, tuple[float, float]] | None:
     return pipeline.load_landmarks(source)[0]
 
 
+def _frame_size(path: Path) -> tuple[int, int]:
+    """(width, height) of an image, without pulling cv2 into the CLI's import path."""
+    import cv2
+
+    img = cv2.imread(str(path))
+    if img is None:
+        raise FileNotFoundError(f"could not read an image from {path}")
+    return img.shape[1], img.shape[0]
+
+
 def _variant_of(value: str | None) -> str | None:
     if not value or not Path(value).exists():
         return None
@@ -116,22 +126,33 @@ def autocalib(
     out: Annotated[Path | None, typer.Option("--out", "-o", help="Write landmarks.json")] = None,
     sport: str = "basketball",
     variant: str | None = None,
-    backend: Annotated[str, typer.Option(help="auto | vlm | claude-cli | lines")] = "auto",
+    backend: Annotated[
+        str, typer.Option(help="auto (= template) | template | vlm | claude-cli | lines")
+    ] = "auto",
     overlay: Annotated[Path | None, typer.Option(help="Draw the proposal onto a JPEG")] = None,
     ask_optional: Annotated[
         bool, typer.Option(help="Also ask for the profile's landmarks_optional")
     ] = False,
+    prior: Annotated[
+        Path | None,
+        typer.Option(help="A landmarks.json / cached proposal to leash the template fit to"),
+    ] = None,
 ) -> None:
-    """Propose the landmark clicks with a vision model and snap them to the court lines."""
+    """Fit the court template to the painted lines (or ask a vision model, `--backend vlm`)."""
     from . import autocalib as auto_mod
 
     img = auto_mod.read_frame(frame)
     profile = load_profile(sport)
     proposal = auto_mod.autocalibrate(
-        img, profile, variant, backend=backend, optional=ask_optional
+        img,
+        profile,
+        variant,
+        backend=backend,
+        optional=ask_optional,
+        prior=_landmarks(str(prior)) if prior else None,
     )
     if overlay:
-        auto_mod.draw_overlay(img, proposal, overlay)
+        auto_mod.draw_overlay(img, proposal, overlay, template=profile.template(variant))
     if out:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(
@@ -174,17 +195,26 @@ def autocalib_eval(
     sport: Annotated[
         str | None, typer.Option(help="Override the sport; default: the clip's filename prefix")
     ] = None,
-    backend: Annotated[str, typer.Option(help="auto | vlm | claude-cli | lines")] = "auto",
+    backend: Annotated[
+        str, typer.Option(help="auto (= template) | template | vlm | claude-cli | lines")
+    ] = "auto",
     clips: Annotated[str | None, typer.Option(help="Comma-separated clip stems to run")] = None,
     reuse: Annotated[bool, typer.Option(help="Score cached proposals, no model calls")] = False,
     ask_optional: Annotated[bool, typer.Option(help="Also ask for landmarks_optional")] = False,
 ) -> None:
-    """Per-landmark pixel error against the hand-made `*.landmarks.json` ground truth."""
+    """Per-landmark pixel error against the hand-made `*.landmarks.json` ground truth.
+
+    Ground-truth landmarks that fall OUTSIDE the frame are skipped, not counted as
+    misses: `northsidewide.corner_fl` sits at x = 2709 on a 2560 px frame and neither
+    2560 px clip has a `corner_fr` at all. A backend that refuses to invent a point it
+    cannot see is right to, so scoring it against one is scoring the wrong thing.
+    """
     from . import autocalib as auto_mod
 
     frames_dir = samples / "frames"
+    tag = "" if backend in ("auto", "vlm", "claude-cli") else f"{backend}_"
     wanted = {c.strip() for c in clips.split(",")} if clips else None
-    rows: list[tuple[str, dict[str, float], float]] = []
+    rows: list[tuple[str, dict[str, float], float, dict]] = []
     for jpg in sorted(samples.glob("*_240s.jpg")):
         stem = jpg.stem
         if wanted and stem not in wanted and stem.split("_")[1] not in wanted:
@@ -193,8 +223,14 @@ def autocalib_eval(
         if not truth_path.is_file():
             continue
         truth_doc = json.loads(truth_path.read_text(encoding="utf-8"))
-        truth = {k: tuple(v) for k, v in truth_doc["landmarks_px"].items()}
-        cache = frames_dir / f"autocalib_{stem}.json"
+        frame_size = _frame_size(jpg)
+        truth = {
+            k: tuple(v)
+            for k, v in truth_doc["landmarks_px"].items()
+            if 0 <= v[0] < frame_size[0] and 0 <= v[1] < frame_size[1]
+        }
+        offframe = len(truth_doc["landmarks_px"]) - len(truth)
+        cache = frames_dir / f"autocalib_{tag}{stem}.json"
         if reuse and cache.is_file():
             doc = json.loads(cache.read_text(encoding="utf-8"))
             proposal = auto_mod.Proposal(
@@ -221,7 +257,13 @@ def autocalib_eval(
             proposal.notes = f"{proposal.notes} [{time.perf_counter() - t0:.0f}s]".strip()
             frames_dir.mkdir(parents=True, exist_ok=True)
             cache.write_text(json.dumps(proposal.as_dict(), indent=1), encoding="utf-8")
-            auto_mod.draw_overlay(img, proposal, frames_dir / f"autocalib_{stem}.jpg", truth)
+            auto_mod.draw_overlay(
+                img,
+                proposal,
+                frames_dir / f"autocalib_{tag}{stem}.jpg",
+                truth,
+                template=profile.template(truth_doc.get("variant")),
+            )
         errors = {
             name: float(
                 (
@@ -233,8 +275,11 @@ def autocalib_eval(
             for name, p in truth.items()
             if name in proposal.landmarks_px
         }
-        rows.append((stem, errors, proposal.reprojection_error_px or float("nan")))
-        typer.echo(f"\n{stem}  source={proposal.source} ok={proposal.ok}")
+        rows.append((stem, errors, proposal.reprojection_error_px or float("nan"), truth))
+        typer.echo(
+            f"\n{stem}  source={proposal.source} ok={proposal.ok}"
+            + (f"  ({offframe} ground-truth landmark(s) off-frame, skipped)" if offframe else "")
+        )
         if proposal.notes:
             typer.echo(f"  {proposal.notes}")
         for name in sorted(truth):
@@ -251,16 +296,9 @@ def autocalib_eval(
         raise typer.Exit(1)
     typer.echo("\n== summary (* = headline: 4 corners + rim) ==")
     typer.echo(f"{'clip':<32}{'n':>4}{'mean px':>10}{'<20px':>8}{'head<20':>9}{'reproj':>9}")
-    for stem, errors, reproj in rows:
+    for stem, errors, reproj, truth in rows:
         head = [errors[n] for n in HEADLINE if n in errors]
-        want = [
-            n
-            for n in HEADLINE
-            if n
-            in json.loads((samples / f"{stem}.landmarks.json").read_text(encoding="utf-8"))[
-                "landmarks_px"
-            ]
-        ]
+        want = [n for n in HEADLINE if n in truth]
         values = list(errors.values())
         typer.echo(
             f"{stem:<32}{len(values):>4}"
@@ -269,7 +307,7 @@ def autocalib_eval(
             f"{sum(v <= NEAR_PX for v in head):>5}/{len(want):<3}"
             f"{reproj:>9.1f}"
         )
-    allv = [v for _, e, _ in rows for v in e.values()]
+    allv = [v for _, e, _, _ in rows for v in e.values()]
     typer.echo(
         f"{'ALL':<32}{len(allv):>4}{(sum(allv) / max(len(allv), 1)):>10.1f}"
         f"{(sum(v <= NEAR_PX for v in allv) / max(len(allv), 1)):>8.0%}"

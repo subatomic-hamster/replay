@@ -355,3 +355,43 @@ def test_line_mask_finds_a_dark_line_on_a_pale_floor():
     mask = templatefit.line_mask(frame)
     assert mask[320, 640] > 0
     assert mask.mean() / 255 < 0.02, "the mask should be the line, not the floor"
+
+
+def test_the_barrel_prestep_recovers_a_court_a_straight_line_fit_cannot(profile):
+    """D-24's "next": `templatefit` searches over STRAIGHT lines, so an ultra-wide court
+    edge — a curve — fragments into chords and the candidate set never contains the
+    truth. The fit is retried on segments straightened at a few `k1` values, and the
+    landmarks are bent back onto the source frame before anyone sees them."""
+    import cv2
+
+    frame, truth = synthetic_frame()
+    h, w = frame.shape[:2]
+    size = (w, h)
+    k1 = -0.30
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    grid = np.stack([xs.ravel(), ys.ravel()], 1).astype(np.float64)
+    sample = autocalib._straighten(grid, k1, size).astype(np.float32)
+    barrelled = cv2.remap(
+        frame, sample[:, 0].reshape(h, w), sample[:, 1].reshape(h, w), cv2.INTER_LINEAR
+    )
+
+    out = autocalib.propose_template(barrelled, profile, "half")
+    assert out.k1 < 0.0, out.notes
+    assert out.ok is True, out.notes
+    for name, point in truth.items():
+        bent = autocalib._bend_back([point], k1, size)[0]
+        got = out.landmarks_px[name]
+        assert np.hypot(got[0] - bent[0], got[1] - bent[1]) < 20.0, f"{name} at {got}"
+
+
+def test_straighten_round_trips(profile):
+    pts = np.array([[0.0, 0.0], [1920.0, 1080.0], [960.0, 540.0], [100.0, 900.0]])
+    size = (1920, 1080)
+    for k1 in autocalib.K1_CANDIDATES:
+        back = autocalib._bend_back(autocalib._straighten(pts, k1, size), k1, size)
+        assert np.allclose(back, pts, atol=1e-6), k1
+    # k1 = 0 is the identity, and the frame corners stay put at every k1.
+    assert np.allclose(autocalib._straighten(pts, 0.0, size), pts)
+    corner = np.array([[1920.0, 1080.0]])
+    for k1 in autocalib.K1_CANDIDATES:
+        assert np.allclose(autocalib._straighten(corner, k1, size), corner, atol=1e-6)

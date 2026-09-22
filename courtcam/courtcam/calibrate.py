@@ -55,11 +55,23 @@ def homography(
     # estimated from the straight court lines is the upgrade.
     # float64 throughout: getPerspectiveTransform is float32 and loses ~1e-4 px.
     # Fit metres->pixels so RANSAC's threshold is in pixels, then invert.
-    h_inv, _ = (
-        cv2.findHomography(dst, src, cv2.RANSAC, MAX_RANSAC_PX)
-        if len(names) >= RANSAC_MIN_POINTS
-        else cv2.findHomography(dst, src)
-    )
+    if len(names) >= RANSAC_MIN_POINTS:
+        # Deterministic: cv2.theRNG() is process-global, so the same clicks used to
+        # calibrate differently run to run (measured on the badminton auditorium clip:
+        # 1.3-2.5 px reported, 26-90 px worst, a different consensus each time).
+        cv2.setRNGSeed(0)
+        h_inv, mask = cv2.findHomography(dst, src, cv2.RANSAC, MAX_RANSAC_PX)
+        # RANSAC is a vote against a couple of bad clicks, not a licence to fit five of
+        # twelve points and report *that* error. On a barrel-distorted frame the pinhole
+        # model genuinely cannot hold all the landmarks, so RANSAC finds a small
+        # consensus and reports 1.5 px for a fit whose worst landmark is 167 px out
+        # (samples/real/RESULTS.md). Once more than two points are voted out there is no
+        # consensus worth the name: refit by least squares over everything and let the
+        # residuals say so.
+        if h_inv is None or mask is None or int(mask.sum()) < len(names) - 2:
+            h_inv, _ = cv2.findHomography(dst, src)
+    else:
+        h_inv, _ = cv2.findHomography(dst, src)
     if h_inv is None:
         raise CalibrationError("findHomography failed (degenerate landmark configuration)")
     h_inv = np.asarray(h_inv, dtype=np.float64)
@@ -76,11 +88,14 @@ def fit_error_px(residuals: dict[str, float]) -> float:
 
     A click further out than `MAX_RANSAC_PX` was voted out of the fit, so folding it into
     the number would report the user's mistake as the homography's. It still rides along
-    in `residuals_px` so the UI can point at it. If fewer than 4 points survive there was
-    no consensus to speak of and the worst residual is the honest answer.
+    in `residuals_px` so the UI can point at it. Excusing a point is capped at 2 — the
+    same bar `homography` uses to keep a RANSAC consensus at all — so a least-squares
+    fallback over a frame the pinhole model cannot hold reports its worst landmark
+    instead of the handful it happens to sit on.
     """
     kept = [r for r in residuals.values() if r <= MAX_RANSAC_PX]
-    return max(kept) if len(kept) >= 4 else max(residuals.values())
+    excused = len(residuals) - len(kept)
+    return max(kept) if len(kept) >= 4 and excused <= 2 else max(residuals.values())
 
 
 def project(points: np.ndarray, h: np.ndarray) -> np.ndarray:

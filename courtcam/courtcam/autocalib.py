@@ -29,6 +29,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +39,7 @@ import cv2
 import numpy as np
 
 from . import calibrate as calib_mod
+from . import distortion
 from . import templatefit as tfit
 from .profiles import Profile
 
@@ -55,6 +57,21 @@ MIN_CONFIDENCE = 0.5
 #: badly wrong court — but it is the only signal the backend has that is not circular.
 MIN_TEMPLATE_SCORE = 0.90
 SNAP_RADIUS_PX = 40.0
+#: Barrel pre-step for the template fit (D-24's "next", D-25's model). `templatefit`
+#: searches over STRAIGHT lines; on an ultra-wide or panoramic camera a court edge is a
+#: curve, so it fragments into short chords pointing different ways and no `HoughLinesP`
+#: line represents it — the candidate set does not contain the truth, which is why the
+#: three basketball panoramas fail (samples/real/RESULTS.md). So the detected segments
+#: are straightened at a few `k1` values and the fit re-run on each.
+K1_CANDIDATES = (0.0, -0.2, -0.4, -0.6)
+#: Wall clock for the whole fit, every candidate included. One fit is 4-12 s on the
+#: corpus, so the last candidates are skipped on a slow frame rather than run.
+TEMPLATE_BUDGET_S = 40.0
+#: How much better a straightened candidate has to score before it is preferred. Its
+#: mask is redrawn from Hough segments and is therefore sparser than the raw ridge mask
+#: the `k1 = 0` fit sees, so the scores are close but not identical measurements; the
+#: margin keeps a 1x lens (where the model buys nothing) on the path it was measured on.
+MIN_K1_MARGIN = 0.02
 #: Wall clock per model call. The brief's 90 s is not survivable through the
 #: `claude` CLI — a measured pass on a 2560 px panorama is 100-240 s — so the default
 #: is 420 s and the two passes run concurrently — a measured pass on the 2560 px
@@ -83,6 +100,12 @@ class Proposal:
     ok: bool = False
     reprojection_error_px: float | None = None
     snapped: dict[str, bool] = field(default_factory=dict)
+    #: The lens curvature the fit had to take out to find the court, 0.0 for a straight
+    #: lens. Same one-parameter division model as `distortion`/`calib.json` (D-25), but
+    #: fitted from the LINES rather than from clicked landmarks. Landmarks are reported
+    #: in source pixels either way, so a consumer that ignores this still gets dots that
+    #: land on the frame.
+    k1: float = 0.0
     #: metres -> pixels, when the backend fitted one. Deliberately NOT in `as_dict`:
     #: the API contract is landmark pixels, and the uploader commits those.
     h_inv: np.ndarray | None = field(default=None, repr=False)
@@ -96,6 +119,7 @@ class Proposal:
             "notes": self.notes,
             "ok": self.ok,
             "reprojection_error_px": self.reprojection_error_px,
+            "k1": self.k1,
         }
 
 
@@ -557,6 +581,44 @@ def _prior_quad(
     return tfit.project(tfit.rectangles(template)[0], np.linalg.inv(h))
 
 
+def _straighten(pts, k1: float, size: tuple[int, int]) -> np.ndarray:
+    """Source pixels -> lens-corrected pixels, rescaled to stay on the same canvas.
+
+    `distortion.undistort_points` pushes everything outward when `k1 < 0`, which throws
+    the court edges — the part that matters — off the frame the fit runs in. A uniform
+    scale about the centre is absorbed by the homography, so the fit does not care, and
+    `1 + k1` is exactly the factor that puts the frame corners back where they were.
+    """
+    c = np.asarray(size, dtype=np.float64) / 2.0
+    return (distortion.undistort_points(pts, k1, size) - c) * (1.0 + k1) + c
+
+
+def _bend_back(pts, k1: float, size: tuple[int, int]) -> np.ndarray:
+    """The exact inverse of `_straighten`: lens-corrected pixels -> source pixels."""
+    c = np.asarray(size, dtype=np.float64) / 2.0
+    pts = (np.asarray(pts, dtype=np.float64).reshape(-1, 2) - c) / (1.0 + k1) + c
+    return distortion.distort_points(pts, k1, size)
+
+
+def _straight_mask(mask: np.ndarray, k1: float, size: tuple[int, int]) -> np.ndarray:
+    """The line mask with the barrel taken out, redrawn from its own Hough segments.
+
+    Undistorting the *frame* would resample two megapixels per candidate and blur the
+    1-2 px paint the ridge filter is looking for. The fit only ever reads the mask, and
+    a segment is three points: two ends and a midpoint, which is enough to keep a chord
+    of a curve on the curve once it is straightened.
+    """
+    out = np.zeros_like(mask)
+    segs = tfit.segments(mask)
+    if not len(segs):
+        return out
+    ends = segs.reshape(-1, 2, 2)
+    triples = np.stack([ends[:, 0], ends.mean(axis=1), ends[:, 1]], axis=1)  # (N, 3, 2)
+    straight = _straighten(triples.reshape(-1, 2), k1, size).reshape(len(segs), 3, 2)
+    cv2.polylines(out, np.rint(straight).astype(np.int32), False, 255, 2)
+    return out
+
+
 def propose_template(
     frame_bgr: np.ndarray,
     profile: Profile,
@@ -574,8 +636,37 @@ def propose_template(
     """
     template = profile.template(variant)
     quad = _prior_quad(prior, profile, variant) if prior else None
-    fits, note = tfit.fit(frame_bgr, template, prior_quad=quad)
+    h, w = frame_bgr.shape[:2]
+    size = (w, h)
+    mask = tfit.line_mask(frame_bgr)
+    deadline = time.monotonic() + TEMPLATE_BUDGET_S
+
+    fits, note = tfit.fit(frame_bgr, template, mask=mask, prior_quad=quad)
     notes = [note] if note else []
+    k1 = 0.0
+    plain = fits[0].score if fits else 0.0
+    beat = plain + MIN_K1_MARGIN
+    skipped = []
+    # A fit that already sits on the paint has no barrel to take out, and the pre-step
+    # is 3-4 more fits at 4-12 s each. Measured: pickleball scores 0.922 straight away
+    # and stays a 4 s, 10/10 answer; the clips that fall through here are the ones the
+    # straight-line search has already failed on.
+    for candidate in K1_CANDIDATES if plain < MIN_TEMPLATE_SCORE else ():
+        if not candidate:
+            continue  # k1 = 0 is the fit already done, on the raw mask
+        if time.monotonic() > deadline:
+            skipped.append(candidate)
+            continue
+        bent = None if quad is None else _straighten(quad, candidate, size)
+        got, _ = tfit.fit(
+            frame_bgr, template, mask=_straight_mask(mask, candidate, size), prior_quad=bent
+        )
+        if got and got[0].score > beat:
+            fits, k1, beat = got, candidate, got[0].score
+    if k1:
+        notes.append(f"k1 {k1:+.2f} straightened the lines ({plain:.3f} -> {fits[0].score:.3f})")
+    if skipped:
+        notes.append(f"skipped k1 {skipped} — {TEMPLATE_BUDGET_S:.0f} s budget")
     if quad is not None and prior:
         notes.append(f"seeded from a {len(prior)}-landmark prior")
     if not fits:
@@ -587,9 +678,10 @@ def propose_template(
     # Two numbers the user can act on: is the fit good in absolute terms, and was it
     # the only good one? A clip with two equally good answers is a clip to check.
     confidence = round(float(min(1.0, best.score) * (0.6 + 0.4 * min(1.0, margin / 0.03))), 3)
-    h, w = frame_bgr.shape[:2]
     names = [n for n in template.landmarks]
-    points = tfit.project(template.landmark_array(names), best.h_inv)
+    # The fit lives in straightened pixels when k1 fired; the UI draws on the source
+    # frame, so every landmark is bent back onto it before anything else sees it.
+    points = _bend_back(tfit.project(template.landmark_array(names), best.h_inv), k1, size)
     landmarks = {
         n: (float(x), float(y))
         for n, (x, y) in zip(names, points, strict=True)
@@ -605,6 +697,7 @@ def propose_template(
         confidence=dict.fromkeys(landmarks, confidence),
         source="template",
         h_inv=best.h_inv,
+        k1=k1,
     )
     try:
         calib = calib_mod.calibrate(landmarks, profile, variant)
@@ -761,8 +854,11 @@ def draw_overlay(
     """
     img = frame_bgr.copy()
     if template is not None and proposal.h_inv is not None:
+        size = (frame_bgr.shape[1], frame_bgr.shape[0])
         for poly in tfit.template_segments(template):
             pts = tfit.project(poly, proposal.h_inv)
+            if proposal.k1:
+                pts = _bend_back(pts, proposal.k1, size)
             if np.isfinite(pts).all():
                 cv2.polylines(img, [pts.astype(np.int32)], False, (0, 200, 0), 2, cv2.LINE_AA)
     for name, (x, y) in (truth or {}).items():

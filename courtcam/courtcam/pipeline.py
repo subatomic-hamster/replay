@@ -14,7 +14,6 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-import cv2
 import numpy as np
 
 from . import calibrate as calib_mod
@@ -126,43 +125,6 @@ def stage_ingest(input_path: Path, out_dir: Path, *, force: bool, progress: Prog
     return info
 
 
-def _refit_least_squares(calib: dict[str, Any], straight, names, template) -> None:
-    """Replace the RANSAC homography with plain least squares over every landmark.
-
-    `calibrate.homography` votes with RANSAC at `MAX_RANSAC_PX = 4 px` once there are 6+
-    landmarks. That is right for raw clicks on a 1x lens. It is wrong once `k1` has
-    already taken the radial error out: what is left is sub-5-px click noise spread over
-    a dozen points, and RANSAC keeps finding a 9-point consensus that throws the whole
-    bottom-left cluster of the badminton clip 26-45 px out while *reporting* 2.5 px —
-    a flattering number on a court polygon that is visibly off the paint. Which
-    consensus it picks also moves with `cv2.theRNG()`, so the same landmarks calibrate
-    differently in different processes.
-
-    Least squares over all of them lands every residual under 5.5 px, and it is what
-    `calibrate.py`'s own comment prescribes when there is nothing to vote out.
-
-    ponytail: this belongs in `calibrate.homography` — keep the RANSAC model only when
-    it keeps most of the points (`mask.sum() >= len(names) - 2`), else fall back to
-    least squares. That file is owned by another agent this session; see the report.
-    """
-    src = np.asarray([straight[n] for n in names], dtype=np.float64)
-    dst = template.landmark_array(names)
-    h_inv, _ = cv2.findHomography(dst, src)
-    if h_inv is None:
-        return
-    h_inv = np.asarray(h_inv, dtype=np.float64)
-    residuals = np.linalg.norm(calib_mod.project(dst, h_inv) - src, axis=1)
-    if residuals.max() >= max(calib["residuals_px"].values()):
-        return  # RANSAC already did better; leave the contract's answer alone
-    calib["H_inv"] = h_inv.tolist()
-    calib["H"] = np.linalg.inv(h_inv).tolist()
-    calib["residuals_px"] = {n: round(float(e), 3) for n, e in zip(names, residuals, strict=True)}
-    calib["reproj_error_px"] = float(residuals.max())
-    calib["court_polygon_px"] = calib_mod.project(template.polygon, h_inv).tolist()
-    if template.rim:
-        calib["rim_px"] = calib_mod.project(np.asarray([template.rim]), h_inv)[0].tolist()
-
-
 def calibrate_lens(
     landmarks_px: dict[str, tuple[float, float]],
     profile: Profile,
@@ -195,8 +157,6 @@ def calibrate_lens(
         for n, p in zip(names, distortion.undistort_points(pts, k1, image_size), strict=True)
     }
     calib = calib_mod.calibrate({**landmarks_px, **straight}, profile, variant)
-    if k1:
-        _refit_least_squares(calib, straight, names, template)
     h_inv = np.asarray(calib["H_inv"], dtype=np.float64)
     calib["k1"] = k1
     calib["image_size"] = [int(image_size[0]), int(image_size[1])]

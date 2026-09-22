@@ -16,11 +16,17 @@ court:
      singles_nl, singles_nr, singles_fl, singles_fr]
   # D-23: prose for the vision model used by `courtcam autocalib`, not geometry.
   orientation_hint: |-
-    A badminton court is a rectangle split in half by a net. The camera is normally
-    behind or beside one back boundary line, looking down the length of the court.
-      - The NEAR baseline is the back boundary line closest to the camera: LOWER and
-        wider in the picture.
-      - The FAR baseline is the other back boundary line, beyond the net.
+    A badminton court is a rectangle split in half by a net. The camera is either
+    BEHIND A BACK BOUNDARY LINE, looking down the length of the court, or BESIDE THE
+    COURT IN THE PLANE OF THE NET, looking across it.
+      - Behind a baseline: the NEAR baseline is the back boundary line closest to the
+        camera (LOWER and wider in the picture) and the FAR baseline is the other one,
+        beyond the net.
+      - Beside the court in the net plane: the net projects to a single near-vertical
+        line, the court's long axis runs left-right across the picture, and both back
+        boundary lines sit at or outside the frame edges - so `corner_*` are usually
+        not visible and should be left out rather than guessed at (D-19). NEAR is then
+        the sideline nearest the camera, LOWER in the picture.
     The four corners wanted here are the OUTER (doubles) corners unless the court
     variant is `singles`; a doubles-marked court has an extra sideline about 0.5 m
     inside each outer one, and the outer pair is the one to click for `doubles`.

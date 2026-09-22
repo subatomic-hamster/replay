@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from replay_api.config import Settings
 from starlette.websockets import WebSocketDisconnect
 
 from .conftest import CALIB, TINY_MP4, new_game, ready_game
@@ -306,3 +307,60 @@ def test_sessions_and_ws_fanout(client: TestClient):
 def test_ws_unknown_session_is_closed(client: TestClient):
     with pytest.raises(WebSocketDisconnect), client.websocket_connect("/sessions/s_nope") as ws:
         ws.receive_text()
+
+
+# The twelve clicks from samples/real/badminton_auditorium_240s.landmarks.json (D-25).
+# A GoPro superview lens: the pinhole fit is 41.8 px out at its worst landmark, the
+# lens-aware one under 5.
+BADMINTON_AUDITORIUM = {
+    "sport": "badminton",
+    "variant": "doubles",
+    "landmarks_px": {
+        "net_post_l": [929.0, 982.7],
+        "net_post_r": [931.0, 517.1],
+        "short_nl": [416.6, 920.7],
+        "short_nr": [747.0, 513.2],
+        "short_fl": [1442.8, 927.1],
+        "short_fr": [1126.0, 517.0],
+        "centre_sn": [650.4, 630.8],
+        "centre_sf": [1218.6, 635.4],
+        "singles_nl": [467.7, 856.4],
+        "singles_nr": [736.5, 526.0],
+        "singles_fl": [1396.0, 861.9],
+        "singles_fr": [1136.1, 530.1],
+    },
+}
+
+
+def test_calibration_reports_the_lens_model_the_pipeline_will_run(
+    client: TestClient, settings: Settings
+):
+    """D-25: the preview used to call bare `calibrate()` and answer 1.5 px for a fit
+    whose worst landmark was 167 px out, while the pipeline started a moment later
+    estimated `k1` and got 4.8. Now both run the same fit, and `k1`/`lens_rms_px` say so.
+    `video.width` is still 0 at calibration time (D-14 grabs the frame, it does not
+    probe), so the frame size comes off `media/calib.jpg`."""
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    gid = new_game(client)
+    frame = settings.games_dir / gid / "media" / "calib.jpg"
+    frame.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(frame), np.zeros((1080, 1920, 3), np.uint8))
+    assert client.get(f"/games/{gid}").json()["video"]["width"] == 0
+
+    r = client.post(f"/games/{gid}/calibration", json=BADMINTON_AUDITORIUM)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["k1"] < -0.5
+    before, after = body["lens_rms_px"]
+    assert before > 14.0 and after < 3.0
+    assert body["reprojection_error_px"] < 6.0
+    assert max(body["residuals_px"].values()) < 6.0
+
+
+def test_an_undistorted_lens_reports_k1_zero(client: TestClient):
+    """The D-24 gate: 5 landmarks is under `MIN_POINTS`, so the payload is the old one."""
+    gid = new_game(client)
+    body = client.post(f"/games/{gid}/calibration", json=CALIB).json()
+    assert body["k1"] == 0.0
+    assert body["reprojection_error_px"] < 5.0

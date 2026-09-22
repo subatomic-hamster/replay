@@ -664,3 +664,38 @@ contract in §4.5/§4.6 except the two additive response fields called out.
 `sport_ui.review: ["heatmap"]`, six landmarks), and the seeded library gains
 `g_pickle4` ("Sunday doubles — court 3"), exported from `e2e/helpers.ts` as `NET_GAME_ID`.
 Library card counts in S-11/S-12 are 4, and S-02 expects two sport radios.
+
+---
+
+## 11. Lens model and the RANSAC fallback (D-25) — appended
+
+### 11.1 Additive response fields
+
+- `POST /games/{id}/calibration` → 200 now also carries `k1: number` (0.0 when the lens
+  model did not fire) and `lens_rms_px: [before, after] | null`, the reprojection RMS the
+  `k1` fit started from and ended at. Both are additive and optional; the web client
+  ignores them. They exist because the preview used to call the *lens-free* fit while the
+  pipeline ran the lens-aware one — so AC-03's "reprojection computed" now means
+  `pipeline.calibrate_lens`, the same fit the run will use. Frame size comes from the
+  game's `video` record when it is populated, else from `media/calib.jpg` (D-14 grabs the
+  frame at upload but does not probe it, so on the pre-processing path it is the JPEG).
+- `courtcam`'s `calib.json` (`courtcam.calib.v1`) carries `k1`, `image_size` and
+  `lens_rms_px` on the same terms, and `court_polygon_px` is a 0.25 m polyline rather than
+  4 corners once `k1 != 0`.
+
+### 11.2 `calib-worst` and the honest error
+
+`calibrate.homography()` keeps its RANSAC consensus only when it holds **all but at most
+two** landmarks; past that it refits by least squares over every landmark and reports
+*that* fit's worst residual. It also seeds `cv2.setRNGSeed(0)`, so the same clicks give
+the same calibration every run. Consequence for S-04/E-08 and `[data-testid=calib-worst]`:
+on a barrelled frame `reprojection_error_px` and the worst residual now agree to within
+one excused click instead of differing by two orders of magnitude (measured: 1.5 px
+reported against a 167 px worst landmark, before).
+
+| ID | Check | Expected |
+|---|---|---|
+| PC-19 | `homography()` on the 12 badminton-auditorium landmarks, `k1 = 0` | worst residual **≥ 40 px** and `fit_error_px` reports it — not a 5-point consensus's 1.5 px (`courtcam/tests/test_calibrate.py::test_barrelled_frame_reports_its_worst_landmark_not_a_five_point_consensus`) |
+| PC-20 | Same landmarks, three calls | Identical residuals every time (`::test_the_barrelled_fit_is_deterministic`) |
+| AC-03b | `POST /calibration` with those landmarks and a 1920×1080 `media/calib.jpg` | 200; `k1 < -0.5`, `lens_rms_px` ≈ `[14.6, 2.5]`, `reprojection_error_px < 6` (`services/api/tests/test_routes.py::test_calibration_reports_the_lens_model_the_pipeline_will_run`) |
+| AC-03c | `POST /calibration` with the 5-landmark basketball fixture | `k1 == 0.0` — under `distortion.MIN_POINTS`, so the payload is the pre-D-25 one (`::test_an_undistorted_lens_reports_k1_zero`) |

@@ -7,6 +7,7 @@ from courtcam.calibrate import (
     MAX_RANSAC_PX,
     CalibrationError,
     calibrate,
+    fit_error_px,
     homography,
     project,
 )
@@ -104,3 +105,42 @@ def test_with_five_points_a_bad_click_still_fails_the_gate():
     five["rim"] = (five["rim"][0] + 120.0, five["rim"][1] + 120.0)
     with pytest.raises(CalibrationError):
         calibrate(five, PROFILE, "half")
+
+
+# The twelve clicks from samples/real/badminton_auditorium_240s.landmarks.json, copied in
+# as literals because samples/real/ is gitignored (D-7). GoPro superview, camera beside
+# the court in the plane of the net: the pinhole model cannot hold all twelve at once.
+BADMINTON_AUDITORIUM = {
+    "net_post_l": (929.0, 982.7),
+    "net_post_r": (931.0, 517.1),
+    "short_nl": (416.6, 920.7),
+    "short_nr": (747.0, 513.2),
+    "short_fl": (1442.8, 927.1),
+    "short_fr": (1126.0, 517.0),
+    "centre_sn": (650.4, 630.8),
+    "centre_sf": (1218.6, 635.4),
+    "singles_nl": (467.7, 856.4),
+    "singles_nr": (736.5, 526.0),
+    "singles_fl": (1396.0, 861.9),
+    "singles_fr": (1136.1, 530.1),
+}
+
+
+def test_barrelled_frame_reports_its_worst_landmark_not_a_five_point_consensus():
+    """RANSAC used to keep a 5-of-12 consensus here and report 1.5 px for a fit whose
+    worst landmark is 167 px out — a lens problem hiding from its own quality gate
+    (D-25). Over two points voted out, the fit is redone by least squares over every
+    landmark and the error reported is that fit's worst."""
+    template = load_profile("badminton").template("doubles")
+    _, residuals = homography(BADMINTON_AUDITORIUM, template)
+    assert set(residuals) == set(BADMINTON_AUDITORIUM)
+    assert max(residuals.values()) >= 40.0
+    assert fit_error_px(residuals) >= 40.0
+
+
+def test_the_barrelled_fit_is_deterministic():
+    """cv2.theRNG() is process-global, so the same clicks used to calibrate differently
+    run to run (measured: 52/90 px one run, 45/33/26 px the next)."""
+    template = load_profile("badminton").template("doubles")
+    runs = [homography(BADMINTON_AUDITORIUM, template)[1] for _ in range(3)]
+    assert runs[0] == runs[1] == runs[2]

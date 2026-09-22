@@ -392,7 +392,13 @@ def _register_routes(app: FastAPI) -> None:
             raise HTTPException(400, f"at least 4 known landmarks are required, got {usable}")
 
         try:
-            error_px, residuals = adapter.calibration_error(body.sport, body.variant, marks)
+            fit = adapter.calibration_error(
+                body.sport,
+                body.variant,
+                marks,
+                game.get("video"),
+                _ctx(request).storage.path(game_id, CALIB_REL),
+            )
         except adapter.CalibrationRejected as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -409,9 +415,12 @@ def _register_routes(app: FastAPI) -> None:
         return {
             "id": game_id,
             "court": game["court"],
-            "reprojection_error_px": error_px,
+            "reprojection_error_px": fit["reprojection_error_px"],
             # Per-landmark, so the uploader can name the worst click (bug 3).
-            "residuals_px": residuals,
+            "residuals_px": fit["residuals_px"],
+            # Additive (D-25): the lens model the pipeline will use, and what it bought.
+            "k1": fit["k1"],
+            "lens_rms_px": fit["lens_rms_px"],
         }
 
     @app.post("/games/{game_id}/calibration/auto", status_code=202)

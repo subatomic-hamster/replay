@@ -9,7 +9,10 @@ courtcam interface used here (verified against courtcam/courtcam/ on 2026-09-22)
     courtcam.profiles.available_sports() -> list[str]
     courtcam.profiles.load_profile(sport) -> Profile          # pydantic; .template(variant)
     courtcam.calibrate.calibrate(landmarks_px, profile, variant) -> dict  # reproj_error_px,
-        # raises CalibrationError above 5 px
+        # raises CalibrationError above the D-19 gate
+    courtcam.pipeline.calibrate_lens(landmarks_px, profile, variant, (w, h)) -> dict
+        # the same payload plus k1 / image_size / lens_rms_px (D-25); this is the fit the
+        # pipeline runs, so it is the one the calibration preview reports
     courtcam.autocalib.autocalibrate(frame_bgr, profile, variant, backend=...) -> Proposal
     courtcam.autocalib.read_frame(path) -> np.ndarray
     courtcam.render.render_crop(video, CropPath, out_path, ...) -> Path
@@ -163,30 +166,73 @@ def get_profile(sport: str, variant: str | None = None) -> dict | None:
     return next((p for p in list_sports() if p.get("id") == sport), None)
 
 
-def calibration_error(
-    sport: str, variant: str, landmarks_px: dict
-) -> tuple[float | None, dict[str, float]]:
-    """`(reprojection error in px, per-landmark residuals)`.
+def _image_size(video: dict | None, frame_path: Path | None) -> tuple[int, int] | None:
+    """Frame size for the lens fit. `video` is only filled in once the pipeline has run
+    (D-14 grabs the calibration frame at upload but does not probe), so on the path that
+    matters — calibrating before processing — the answer comes off `media/calib.jpg`."""
+    w, h = (video or {}).get("width") or 0, (video or {}).get("height") or 0
+    if w and h:
+        return int(w), int(h)
+    if frame_path and Path(frame_path).is_file():
+        try:
+            import cv2  # type: ignore
 
-    The error is None when courtcam cannot compute it, and the residuals are then empty.
-    They are what lets the uploader point at the one click that is off instead of just
-    printing a number (bug 3). Raises CalibrationRejected when the clicks are unusable.
+            img = cv2.imread(str(frame_path))
+            if img is not None:
+                return int(img.shape[1]), int(img.shape[0])
+        except Exception as exc:  # noqa: BLE001
+            log.info("calibration frame size unavailable (%s)", exc)
+    return None
+
+
+def calibration_error(
+    sport: str,
+    variant: str,
+    landmarks_px: dict,
+    video: dict | None = None,
+    frame_path: Path | None = None,
+) -> dict:
+    """What `POST /calibration` reports back: reprojection error, per-landmark residuals
+    and the lens model that produced them.
+
+    The fit is the **lens-aware** one the pipeline itself runs (D-25), not bare
+    `calibrate()`. On a barrelled clip the two disagree by two orders of magnitude — the
+    pinhole fit answered 1.5 px for a court 167 px off the paint — so the calibrate
+    screen was passing for the wrong reason. `k1` and `lens_rms_px` ride along additively
+    so the uploader can say *why* a fisheye clip calibrates.
+
+    Every value is None/empty when courtcam cannot compute it. Raises CalibrationRejected
+    when the clicks are unusable.
     """
+    empty = {"reprojection_error_px": None, "residuals_px": {}, "k1": None, "lens_rms_px": None}
     try:
         from courtcam.calibrate import CalibrationError, calibrate  # type: ignore
+        from courtcam.pipeline import calibrate_lens  # type: ignore
         from courtcam.profiles import load_profile  # type: ignore
     except Exception as exc:  # noqa: BLE001
         log.info("courtcam calibration unavailable (%s)", exc)
-        return None, {}
+        return empty
+    size = _image_size(video, frame_path)
+    marks = dict(landmarks_px)
     try:
-        calib = calibrate(dict(landmarks_px), load_profile(sport), variant)
+        profile = load_profile(sport)
+        # No frame size, no radius to measure `k1` against — the plain pinhole fit, which
+        # is what `k1 = 0` means anyway.
+        calib = (
+            calibrate_lens(marks, profile, variant, size)
+            if size
+            else calibrate(marks, profile, variant)
+        )
     except CalibrationError as exc:
         raise CalibrationRejected(str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - bad template/landmarks: not fatal to the API
         log.info("reprojection error unavailable (%s)", exc)
-        return None, {}
-    return float(calib["reproj_error_px"]), {
-        k: float(v) for k, v in (calib.get("residuals_px") or {}).items()
+        return empty
+    return {
+        "reprojection_error_px": float(calib["reproj_error_px"]),
+        "residuals_px": {k: float(v) for k, v in (calib.get("residuals_px") or {}).items()},
+        "k1": float(calib.get("k1") or 0.0),
+        "lens_rms_px": list(calib.get("lens_rms_px") or []) or None,
     }
 
 
@@ -198,6 +244,8 @@ EMPTY_PROPOSAL: dict = {
     "notes": "",
     "ok": False,
     "reprojection_error_px": None,
+    # Additive (D-25): the barrel the template fit had to take out to find the court.
+    "k1": 0.0,
 }
 
 
@@ -217,7 +265,9 @@ def autocalibrate(
     if backend == "fake":
         time.sleep(fake_delay_s)
         court = _pipeline_keys_court(fake_dir)
-        marks = {k: [float(v[0]), float(v[1])] for k, v in (court.get("landmarks_px") or {}).items()}
+        marks = {
+            k: [float(v[0]), float(v[1])] for k, v in (court.get("landmarks_px") or {}).items()
+        }
         return {
             **EMPTY_PROPOSAL,
             "landmarks_px": marks,

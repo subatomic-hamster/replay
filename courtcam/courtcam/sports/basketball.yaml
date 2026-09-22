@@ -110,4 +110,4 @@ query_vocab:
   misses: {type: shot, made: false}
 sport_ui:
   chips: ["All shots", "Makes", "Misses", "Top plays"]
-  review: [shot_chart, heatmap]
+  review: [shot_chart, heatmap, box_score]

@@ -90,3 +90,6 @@ running). `game.json` is never written mid-run. `POST /games/{id}/process` is id
 while a job for that game is queued or running it returns 202 with that job's id instead
 of queuing a second run. `REPLAY_FAKE_PIPELINE_DELAY_S` (default 0) sleeps between the
 two progress reports of each fake stage so the transition is observable in tests.
+
+## D-18 (2026-09-22) — Lens distortion is out of Phase 1 scope
+Every clip in the test corpus is ultra-wide or panoramic-stitched, so a single homography cannot sit on the court lines (see samples/real/RESULTS.md). The target footage is a phone 1x lens on a tripod, which is far less distorted. Phase 1 keeps the plain homography (least-squares over all clicked landmarks, optional extras allowed) and accepts loose on-court filtering on the corpus. Upgrade path: estimate k1/k2 from straight court lines with `cv2.calibrateCamera` before the homography. The uploader should tell users to film with the 1x lens, not 0.5x.

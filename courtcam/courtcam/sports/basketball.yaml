@@ -37,11 +37,18 @@ shot:
   burst_sigma: 2.5
   pre_s: 3.0
   post_s: 2.0
-followcam: {zoom: 2.0, lead_s: 0.3, stiffness: 7.0}
+# `zoom` divides the court's *pixel* width (calib.court_polygon_px, clipped to the
+# frame) to get the follow-cam window, not the frame width — so the same number means
+# the same framing on a tight 720p clip and on a 2560x960 whole-court panorama, and the
+# window is 16:9 whatever the source is. 2.4 = "a bit over a third of the court across":
+# on basketball_kennesawwide_240s.mp4 that is a 1039x584 window and a median on-court
+# player 124 px tall, i.e. 1/4.7 of the crop height (samples/real/RESULTS.md). Floor is
+# croppath.MIN_CROP_W, cap is the frame width.
+followcam: {zoom: 2.4, lead_s: 0.3, stiffness: 7.0}
 query_vocab:
   shots: {type: shot}
   makes: {type: shot, made: true}
   misses: {type: shot, made: false}
 sport_ui:
-  chips: ["My shots", "Makes", "Last 2 minutes"]
+  chips: ["All shots", "Makes", "Misses", "Top plays"]
   review: [shot_chart, heatmap]

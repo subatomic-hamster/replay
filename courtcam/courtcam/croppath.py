@@ -14,6 +14,8 @@ from .profiles import FollowCamCfg
 from .schema import CropPath
 
 MAX_LEAD_FRACTION = 0.25  # of the crop window, so a sprint cannot throw the frame
+CROP_ASPECT = 16.0 / 9.0  # the TV viewport; a panoramic source must not letterbox it
+MIN_CROP_W = 480.0  # px — below this a 1080p TV is upscaling more than 4x
 
 
 def _targets(boxes_px: np.ndarray) -> np.ndarray:
@@ -32,12 +34,34 @@ def _targets(boxes_px: np.ndarray) -> np.ndarray:
     return filled
 
 
-def crop_size(frame_w: int, frame_h: int, zoom: float) -> tuple[float, float]:
-    # ponytail: constant zoom from the profile. 2.0 suits a tight source; on a 2560-px
-    # whole-court clip the subject comes out ~60 px tall in a frame of empty floor. It
-    # wants to scale with the court's pixel width (calib.court_polygon_px) once some
-    # clip actually needs both.
-    return frame_w / zoom, frame_h / zoom
+def court_px_width(calib: dict | None, frame_w: int) -> float | None:
+    """Visible pixel width of the calibrated court polygon, or None without a calib.
+
+    Clipped to the frame: a loose homography on a wide lens projects the far sideline
+    well outside the image, and only the part you can see should set the zoom.
+    """
+    poly = (calib or {}).get("court_polygon_px")
+    if not poly:
+        return None
+    xs = [float(p[0]) for p in poly]
+    width = min(max(xs), float(frame_w)) - max(min(xs), 0.0)
+    return width if width > 0 else None
+
+
+def crop_size(
+    frame_w: int, frame_h: int, zoom: float, court_px_w: float | None = None
+) -> tuple[float, float]:
+    """16:9 follow-cam window in source pixels.
+
+    `followcam.zoom` is a **divisor on the court's pixel width**: zoom = 4.5 frames
+    about a fifth of the court, whatever the source resolution. A fixed fraction of the
+    frame cannot work across the corpus — on a 2560x960 whole-court clip the old
+    `frame_w / 2` left the subject ~60 px tall in an empty floor (samples/real/RESULTS.md).
+    Without a calibration the court extent is unknown and the frame width stands in,
+    which reproduces the old behaviour on a 16:9 source.
+    """
+    w = min(max((court_px_w or float(frame_w)) / max(zoom, 1e-3), MIN_CROP_W), float(frame_w))
+    return w, min(w / CROP_ASPECT, float(frame_h))
 
 
 def crop_path(
@@ -47,10 +71,11 @@ def crop_path(
     cfg: FollowCamCfg,
     *,
     fps: float = 30.0,
+    court_px_w: float | None = None,
 ) -> np.ndarray:
     """(N, 4) boxes in pixels (NaN rows allowed) → (N, 4) normalised [x, y, w, h] rects."""
     n = len(boxes_px)
-    cw, ch = crop_size(frame_w, frame_h, cfg.zoom)
+    cw, ch = crop_size(frame_w, frame_h, cfg.zoom, court_px_w)
     half = np.asarray([cw / 2.0, ch / 2.0])
     lo, hi = half, np.asarray([frame_w, frame_h]) - half
     if np.any(lo > hi):  # crop bigger than the frame
@@ -92,8 +117,9 @@ def build_crop_path(
     cfg: FollowCamCfg,
     *,
     rate_hz: int = 30,
+    court_px_w: float | None = None,
 ) -> CropPath:
-    rects = crop_path(boxes_px, frame_w, frame_h, cfg, fps=float(rate_hz))
+    rects = crop_path(boxes_px, frame_w, frame_h, cfg, fps=float(rate_hz), court_px_w=court_px_w)
     return CropPath(
         player_id=player_id,
         rate_hz=rate_hz,

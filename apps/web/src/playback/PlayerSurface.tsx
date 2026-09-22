@@ -100,8 +100,13 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
   );
 
   // Follow-cam: recompute the transform every animation frame from the crop rect at the
-  // clock's current time. The rect [x,y,w,h] is normalized; scale = 1/w makes it fill the
-  // fixed 16:9 viewport, and transform-origin 0 0 makes the translate plain arithmetic.
+  // clock's current time. The rect [x,y,w,h] is normalized; scale (1/w, 1/h) makes it
+  // fill the fixed 16:9 viewport, and transform-origin 0 0 makes the translate plain
+  // arithmetic. The two axes scale independently because the crop window is 16:9 in
+  // source pixels while the source itself may not be (a 2560x960 panorama): the video
+  // is already object-fit:fill-stretched into the viewport, so the uneven scale is
+  // exactly what undoes that for the cropped region. On a 16:9 source w === h and this
+  // is a uniform scale, as before.
   useEffect(() => {
     const box = transformRef.current;
     const viewport = viewportRef.current;
@@ -115,13 +120,14 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
       const t = clockRef.current?.now() ?? videoRef.current?.currentTime ?? 0;
       // E-12: clamp past the last rect instead of reading undefined.
       const i = clamp(Math.round((t - crop.t0) * crop.rate_hz), 0, crop.rects.length - 1);
-      const [x, y, w] = crop.rects[i];
-      const s = w > 0 ? 1 / w : 1;
+      const [x, y, w, h] = crop.rects[i];
+      const sx = w > 0 ? 1 / w : 1;
+      const sy = h > 0 ? 1 / h : sx;
       const W = viewport.clientWidth;
       const H = viewport.clientHeight;
-      box.style.transform = `translate(${(-s * x * W).toFixed(2)}px, ${(-s * y * H).toFixed(
+      box.style.transform = `translate(${(-sx * x * W).toFixed(2)}px, ${(-sy * y * H).toFixed(
         2,
-      )}px) scale(${s.toFixed(4)})`;
+      )}px) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
       raf = requestAnimationFrame(apply);
     };
     raf = requestAnimationFrame(apply);

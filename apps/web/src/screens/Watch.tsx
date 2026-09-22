@@ -266,9 +266,13 @@ export function Watch({ gameId }: { gameId: string }) {
     return () => clearInterval(timer);
   }, [chrome, handle]);
 
-  // Entering select mode with nothing focused: start at the leftmost box.
+  // Entering select mode with nothing focused: start at the leftmost box. Also covers
+  // a focus that went stale — seek past the end of a player's track (or come back from
+  // following one who has left) and the id no longer matches any box, which left select
+  // mode with no focus ring and nothing for Enter to act on.
   useEffect(() => {
-    if (mode !== "select" || focusId || players.length === 0) return;
+    if (mode !== "select" || players.length === 0) return;
+    if (focusId && players.some((p) => p.id === focusId)) return;
     setFocusId([...players].sort((a, b) => a.bb[0] - b.bb[0])[0].id);
   }, [mode, focusId, players]);
 

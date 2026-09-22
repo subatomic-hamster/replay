@@ -31,6 +31,8 @@ export interface SportProfile {
   tier: number;
   /** Landmark keys to click, in click order (§4.4 stage 2). */
   landmarks: string[];
+  /** Extra named points the fit accepts when a required one is off-frame (D-18/D-19). */
+  landmarks_optional?: string[];
   variants?: string[];
   sport_ui?: SportUi;
 }

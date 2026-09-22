@@ -12,6 +12,12 @@ import numpy as np
 from .profiles import CourtTemplate, Profile
 
 MAX_REPROJ_PX = 5.0
+# ...and, on a bigger frame, 1 % of how wide the clicked court is. 5 px is a sane floor
+# for a 720p clip but an impossible bar on a 2560-px panorama: the fit there is barrel
+# distorted (D-18) *and* a tap is worth several source pixels, so a hand-clicked set
+# lands at 10-20 px however carefully it is placed, while the court polygon it yields is
+# still well inside `margin_m` of the right one. Measured in samples/real/RESULTS.md.
+MAX_REPROJ_SPAN_FRAC = 0.01
 
 
 class CalibrationError(ValueError):
@@ -54,6 +60,20 @@ def project(points: np.ndarray, h: np.ndarray) -> np.ndarray:
     return cv2.perspectiveTransform(pts, h).reshape(-1, 2)
 
 
+def max_reproj_px(
+    landmarks_px: dict[str, tuple[float, float]], floor_px: float = MAX_REPROJ_PX
+) -> float:
+    """The gate for this click set: `floor_px`, or 1 % of how far the clicks spread."""
+    pts = list(landmarks_px.values())
+    if not pts:
+        return floor_px
+    span = max(
+        max(p[0] for p in pts) - min(p[0] for p in pts),
+        max(p[1] for p in pts) - min(p[1] for p in pts),
+    )
+    return max(floor_px, MAX_REPROJ_SPAN_FRAC * span)
+
+
 def calibrate(
     landmarks_px: dict[str, tuple[float, float]],
     profile: Profile,
@@ -61,13 +81,17 @@ def calibrate(
     *,
     max_error_px: float = MAX_REPROJ_PX,
 ) -> dict[str, Any]:
-    """Build the `calib.json` payload. Raises `CalibrationError` if reprojection is poor."""
+    """Build the `calib.json` payload. Raises `CalibrationError` if reprojection is poor.
+
+    `max_error_px` is the *floor* of the gate; see `max_reproj_px`.
+    """
     variant = variant or profile.default_variant()
     template = profile.template(variant)
     h, err = homography(landmarks_px, template)
-    if err > max_error_px:
+    limit = max_reproj_px(landmarks_px, max_error_px)
+    if err > limit:
         raise CalibrationError(
-            f"reprojection error {err:.2f} px > {max_error_px} px — re-click the landmarks"
+            f"reprojection error {err:.2f} px > {limit:.1f} px — re-click the landmarks"
         )
     h_inv = np.linalg.inv(h)
     return {

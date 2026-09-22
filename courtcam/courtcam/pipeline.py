@@ -268,9 +268,17 @@ def stage_tracks(
 
 
 def stage_crops(
-    out_dir: Path, profile: Profile, info: VideoInfo, *, progress: Progress
+    out_dir: Path,
+    profile: Profile,
+    info: VideoInfo,
+    calib: dict[str, Any] | None = None,
+    *,
+    progress: Progress,
 ) -> list[str]:
     players, _ = identity.read_players(out_dir / "_work" / "players.json")
+    # The follow-cam window scales with how many pixels the court actually spans, so a
+    # whole-court panoramic source zooms in far harder than a tight one (croppath).
+    court_px_w = croppath.court_px_width(calib, info.width)
     (out_dir / "crops").mkdir(parents=True, exist_ok=True)
     n = int(round(info.duration_s * 30))
     times = np.arange(n) / 30.0
@@ -278,7 +286,7 @@ def stage_crops(
     for i, p in enumerate(players):
         boxes, _, _ = resample(p.track, times)
         path = croppath.build_crop_path(
-            p.player_id, boxes, info.width, info.height, profile.followcam
+            p.player_id, boxes, info.width, info.height, profile.followcam, court_px_w=court_px_w
         )
         write_json(out_dir / CROPS_TEMPLATE.format(player_id=p.player_id), path)
         written.append(p.player_id)
@@ -427,7 +435,7 @@ def run(
         )
         _mark(out_dir, game, "tracks")
     if "crops" in requested:
-        stage_crops(out_dir, profile, info, progress=report)
+        stage_crops(out_dir, profile, info, calib_data, progress=report)
         _mark(out_dir, game, "crops")
     if "events" in requested:
         stage_events(out_dir, profile, calib_data, info, labeler=labeler, progress=report)

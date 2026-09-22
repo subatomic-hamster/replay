@@ -50,10 +50,10 @@ and a static basketball profile, so the web app still works.
 | POST | `/games` | `{title, sport}` → `201 {id, upload_url}` |
 | PUT | `/games/{id}/upload` | streams the request body to disk → `{id, size, status}`; also grabs `media/calib.jpg` (D-14) |
 | POST | `/games/{id}/upload` | same, multipart `file` field (browsers) |
-| POST | `/games/{id}/calibration` | `{sport, variant, landmarks_px}`; ≥ 4 corners + the profile's landmarks; returns `reprojection_error_px`, `400` if courtcam rejects the clicks |
+| POST | `/games/{id}/calibration` | `{sport, variant, landmarks_px}`; ≥ 4 landmarks the template knows — `landmarks` ∪ `landmarks_optional`, no specific ones required (D-19); returns `reprojection_error_px`, `400` if courtcam rejects the clicks |
 | POST | `/games/{id}/process` | `202 {job_id, status}`; needs an upload + calibration; idempotent while a job is queued/running (D-17) |
 | GET | `/games` | JSON array: id, title, status, stages, duration_s, thumb_url, recorded_at, sport (+ `progress` while processing) |
-| GET | `/games/{id}` | `game.json` with media/tracks/crops/events URLs resolved absolute, plus `thumb_url`, `calib_url`, `sport_ui`, and live `stages`/`progress` merged from the job record (D-17) |
+| GET | `/games/{id}` | `game.json` with media/tracks/crops/events URLs resolved absolute, plus `thumb_url`, `calib_url`, `sport_ui` (built from *this game's* court variant), and live `stages`/`progress` merged from the job record (D-17) |
 | PATCH | `/games/{id}/players/{pid}` | `{name?, merge_into?}`; merge rewrites ids in tracks + events |
 | POST | `/games/{id}/players/{pid}/render` | `202`, lazy rendition render |
 | PATCH | `/games/{id}/events/{eid}` | confirm/correct; sets `confirmed`, `source:"user"` on a change; `{"dismissed": true}` is "not a shot" (D-11) |

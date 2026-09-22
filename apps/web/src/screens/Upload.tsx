@@ -8,7 +8,8 @@ import { ApiErrorBanner, useAsync } from "../ui";
 import type { Game, SportProfile } from "../api/types";
 
 const STAGES = ["ingest", "detect", "track", "render", "label"] as const;
-const MAX_REPROJECTION_PX = 5;
+// What courtcam's homography needs; the API enforces the same floor (D-19).
+const MIN_LANDMARKS = 4;
 
 /** `/upload` — create a game (S-02, S-09). */
 export function UploadCreate() {
@@ -215,32 +216,42 @@ function Roster({ game, onChange }: { game: Game; onChange: () => void }) {
   );
 }
 
-/** `/upload/:id/calibrate` — I2 (S-04, S-05, S-06, E-05..E-08). */
+/** `/upload/:id/calibrate` — I2 (S-04, S-05, S-06, E-05..E-08).
+ *
+ * The walk is `profile.landmarks`, plus `landmarks_optional` behind "more points".
+ * Real wide footage routinely puts a corner off-frame (D-18) and guessing at it wrecks
+ * the fit far worse than leaving it out (~20 px vs 0.3 px on the Kennesaw clip), so any
+ * single point can be skipped — the API only needs 4 points the template knows (D-19).
+ */
 export function Calibrate({ gameId }: { gameId: string }) {
   const { data, error, reload } = useAsync(
     () => Promise.all([api.getGame(gameId), api.listSports()]),
     [gameId],
   );
   const [variant, setVariant] = useState("half");
-  const [clicks, setClicks] = useState<[number, number][]>([]);
+  const [more, setMore] = useState(false);
+  const [marks, setMarks] = useState<Record<string, [number, number]>>({});
+  const [step, setStep] = useState(0);
   const [result, setResult] = useState<{ ok: boolean; px?: number; msg?: string } | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const game = data?.[0];
   const profile = data?.[1].find((s) => s.id === game?.sport) ?? data?.[1][0];
-  const landmarks = useMemo(() => profile?.landmarks ?? [], [profile]);
+  const required = useMemo(() => profile?.landmarks ?? [], [profile]);
+  const optional = useMemo(() => profile?.landmarks_optional ?? [], [profile]);
+  const names = useMemo(
+    () => (more ? [...required, ...optional] : required),
+    [more, required, optional],
+  );
 
   const submit = useCallback(
-    (pts: [number, number][]) => {
-      if (!game || !profile || pts.length < landmarks.length) {
+    (pts: Record<string, [number, number]>) => {
+      if (!game || !profile || Object.keys(pts).length < MIN_LANDMARKS) {
         setResult(null);
         return;
       }
-      const landmarks_px = Object.fromEntries(
-        landmarks.map((k, i) => [k, pts[i]]),
-      ) as Record<string, [number, number]>;
       api
-        .calibrate(game.id, { sport: profile.id, court_variant: variant, landmarks_px })
+        .calibrate(game.id, { sport: profile.id, court_variant: variant, landmarks_px: pts })
         .then((r) =>
           setResult(
             r.ok
@@ -250,21 +261,30 @@ export function Calibrate({ gameId }: { gameId: string }) {
         )
         .catch((e: Error) => setResult({ ok: false, msg: e.message }));
     },
-    [game, profile, landmarks, variant],
+    [game, profile, variant],
   );
 
-  // Re-validate when the variant changes with a complete click set.
+  // Re-validate when the variant changes, once the required walk is behind us.
   useEffect(() => {
-    if (clicks.length === landmarks.length && landmarks.length > 0) submit(clicks);
+    if (step >= required.length) submit(marks);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variant]);
 
   if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
   if (!game || !profile) return <div className="screen phone">Loading…</div>;
 
-  const next = landmarks[clicks.length];
-  // A 200 with no number means courtcam could not measure but did accept the clicks.
-  const valid = !!result?.ok && (result.px ?? 0) < MAX_REPROJECTION_PX;
+  const next: string | undefined = names[step];
+  const placed = Object.keys(marks);
+  // The API owns the threshold (it scales with the clicked court's pixel span, because
+  // 5 px is unreachable by hand on a 2560-px panorama — courtcam.calibrate). A 200 is a
+  // usable fit, with or without a number attached; a 400 comes back as `ok: false`.
+  const valid = !!result?.ok;
+
+  const advance = (pts: Record<string, [number, number]>) => {
+    setMarks(pts);
+    setStep(step + 1);
+    if (step + 1 >= required.length) submit(pts);
+  };
 
   return (
     <div className="screen phone calibrate">
@@ -286,7 +306,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
 
       <p className="calib-prompt" data-testid="calib-prompt">
         {next
-          ? `Tap ${next.replace(/_/g, " ")} — point ${clicks.length + 1} of ${landmarks.length}`
+          ? `Tap ${next.replace(/_/g, " ")} — point ${step + 1} of ${names.length}`
           : "All landmarks placed."}
       </p>
 
@@ -300,29 +320,29 @@ export function Calibrate({ gameId }: { gameId: string }) {
             // E-07: coordinates are derived from the image rect, so a click can never
             // land outside [0,naturalWidth] x [0,naturalHeight].
             const img = e.currentTarget;
-            if (clicks.length >= landmarks.length) return;
+            if (!next) return;
             const r = img.getBoundingClientRect();
             const px: [number, number] = [
               Math.round(((e.clientX - r.left) / r.width) * (img.naturalWidth || r.width)),
               Math.round(((e.clientY - r.top) / r.height) * (img.naturalHeight || r.height)),
             ];
-            const pts = [...clicks, px];
-            setClicks(pts);
-            if (pts.length === landmarks.length) submit(pts);
+            advance({ ...marks, [next]: px });
           }}
         />
-        {clicks.map((p, i) => {
+        {placed.map((name) => {
           const img = imgRef.current;
           const w = img?.naturalWidth || 1;
           const h = img?.naturalHeight || 1;
+          const p = marks[name];
           return (
             <span
-              key={landmarks[i]}
+              key={name}
               className="landmark"
-              data-testid={`landmark-${landmarks[i]}`}
+              data-testid={`landmark-${name}`}
               style={{ left: `${(p[0] / w) * 100}%`, top: `${(p[1] / h) * 100}%` }}
+              title={name.replace(/_/g, " ")}
             >
-              {i + 1}
+              {names.indexOf(name) + 1}
             </span>
           );
         })}
@@ -338,20 +358,47 @@ export function Calibrate({ gameId }: { gameId: string }) {
             ? `${result.px?.toFixed(1) ?? "?"} px`
             : result
               ? result.msg
-              : `need ${landmarks.length - clicks.length} more points`}
+              : `need ${Math.max(0, required.length - placed.length)} more points`}
         </p>
         <button
           type="button"
           className="secondary"
-          data-testid="calib-undo"
-          disabled={clicks.length === 0}
+          data-testid="calib-skip"
+          disabled={!next}
           onClick={() => {
-            setClicks((c) => c.slice(0, -1));
+            if (!next) return;
+            const pts = { ...marks };
+            delete pts[next];
+            advance(pts);
+          }}
+        >
+          Not visible
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          data-testid="calib-undo"
+          disabled={step === 0}
+          onClick={() => {
+            const pts = { ...marks };
+            delete pts[names[step - 1]];
+            setMarks(pts);
+            setStep(step - 1);
             setResult(null);
           }}
         >
           Undo
         </button>
+        {optional.length > 0 && !more ? (
+          <button
+            type="button"
+            className="secondary"
+            data-testid="calib-more"
+            onClick={() => setMore(true)}
+          >
+            More points
+          </button>
+        ) : null}
       </div>
 
       <button

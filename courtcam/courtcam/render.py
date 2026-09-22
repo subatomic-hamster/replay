@@ -112,8 +112,12 @@ def render_crop(
     cap.release()
     if not fw or not fh:
         raise FileNotFoundError(f"cannot open {video}")
-    size = (int(round(height * fw / fh)) // 2 * 2, height)
     rects = crops.rects
+    # The output aspect is the *crop window's*, not the source's: a follow-cam rect out
+    # of a 2560x960 panorama is 16:9, and resizing it to 8:3 stretched every player.
+    r0 = rects[0] if rects else (0.0, 0.0, 1.0, 1.0)
+    aspect = (r0[2] * fw) / max(r0[3] * fh, 1e-6)
+    size = (int(round(height * aspect)) // 2 * 2, height)
 
     def draw(i: int, frame: np.ndarray) -> np.ndarray:
         r = rects[min(i, len(rects) - 1)] if rects else (0.0, 0.0, 1.0, 1.0)

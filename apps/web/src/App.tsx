@@ -20,7 +20,13 @@ export function App() {
   const isPhone = seg[0] === "upload" || seg[0] === "companion";
 
   return (
-    <div className={isPhone ? "app phone-app" : "app tv-app"}>{route(seg, tv)}</div>
+    <div
+      className={`${isPhone ? "app phone-app" : "app tv-app"}${
+        seg[2] === "calibrate" ? " wide-app" : ""
+      }`}
+    >
+      {route(seg, tv)}
+    </div>
   );
 }
 

@@ -211,3 +211,126 @@ Lens distortion. It is the single root cause behind the loose polygon, the
 scorer's-table false players, and the unusable metric gates. (The meaningless team
 colours are a separate problem — that one is resolution.) `cv2.calibrateCamera` with `k1,k2` estimated
 from the straight court lines, applied before the homography, would fix all of it.
+
+## End-to-end through the product (Phase 1 §6.3 DoD)
+
+Everything below ran through the real product path, not the CLI: `services/api` with
+`REPLAY_PIPELINE` unset (so courtcam + YOLO), the Vite app pointed at it, and Playwright
+driving the browser. It is reproducible as the opt-in `real` Playwright project:
+
+```sh
+cd apps/web
+REPLAY_E2E_REAL=1 REPLAY_E2E_REAL_DATA=/tmp/replay-real pnpm exec playwright test --project=real
+```
+
+`apps/web/e2e-real/` holds three specs — `R-01` (upload → calibrate → process → watch →
+follow → highlights → review on the 50 s smoke cut), `R-02` (the select/follow DoD table
+below on the 240 s clip) and `R-03` (a 1920×1080 `recordVideo` run of the whole loop).
+They skip themselves when the clip is missing, because `samples/real/` is gitignored (D-7).
+
+### DoD — "select → follow → back works for every on-court player in a 5-minute stretch"
+
+`basketball_kennesawwide_240s.mp4`, uploaded and processed through the API, driven on the
+TV with the keyboard D-pad only. At each timestamp every `select-box-*` was enumerated,
+reached by arrow presses alone (cap 20), followed with Enter, and dismissed with Escape.
+
+| t | player | reached (presses) | followed | same frame | back to wide |
+|---|---|---|---|---|---|
+| 30 s | p1 | yes (9) | yes | yes | yes |
+| 30 s | p2 | yes (6) | yes | yes | yes |
+| 30 s | p3 | yes (12) | yes | yes | yes |
+| 30 s | p4 | yes (6) | yes | yes | yes |
+| 30 s | p5 | yes (4) | yes | yes | yes |
+| 30 s | p6 | yes (8) | yes | yes | yes |
+| 30 s | p7 | yes (2) | yes | yes | yes |
+| 30 s | p8 | yes (4) | yes | yes | yes |
+| 90 s | p1 | yes (6) | yes | yes | yes |
+| 90 s | p2 | yes (6) | yes | yes | yes |
+| 90 s | p3 | yes (8) | yes | yes | yes |
+| 90 s | p4 | yes (2) | yes | yes | yes |
+| 90 s | p5 | yes (6) | yes | yes | yes |
+| 90 s | p6 | yes (2) | yes | yes | yes |
+| 90 s | p7 | yes (6) | yes | yes | yes |
+| 90 s | p8 | yes (6) | yes | yes | yes |
+| 90 s | p9 | yes (2) | yes | yes | yes |
+| 150 s | p1 | yes (3) | yes | yes | yes |
+| 150 s | p9 | yes (2) | yes | yes | yes |
+| 150 s | p10 | yes (2) | yes | yes | yes |
+| 210 s | p9 | yes (2) | yes | yes | yes |
+| 210 s | p10 | yes (2) | yes | yes | yes |
+
+**22/22 reachable, followed and returned.** "same frame" = `currentTime` moved by less
+than 1/30 s across the Enter, i.e. following is not a seek (W4).
+
+The honest caveat is not the interaction, it is the **roster**: 8–9 boxes at t = 30/90 s
+but only 3 at 150 s and 2 at 210 s. `players.max = 10` caps *merged* players, and on this
+clip the ten best-scoring merges are not contemporaneous — p1…p8 all end by ~155 s while
+p9/p10 only start at 84 s/124 s. Every player who *is* on court is selectable; the number
+on court late in the clip is smaller than the number actually playing. Raising
+`players.max` (the cap exists to bound the O(n²) merge, which `tracking.max_candidates`
+already does) is the obvious next experiment.
+
+### Per-stage timings, through the API
+
+| stage | 50 s smoke cut | 240 s clip |
+|---|---|---|
+| ingest | 20.9 s | 107.9 s |
+| calibrate | 2.9 s | 4.0 s |
+| detect (+ ByteTrack) | 143.9 s | 808.9 s |
+| track | 0.2 s | 0.8 s |
+| court | 0.4 s | 0.8 s |
+| identity | 3.1 s | 16.5 s |
+| tracks | — | 1.0 s |
+| crops | — | 0.4 s |
+| events | 13.3 s | 16.6 s |
+| **job total** | **174.6 s** | **957.0 s** |
+
+≈ 3.5× and 4.0× realtime. Detect is still 85 % of it. (Smoke-cut `tracks`/`crops` are
+folded into `events` there — they are sub-second.)
+
+### Follow-cam zoom, re-measured
+
+The earlier note that the subject is "a ~60 px figure" was eyeballed and too pessimistic.
+Measured over every track of the 240 s run, an on-court box is **p10 96 px, median 124 px,
+p90 227 px** tall in the 2560×960 source. `followcam.zoom` now divides the court's pixel
+width (2492.7 px here) instead of the frame's, and the window is 16:9 instead of the
+source's 8:3:
+
+| zoom | window | median player |
+|---|---|---|
+| 2.0 | 1246×701 | 1/5.7 of crop height |
+| **2.4** | **1039×584** | **1/4.7** |
+| 3.0 | 831×467 | 1/3.8 |
+| 4.5 | 554×312 | 1/2.5 |
+
+Shipped at **2.4**. Spot-checked against the most mobile player's own box: 1/4.8, 1/4.9
+and 1/5.2 of the crop height at t = 30.8 / 77.0 / 123.2 s. The real defect the old
+constant caused was the **aspect**, not the width — a 1280×480 window stretched into a
+16:9 viewport made every player 1.5× too tall; that is fixed in `PlayerSurface` and in
+`render.render_crop` (D-20).
+
+### Calibrating real footage from the uploader
+
+Clicking the 14 usable landmarks by hand on the real calibrate screen gives **5.2 px**,
+against 0.26 px for the exact values in `basketball_kennesawwide_240s.landmarks.json`.
+That gap is click quantisation, and it is brutal here: ±0.5 px of jitter already costs
+~3.5 px of reprojection error on this point set, because no single homography fits a
+barrel-distorted panorama (D-18). Measured, 25 samples each:
+
+| frame shown at | reprojection error (median) | court polygon vs the exact fit |
+|---|---|---|
+| 560 px (the old phone column) | 16.5 px | 53 px |
+| 1200 px | 10.2 px | 54 px |
+| 1920 px | 2.9 px | 25 px |
+
+So the calibrate screen now uses the whole viewport, a required landmark can be skipped
+when it is off-frame, `landmarks_optional` are reachable from the uploader, and the gate
+scales with the clicked span (D-19). Guessing `corner_fr` on-frame instead of skipping it
+is 17–21 px with 5 points and ~2000 px once the optional points are in — worse than
+leaving it out, which is why "Not visible" exists.
+
+### Screenshots and demo
+
+Held outside the repo (third-party footage, D-7) under the run's scratch dir:
+`real/{01-calibrate,02-select,03-follow,04-highlights,05-status-phone-midrun,06-review}-real.png`
+at 1920×1080, plus `real/demo-rough.webm` (1920×1080, the R-03 loop).

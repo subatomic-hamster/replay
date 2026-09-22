@@ -172,7 +172,7 @@ tracking:
   smooth_window: 5
 events: [shot]                  # which detectors run
 shot: {rim_radius_m: 7.0, roi_px: 96, min_gap_s: 2.0, burst_sigma: 2.5, pre_s: 3.0, post_s: 2.0}
-followcam: {zoom: 2.0, lead_s: 0.3, stiffness: 7.0}
+followcam: {zoom: 2.4, lead_s: 0.3, stiffness: 7.0}   # zoom divides the COURT's px width
 query_vocab: {...}              # read by the API's query engine
 sport_ui: {...}                 # read by the TV app; courtcam only carries it
 ```
@@ -276,6 +276,25 @@ Marked in the source with `# ponytail:` comments.
   distorted, so the fit contains the play area but does not sit on the lines. Fine for
   the on-court filter, not for court-metre analytics. `cv2.calibrateCamera` with
   `k1,k2` is the fix — see `samples/real/RESULTS.md`.
-- **`followcam.zoom` is a constant.** 2.0 suits a tight source and is far too wide on a
-  2560-px whole-court one, where the subject ends up ~60 px tall. It should scale with
-  the court's pixel width.
+- **One follow-cam window per clip.** `followcam.zoom` now divides the court's pixel
+  width rather than the frame's, so the same number frames the same way on any source
+  (and the window is 16:9 whatever the source aspect is). It is still *one* size for the
+  whole clip: on a wide camera a player near the lens is three times the pixel height of
+  one at the far baseline, and only a per-player window sized from that player's own box
+  would frame both well.
+
+
+## Real-footage notes
+
+`samples/real/RESULTS.md` (in the Replay repo, not this package) has the full tuning run.
+Two things that bite on any wide gym camera and are worth knowing before you click:
+
+- **Skip a landmark you cannot see.** `homography()` needs 4 points the template knows,
+  from `landmarks` or `landmarks_optional` — not a specific four. Guessing at an
+  off-frame corner is far worse than omitting it: on the Kennesaw clip a plausible
+  on-frame guess for `corner_fr` costs 17-21 px of reprojection error, and ~2000 px once
+  the optional key/free-throw/centre points are in the fit, versus 0.26 px without it.
+- **The reprojection gate scales.** `calibrate()` rejects above `max(5 px, 1 % of the
+  clicked landmarks' pixel span)`. A flat 5 px is unreachable by hand on a 2560-px
+  panorama, where the image is barrel distorted and one tap is worth several source
+  pixels — ±0.5 px of click jitter already moves the error by ~3.5 px.

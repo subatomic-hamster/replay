@@ -869,6 +869,32 @@ body,
   font-size: 20px;
   font-weight: 600;
 }
+/* Calibration is the one phone screen that must not live in a 560 px column: a
+   2560-px panoramic court tapped at 560 px is ~4.6 source px per tap, and the
+   homography is sensitive enough that that alone fails the gate (RESULTS.md). The
+   frame gets the viewport; the controls stay in the column. */
+.wide-app {
+  max-width: none;
+}
+.wide-app .calibrate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.wide-app .calibrate > * {
+  width: min(560px, 100%);
+}
+/* The frame shrink-wraps the image, which is capped by BOTH the viewport width and
+   its height — an image taller than the window puts the lower landmarks out of reach. */
+.wide-app .calibrate > .calib-frame {
+  width: auto;
+  max-width: 100%;
+}
+.wide-app .calib-frame img {
+  width: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 300px);
+}
 .calib-frame {
   position: relative;
   display: block;
@@ -914,12 +940,14 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   margin-top: 16px;
 }
 .calib-actions button {
   margin-top: 0;
-  min-width: 150px;
+  min-width: 130px;
+  flex: 1;
 }
 .calib-actions .calib-error {
   margin: 0;

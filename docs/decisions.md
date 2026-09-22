@@ -93,3 +93,33 @@ two progress reports of each fake stage so the transition is observable in tests
 
 ## D-18 (2026-09-22) — Lens distortion is out of Phase 1 scope
 Every clip in the test corpus is ultra-wide or panoramic-stitched, so a single homography cannot sit on the court lines (see samples/real/RESULTS.md). The target footage is a phone 1x lens on a tripod, which is far less distorted. Phase 1 keeps the plain homography (least-squares over all clicked landmarks, optional extras allowed) and accepts loose on-court filtering on the corpus. Upgrade path: estimate k1/k2 from straight court lines with `cv2.calibrateCamera` before the homography. The uploader should tell users to film with the 1x lens, not 0.5x.
+
+## D-19 (2026-09-22) — calibration takes any 4 landmarks the template knows, and the gate scales with the clicked span
+Driving the real uploader on `basketball_kennesawwide_smoke.mp4` (2560×960 panoramic,
+`corner_fr` off the bottom of the frame) failed three ways, all of them contract, not code:
+`POST /games/{id}/calibration` demanded 4 `corner_*` **and** every name in
+`court.landmarks`; the phone column showed the frame at 560 CSS px, so one tap was worth
+~4.6 source px; and `MAX_REPROJ_PX = 5.0` is an absolute pixel bar. The fit on this
+footage is barrel distorted (D-18) and ill-conditioned — ±0.5 px of click noise already
+costs ~3.5 px of reprojection error, and guessing `corner_fr` on-frame costs ~20 px
+(2000 px once the optional landmarks are in), far worse than leaving it out.
+So: the API requires **4 landmarks the template knows** (`landmarks` ∪
+`landmarks_optional`) and nothing more; the uploader walks the required list, lets any
+single point be skipped ("Not visible") and reveals `landmarks_optional` behind a "More
+points" button; the calibrate screen escapes the 560 px column; and the gate is
+`max(5 px, 1 % of the clicked landmarks' pixel span)` — 25 px on this clip, still 5 px on
+a 720p one. Measured: the polygon from hand clicks at 1920 px sits within ~25 px of the
+one from exact landmarks, which is well inside `margin_m`. The web client no longer
+carries its own copy of the threshold; a 200 from the API means "usable".
+Consequence: `POST /games/{id}/calibration` no longer 400s on a missing `rim`.
+
+## D-20 (2026-09-22) — the follow-cam window is a fraction of the COURT, and it is 16:9
+`followcam.zoom` divided the *frame* width, so the same 2.0 meant a tight crop on a 720p
+clip and half of a 2560 px whole-court panorama. It now divides the court's pixel width
+(`calib.court_polygon_px`, clipped to the frame; `croppath.court_px_width`), with
+`croppath.MIN_CROP_W` as the floor and the frame width as both the cap and the fallback
+when there is no calibration. The window is 16:9 in source pixels rather than the
+frame's aspect, because the TV viewport is 16:9 — so `PlayerSurface` scales x and y
+independently (identical to the old uniform scale on a 16:9 source) and
+`render.render_crop` sizes its output from the crop rect instead of the source. Without
+that pair a 2560×960 source came out stretched 1.5× vertically in follow mode.

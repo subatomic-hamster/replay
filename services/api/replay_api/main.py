@@ -147,7 +147,8 @@ def _resolve_urls(game: dict, storage: LocalStorage, base: str) -> dict:
     thumb = _thumbnail_rel(g, storage)
     g["thumb_url"] = url(thumb) if thumb else None
     g["calib_url"] = url(CALIB_REL) if storage.path(gid, CALIB_REL).is_file() else None
-    g["sport_ui"] = (adapter.get_profile(g.get("sport") or "") or {}).get("sport_ui")
+    variant = (g.get("court") or {}).get("variant")
+    g["sport_ui"] = (adapter.get_profile(g.get("sport") or "", variant) or {}).get("sport_ui")
     return g
 
 
@@ -347,12 +348,15 @@ def _register_routes(app: FastAPI) -> None:
             raise HTTPException(400, f"variant must be one of {variants}")
 
         marks = body.landmarks_px
-        corners = [k for k in marks if k.startswith("corner_")]
-        if len(corners) < 4:
-            raise HTTPException(400, "at least 4 court corners are required")
-        missing = sorted(set(court.get("landmarks") or []) - set(marks))
-        if missing:
-            raise HTTPException(400, f"missing landmarks: {', '.join(missing)}")
+        # D-19: a homography needs 4 points the *template* knows, not specifically the 4
+        # corners. On real wide footage a corner is routinely off-frame (D-18), which is
+        # exactly what the profile's `landmarks_optional` exist for. courtcam's
+        # reprojection gate below is the real check; this one only catches an empty click
+        # set or points from some other sport.
+        known = set(court.get("landmarks") or []) | set(court.get("landmarks_optional") or [])
+        usable = sorted(set(marks) & known) if known else sorted(marks)
+        if len(usable) < 4:
+            raise HTTPException(400, f"at least 4 known landmarks are required, got {usable}")
 
         try:
             error_px = adapter.calibration_error(body.sport, body.variant, marks)
@@ -500,7 +504,7 @@ def _register_routes(app: FastAPI) -> None:
             game,
             live_events(_events(ctx.storage, game_id)),
             _track_frames(ctx.storage, game_id),
-            adapter.get_profile(game.get("sport", "")),
+            adapter.get_profile(game.get("sport", ""), (game.get("court") or {}).get("variant")),
         )
 
     # ---------------------------------------------------------------- sessions

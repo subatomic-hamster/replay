@@ -90,15 +90,16 @@ class CalibrationRejected(ValueError):
     """courtcam refused the landmark clicks (reprojection error too high)."""
 
 
-def _profile_dict(profile) -> dict:
+def _profile_dict(profile, variant: str | None = None) -> dict:
     d = profile.model_dump(mode="json", by_alias=True)
     # D-13: the clients read `landmarks`/`variants` at the top level; the nested
     # `court` block stays for the pipeline.
     court = d.get("court") or {}
     d["landmarks"] = list(court.get("landmarks") or [])
+    d["landmarks_optional"] = list(court.get("landmarks_optional") or [])
     d["variants"] = list(court.get("variants") or [])
     try:  # court extents in metres, for the shot chart / heatmap bins
-        template = profile.template()
+        template = profile.template(variant)
         poly = template.polygon
         court["x_range"] = [float(poly[:, 0].min()), float(poly[:, 0].max())]
         court["y_range"] = [float(poly[:, 1].min()), float(poly[:, 1].max())]
@@ -139,7 +140,18 @@ def list_sports() -> list[dict]:
     return [BASKETBALL_PROFILE]
 
 
-def get_profile(sport: str) -> dict | None:
+def get_profile(sport: str, variant: str | None = None) -> dict | None:
+    """The catalog entry, or — with `variant` — one whose court extents and `sport_ui`
+    come from *that* variant's template. Without it a full-court game was served the
+    half-court polygon, so the court inset, the shot chart and the heatmap all drew the
+    wrong court and binned positions outside their own range."""
+    if variant:
+        try:
+            from courtcam.profiles import load_profile  # type: ignore
+
+            return _profile_dict(load_profile(sport), variant)
+        except Exception as exc:  # noqa: BLE001 - fall back to the variant-less catalog
+            log.info("no %s profile for variant %r (%s)", sport, variant, exc)
     return next((p for p in list_sports() if p.get("id") == sport), None)
 
 

@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 
 import pytest
-from replay_api.providers.query import RuleQueryEngine, _merge_overlaps
+from replay_api import pipeline_adapter
+from replay_api.providers.query import (
+    RuleQueryEngine,
+    _merge_overlaps,
+    merged_vocab,
+)
 
 from .conftest import FAKE_GAME
 
@@ -89,3 +94,15 @@ def test_overlapping_clips_merge():
         (0.0, 9.0, "a"),
         (20.0, 22.0, "c"),
     ]
+
+
+def test_every_profile_chip_resolves():
+    """S-29/DoD: `sport_ui.chips` is what the TV shows, and every one of them has to hit
+    the rule grammar — a chip that returns "No match" is a dead button on the remote."""
+    profile = pipeline_adapter.get_profile("basketball")
+    assert profile, "basketball profile must load (courtcam or the static fallback)"
+    chips = profile["sport_ui"]["chips"]
+    assert chips, "the profile must ship chips"
+    engine = RuleQueryEngine(merged_vocab(profile.get("query_vocab")))
+    unresolved = [c for c in chips if engine.query(c, GAME, EVENTS)["interpretation"] == "No match"]
+    assert not unresolved, f"chips with no interpretation: {unresolved}"

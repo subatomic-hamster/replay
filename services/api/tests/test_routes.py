@@ -95,12 +95,17 @@ def test_calibration_validation(client: TestClient):
     bad = {**CALIB, "landmarks_px": {k: v for k, v in list(CALIB["landmarks_px"].items())[:3]}}
     assert client.post(f"/games/{gid}/calibration", json=bad).status_code == 400
 
+    # D-19: any 4 landmarks the template knows are enough — a real wide camera routinely
+    # puts a named one off-frame, and the reprojection gate is the real check.
     no_rim = {
         **CALIB,
         "landmarks_px": {k: v for k, v in CALIB["landmarks_px"].items() if k != "rim"},
     }
-    r = client.post(f"/games/{gid}/calibration", json=no_rim)
-    assert r.status_code == 400 and "rim" in r.json()["detail"]
+    assert client.post(f"/games/{gid}/calibration", json=no_rim).status_code == 200
+
+    unknown = {**CALIB, "landmarks_px": {f"net_{i}": [10.0 * i, 20.0] for i in range(5)}}
+    r = client.post(f"/games/{gid}/calibration", json=unknown)
+    assert r.status_code == 400 and "known landmarks" in r.json()["detail"]
 
     assert (
         client.post(f"/games/{gid}/calibration", json={**CALIB, "variant": "octagon"}).status_code

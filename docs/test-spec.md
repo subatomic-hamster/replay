@@ -16,6 +16,20 @@ append.
 - **Selectors**: tests key off `data-testid`. Referenced here as `[data-testid=x]`.
   Implementation must add these hooks; exact naming may be adjusted but must stay documented
   in this file when changed (plan §12 rule 3 applies to test hooks by extension).
+- **Additional test hooks added by `apps/web`** (not named in the scenarios below, but
+  relied on by `apps/web/e2e/`): `video`, `player-surface`, `player-transform` (the
+  transformed `<video>` wrapper whose computed `transform` S-20/S-21 assert on), `seek-bar`,
+  `clip-counter`, `review-empty`, `review-action-{made|missed|not-a-shot}`, `shot-marker`,
+  `court-dot-{pid}`, `nav-{library|highlights|review}`, `tag-dialog`, `tag-value`,
+  `tag-key-{label}`, `pair-code`, `game-title-input`, `create-game`, `file-input`,
+  `go-calibrate`, `calib-image`, `calib-prompt`, `calib-undo`, `landmark-{name}`,
+  `variant-{half|full}`, `roster-row`, `roster-name-{pid}`, `roster-save-{pid}`,
+  `roster-merge-{pid}`. Existing hooks also carry data attributes used as assertion
+  targets: `data-focused`, `data-player-id`, `data-game-id`, `data-event-id`, `data-type`,
+  `data-t-key`, `data-t-start`, `data-confidence`, `data-state`, `data-made`, `data-ok`.
+- **Extra keys beyond the D-1 remote map** (implemented on `/tv`, documented here rather
+  than silently added): `s` toggles the spotlight overlay (W6), `t` opens the tag dialog for
+  the focused player (W7). Both hang off on-screen affordances on a real remote.
 - **Keyboard map** (D-1, the entire input surface for Phase 1 — no mouse/touch on `/tv`):
 
   | Key | Action |
@@ -203,6 +217,10 @@ Given a player box focused in select mode. When user presses `Enter`.
 elements are removed/hidden; video resumes playback automatically (`video.paused === false`)
 unless product decision says otherwise — assert whichever the implementation defines, but the
 transition must complete within 300 ms of keypress.
+**Implemented (apps/web)**: entering follow does **not** resume playback. Select mode is only
+reachable by pausing, so the user presses `Space` to resume when ready; this keeps
+`video.currentTime` provably unchanged across the transition (asserted within ±1 frame in
+`e2e/S-19-follow-mode.spec.ts`).
 
 ### S-20 — Follow mode visual transform (D-6, client mode)
 Given follow mode active on player `p3` whose crop rect at current `t` is
@@ -345,7 +363,7 @@ per-player highlight reel (S-27) no longer includes this clip on next load.
 | E-18 | Renaming to a duplicate name | Either allowed with a disambiguator or rejected with a clear message — pick one and assert it | If rejected: `PATCH` returns 400 and `[data-testid=rename-error]` visible; if allowed: both players show the same name plus a distinguishing marker (e.g. team color) — whichever the implementation chooses, the test asserts no two roster rows are indistinguishable in the UI |
 | E-19 | Event with low confidence in review queue | Shown with a visible confidence indicator, distinct from confirmed events | `[data-testid=review-item][data-confidence]` renders the numeric confidence; items below the confirm threshold and `confirmed:false` are the *only* ones listed on `/tv/{id}/review` |
 | E-20 | Query chip with zero results | "No clips" state, not a blank/broken screen | `[data-testid=no-clips]` visible when a chip's filter matches 0 events; reel/player area does not render an empty `<video>` |
-| E-21 | Page reload mid-playback | Defines and meets a stated recovery expectation | Minimum bar: reload navigates back to Library (`/tv`), not a blank page — state is NOT required to persist in Phase 1 (no client storage requirement stated in plan); if the implementation does persist `currentTime`/mode via `localStorage` or a query param, test asserts restoration within ±1 s instead. Document which behavior is implemented here when built. |
+| E-21 | Page reload mid-playback | Defines and meets a stated recovery expectation | Minimum bar: reload navigates back to Library (`/tv`), not a blank page — state is NOT required to persist in Phase 1 (no client storage requirement stated in plan); if the implementation does persist `currentTime`/mode via `localStorage` or a query param, test asserts restoration within ±1 s instead. **Implemented (apps/web)**: `/tv/:id` mirrors `?mode=&pid=&t=` into the URL at 1 Hz and restores all three on load (`e2e/S-19-follow-mode.spec.ts`). |
 | E-22 | API unreachable | Visible error state, no white screen | Stop the API process; any screen making a request shows `[data-testid=api-error]` with a retry affordance; `document.body.innerText` is non-empty (no blank render) |
 
 ---

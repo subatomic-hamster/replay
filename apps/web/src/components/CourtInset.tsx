@@ -16,8 +16,17 @@ const FALLBACK: Record<string, [number, number]> = {
   full: [15, 28],
 };
 
+/** A half court's origin is the baseline centre, so x runs -7.5..7.5: the viewBox has
+ *  to start at the court's real minimum, not 0. */
+export function courtViewBox(court: CourtTemplate | undefined, w: number, h: number) {
+  const x = court?.x_range?.[0] ?? 0;
+  const y = court?.y_range?.[0] ?? 0;
+  return { x, y, attr: `${x} ${y} ${w} ${h}` };
+}
+
 export function CourtInset({ court, variant, players, roster, selectedId }: Props) {
   const [w, h] = court?.size_m ?? FALLBACK[variant] ?? FALLBACK.half;
+  const box = courtViewBox(court, w, h);
   const polygons = court?.polygons ?? {
     outer: [
       [0, 0],
@@ -31,11 +40,11 @@ export function CourtInset({ court, variant, players, roster, selectedId }: Prop
     <svg
       className="court-inset"
       data-testid="court-inset"
-      viewBox={`0 0 ${w} ${h}`}
+      viewBox={box.attr}
       preserveAspectRatio="xMidYMid meet"
       aria-label="Court minimap"
     >
-      <rect x={0} y={0} width={w} height={h} className="court-bg" />
+      <rect x={box.x} y={box.y} width={w} height={h} className="court-bg" />
       {Object.entries(polygons).map(([name, pts]) => (
         <polygon key={name} className={`court-line court-${name}`} points={pts.map((p) => p.join(",")).join(" ")} />
       ))}
@@ -50,8 +59,8 @@ export function CourtInset({ court, variant, players, roster, selectedId }: Prop
               className={`court-dot${sel ? " selected" : ""}`}
               data-testid={`court-dot-${p.id}`}
               data-selected={sel ? "true" : "false"}
-              cx={Math.min(w, Math.max(0, p.ct![0]))}
-              cy={Math.min(h, Math.max(0, p.ct![1]))}
+              cx={Math.min(box.x + w, Math.max(box.x, p.ct![0]))}
+              cy={Math.min(box.y + h, Math.max(box.y, p.ct![1]))}
               r={sel ? w / 22 : w / 32}
               fill={info?.color_hex ?? "#8ab4ff"}
             />

@@ -35,6 +35,7 @@ log = logging.getLogger(__name__)
 
 EVENTS_REL = "events.json"
 THUMB_REL = "media/thumb.jpg"
+CALIB_REL = "media/calib.jpg"
 SOURCE_REL = "source.mp4"
 EVENT_FIELDS = {
     "type",
@@ -48,7 +49,15 @@ EVENT_FIELDS = {
     "confirmed",
     "contacts",
     "winner_side",
+    # D-11: "not a shot" in the review queue. Additive and optional; `replay.events.v1`
+    # allows extra keys, so courtcam still reads a file the API rewrote.
+    "dismissed",
 }
+
+
+def live_events(events: list[dict]) -> list[dict]:
+    """D-11: dismissed events stay in the file but never reach query or stats."""
+    return [e for e in events if not e.get("dismissed")]
 
 
 # --------------------------------------------------------------------------- models
@@ -133,8 +142,11 @@ def _resolve_urls(game: dict, storage: LocalStorage, base: str) -> dict:
             block["url_template"] = url(block["url_template"])
     if g.get("events_url"):
         g["events_url"] = url(g["events_url"])
+    # D-13/D-14: not §4.5 game.json fields, but the uploader and the library need them.
     thumb = _thumbnail_rel(g, storage)
-    g["thumbnail"] = url(thumb) if thumb else None
+    g["thumb_url"] = url(thumb) if thumb else None
+    g["calib_url"] = url(CALIB_REL) if storage.path(gid, CALIB_REL).is_file() else None
+    g["sport_ui"] = (adapter.get_profile(g.get("sport") or "") or {}).get("sport_ui")
     return g
 
 
@@ -152,7 +164,7 @@ def _summary(game: dict, storage: LocalStorage, base: str) -> dict:
         "status": game.get("status"),
         "stages": game.get("stages"),
         "duration_s": (game.get("video") or {}).get("duration_s"),
-        "thumbnail": storage.url(game["id"], thumb, base) if thumb else None,
+        "thumb_url": storage.url(game["id"], thumb, base) if thumb else None,
         "recorded_at": game.get("recorded_at"),
         "sport": game.get("sport"),
     }
@@ -216,7 +228,7 @@ def _register_routes(app: FastAPI) -> None:
 
     @app.get("/sports")
     def sports():
-        return {"sports": adapter.list_sports()}
+        return adapter.list_sports()
 
     # ---------------------------------------------------------------- games
 
@@ -231,7 +243,7 @@ def _register_routes(app: FastAPI) -> None:
     def list_games(request: Request):
         ctx = _ctx(request)
         base = _base(request)
-        return {"games": [_summary(g, ctx.storage, base) for g in ctx.index.list()]}
+        return [_summary(g, ctx.storage, base) for g in ctx.index.list()]
 
     @app.get("/games/{game_id}")
     def get_game(request: Request, game_id: str):
@@ -271,6 +283,10 @@ def _register_routes(app: FastAPI) -> None:
         if size == 0:
             _ctx(request).storage.path(game["id"], SOURCE_REL).unlink(missing_ok=True)
             raise HTTPException(400, "empty upload")
+        # D-14: calibration happens before processing, so the frame to click on has to
+        # exist now. One ffmpeg -frames:v 1 on a local file, ~100 ms.
+        storage = _ctx(request).storage
+        adapter.grab_frame(storage.path(game["id"], SOURCE_REL), storage.path(game["id"], CALIB_REL), 5.0)
         game["status"] = "uploaded"
         _ctx(request).index.save(game)
         return {"id": game["id"], "size": size, "status": "uploaded"}
@@ -426,7 +442,7 @@ def _register_routes(app: FastAPI) -> None:
         game = _game_or_404(request, game_id)
         profile = adapter.get_profile(game.get("sport", "")) or {}
         engine = get_query_engine(ctx.settings.query, merged_vocab(profile.get("query_vocab")))
-        return engine.query(body.text, game, _events(ctx.storage, game_id))
+        return engine.query(body.text, game, live_events(_events(ctx.storage, game_id)))
 
     @app.get("/games/{game_id}/stats")
     def game_stats(request: Request, game_id: str):
@@ -434,7 +450,7 @@ def _register_routes(app: FastAPI) -> None:
         game = _game_or_404(request, game_id)
         return stats_mod.compute(
             game,
-            _events(ctx.storage, game_id),
+            live_events(_events(ctx.storage, game_id)),
             _track_frames(ctx.storage, game_id),
             adapter.get_profile(game.get("sport", "")),
         )
@@ -446,7 +462,7 @@ def _register_routes(app: FastAPI) -> None:
         sid = "s_" + secrets.token_hex(4)
         code = f"{secrets.randbelow(10000):04d}"
         _ctx(request).sessions[sid] = {"code": code, "clients": set()}
-        return {"sid": sid, "code": code}
+        return {"id": sid, "code": code}
 
     @app.websocket("/sessions/{sid}")
     async def session_ws(ws: WebSocket, sid: str):

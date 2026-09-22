@@ -215,7 +215,7 @@ const delay = <T,>(v: T, ms = 10) => new Promise<T>((r) => setTimeout(() => r(v)
 
 function matchEvents(list: GameEvent[], text: string, players: Player[]): GameEvent[] {
   const q = text.toLowerCase();
-  let out = list.filter((e) => e.type === "shot");
+  let out = list.filter((e) => e.type === "shot" && !e.dismissed);
   const named = players.find((p) => p.name && q.includes(p.name.toLowerCase()));
   if (named) out = out.filter((e) => e.player_id === named.id);
   if (/\bmake|\bmade\b/.test(q)) out = out.filter((e) => e.made === true);
@@ -362,7 +362,7 @@ export const mockApi: ReplayApi = {
     const list = events.get(gameId) ?? [];
     const i = list.findIndex((e) => e.id === eventId);
     if (i < 0) throw new Error(`unknown event ${eventId}`);
-    if (body.type === undefined && body.made === undefined && !body.confirmed) {
+    if (body.type === undefined && body.made === undefined && !body.confirmed && !body.dismissed) {
       throw new Error("nothing to patch");
     }
     const next = { ...list[i], ...body, confirmed: true, source: "user" as const };
@@ -391,7 +391,7 @@ export const mockApi: ReplayApi = {
   getStats(gameId) {
     log("GET", `/games/${gameId}/stats`);
     const g = needGame(gameId);
-    const list = (events.get(gameId) ?? []).filter((e) => e.type === "shot");
+    const list = (events.get(gameId) ?? []).filter((e) => e.type === "shot" && !e.dismissed);
     const stats: Stats = {
       box_score: g.players.map((p) => {
         const mine = list.filter((e) => e.player_id === p.id);

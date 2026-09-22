@@ -18,7 +18,7 @@ test("S-36 confirming Made PATCHes the event and clears the queue", async ({ pag
     (c) => c.method === "PATCH" && c.path.includes("/events/e_0004"),
   );
   expect(patch).toHaveLength(1);
-  expect(patch[0].body).toEqual({ made: true, confirmed: true, source: "user" });
+  expect(patch[0].body).toEqual({ made: true, confirmed: true });
 });
 
 test("S-37 correcting to Missed sends made:false", async ({ page }) => {
@@ -31,7 +31,7 @@ test("S-37 correcting to Missed sends made:false", async ({ page }) => {
 
   await expect(page.getByTestId("review-empty")).toBeVisible();
   const patch = (await mockCalls(page)).filter((c) => c.method === "PATCH");
-  expect(patch[0].body).toEqual({ made: false, confirmed: true, source: "user" });
+  expect(patch[0].body).toEqual({ made: false, confirmed: true });
 });
 
 test("R1/R3 the shot chart and box score render, labelled auto-detected", async ({ page }) => {

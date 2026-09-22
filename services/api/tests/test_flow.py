@@ -66,11 +66,11 @@ def test_full_fake_pipeline_flow(client: TestClient):
     assert len([e for e in events if e["type"] == "shot"]) == 3
 
     # the library row the TV renders
-    row = next(g for g in client.get("/games").json()["games"] if g["id"] == gid)
+    row = next(g for g in client.get("/games").json() if g["id"] == gid)
     assert row["status"] == "ready" and 19.5 < row["duration_s"] < 20.5
 
     # and the derived stats
-    assert client.get(f"/games/{gid}/stats").json()["totals"]["attempted"] == 3
+    assert client.get(f"/games/{gid}/stats").json()["totals"]["attempts"] == 3
 
 
 def test_job_state_survives_a_restart(client: TestClient, settings):

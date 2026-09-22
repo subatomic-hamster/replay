@@ -13,6 +13,11 @@ append.
   `/upload` (create game), `/upload/:gameId/calibrate`, `/upload/:gameId/status`,
   `/tv` (library), `/tv/:gameId` (watch: wide + select + follow), `/tv/:gameId/highlights`,
   `/tv/:gameId/review`, `/tv/pair` (phone companion pairing, H4).
+- **Playwright projects**: `chromium` runs `apps/web/e2e/` against the in-browser mock
+  (`VITE_MOCK_API=1`); `live` runs `apps/web/e2e-live/` against a real
+  `REPLAY_PIPELINE=fake` uvicorn on :8000 with a wiped temp data dir, and covers S-01 end
+  to end plus the empty library, the API-unreachable banner and range seeking. Both run
+  from one `pnpm exec playwright test`.
 - **Selectors**: tests key off `data-testid`. Referenced here as `[data-testid=x]`.
   Implementation must add these hooks; exact naming may be adjusted but must stay documented
   in this file when changed (plan §12 rule 3 applies to test hooks by extension).
@@ -96,7 +101,8 @@ player box, presses Enter, (9) confirms follow-cam is active, (10) presses Escap
 navigates to Highlights and plays the reel for a tagged player.
 **Pass**: `POST /games` returns 201 with `id`; upload progress reaches 100% and
 `[data-testid=upload-done]` visible; `[data-testid=calib-error]` shows a numeric value
-`< 5`; `[data-testid=start-processing]` becomes enabled then clicked triggers
+`< 5`; `[data-testid=calib-image]` is the frame extracted at upload (D-14);
+`[data-testid=start-processing]` becomes enabled then clicked triggers
 `POST /games/{id}/process` (202); `[data-testid=stage-ingest]` … `[data-testid=stage-label]`
 each transition to `done`/`partial` within the polling loop; game card for this id appears
 on `/tv` with status text "ready"; clicking it navigates to `/tv/{id}` and `<video>` element
@@ -124,13 +130,14 @@ network request to `upload_url` observed (PUT/POST per provider); on completion
 Given calibration frame loaded for a half-court basketball game. When user clicks
 corner_nl, corner_nr, corner_fl, corner_fr, rim in order and selects variant=half.
 **Pass**: `[data-testid=calib-error]` shows a number `< 5`; `POST /games/{id}/calibration`
-body contains `sport:"basketball"`, `court_variant:"half"`, `landmarks_px` with exactly the
-5 keys `corner_nl,corner_nr,corner_fl,corner_fr,rim`; `[data-testid=start-processing]` not
+carries `sport:"basketball"`, the half-court variant and `landmarks_px` with exactly the
+5 keys `corner_nl,corner_nr,corner_fl,corner_fr,rim`. The client-side payload names the
+variant `court_variant` (what the mock records); D-13 maps it to `variant` on the wire; `[data-testid=start-processing]` not
 disabled.
 
 ### S-05 — Calibration: full-court variant
 Same as S-04 with variant=full. **Pass**: `landmarks_px` still the 5 basketball landmarks
-(rim is one basket); `court_variant:"full"` in request body; reprojection error still shown
+(rim is one basket); the full-court variant in the request body; reprojection error still shown
 and gate behaves identically to S-04.
 
 ### S-06 — Calibration validation gate before Start Processing
@@ -329,12 +336,15 @@ attempted/made numbers matching `GET /games/{id}/stats`; every row/table is labe
 ### S-36 — Review queue: confirm event (R5)
 Given events.json has one `shot` event with `confidence:0.55` (below a confirm threshold) and
 `confirmed:false`. When user opens `/tv/{id}/review` and presses the "Made" remote action on
-that event. **Pass**: `PATCH /games/{id}/events/{eid}` body includes `{made:true, confirmed:true, source:"user"}`;
+that event. **Pass**: `PATCH /games/{id}/events/{eid}` body includes `{made:true, confirmed:true}` and the
+response carries `source:"user"` (the API owns provenance, §4.5);
 the event disappears from the pending review list; game stats (R3) recompute to include it.
+A third answer, "Not a shot", sends `{dismissed:true, confirmed:true}` (D-11) and the event
+drops out of `/query` and `/stats` while staying in `events.json`.
 
 ### S-37 — Review queue: correct event (R5)
 Given the same low-confidence event, this time the heuristic said `made:true` but the user
-selects "Missed". **Pass**: `PATCH` body `{made:false, confirmed:true, source:"user"}`; the
+selects "Missed". **Pass**: `PATCH` body `{made:false, confirmed:true}`; the
 per-player highlight reel (S-27) no longer includes this clip on next load.
 
 ---
@@ -397,18 +407,18 @@ below marked "if auth enabled" are conditional on that env var being set in the 
 | ID | Route | Checks |
 |---|---|---|
 | AC-01 | `POST /games` | 201 with `{id, upload_url}`; 400 if `title` or `sport` missing/empty; 400 if `sport` not in `GET /sports`; 401 if auth enabled and header missing/wrong |
-| AC-02 | `GET /sports` | 200; array of profiles each with `id, display_name, tier, landmarks, sport_ui`; basketball always present in Phase 1 |
+| AC-02 | `GET /sports` | 200; bare array (no envelope, D-13) of profiles each with `id, display_name, tier, landmarks, variants, court, sport_ui`; basketball always present in Phase 1 |
 | AC-03 | `POST /games/{id}/calibration` | 200 on valid payload (≥4 landmarks, non-collinear, reprojection computed); 400 on missing landmarks, malformed variant, or degenerate points (E-05/E-06); 404 for unknown `{id}` |
 | AC-04 | `POST /games/{id}/process` | 202 (enqueued) once calibration exists; 400 if no calibration saved yet; 404 unknown `{id}` |
-| AC-05 | `GET /games` | 200; array, each item has at least `id, title, status, duration_s`-equivalent for library rendering; empty array when no games exist (E-01) |
-| AC-06 | `GET /games/{id}` | 200 with full `game.json`, media URLs resolved to absolute (not relative paths); 404 unknown `{id}` |
+| AC-05 | `GET /games` | 200; bare array (D-13), each item has `id, title, status, stages, duration_s, thumb_url, recorded_at, sport`; empty array when no games exist (E-01) |
+| AC-06 | `GET /games/{id}` | 200 with full `game.json`, media URLs resolved to absolute (not relative paths), plus `thumb_url`, `calib_url` (D-14) and `sport_ui`; 404 unknown `{id}` |
 | AC-07 | `PATCH /games/{id}/players/{pid}` | 200 on rename or merge; request body validated (`name` non-empty string, or `merge_into` a valid existing `pid`); 404 unknown `{id}`/`{pid}`; 400 on self-merge (`merge_into === pid`) |
 | AC-08 | `POST /games/{id}/players/{pid}/render` | 202 (lazy rendition render queued); 404 unknown ids |
-| AC-09 | `PATCH /games/{id}/events/{eid}` | 200 on confirm/correct; response reflects `confirmed:true, source:"user"`; 404 unknown `{id}`/`{eid}`; 400 on invalid `type`/`made` combination |
-| AC-10 | `POST /games/{id}/events` | 201 creating a bookmark (or other user-sourced event); required field `t_key` (or equivalent); 400 if `t_key` outside `[0, duration_s]` |
+| AC-09 | `PATCH /games/{id}/events/{eid}` | 200 on confirm/correct; response reflects `confirmed:true, source:"user"`; accepts `dismissed` (D-11); 404 unknown `{id}`/`{eid}`; 400 on an unsupported field |
+| AC-10 | `POST /games/{id}/events` | 201 creating a bookmark from `{t}`; response has `id` and the derived `t_start`/`t_key`/`t_end`; 422 if `t` < 0 |
 | AC-11 | `POST /games/{id}/query` | 200 with `{interpretation, clips[]}`; 400 if `text` missing; empty `clips` array (not error) when nothing matches (E-20); repeated identical requests return identical `clips` (determinism, rule-parser path) |
-| AC-12 | `GET /games/{id}/stats` | 200 with box score / shot chart / heatmap payloads; 404 unknown `{id}`; empty/zeroed structures (not error) for a game with zero events |
-| AC-13 | `POST /sessions` / WS `/sessions/{sid}` | `POST` 201 with a 4-digit pairing code; WS connect with a valid `sid` succeeds; invalid/expired `sid` closes the socket or rejects the upgrade |
+| AC-12 | `GET /games/{id}/stats` | 200 with `{box_score, shots, heatmap, totals}` (D-12), dismissed events excluded; 404 unknown `{id}`; empty/zeroed structures (not error) for a game with zero events |
+| AC-13 | `POST /sessions` / WS `/sessions/{sid}` | `POST` 201 with `{id, code}`, a 4-digit pairing code; WS connect with a valid `sid` succeeds; invalid/expired `sid` closes the socket or rejects the upgrade |
 | AC-14 | Media serving (`renditions.wide` MP4 URL, D-3) | `GET` with `Range: bytes=0-1023` → 206 with `Content-Range` and `Accept-Ranges: bytes` headers, body length 1024; full `GET` without Range → 200; `Content-Type: video/mp4` |
 | AC-15 | CORS | Preflight `OPTIONS` and actual requests from the web app's dev origin (e.g. `http://localhost:5173`) receive `Access-Control-Allow-Origin` matching that origin (or `*` if that's the chosen policy — assert whichever is implemented, but assert it explicitly, not implicitly) |
 | AC-16 | Auth (if enabled) | Any mutating route without `X-Replay-Key` → 401; with correct key → normal response; game IDs alone are not treated as sufficient auth (plan §4.6 "unguessable" is a mitigation, not a substitute, when the env var is set) |

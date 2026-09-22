@@ -63,16 +63,20 @@ BASKETBALL_PROFILE: dict = {
     },
     "events": ["shot", "bookmark"],
     "query_vocab": {k: v for k, v in DEFAULT_VOCAB.items() if v["type"] in ("shot", "bookmark")},
+    "landmarks": ["corner_nl", "corner_nr", "corner_fl", "corner_fr", "rim"],
+    "variants": ["half", "full"],
     "sport_ui": {
         "chips": ["All shots", "Makes", "Misses", "Top plays", "Bookmarks"],
         "review": ["shot_chart", "heatmap", "box_score"],
         "event_types": ["shot", "bookmark"],
         "court": {
-            "units": "m",
-            "outline": [[-7.5, 0.0], [7.5, 0.0], [7.5, 14.0], [-7.5, 14.0]],
-            "rim": [0.0, 1.575],
-            "three_point_radius_m": 6.75,
-            "free_throw_line_y_m": 5.8,
+            "size_m": [15.0, 14.0],
+            "x_range": [-7.5, 7.5],
+            "y_range": [0.0, 14.0],
+            "polygons": {
+                "outline": [[-7.5, 0.0], [7.5, 0.0], [7.5, 14.0], [-7.5, 14.0]],
+                "paint": [[-2.45, 0.0], [2.45, 0.0], [2.45, 5.8], [-2.45, 5.8]],
+            },
         },
     },
 }
@@ -87,16 +91,39 @@ class CalibrationRejected(ValueError):
 
 def _profile_dict(profile) -> dict:
     d = profile.model_dump(mode="json", by_alias=True)
+    # D-13: the clients read `landmarks`/`variants` at the top level; the nested
+    # `court` block stays for the pipeline.
+    court = d.get("court") or {}
+    d["landmarks"] = list(court.get("landmarks") or [])
+    d["variants"] = list(court.get("variants") or [])
     try:  # court extents in metres, for the shot chart / heatmap bins
         template = profile.template()
         poly = template.polygon
-        d["court"]["x_range"] = [float(poly[:, 0].min()), float(poly[:, 0].max())]
-        d["court"]["y_range"] = [float(poly[:, 1].min()), float(poly[:, 1].max())]
-        d["court"]["size_m"] = [float(v) for v in template.size]
-        d["court"]["standard"] = template.standard
+        court["x_range"] = [float(poly[:, 0].min()), float(poly[:, 0].max())]
+        court["y_range"] = [float(poly[:, 1].min()), float(poly[:, 1].max())]
+        court["size_m"] = [float(v) for v in template.size]
+        court["standard"] = template.standard
+        d.setdefault("sport_ui", {})["court"] = _ui_court(template, court)
     except Exception as exc:  # noqa: BLE001
         log.info("no court template extents for %s (%s)", d.get("id"), exc)
     return d
+
+
+def _ui_court(template, court: dict) -> dict:
+    """`sport_ui.court` as the TV draws it: metre polygons plus the axis ranges, so a
+    court whose origin is the baseline centre (x < 0 on the left) still fits the SVG."""
+    return {
+        "size_m": court["size_m"],
+        "x_range": court["x_range"],
+        "y_range": court["y_range"],
+        "polygons": {
+            "outline": [[float(x), float(y)] for x, y in template.court],
+            **{
+                name: [[float(x), float(y)] for x, y in pts]
+                for name, pts in (template.features or {}).items()
+            },
+        },
+    }
 
 
 def list_sports() -> list[dict]:
@@ -302,26 +329,38 @@ def _transcode(src: Path, dst: Path) -> None:
         shutil.copyfile(src, dst)
 
 
+def grab_frame(src: Path, dst: Path, at_s: float = 1.0) -> bool:
+    """One JPEG out of `src`. Falls back to the first frame when the clip is shorter
+    than `at_s`. Used for the thumbnail and for the calibration frame (D-14)."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    for seek in (at_s, 0.0):
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-ss",
+            str(seek),
+            "-i",
+            str(src),
+            "-frames:v",
+            "1",
+            "-q:v",
+            "4",
+            str(dst),
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.warning("ffmpeg frame grab at %ss failed (%s)", seek, exc)
+            continue
+        if dst.is_file() and dst.stat().st_size:
+            return True
+    return False
+
+
 def _thumbnail(src: Path, dst: Path) -> None:
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-loglevel",
-        "error",
-        "-ss",
-        "1",
-        "-i",
-        str(src),
-        "-frames:v",
-        "1",
-        "-q:v",
-        "4",
-        str(dst),
-    ]
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
-    except (OSError, subprocess.SubprocessError) as exc:
-        log.warning("ffmpeg thumbnail failed (%s)", exc)
+    grab_frame(src, dst, 1.0)
 
 
 def _probe(path: Path) -> dict | None:

@@ -78,7 +78,12 @@ async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Pr
     body: json !== undefined ? JSON.stringify(json) : rest.body,
   });
   if (!res.ok) {
-    throw new ApiError(res.status, `${init?.method ?? "GET"} ${path} → ${res.status}`);
+    // The API reports failures as {"detail": "..."} — surface that, not just the code.
+    const detail = await res.text().then(
+      (t) => (t ? ((JSON.parse(t) as { detail?: string }).detail ?? t) : ""),
+      () => "",
+    );
+    throw new ApiError(res.status, detail || `${init?.method ?? "GET"} ${path} → ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -128,20 +133,35 @@ export const httpApi: ReplayApi = {
     });
   },
 
+  // The API takes `variant` and answers 200 `{court, reprojection_error_px}` /
+  // 400 `{detail}`; the screens want a flat ok/error result.
   calibrate: (gameId, payload) =>
-    req<CalibrationResult>(`/games/${gameId}/calibration`, { method: "POST", json: payload }),
-  startProcessing: (gameId) =>
-    req<void>(`/games/${gameId}/process`, { method: "POST", json: {} }),
+    req<{ reprojection_error_px?: number | null }>(`/games/${gameId}/calibration`, {
+      method: "POST",
+      json: {
+        sport: payload.sport,
+        variant: payload.court_variant,
+        landmarks_px: payload.landmarks_px,
+      },
+    }).then(
+      (r): CalibrationResult => ({ ok: true, reprojection_error_px: r.reprojection_error_px ?? undefined }),
+      (e: Error) => ({ ok: false, error: e.message }),
+    ),
+  startProcessing: (gameId) => req<void>(`/games/${gameId}/process`, { method: "POST" }),
   listGames: () => req<GameSummary[]>("/games"),
   getGame: (gameId) => req<Game>(`/games/${gameId}`),
+  // The API answers with the whole game (a merge rewrites the roster); callers want
+  // the one player they touched.
   patchPlayer: (gameId, pid, body) =>
-    req<Player>(`/games/${gameId}/players/${pid}`, { method: "PATCH", json: body }),
+    req<Game>(`/games/${gameId}/players/${pid}`, { method: "PATCH", json: body })
+      .then((g) => g.players.find((p) => p.id === pid) ?? { id: pid, name: body.name ?? null, team: 0 }),
   getEvents: (game) =>
     fetchUrl<{ events: GameEvent[] }>(resolveMedia(game.id, game.events_url)).then(
       (f) => f.events,
     ),
+  // §4.6 "create bookmark": the API only takes the timestamp and derives the window.
   createEvent: (gameId, body) =>
-    req<GameEvent>(`/games/${gameId}/events`, { method: "POST", json: body }),
+    req<GameEvent>(`/games/${gameId}/events`, { method: "POST", json: { t: body.t_key ?? 0 } }),
   patchEvent: (gameId, eventId, body) =>
     req<GameEvent>(`/games/${gameId}/events/${eventId}`, { method: "PATCH", json: body }),
   query: (gameId, text) =>
@@ -152,7 +172,7 @@ export const httpApi: ReplayApi = {
     fetchUrl<CropPath>(
       resolveMedia(game.id, game.croppaths.url_template.replace("{player_id}", playerId)),
     ),
-  createSession: () => req<Session>("/sessions", { method: "POST", json: {} }),
+  createSession: () => req<Session>("/sessions", { method: "POST" }),
   mediaUrl: (game, path) => resolveMedia(game.id, path),
 };
 

@@ -18,12 +18,17 @@ def test_healthz(client: TestClient):
 def test_sports(client: TestClient):
     r = client.get("/sports")
     assert r.status_code == 200
-    sport = r.json()["sports"][0]
+    body = r.json()
+    assert isinstance(body, list)  # D-13: bare array, no envelope
+    sport = body[0]
     assert sport["id"] == "basketball"
     assert {"display_name", "tier", "court", "sport_ui"} <= set(sport)
-    assert "corner_nl" in sport["court"]["landmarks"]
-    assert sport["court"]["variants"] == ["half", "full"]
+    # D-13: the click order the uploader prompts with lives at the top level
+    assert sport["landmarks"][0] == "corner_nl" and sport["landmarks"][-1] == "rim"
+    assert sport["variants"] == ["half", "full"]
     assert sport["sport_ui"]["chips"]
+    assert sport["sport_ui"]["court"]["size_m"] == [15.0, 14.0]
+    assert sport["sport_ui"]["court"]["polygons"]["outline"]
 
 
 def test_create_game_and_upload_url(client: TestClient):
@@ -130,7 +135,7 @@ def test_process_requires_upload_and_calibration(client: TestClient):
 
 def test_library_list(client: TestClient, settings):
     gid = ready_game(client, settings, "Fixture game")
-    games = client.get("/games").json()["games"]
+    games = client.get("/games").json()
     row = next(g for g in games if g["id"] == gid)
     assert set(row) == {
         "id",
@@ -138,12 +143,12 @@ def test_library_list(client: TestClient, settings):
         "status",
         "stages",
         "duration_s",
-        "thumbnail",
+        "thumb_url",
         "recorded_at",
         "sport",
     }
     assert row["duration_s"] == 20.0
-    assert row["thumbnail"].endswith(f"/media/games/{gid}/media/thumb.jpg")
+    assert row["thumb_url"].endswith(f"/media/games/{gid}/media/thumb.jpg")
 
 
 def test_get_game_resolves_urls(client: TestClient, settings):
@@ -209,6 +214,28 @@ def test_patch_event(client: TestClient, settings):
     assert client.patch(f"/games/{gid}/events/e_0001", json={"hax": 1}).status_code == 400
 
 
+def test_upload_extracts_a_calibration_frame(client: TestClient, settings):
+    """D-14: calibration runs before processing, so the frame must exist after upload."""
+    gid = new_game(client)
+    client.put(f"/games/{gid}/upload", content=TINY_MP4.read_bytes())
+    g = client.get(f"/games/{gid}").json()
+    assert g["calib_url"].endswith(f"/media/games/{gid}/media/calib.jpg")
+    assert client.get(g["calib_url"]).status_code == 200
+    assert g["sport_ui"]["chips"]  # D-13: the TV reads the profile block off the game
+
+
+def test_dismissed_events_leave_query_and_stats(client: TestClient, settings):
+    """D-11: "not a shot" keeps the event in the file but out of every derived view."""
+    gid = ready_game(client, settings)
+    r = client.patch(f"/games/{gid}/events/e_0001", json={"dismissed": True, "confirmed": True})
+    assert r.status_code == 200 and r.json()["dismissed"] is True
+    assert client.get(f"/games/{gid}/stats").json()["totals"] == {"attempts": 2, "makes": 1}
+    clips = client.post(f"/games/{gid}/query", json={"text": "all shots"}).json()["clips"]
+    assert all(c["event_id"] != "e_0001" for c in clips)
+    stored = client.get(f"/media/games/{gid}/events.json").json()["events"]
+    assert len(stored) == 4  # still on disk
+
+
 def test_create_bookmark(client: TestClient, settings):
     gid = ready_game(client, settings)
     r = client.post(f"/games/{gid}/events", json={"t": 12.0})
@@ -243,13 +270,14 @@ def test_stats_route(client: TestClient, settings):
     gid = ready_game(client, settings)
     body = client.get(f"/games/{gid}/stats").json()
     assert body["schema"] == "replay.stats.v1" and body["auto_detected"] is True
-    assert body["totals"] == {"attempted": 3, "made": 2}
+    assert body["totals"] == {"attempts": 3, "makes": 2}
+    assert {"box_score", "shots", "heatmap"} <= set(body)
 
 
 def test_sessions_and_ws_fanout(client: TestClient):
     r = client.post("/sessions")
     assert r.status_code == 201
-    sid, code = r.json()["sid"], r.json()["code"]
+    sid, code = r.json()["id"], r.json()["code"]
     assert len(code) == 4 and code.isdigit()
     with (
         client.websocket_connect(f"/sessions/{sid}") as tv,

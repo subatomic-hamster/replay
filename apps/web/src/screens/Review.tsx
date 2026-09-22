@@ -1,18 +1,21 @@
 // R5 review queue, R1 shot chart, R3 box score lite — all labelled "auto-detected".
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
+import { courtViewBox } from "../components/CourtInset";
 import { REVIEW_CONFIDENCE_THRESHOLD } from "../config";
 import { useDpad, type DpadAction } from "../platform/keys";
 import { navigate } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
 import type { GameEvent, Stats } from "../api/types";
 
+// `source: "user"` is set by the API on any field the user changed (§4.5) — the client
+// does not get to claim provenance.
 const ACTIONS: { label: string; patch: Partial<GameEvent> }[] = [
-  { label: "Made", patch: { made: true, confirmed: true, source: "user" } },
-  { label: "Missed", patch: { made: false, confirmed: true, source: "user" } },
-  // "Not a shot": v1 has no delete, so the event is reclassified. Flagged as an API
-  // assumption — reconcile with services/api before the demo.
-  { label: "Not a shot", patch: { type: "possession_change", confirmed: true, source: "user" } },
+  { label: "Made", patch: { made: true, confirmed: true } },
+  { label: "Missed", patch: { made: false, confirmed: true } },
+  // D-11 "not a shot": v1 has no delete, so the event is flagged dismissed and drops
+  // out of query and stats while staying in events.json.
+  { label: "Not a shot", patch: { dismissed: true, confirmed: true } },
 ];
 
 const COURT_FALLBACK: [number, number] = [15, 14];
@@ -74,6 +77,7 @@ export function Review({ gameId }: { gameId: string }) {
   const current = queue[0];
   const [cw, ch] = game.sport_ui?.court?.size_m ?? COURT_FALLBACK;
   const polygons = game.sport_ui?.court?.polygons;
+  const viewBox = courtViewBox(game.sport_ui?.court, cw, ch);
 
   return (
     <div className="screen review">
@@ -116,8 +120,8 @@ export function Review({ gameId }: { gameId: string }) {
 
       <section className="stats">
         <h2>Shot chart</h2>
-        <svg className="shot-chart" data-testid="shot-chart" viewBox={`0 0 ${cw} ${ch}`}>
-          <rect x={0} y={0} width={cw} height={ch} className="court-bg" />
+        <svg className="shot-chart" data-testid="shot-chart" viewBox={viewBox.attr}>
+          <rect x={viewBox.x} y={viewBox.y} width={cw} height={ch} className="court-bg" />
           {Object.entries(polygons ?? {}).map(([name, pts]) => (
             <polygon
               key={name}

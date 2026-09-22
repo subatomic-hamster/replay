@@ -5,7 +5,7 @@
 // the session — this is the E-21 behaviour this implementation commits to.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
-import { FORCE_SPOTLIGHT, MOCK_API, SEEK_STEP_S, followcam } from "../config";
+import { FORCE_SPOTLIGHT, SEEK_STEP_S, followcam } from "../config";
 import { createTracksCache } from "../data/tracksCache";
 import { nextFocus, type Direction } from "../focus/spatial";
 import { useDpad, type DpadAction } from "../platform/keys";
@@ -247,11 +247,12 @@ export function Watch({ gameId }: { gameId: string }) {
         <span className="title">{game.title}</span>
       </nav>
 
+      {/* Muted: Phase 1 has no audio design and an unmuted autoplay is blocked. */}
       <PlayerSurface
         ref={setHandle}
         src={api.mediaUrl(game, game.renditions.wide)}
         crop={useTransform ? crop : null}
-        muted={MOCK_API}
+        muted
       >
         {mode === "select" ? (
           <SelectOverlay players={players} roster={roster} focusId={focusId} spotlight={spotlightOn} />

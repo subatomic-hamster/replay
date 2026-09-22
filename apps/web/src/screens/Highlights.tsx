@@ -2,7 +2,6 @@
 // POST /games/{id}/query so the TV never re-implements the query grammar.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
-import { MOCK_API } from "../config";
 import { useDpad, type DpadAction } from "../platform/keys";
 import { PlayerSurface, type PlayerHandle } from "../playback/PlayerSurface";
 import { useClockTime } from "../playback/clock";
@@ -134,7 +133,7 @@ export function Highlights({ gameId }: { gameId: string }) {
           <PlayerSurface
             ref={setHandle}
             src={api.mediaUrl(game, game.renditions.wide)}
-            muted={MOCK_API}
+            muted
           />
           <p className="clip-counter" data-testid="clip-counter">
             clip {index + 1}/{clips.length}

@@ -1,4 +1,7 @@
-"""Derived stats (plan R1–R4): box score lite, shot chart, heatmap, distance covered.
+"""Derived stats (plan R1-R4): box score lite, shot chart, heatmap, distance covered.
+
+Response shape is D-12 (the plan leaves it unspecified): `box_score`, `shots`, `heatmap`
+are exactly what the TV's Review screen renders.
 
 All of it is derived from events.json + tracks chunks on read; nothing is precomputed.
 A 40-minute game is ~24k track frames — a few hundred ms. ponytail: recompute per
@@ -57,52 +60,63 @@ def compute(game: dict, events: list[dict], frames: Iterable[dict], profile: dic
 
     shots = [e for e in events if e.get("type") == "shot"]
     rows = []
+    heatmap = []
     for p in players:
         pid = p["id"]
         mine = [e for e in shots if e.get("player_id") == pid]
         smoothed = _moving_average(paths[pid], SMOOTH_WIN)
-        distance = sum(math.dist(a, b) for a, b in itertools.pairwise(smoothed))
+        confidences = [float(e.get("confidence") or 0.0) for e in mine]
         rows.append(
             {
-                "id": pid,
+                "player_id": pid,
                 "name": p.get("name"),
                 "team": p.get("team"),
-                "attempted": len(mine),
-                "made": sum(1 for e in mine if e.get("made")),
+                "attempts": len(mine),
+                "makes": sum(1 for e in mine if e.get("made")),
                 "confirmed": sum(1 for e in mine if e.get("confirmed")),
-                "distance_m": round(distance, 1),
+                "confidence": (
+                    round(sum(confidences) / len(confidences), 2) if confidences else 0.0
+                ),
+                # R4 distance covered — not on the TV yet, cheap to keep.
+                "distance_m": round(
+                    sum(math.dist(a, b) for a, b in itertools.pairwise(smoothed)), 1
+                ),
                 "samples": len(paths[pid]),
-                "heatmap": {
-                    "bins": [nx, ny],
-                    "x_range": x_range,
-                    "y_range": y_range,
-                    "grid": grids[pid],
-                },
             }
         )
-
-    shot_chart = [
-        {
-            "event_id": e["id"],
-            "player_id": e.get("player_id"),
-            "court": e.get("court"),
-            "made": bool(e.get("made")),
-            "confidence": e.get("confidence"),
-            "auto_detected": e.get("auto_detected", e.get("source") != "user"),
-        }
-        for e in shots
-        if e.get("court")
-    ]
+        heatmap.append(
+            {
+                "player_id": pid,
+                "cols": nx,
+                "rows": ny,
+                "x_range": x_range,
+                "y_range": y_range,
+                # row-major, cols * rows values
+                "values": [v for row in grids[pid] for v in row],
+            }
+        )
 
     return {
         "schema": "replay.stats.v1",
         "game_id": game["id"],
         # R3: stats are always presented as auto-detected; user confirmations count too.
         "auto_detected": True,
-        "players": rows,
-        "shot_chart": shot_chart,
+        "box_score": rows,
+        "shots": [
+            {
+                "event_id": e["id"],
+                "player_id": e.get("player_id"),
+                "court": e.get("court"),
+                "made": bool(e.get("made")),
+                "confirmed": bool(e.get("confirmed")),
+                "confidence": e.get("confidence"),
+            }
+            for e in shots
+            if e.get("court")
+        ],
+        "heatmap": heatmap,
         "totals": {
-            "attempted": len(shots),
-            "made": sum(1 for e in shots if e.get("made")),
+            "attempts": len(shots),
+            "makes": sum(1 for e in shots if e.get("made")),
         },
     }

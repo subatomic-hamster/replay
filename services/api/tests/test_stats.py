@@ -24,34 +24,35 @@ def result():
 
 
 def test_box_score_lite():
-    rows = {p["id"]: p for p in result()["players"]}
-    assert (rows["p1"]["attempted"], rows["p1"]["made"]) == (2, 1)
-    assert (rows["p2"]["attempted"], rows["p2"]["made"]) == (1, 1)
+    rows = {p["player_id"]: p for p in result()["box_score"]}
+    assert (rows["p1"]["attempts"], rows["p1"]["makes"]) == (2, 1)
+    assert (rows["p2"]["attempts"], rows["p2"]["makes"]) == (1, 1)
     assert rows["p1"]["name"] == "Marcus"
-    assert result()["totals"] == {"attempted": 3, "made": 2}
+    assert result()["totals"] == {"attempts": 3, "makes": 2}
     assert result()["auto_detected"] is True
 
 
 def test_shot_chart_points_are_court_metres():
-    chart = result()["shot_chart"]
+    chart = result()["shots"]
     assert len(chart) == 3
-    assert all(p["auto_detected"] for p in chart)
+    assert {"event_id", "player_id", "court", "made", "confirmed"} <= set(chart[0])
     for point in chart:
         x, y = point["court"]
         assert -7.5 <= x <= 7.5 and 0.0 <= y <= 14.0
 
 
 def test_heatmap_grid():
-    row = result()["players"][0]
-    heat = row["heatmap"]
-    assert heat["bins"] == [15, 14]
-    assert len(heat["grid"]) == 14 and len(heat["grid"][0]) == 15
+    out = result()
+    heat = out["heatmap"][0]
+    assert (heat["cols"], heat["rows"]) == (15, 14)
+    assert len(heat["values"]) == 15 * 14
     # 20 s at 10 Hz, every sample inside the court
-    assert sum(sum(r) for r in heat["grid"]) == 200 == row["samples"]
+    samples = next(r["samples"] for r in out["box_score"] if r["player_id"] == heat["player_id"])
+    assert sum(heat["values"]) == 200 == samples
 
 
 def test_distance_covered_matches_the_fixture_path():
-    rows = {p["id"]: p for p in result()["players"]}
+    rows = {p["player_id"]: p for p in result()["box_score"]}
     # p1 traces 3*sin(0.30t), 6+3*cos(0.25t): speed ~0.75-0.9 m/s over 20 s
     expected = sum(
         math.dist(
@@ -69,4 +70,4 @@ def test_distance_covered_matches_the_fixture_path():
 
 def test_empty_game_does_not_explode():
     out = stats.compute({"id": "g_x", "players": [], "video": {}}, [], iter([]), BASKETBALL_PROFILE)
-    assert out["players"] == [] and out["totals"] == {"attempted": 0, "made": 0}
+    assert out["box_score"] == [] and out["totals"] == {"attempts": 0, "makes": 0}

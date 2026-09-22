@@ -260,7 +260,8 @@ export function Calibrate({ gameId }: { gameId: string }) {
   if (!game || !profile) return <div className="screen phone">Loading…</div>;
 
   const next = landmarks[clicks.length];
-  const valid = result?.ok && (result.px ?? Infinity) < MAX_REPROJECTION_PX;
+  // A 200 with no number means courtcam could not measure but did accept the clicks.
+  const valid = !!result?.ok && (result.px ?? 0) < MAX_REPROJECTION_PX;
 
   return (
     <div className="screen phone calibrate">
@@ -340,7 +341,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
         data-ok={valid ? "true" : "false"}
       >
         {result?.ok
-          ? `${result.px?.toFixed(1)} px`
+          ? `${result.px?.toFixed(1) ?? "?"} px`
           : result
             ? result.msg
             : `need ${landmarks.length - clicks.length} more points`}

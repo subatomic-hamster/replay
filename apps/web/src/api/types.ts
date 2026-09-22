@@ -19,6 +19,10 @@ export interface CourtTemplate {
   size_m: [number, number];
   /** Named polygons, each a list of [x_m, y_m] points. */
   polygons: Record<string, [number, number][]>;
+  /** Axis extents in meters. A half court's origin is the baseline centre, so x is
+   *  negative on the left — without these the SVG viewBox clips half the court. */
+  x_range?: [number, number];
+  y_range?: [number, number];
 }
 
 export interface SportProfile {
@@ -64,10 +68,10 @@ export interface Game {
   tracks: { rate_hz: number; chunk_s: number; url_template: string; chunks: number };
   croppaths: { rate_hz: number; url_template: string };
   events_url: string;
-  /** Not in §4.5; see API assumptions in the web README/report. Optional everywhere. */
-  sport_ui?: SportUi;
-  thumb_url?: string;
-  calib_url?: string;
+  /** Not §4.5 game.json fields; the API adds them to GET /games/{id} (D-13, D-14). */
+  sport_ui?: SportUi | null;
+  thumb_url?: string | null;
+  calib_url?: string | null;
 }
 
 /** Library list item — §4.6 GET /games. A trimmed Game is also accepted. */
@@ -76,8 +80,8 @@ export interface GameSummary {
   title: string;
   status: GameStatus;
   recorded_at?: string;
-  duration_s?: number;
-  thumb_url?: string;
+  duration_s?: number | null;
+  thumb_url?: string | null;
   stages?: Partial<Record<StageName, StageState>>;
 }
 
@@ -128,6 +132,8 @@ export interface GameEvent {
   source: "heuristic" | "vlm" | "user";
   confirmed: boolean;
   label?: string;
+  /** D-11 "not a shot": kept in events.json, excluded from query and stats. */
+  dismissed?: boolean;
 }
 
 export interface EventsFile {
@@ -166,8 +172,16 @@ export interface BoxScoreRow {
 export interface Stats {
   box_score: BoxScoreRow[];
   shots: ShotPoint[];
-  /** Optional per-player occupancy grid (R2, P2 — rendered only if present). */
-  heatmap?: { player_id: string; cols: number; rows: number; values: number[] }[];
+  /** Optional per-player occupancy grid (R2, P2 — rendered only if present).
+   *  `values` is row-major, `cols * rows` long. */
+  heatmap?: {
+    player_id: string;
+    cols: number;
+    rows: number;
+    values: number[];
+    x_range?: [number, number];
+    y_range?: [number, number];
+  }[];
 }
 
 export interface CreateGameResult {

@@ -45,21 +45,21 @@ and a static basketball profile, so the web app still works.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/healthz` | no auth; reports the active providers |
-| GET | `/sports` | courtcam profiles (id, display_name, tier, court.landmarks, variants, `sport_ui`) |
+| GET | `/sports` | JSON array of courtcam profiles (`id, display_name, tier, landmarks, variants, court, sport_ui`) |
 | POST | `/games` | `{title, sport}` → `201 {id, upload_url}` |
-| PUT | `/games/{id}/upload` | streams the request body to disk → `{id, size, status}` |
+| PUT | `/games/{id}/upload` | streams the request body to disk → `{id, size, status}`; also grabs `media/calib.jpg` (D-14) |
 | POST | `/games/{id}/upload` | same, multipart `file` field (browsers) |
 | POST | `/games/{id}/calibration` | `{sport, variant, landmarks_px}`; ≥ 4 corners + the profile's landmarks; returns `reprojection_error_px`, `400` if courtcam rejects the clicks |
 | POST | `/games/{id}/process` | `202 {job_id, status}`; needs an upload + calibration |
-| GET | `/games` | library list: id, title, status, stages, duration_s, thumbnail, recorded_at, sport |
-| GET | `/games/{id}` | `game.json` with media/tracks/crops/events URLs resolved absolute |
+| GET | `/games` | JSON array: id, title, status, stages, duration_s, thumb_url, recorded_at, sport |
+| GET | `/games/{id}` | `game.json` with media/tracks/crops/events URLs resolved absolute, plus `thumb_url`, `calib_url`, `sport_ui` |
 | PATCH | `/games/{id}/players/{pid}` | `{name?, merge_into?}`; merge rewrites ids in tracks + events |
 | POST | `/games/{id}/players/{pid}/render` | `202`, lazy rendition render |
-| PATCH | `/games/{id}/events/{eid}` | confirm/correct; sets `confirmed`, `source:"user"` on a change |
+| PATCH | `/games/{id}/events/{eid}` | confirm/correct; sets `confirmed`, `source:"user"` on a change; `{"dismissed": true}` is "not a shot" (D-11) |
 | POST | `/games/{id}/events` | `{t}` → bookmark `t−3 / t / t+2` |
 | POST | `/games/{id}/query` | `{text}` → `{interpretation, clips[]}` |
-| GET | `/games/{id}/stats` | box score lite, shot chart, 15×14 heatmap, distance covered |
-| POST | `/sessions` | `201 {sid, code}` (4-digit pairing code) |
+| GET | `/games/{id}/stats` | `{box_score, shots, heatmap, totals}` (D-12); dismissed events excluded |
+| POST | `/sessions` | `201 {id, code}` (4-digit pairing code) |
 | WS | `/sessions/{sid}` | in-memory fan-out, phone → TV (`{type:"query", text}`) |
 | GET | `/media/games/{id}/{path}` | static files with HTTP Range (206), no auth, no traversal |
 

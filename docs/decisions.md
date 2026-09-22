@@ -31,3 +31,40 @@ courtcam rewrites `game.json` after every stage. The API writes it only at job c
 
 ## D-10 (2026-09-22) — H.264 encoder selection
 Dev box ffmpeg has no `libx264`; encoders are tried in order `libx264` → `h264_vaapi`/`h264_qsv` (if available) → `libopenh264` → stream copy. Any tool that encodes must go through this fallback, never hardcode `libx264`.
+
+## D-11 (2026-09-22) — "Not a shot" is an additive `dismissed` flag on the event, not a retype
+The review queue's third answer used to rewrite `type` to `possession_change`, which lies about
+what happened and pollutes a real event type. Instead `PATCH /games/{id}/events/{eid}` accepts
+`{"dismissed": true, "confirmed": true}` and the API sets `source: "user"` as it does for any
+correction. `replay.events.v1` is unchanged and `dismissed` is optional; courtcam's pydantic
+models are `extra="allow"`, so a file the API rewrote still round-trips through courtcam.
+Consequence: `POST /games/{id}/query` and `GET /games/{id}/stats` filter dismissed events out;
+they stay in `events.json` so the decision is reversible.
+
+## D-12 (2026-09-22) — `GET /games/{id}/stats` is `{box_score, shots, heatmap, totals}`
+§4.6 only says "derived box score lite, shot chart points, heatmap grid". The API now returns
+exactly what the TV's Review screen renders: `box_score: [{player_id, name, team, attempts,
+makes, confirmed, confidence, distance_m, samples}]`, `shots: [{event_id, player_id, court,
+made, confirmed, confidence}]`, `heatmap: [{player_id, cols, rows, x_range, y_range, values}]`
+(`values` row-major, `cols * rows` long) and `totals: {attempts, makes}`. Consequence: R4
+distance covered rides along in `box_score` even though no screen shows it yet.
+
+## D-13 (2026-09-22) — Response shapes the plan left open: bare arrays, `thumb_url`, `id`
+Reconciling `apps/web` against `services/api`, all unspecified by §4.6:
+`GET /sports` and `GET /games` return bare JSON arrays (no `{"sports": …}` / `{"games": …}`
+envelope), matching `/query` and `/stats` which already did. A sport profile repeats its
+`court.landmarks` / `court.variants` at the top level as `landmarks` / `variants` — the click
+order is a client concern, the nested block stays for the pipeline — and `sport_ui.court` is
+normalised to `{size_m, x_range, y_range, polygons}` in metres so the TV can draw a court whose
+origin is the baseline centre. `GET /games` uses `thumb_url`, not `thumbnail`, matching
+`events_url` / `calib_url`. `POST /sessions` returns `{id, code}` like every other create.
+`POST /games/{id}/calibration` takes `{sport, variant, landmarks_px}` — the web client maps its
+internal `court_variant` on the way out and flattens the 200/400 into `{ok, …}`.
+
+## D-14 (2026-09-22) — The calibration frame is grabbed at upload, not by the pipeline
+Calibration happens before processing, so `media/wide.mp4` and `media/thumb.jpg` do not exist
+yet when `/upload/:id/calibrate` needs an image. The upload handler runs one
+`ffmpeg -ss 5 -frames:v 1` (falling back to the first frame for short clips) into
+`media/calib.jpg`, and `GET /games/{id}` exposes it as `calib_url` next to `thumb_url` and
+`sport_ui`. Cost is ~100 ms on a local file. Consequence: landmark pixel coordinates are in the
+source video's frame space, which is also what the pipeline homography expects.

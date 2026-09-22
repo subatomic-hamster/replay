@@ -14,3 +14,6 @@ replay-api = { workspace = true }
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[dependency-groups]
+dev = ["pytest", "ruff", "httpx"]

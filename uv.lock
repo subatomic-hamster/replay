@@ -771,10 +771,24 @@ dependencies = [
     { name = "replay-api" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "courtcam", editable = "courtcam" },
     { name = "replay-api", editable = "services/api" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "ruff" },
 ]
 
 [[package]]

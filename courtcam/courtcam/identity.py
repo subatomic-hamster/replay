@@ -214,6 +214,39 @@ def _concat(tracks: list[CourtTrack], group: list[int]) -> CourtTrack:
     return CourtTrack(merged, court, frac / lifetime)
 
 
+def _fits(span: tuple[float, float], accepted: list[tuple[float, float]], max_n: int) -> bool:
+    """True if `span` can join `accepted` without ever exceeding `max_n` at once."""
+    s, e = span
+    live = [a for a in accepted if a[0] < e and a[1] > s]
+    if len(live) < max_n:
+        return True
+    # The overlap count is a step function that only steps up at an interval start, so
+    # checking `s` and every accepted start inside the span finds its maximum exactly.
+    return all(
+        sum(a[0] <= t < a[1] for a in live) < max_n for t in (s, *(a[0] for a in live if a[0] > s))
+    )
+
+
+def _cap_concurrent(
+    merged: list[tuple[list[int], CourtTrack]], max_n: int
+) -> list[tuple[list[int], CourtTrack]]:
+    """Keep at most `max_n` players alive at any instant, best score first.
+
+    `players.max` is a *concurrency* cap, not a roster cap: the ten best merges over a
+    240 s clip need not be contemporaneous, and capping globally left 2-3 selectable
+    boxes late in the Kennesaw clip while ten people were on court (samples/real/
+    RESULTS.md). Greedy by score; the output can hold more than `max_n` players.
+    """
+    kept: list[tuple[list[int], CourtTrack]] = []
+    spans: list[tuple[float, float]] = []
+    for g, c in merged:
+        span = (c.tracklet.t_start, c.tracklet.t_end)
+        if _fits(span, spans, max_n):
+            kept.append((g, c))
+            spans.append(span)
+    return kept
+
+
 def identify(video: str, tracks: list[CourtTrack], profile: Profile) -> list[PlayerTrack]:
     """Tracklets → `p1..pN` with team labels and team colours."""
     if not tracks:
@@ -225,9 +258,10 @@ def identify(video: str, tracks: list[CourtTrack], profile: Profile) -> list[Pla
     merged = [(g, _concat(tracks, g)) for g in groups]
     # `players.max` caps *merged* players, not raw tracklets (§4.4 step 5 applied after
     # step 6): a player broken into six tracklets should still beat a bystander with one
-    # long one. Score is the merged lifetime weighted by time spent on court.
+    # long one. Score is the merged lifetime weighted by time spent on court, and the cap
+    # is on how many are alive at once — so ids come out in acceptance (best-first) order.
     merged.sort(key=lambda gc: gc[1].score, reverse=True)
-    merged = sorted(merged[: profile.players.max], key=lambda gc: gc[1].tracklet.t_start)
+    merged = _cap_concurrent(merged, profile.players.max)
     players: list[PlayerTrack] = []
     for n, (group, track) in enumerate(merged, start=1):
         team = int(np.bincount(teams[group]).argmax())

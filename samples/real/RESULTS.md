@@ -334,3 +334,69 @@ leaving it out, which is why "Not visible" exists.
 Held outside the repo (third-party footage, D-7) under the run's scratch dir:
 `real/{01-calibrate,02-select,03-follow,04-highlights,05-status-phone-midrun,06-review}-real.png`
 at 1920×1080, plus `real/demo-rough.webm` (1920×1080, the R-03 loop).
+
+### Concurrency cap
+
+The roster caveat above is fixed. `players.max` was a **global** cap on merged players,
+so on a 240 s clip the ten best-scoring merges were simply the ten longest-lived ones —
+all clustered in the first half. It is now a **concurrency** cap: merged players are taken
+best score first and one is accepted only if it never pushes the number of players alive
+at the same instant past `players.max`. The roster over the clip can therefore be much
+larger than 10; the TV never sees more than 10 boxes at once.
+
+Re-run on the same `_work/dets.json` / `_work/tracklets.json` as the run above (stages
+`identity,tracks,crops,events` only — no YOLO, nothing before `identity` changed):
+
+**Players in `game.json`: 10 → 57.** `identity` still 16 s, `tracks` 1.3 s, `crops` 14.5 s,
+`events` 15.3 s.
+
+Concurrent selectable players per 10 s chunk, counted from `tracks/{chunk}.json`:
+
+| window | before (min-max, mean) | after (min-max, mean) |
+|---|---|---|
+| 0-10 s | 7-8, 7.4 | 9-10, 9.9 |
+| 10-20 s | 8-8, 8.0 | 10-10, 10.0 |
+| 20-30 s | 8-8, 8.0 | 10-10, 10.0 |
+| 30-40 s | 8-8, 8.0 | 10-10, 10.0 |
+| 40-50 s | 8-8, 8.0 | 10-10, 10.0 |
+| 50-60 s | 8-8, 8.0 | 10-10, 10.0 |
+| 60-70 s | 8-8, 8.0 | 10-10, 10.0 |
+| 70-80 s | 8-8, 8.0 | 10-10, 10.0 |
+| 80-90 s | 8-9, 8.6 | 9-10, 9.8 |
+| 90-100 s | 8-9, 9.0 | 9-10, 9.8 |
+| 100-110 s | 6-8, 7.1 | 7-10, 9.0 |
+| 110-120 s | 3-6, 4.0 | 6-10, 9.0 |
+| 120-130 s | 3-4, 3.5 | 8-10, 9.1 |
+| 130-140 s | 3-3, 3.0 | 7-10, 8.6 |
+| 140-150 s | 3-3, 3.0 | 9-10, 9.3 |
+| 150-160 s | 2-3, 2.4 | 9-10, 9.8 |
+| 160-170 s | 2-2, 2.0 | 10-10, 10.0 |
+| 170-180 s | 2-2, 2.0 | 9-10, 9.4 |
+| 180-190 s | 2-2, 2.0 | 8-10, 8.6 |
+| 190-200 s | 2-2, 2.0 | 8-10, 9.1 |
+| 200-210 s | 2-2, 2.0 | 9-10, 9.7 |
+| 210-220 s | 2-2, 2.0 | 8-10, 9.1 |
+| 220-230 s | 2-2, 2.0 | 9-10, 9.8 |
+| 230-240 s | 2-2, 2.0 | 9-10, 10.0 |
+
+The late-clip dead zone is gone: the second half now holds 8-10 boxes where it held 2.
+The cap is never breached — 10 is the maximum in every chunk. The remaining dips (6 at
+110-120 s, 7 at 130-140 s) are frames where fewer than ten tracklets survive
+`oncourt_min_fraction`, not the cap.
+
+**The scorer's-table officials still take slots** — this is unchanged and expected (D-18:
+the loose polygon includes the table). In the new run they are `p3` (0-129 s) and `p12`
+(0-82 s): single-tracklet, 0.4 m and 0.2 m of total court displacement, 0.05 / 0.02 m·s⁻¹,
+visible as the two boxes at the bottom-left of the overlay at t = 30 s. A referee, `p1`
+(84-240 s, 0.97 m·s⁻¹), holds a third. Because the cap is now per-instant rather than
+global, three static bystanders cost three of ten *concurrent* slots instead of three of
+the whole roster — the same nuisance, a much smaller blast radius. Filtering them wants a
+motion prior (a seated official never crosses the half-court line), not a smaller cap.
+
+**Identity switches:** unchanged per seam, more of them in absolute terms because more
+merges survive. Over all merged players, jumps across a sample-time gap > 0.2 s: 233
+before / 596 after, of which > 5 m is 15 (6.4 %) before and 38 (6.4 %) after; mean jump
+1.00 m → 1.12 m. One id does span an obvious switch: **`p31` teleports 22.4 m in 0.73 s at
+t ≈ 226.2 s** — a genuine mis-merge, which the tag UI is the correction mechanism for.
+The overlay at t = 30 / 120 / 210 s shows 10 / 9 / 9 boxes, every one of them on a real
+person, and no duplicate id on two people in the same frame.

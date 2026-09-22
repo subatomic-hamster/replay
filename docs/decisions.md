@@ -123,3 +123,6 @@ frame's aspect, because the TV viewport is 16:9 — so `PlayerSurface` scales x 
 independently (identical to the old uniform scale on a 16:9 source) and
 `render.render_crop` sizes its output from the crop rect instead of the source. Without
 that pair a 2560×960 source came out stretched 1.5× vertically in follow mode.
+
+## D-21 (2026-09-22) — `players.max` is a concurrency cap, not a roster size
+The global top-N cap left 2–3 selectable players late in a clip because the best-scoring merged players were not contemporaneous. `identity` now accepts players greedily by score as long as no instant exceeds `players.max` concurrent players; the roster in `game.json` may exceed `max` (57 on the 240 s Kennesaw clip). Player ids are assigned in acceptance order. See samples/real/RESULTS.md "Concurrency cap".

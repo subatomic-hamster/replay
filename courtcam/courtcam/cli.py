@@ -60,9 +60,7 @@ def run(
     ground_truth: Annotated[
         Path | None, typer.Option(help="ground_truth.json for --detector synthetic")
     ] = None,
-    backend: Annotated[
-        str, typer.Option(help="Inference backend: pt | openvino | onnx")
-    ] = "pt",
+    backend: Annotated[str, typer.Option(help="Inference backend: pt | openvino | onnx")] = "pt",
     stride: int | None = None,
     max_frames: int | None = None,
     stages: Annotated[

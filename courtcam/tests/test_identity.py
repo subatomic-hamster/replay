@@ -110,3 +110,14 @@ def test_net_side_team_rule_fails_loudly():
     net_sport = PROFILE.model_copy(update={"team_rule": "net_side"})
     with pytest.raises(NotImplementedError, match="net_side"):
         assign_teams(np.zeros((4, 48), dtype=np.float32), net_sport)
+
+
+def test_concurrency_cap_keeps_non_overlapping_players_beyond_max():
+    """`players.max` bounds how many are on court at once, not the roster."""
+    from courtcam.identity import _cap_concurrent
+
+    seq = [([i], _track(i, 10.0 * i, 10.0 * i + 8.0, (0.0, 5.0), (1.0, 5.0))) for i in range(3)]
+    assert len(_cap_concurrent(seq, 2)) == 3
+
+    both = [([i], _track(i, 0.0, 10.0, (float(i), 5.0), (float(i), 6.0))) for i in range(3)]
+    assert len(_cap_concurrent(both, 2)) == 2

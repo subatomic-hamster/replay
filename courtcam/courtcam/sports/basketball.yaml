@@ -15,6 +15,8 @@ court:
   landmarks_optional:
     [key_nl, key_nr, ft_nl, ft_nr, key_fl, key_fr, ft_fl, ft_fr, centre_l, centre_r]
   margin_m: 1.0
+# `max` is a *concurrency* cap — the most players selectable at any one instant, not the
+# size of the roster over the clip. Substitutions push the total above it.
 players: {min: 2, max: 10}
 team_rule: jersey_color
 detection: {classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25}

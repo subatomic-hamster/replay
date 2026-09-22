@@ -36,6 +36,16 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
   const videoRef = useRef<HTMLVideoElement>(null);
   const clockRef = useRef<Clock | null>(null);
   const [, setReady] = useState(0);
+  // Plan task 12: a follow-cam rendition swap must land at the same media time. The
+  // snapshot is taken during render, before React commits the new src and the element
+  // resets currentTime to 0.
+  const timeRef = useRef(0);
+  const lastSrc = useRef(src);
+  const resumeAt = useRef<{ t: number; playing: boolean } | null>(null);
+  if (lastSrc.current !== src) {
+    lastSrc.current = src;
+    resumeAt.current = { t: timeRef.current, playing: !(videoRef.current?.paused ?? true) };
+  }
 
   useEffect(() => {
     const v = videoRef.current;
@@ -48,6 +58,20 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
       clockRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    const resume = resumeAt.current;
+    if (!v || !resume) return;
+    resumeAt.current = null;
+    const apply = () => {
+      v.currentTime = resume.t;
+      if (resume.playing) void v.play().catch(() => {});
+    };
+    if (v.readyState >= 1) apply();
+    else v.addEventListener("loadedmetadata", apply, { once: true });
+    return () => v.removeEventListener("loadedmetadata", apply);
+  }, [src]);
 
   useImperativeHandle(
     ref,
@@ -122,6 +146,9 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
           playsInline
           preload="auto"
           data-testid="video"
+          onTimeUpdate={(e) => {
+            timeRef.current = e.currentTarget.currentTime;
+          }}
           onEnded={onEnded}
         />
       </div>

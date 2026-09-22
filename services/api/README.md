@@ -35,6 +35,7 @@ uv run --package replay-api pytest services/api/tests -q
 | `REPLAY_CORS_ORIGINS` | `*` | comma-separated origins |
 | `REPLAY_PIPELINE` | `courtcam` | `fake` copies a fixture output tree instead of running the pipeline |
 | `REPLAY_FAKE_PIPELINE_DIR` | `fixtures/fake_game` | the tree fake mode copies |
+| `REPLAY_FAKE_PIPELINE_DELAY_S` | `0` | fake mode only: seconds each stage stays `running` (S-08) |
 | `REPLAY_DETECTOR` | `yolo` | passed through to courtcam |
 
 If `import courtcam` fails at runtime, the API logs a warning and falls back to fake mode
@@ -50,9 +51,9 @@ and a static basketball profile, so the web app still works.
 | PUT | `/games/{id}/upload` | streams the request body to disk → `{id, size, status}`; also grabs `media/calib.jpg` (D-14) |
 | POST | `/games/{id}/upload` | same, multipart `file` field (browsers) |
 | POST | `/games/{id}/calibration` | `{sport, variant, landmarks_px}`; ≥ 4 corners + the profile's landmarks; returns `reprojection_error_px`, `400` if courtcam rejects the clicks |
-| POST | `/games/{id}/process` | `202 {job_id, status}`; needs an upload + calibration |
-| GET | `/games` | JSON array: id, title, status, stages, duration_s, thumb_url, recorded_at, sport |
-| GET | `/games/{id}` | `game.json` with media/tracks/crops/events URLs resolved absolute, plus `thumb_url`, `calib_url`, `sport_ui` |
+| POST | `/games/{id}/process` | `202 {job_id, status}`; needs an upload + calibration; idempotent while a job is queued/running (D-17) |
+| GET | `/games` | JSON array: id, title, status, stages, duration_s, thumb_url, recorded_at, sport (+ `progress` while processing) |
+| GET | `/games/{id}` | `game.json` with media/tracks/crops/events URLs resolved absolute, plus `thumb_url`, `calib_url`, `sport_ui`, and live `stages`/`progress` merged from the job record (D-17) |
 | PATCH | `/games/{id}/players/{pid}` | `{name?, merge_into?}`; merge rewrites ids in tracks + events |
 | POST | `/games/{id}/players/{pid}/render` | `202`, lazy rendition render |
 | PATCH | `/games/{id}/events/{eid}` | confirm/correct; sets `confirmed`, `source:"user"` on a change; `{"dismissed": true}` is "not a shot" (D-11) |
@@ -60,7 +61,7 @@ and a static basketball profile, so the web app still works.
 | POST | `/games/{id}/query` | `{text}` → `{interpretation, clips[]}` |
 | GET | `/games/{id}/stats` | `{box_score, shots, heatmap, totals}` (D-12); dismissed events excluded |
 | POST | `/sessions` | `201 {id, code}` (4-digit pairing code) |
-| WS | `/sessions/{sid}` | in-memory fan-out, phone → TV (`{type:"query", text}`) |
+| WS | `/sessions/{sid}` | in-memory fan-out, phone → TV (`{type:"query", text}`); `{sid}` may be the session id or its 4-digit code (D-16) |
 | GET | `/media/games/{id}/{path}` | static files with HTTP Range (206), no auth, no traversal |
 
 Errors are `{"detail": "..."}`: `404` unknown game/player/event, `400`/`422` bad input.
@@ -85,4 +86,5 @@ each provider for an AWS one; routes only see the Protocol.
 
 While the pipeline runs, **courtcam owns `game.json`** (it rewrites it after every stage), so
 the API writes it only at job start and at completion; per-stage progress goes to the job
-record in `data/jobs.json`.
+record in `data/jobs.json` and is merged back in on read (D-17): the read path turns the
+job's `{stage, fraction}` into `stages` + `progress` and forces `status: "processing"`.

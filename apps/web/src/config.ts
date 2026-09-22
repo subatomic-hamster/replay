@@ -7,8 +7,11 @@ export const API_KEY: string = import.meta.env.VITE_REPLAY_API_KEY ?? "";
 
 export const MOCK_API = import.meta.env.VITE_MOCK_API === "1";
 
-/** D-6: client-side CSS transform follow-cam is the Phase 1 default. */
-export const followcam: { mode: "client" | "rendition" } = { mode: "client" };
+/** D-6: client-side CSS transform follow-cam is the Phase 1 default. `rendition` swaps
+ *  the video src for a pre-rendered per-player MP4 (plan task 12) when one exists. */
+export const followcam: { mode: "client" | "rendition" } = {
+  mode: import.meta.env.VITE_FOLLOWCAM_MODE === "rendition" ? "rendition" : "client",
+};
 
 /** W6 fallback: force spotlight instead of a transform (S-23 flips this). */
 export const FORCE_SPOTLIGHT = import.meta.env.VITE_FORCE_SPOTLIGHT === "1";

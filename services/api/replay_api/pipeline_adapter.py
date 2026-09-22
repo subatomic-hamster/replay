@@ -24,6 +24,7 @@ import json
 import logging
 import shutil
 import subprocess
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -174,6 +175,7 @@ def run(
     pipeline: str = "courtcam",
     fake_dir: Path | None = None,
     detector: str = "yolo",
+    fake_delay_s: float = 0.0,
 ) -> dict:
     """Process `input_path` into `out_dir`; return the game.json keys the pipeline owns."""
     court = game.get("court") or {}
@@ -198,7 +200,7 @@ def run(
                 show_progress=False,
             )
             return _pipeline_keys(Path(out_dir) / "game.json")
-    return _run_fake(input_path, out_dir, fake_dir, progress)
+    return _run_fake(input_path, out_dir, fake_dir, progress, fake_delay_s)
 
 
 def render_player(game_dir: Path, player_id: str, progress: Progress, pipeline: str) -> str | None:
@@ -244,7 +246,13 @@ def _prepare_for_courtcam(out_dir: Path, game: dict) -> None:
 # --------------------------------------------------------------------------- fake mode
 
 
-def _run_fake(input_path: Path, out_dir: Path, fake_dir: Path | None, progress: Progress) -> dict:
+def _run_fake(
+    input_path: Path,
+    out_dir: Path,
+    fake_dir: Path | None,
+    progress: Progress,
+    delay_s: float = 0.0,
+) -> dict:
     """Copy a fixture output tree + transcode the upload, so the web app and Playwright
     can run the whole flow with no model."""
     fake_dir = Path(fake_dir) if fake_dir else Path(__file__).parent.parent / "fixtures/fake_game"
@@ -260,16 +268,17 @@ def _run_fake(input_path: Path, out_dir: Path, fake_dir: Path | None, progress: 
     _thumbnail(media / "wide.mp4", media / "thumb.jpg")
     progress("ingest", 1.0)
 
-    for stage in ("detect", "track"):
-        progress(stage, 0.5)
     # game.json stays API-owned: the fixture's copy would reset id/title/status mid-run
     shutil.copytree(
         fake_dir, out_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns("game.json")
     )
-    progress("detect", 1.0)
-    progress("track", 1.0)
-    progress("render", 1.0)
-    progress("label", 1.0)
+    # Reported in order so the merged read path (D-9) never shows a later stage done
+    # before an earlier one. REPLAY_FAKE_PIPELINE_DELAY_S widens each `running` window.
+    for stage in ("detect", "track", "render", "label"):
+        progress(stage, 0.5)
+        if delay_s > 0:
+            time.sleep(delay_s)
+        progress(stage, 1.0)
 
     keys = _pipeline_keys(fake_dir / "game.json")
     probed = _probe(media / "wide.mp4")

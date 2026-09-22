@@ -1,4 +1,4 @@
-// R5 review queue, R1 shot chart, R3 box score lite — all labelled "auto-detected".
+// R5 review queue, R1 shot chart, R2 heatmap, R3 box score lite — all "auto-detected".
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { courtViewBox } from "../components/CourtInset";
@@ -7,6 +7,48 @@ import { useDpad, type DpadAction } from "../platform/keys";
 import { navigate } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
 import type { GameEvent, Stats } from "../api/types";
+
+type HeatGrid = NonNullable<Stats["heatmap"]>[number];
+
+/** R2 (S-34) — one SVG rect per occupied cell, opacity proportional to the count, drawn
+ *  in court metres so it lines up with the same court outline the shot chart uses. */
+function Heatmap({ grid, viewBox, size }: {
+  grid: HeatGrid;
+  viewBox: { x: number; y: number; attr: string };
+  size: [number, number];
+}) {
+  const [x0, x1] = grid.x_range ?? [viewBox.x, viewBox.x + size[0]];
+  const [y0, y1] = grid.y_range ?? [viewBox.y, viewBox.y + size[1]];
+  const cw = (x1 - x0) / grid.cols;
+  const chh = (y1 - y0) / grid.rows;
+  const max = Math.max(1, ...grid.values);
+  return (
+    <svg
+      className="heatmap"
+      data-testid="heatmap"
+      data-player-id={grid.player_id}
+      viewBox={viewBox.attr}
+      aria-label="Position heatmap"
+    >
+      <rect x={viewBox.x} y={viewBox.y} width={size[0]} height={size[1]} className="court-bg" />
+      {grid.values.map((v, i) =>
+        v > 0 ? (
+          <rect
+            key={i}
+            className="heat-cell"
+            data-testid="heatmap-cell"
+            data-value={v}
+            x={x0 + (i % grid.cols) * cw}
+            y={y0 + Math.floor(i / grid.cols) * chh}
+            width={cw}
+            height={chh}
+            fillOpacity={v / max}
+          />
+        ) : null,
+      )}
+    </svg>
+  );
+}
 
 // `source: "user"` is set by the API on any field the user changed (§4.5) — the client
 // does not get to claim provenance.
@@ -26,6 +68,10 @@ export function Review({ gameId }: { gameId: string }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [focus, setFocus] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Two focusable rows: the review answers, then the heatmap's player picker.
+  const [row, setRow] = useState(0);
+  const [heatFocus, setHeatFocus] = useState(0);
+  const heatmap = stats?.heatmap ?? [];
 
   useEffect(() => {
     if (!game) return;
@@ -62,12 +108,17 @@ export function Review({ gameId }: { gameId: string }) {
 
   const onAction = useCallback(
     (a: DpadAction) => {
-      if (a === "left") setFocus((f) => Math.max(0, f - 1));
-      else if (a === "right") setFocus((f) => Math.min(ACTIONS.length - 1, f + 1));
-      else if (a === "select") answer(focus);
+      if (a === "up") setRow(0);
+      else if (a === "down") setRow(heatmap.length ? 1 : 0);
+      else if (a === "left" && row === 0) setFocus((f) => Math.max(0, f - 1));
+      else if (a === "left") setHeatFocus((i) => Math.max(0, i - 1));
+      else if (a === "right" && row === 0)
+        setFocus((f) => Math.min(ACTIONS.length - 1, f + 1));
+      else if (a === "right") setHeatFocus((i) => Math.min(heatmap.length - 1, i + 1));
+      else if (a === "select" && row === 0) answer(focus);
       else if (a === "back") navigate(`/tv/${gameId}`);
     },
-    [focus, answer, gameId],
+    [focus, answer, gameId, row, heatmap.length],
   );
   useDpad(onAction);
 
@@ -142,6 +193,33 @@ export function Review({ gameId }: { gameId: string }) {
           ))}
         </svg>
 
+        {heatmap.length ? (
+          <>
+            <h2>Position heatmap</h2>
+            <div className="heat-players" role="listbox" aria-label="Heatmap player">
+              {heatmap.map((h, i) => (
+                <span
+                  key={h.player_id}
+                  role="option"
+                  aria-selected={i === heatFocus}
+                  className={`chip${row === 1 && i === heatFocus ? " focused" : ""}${
+                    i === heatFocus ? " active" : ""
+                  }`}
+                  data-testid={`heatmap-player-${h.player_id}`}
+                  data-focused={row === 1 && i === heatFocus ? "true" : "false"}
+                >
+                  {game.players.find((p) => p.id === h.player_id)?.name ?? h.player_id}
+                </span>
+              ))}
+            </div>
+            <Heatmap
+              grid={heatmap[Math.min(heatFocus, heatmap.length - 1)]}
+              viewBox={viewBox}
+              size={[cw, ch]}
+            />
+          </>
+        ) : null}
+
         <h2>Box score lite</h2>
         <table className="box-score">
           <thead>
@@ -165,7 +243,9 @@ export function Review({ gameId }: { gameId: string }) {
         </table>
       </section>
 
-      <p className="hint">Arrows pick an answer · Enter confirms · Escape goes back</p>
+      <p className="hint">
+        Arrows pick an answer · ↓ switches the heatmap player · Enter confirms · Escape goes back
+      </p>
     </div>
   );
 }

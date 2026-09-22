@@ -10,6 +10,7 @@ import { createTracksCache } from "../data/tracksCache";
 import { nextFocus, type Direction } from "../focus/spatial";
 import { useDpad, type DpadAction } from "../platform/keys";
 import { PlayerSurface, type PlayerHandle } from "../playback/PlayerSurface";
+import { followSource } from "../playback/followSource";
 import { useClockTime } from "../playback/clock";
 import { CourtInset } from "../components/CourtInset";
 import { SeekBarEvents } from "../components/SeekBarEvents";
@@ -41,6 +42,8 @@ export function Watch({ gameId }: { gameId: string }) {
   const [spotlight, setSpotlight] = useState(false);
   const [tagging, setTagging] = useState<string | null>(null);
   const [navFocus, setNavFocus] = useState<number | null>(null);
+  const [rendering, setRendering] = useState(false);
+  const renderAsked = useRef<string | null>(null);
   const [version, bump] = useState(0);
   const restoreT = useRef<number | null>(Number(params.get("t")) || null);
 
@@ -91,9 +94,32 @@ export function Watch({ gameId }: { gameId: string }) {
     return () => clearInterval(timer);
   }, [handle, mode, pid]);
 
+  // Plan task 12: `rendition` mode plays the pre-rendered per-player MP4 when the game
+  // has one; otherwise it falls back to the client transform and queues the render.
+  const rendition = pid ? game?.renditions?.players?.[pid] : undefined;
+  const source = followSource(
+    followcam.mode,
+    game ? api.mediaUrl(game, game.renditions.wide) : "",
+    mode === "follow" && !!pid && !FORCE_SPOTLIGHT,
+    rendition && game ? api.mediaUrl(game, rendition) : null,
+  );
+
+  useEffect(() => {
+    if (!game || !pid || !source.needsRender || renderAsked.current === pid) return;
+    renderAsked.current = pid;
+    api.renderPlayer(game.id, pid).then(
+      (job) => setRendering(!!job.job_id),
+      () => setRendering(false),
+    );
+  }, [game, pid, source.needsRender]);
+
+  useEffect(() => {
+    if (mode !== "follow") setRendering(false);
+  }, [mode]);
+
   // D-6 client follow-cam: fetch the crop path for the followed player.
   useEffect(() => {
-    if (mode !== "follow" || !pid || !game || followcam.mode !== "client") {
+    if (!source.useCrop || !pid || !game) {
       setCrop(null);
       return;
     }
@@ -102,7 +128,7 @@ export function Watch({ gameId }: { gameId: string }) {
     return () => {
       live = false;
     };
-  }, [mode, pid, game]);
+  }, [source.useCrop, pid, game]);
 
   // `version` is bumped when a tracks chunk lands — it is a real dependency even though
   // the cache reads it internally.
@@ -169,6 +195,9 @@ export function Watch({ gameId }: { gameId: string }) {
           if (mode === "select" && focusId) setTagging(focusId);
           else if (mode === "follow" && pid) setTagging(pid);
           break;
+        case "pair":
+          navigate(`/tv/pair?game=${game.id}`);
+          break;
         case "up":
         case "left":
         case "right":
@@ -229,7 +258,6 @@ export function Watch({ gameId }: { gameId: string }) {
 
   const followName = roster.find((p) => p.id === pid);
   const spotlightOn = spotlight || (mode === "follow" && FORCE_SPOTLIGHT);
-  const useTransform = mode === "follow" && followcam.mode === "client" && !FORCE_SPOTLIGHT;
 
   return (
     <div className="screen watch" data-mode={mode}>
@@ -250,8 +278,8 @@ export function Watch({ gameId }: { gameId: string }) {
       {/* Muted: Phase 1 has no audio design and an unmuted autoplay is blocked. */}
       <PlayerSurface
         ref={setHandle}
-        src={api.mediaUrl(game, game.renditions.wide)}
-        crop={useTransform ? crop : null}
+        src={source.src}
+        crop={source.useCrop ? crop : null}
         muted
       >
         {mode === "select" ? (
@@ -269,6 +297,11 @@ export function Watch({ gameId }: { gameId: string }) {
             <div className="followcam-badge" data-testid="followcam-active" data-player-id={pid}>
               Following {followName?.name ?? pid}
             </div>
+            {rendering ? (
+              <div className="rendering-badge" data-testid="rendering-badge">
+                rendering…
+              </div>
+            ) : null}
           </>
         ) : null}
       </PlayerSurface>

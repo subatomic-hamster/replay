@@ -55,6 +55,8 @@ export interface Game {
   recorded_at?: string;
   status: GameStatus;
   stages: Partial<Record<StageName, StageState>>;
+  /** D-9/S-08: per-stage fraction, merged in from the job record while a job runs. */
+  progress?: Partial<Record<StageName, number>>;
   video: { duration_s: number; fps: number; width: number; height: number };
   sport: string;
   court: {
@@ -83,6 +85,7 @@ export interface GameSummary {
   duration_s?: number | null;
   thumb_url?: string | null;
   stages?: Partial<Record<StageName, StageState>>;
+  progress?: Partial<Record<StageName, number>>;
 }
 
 export interface TrackPlayer {
@@ -199,4 +202,11 @@ export interface CalibrationResult {
 export interface Session {
   id: string;
   code: string;
+}
+
+/** POST /games/{id}/players/{pid}/render — 202 with the queued job. */
+export interface RenderJob {
+  job_id: string;
+  status: string;
+  player_id: string;
 }

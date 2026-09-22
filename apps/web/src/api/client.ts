@@ -9,6 +9,7 @@ import type {
   GameSummary,
   Player,
   QueryResult,
+  RenderJob,
   Session,
   SportProfile,
   Stats,
@@ -51,6 +52,8 @@ export interface ReplayApi {
   getTracksChunk(game: Game, index: number): Promise<TracksChunk>;
   getCropPath(game: Game, playerId: string): Promise<CropPath>;
   createSession(): Promise<Session>;
+  /** Plan task 12: queue the follow-cam rendition for one player (fire-and-forget). */
+  renderPlayer(gameId: string, playerId: string): Promise<RenderJob>;
   /** Absolute URL for a media path from game.json (already-absolute passes through). */
   mediaUrl(game: Game, path: string): string;
 }
@@ -173,7 +176,15 @@ export const httpApi: ReplayApi = {
       resolveMedia(game.id, game.croppaths.url_template.replace("{player_id}", playerId)),
     ),
   createSession: () => req<Session>("/sessions", { method: "POST" }),
+  renderPlayer: (gameId, playerId) =>
+    req<RenderJob>(`/games/${gameId}/players/${playerId}/render`, { method: "POST" }),
   mediaUrl: (game, path) => resolveMedia(game.id, path),
 };
 
 export const api: ReplayApi = MOCK_API ? mockApi : httpApi;
+
+/** H4: the phone companion connects with the 4-digit code, the TV with the session id —
+ *  the WS route accepts either (D-16). */
+export function sessionWsUrl(idOrCode: string): string {
+  return `${API_BASE.replace(/^http/, "ws")}/sessions/${encodeURIComponent(idOrCode)}`;
+}

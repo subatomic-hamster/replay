@@ -12,6 +12,7 @@ import type {
   GameSummary,
   Player,
   QueryResult,
+  RenderJob,
   Session,
   SportProfile,
   Stats,
@@ -157,6 +158,24 @@ function ev(
     source: confidence > 0.7 ? "vlm" : "heuristic",
     confirmed: false,
   };
+}
+
+const HEAT_COLS = 15;
+const HEAT_ROWS = 14;
+
+/** R2 — the same occupancy grid services/api derives from the tracks chunks (D-12):
+ *  bin every 10 Hz sample of a player's court position into one cell per court metre. */
+function heatmapFor(playerId: string): number[] {
+  const values = new Array(HEAT_COLS * HEAT_ROWS).fill(0);
+  const motion = MOTION[playerId];
+  if (!motion) return values;
+  for (let i = 0; i < DURATION * 10; i++) {
+    const { ct } = trackAt(playerId, i / 10);
+    const ix = Math.floor((ct![0] / 15) * HEAT_COLS);
+    const iy = Math.floor((ct![1] / 14) * HEAT_ROWS);
+    if (ix >= 0 && ix < HEAT_COLS && iy >= 0 && iy < HEAT_ROWS) values[iy * HEAT_COLS + ix] += 1;
+  }
+  return values;
 }
 
 const games = new Map<string, Game>();
@@ -414,6 +433,14 @@ export const mockApi: ReplayApi = {
           made: !!e.made,
           confirmed: e.confirmed,
         })),
+      heatmap: g.players.map((p) => ({
+        player_id: p.id,
+        cols: HEAT_COLS,
+        rows: HEAT_ROWS,
+        x_range: [0, 15] as [number, number],
+        y_range: [0, 14] as [number, number],
+        values: heatmapFor(p.id),
+      })),
     };
     return delay(stats);
   },
@@ -457,6 +484,11 @@ export const mockApi: ReplayApi = {
   createSession() {
     log("POST", "/sessions");
     return delay<Session>({ id: "s_mock", code: "4821" });
+  },
+
+  renderPlayer(gameId, playerId) {
+    log("POST", `/games/${gameId}/players/${playerId}/render`);
+    return delay<RenderJob>({ job_id: "j_mock", status: "queued", player_id: playerId });
   },
 
   mediaUrl: (_game, path) => path,

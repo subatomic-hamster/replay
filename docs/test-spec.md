@@ -12,12 +12,18 @@ append.
 - **Routes** (assumed; not yet implemented — update this doc if the router differs):
   `/upload` (create game), `/upload/:gameId/calibrate`, `/upload/:gameId/status`,
   `/tv` (library), `/tv/:gameId` (watch: wide + select + follow), `/tv/:gameId/highlights`,
-  `/tv/:gameId/review`, `/tv/pair` (phone companion pairing, H4).
+  `/tv/:gameId/review`, `/tv/pair` (phone companion pairing, H4 — `?game=` carries the game
+  whose highlights a phone query should open), `/companion` and `/companion/:code` (the
+  phone side of H4: touch, not D-pad).
 - **Playwright projects**: `chromium` runs `apps/web/e2e/` against the in-browser mock
   (`VITE_MOCK_API=1`); `live` runs `apps/web/e2e-live/` against a real
   `REPLAY_PIPELINE=fake` uvicorn on :8000 with a wiped temp data dir, and covers S-01 end
-  to end plus the empty library, the API-unreachable banner and range seeking. Both run
-  from one `pnpm exec playwright test`.
+  to end plus the empty library, the API-unreachable banner, range seeking and S-31 (the
+  phone companion, which needs the real WebSocket). Both run from one
+  `pnpm exec playwright test`. The `live` project's tests all live in one file and share
+  the game S-01 uploads, because `fullyParallel: false` only serialises *within* a file.
+  Its uvicorn runs with `REPLAY_FAKE_PIPELINE_DELAY_S=1` so S-08's `running` stage is
+  observable (fake mode is otherwise instant).
 - **Selectors**: tests key off `data-testid`. Referenced here as `[data-testid=x]`.
   Implementation must add these hooks; exact naming may be adjusted but must stay documented
   in this file when changed (plan §12 rule 3 applies to test hooks by extension).
@@ -29,12 +35,20 @@ append.
   `tag-key-{label}`, `pair-code`, `game-title-input`, `create-game`, `file-input`,
   `go-calibrate`, `calib-image`, `calib-prompt`, `calib-undo`, `landmark-{name}`,
   `variant-{half|full}`, `roster-row`, `roster-name-{pid}`, `roster-save-{pid}`,
-  `roster-merge-{pid}`. Existing hooks also carry data attributes used as assertion
+  `roster-merge-{pid}`, `ask-dialog`, `ask-value`, `ask-key-{label}` (H3 free text — the
+  same `TextEntryDialog` the tag dialog uses, with an `ask-` prefix), `heatmap`,
+  `heatmap-cell`, `heatmap-player-{pid}` (R2), `rendering-badge` (rendition follow mode),
+  `companion-code-input`, `companion-connect`, `companion-query`, `companion-send`,
+  `companion-mic`, `companion-status`, `companion-sent`, `companion-error` (H4).
+  Existing hooks also carry data attributes used as assertion
   targets: `data-focused`, `data-player-id`, `data-game-id`, `data-event-id`, `data-type`,
-  `data-t-key`, `data-t-start`, `data-confidence`, `data-state`, `data-made`, `data-ok`.
+  `data-t-key`, `data-t-start`, `data-confidence`, `data-state`, `data-made`, `data-ok`,
+  `data-value` (heatmap cells), `data-chip`, `data-listening`.
 - **Extra keys beyond the D-1 remote map** (implemented on `/tv`, documented here rather
   than silently added): `s` toggles the spotlight overlay (W6), `t` opens the tag dialog for
-  the focused player (W7). Both hang off on-screen affordances on a real remote.
+  the focused player (W7), `p` opens the phone-pairing screen for the current game
+  (`/tv/pair?game=<id>`, H4) from Watch or Highlights. All three hang off on-screen
+  affordances on a real remote.
 - **Keyboard map** (D-1, the entire input surface for Phase 1 — no mouse/touch on `/tv`):
 
   | Key | Action |
@@ -46,6 +60,7 @@ append.
   | `,` / `.` | Seek −10 s / +10 s |
   | `[` / `]` | Previous / next event |
   | `b` | Bookmark |
+  | `s` / `t` / `p` | Spotlight · Tag player · Pair phone (extra keys, above) |
 
 - **Tolerances used throughout**: video time tolerance = ±1 frame (1/30 s ≈ 33 ms) when
   paused, ±100 ms when playing (NF-06); homography reprojection < 5 px (plan §4.4 stage 2);
@@ -156,6 +171,12 @@ Given processing enqueued for the synthetic sample. When user watches the status
 content cycles `pending → running → done` (render may end `partial`) in that left-to-right
 order; no stage shows `done` before its predecessor does; final state
 `[data-testid=game-status]` text = "ready".
+**Implemented (services/api + apps/web)**: while a job is queued or running, `GET /games/{id}`
+and `GET /games` merge it from `data/jobs.json` (D-9, D-17) — `status: "processing"`, the
+job's stage `running`, earlier ones `done`, later ones `pending`, plus an additive
+`progress: {stage: fraction}`. `game.json` is never written mid-run. The live S-01 test
+asserts one snapshot matches `processing (done,)*running(,pending)*`. `POST /process` is
+idempotent while a job is active (`services/api/tests/test_progress.py`).
 
 ### S-09 — Sport picker at upload
 Given `/upload` loaded and `GET /sports` returns basketball (enabled). When user opens the
@@ -235,6 +256,15 @@ Given follow mode active on player `p3` whose crop rect at current `t` is
 or `translate()/scale()` pair consistent with scale ≈ `1/0.5 = 2` and translate consistent
 with centering the crop rect's origin in the viewport, recomputed every animation frame
 (sampled at 3 distinct `t` values, transform changes each time if the player moved).
+**Implemented (apps/web)**: `followcam.mode` is `client` by default and `rendition` when
+`VITE_FOLLOWCAM_MODE=rendition`. In `rendition` mode, if `game.renditions.players[pid]`
+exists the `<video>` src is swapped to it at the same `currentTime` (PlayerSurface restores
+time and play state on a src change) and no transform is applied; otherwise the client
+transform still runs and `POST /games/{id}/players/{pid}/render` is fired once, showing
+`[data-testid=rendering-badge]` while the API reports a job. The choice is the pure
+`followSource()` in `src/playback/followSource.ts`, unit-tested by
+`e2e/S-20-rendition-source.spec.ts` (no page — flipping the flag would cost a fourth Vite
+server for one boolean).
 
 ### S-21 — Follow mode: Back returns to wide at same timestamp
 Given follow mode active, `video.currentTime === 120.4`. When user presses `Escape`.
@@ -301,12 +331,25 @@ that free text and an LLM layer (Ollama, per plan §4.7) is configured. **Pass**
 returns `{interpretation, clips}` (LLM emits a filter, never raw timestamps, per §4.7);
 `[data-testid=query-interpretation]` shows a human-readable restatement; if no LLM is
 configured, response is a graceful "no match" (see E-20), never a 500.
+**Implemented (apps/web)**: no LLM in Phase 1. The Highlights chip row ends with an "Ask…"
+chip (`[data-chip="Ask…"]`) that opens `[data-testid=ask-dialog]` — the same on-screen
+keyboard as S-25, extracted as `TextEntryDialog` — and Enter/SAVE submits the typed text to
+`POST /query`. Unmatched text returns `{interpretation: "No match", clips: []}` and the
+screen shows `[data-testid=no-clips]` (`e2e/S-30-free-text-query.spec.ts`).
 
 ### S-31 — Phone companion query (H4, P1)
 Given a TV session paired via a 4-digit code (`POST /sessions`, WS `/sessions/{sid}`) and a
 phone connected to `/tv/pair`. When user types a query on the phone and submits.
 **Pass**: the TV's highlights view updates to the query's results within 2 s without any TV
 remote input, driven by the session WebSocket push.
+**Implemented (apps/web + services/api)**: the phone page is `/companion` (code entry) /
+`/companion/:code`; it connects to `WS /sessions/{code}` directly — the route accepts the
+pairing code as well as the session id (D-16) — and sends `{type:"query", text}` from a text
+box or the Web Speech API mic button (`[data-testid=companion-mic]`, hidden where
+`webkitSpeechRecognition` is absent). On the TV, `p` on Watch/Highlights opens
+`/tv/pair?game=<id>`; the Pair screen and Highlights both listen on the session (id kept in
+`sessionStorage`), and a push navigates to `/tv/:id/highlights?q=<text>` and runs the query.
+Covered live in `e2e-live/S-01-live.spec.ts` with two pages.
 
 ### S-32 — Bookmarks (H5)
 Given video playing at t=75.0 on `/tv/{id}`. When user presses `b`.
@@ -326,6 +369,12 @@ Given stats include a per-player position grid. When user selects a player on th
 screen. **Pass**: `[data-testid=heatmap]` renders a grid whose cell intensities are
 monotonically consistent with the stats payload's grid values (higher value → visually denser
 cell); switching players re-renders without page reload.
+**Implemented (apps/web)**: on the Review screen, below the shot chart. One
+`[data-testid=heatmap-cell]` per non-zero cell, `fill-opacity = value / max`, drawn in court
+metres over the same court outline as the shot chart (`x_range`/`y_range` from D-12).
+`ArrowDown` moves focus from the review answers to the player row
+(`[data-testid=heatmap-player-{pid}]`); Left/Right switches the rendered player
+(`e2e/S-34-heatmap.spec.ts`).
 
 ### S-35 — Box score lite (R3, P1)
 Given stats include shots attempted/made per player. When user opens the box score view.
@@ -409,16 +458,16 @@ below marked "if auth enabled" are conditional on that env var being set in the 
 | AC-01 | `POST /games` | 201 with `{id, upload_url}`; 400 if `title` or `sport` missing/empty; 400 if `sport` not in `GET /sports`; 401 if auth enabled and header missing/wrong |
 | AC-02 | `GET /sports` | 200; bare array (no envelope, D-13) of profiles each with `id, display_name, tier, landmarks, variants, court, sport_ui`; basketball always present in Phase 1 |
 | AC-03 | `POST /games/{id}/calibration` | 200 on valid payload (≥4 landmarks, non-collinear, reprojection computed); 400 on missing landmarks, malformed variant, or degenerate points (E-05/E-06); 404 for unknown `{id}` |
-| AC-04 | `POST /games/{id}/process` | 202 (enqueued) once calibration exists; 400 if no calibration saved yet; 404 unknown `{id}` |
-| AC-05 | `GET /games` | 200; bare array (D-13), each item has `id, title, status, stages, duration_s, thumb_url, recorded_at, sport`; empty array when no games exist (E-01) |
-| AC-06 | `GET /games/{id}` | 200 with full `game.json`, media URLs resolved to absolute (not relative paths), plus `thumb_url`, `calib_url` (D-14) and `sport_ui`; 404 unknown `{id}` |
+| AC-04 | `POST /games/{id}/process` | 202 (enqueued) once calibration exists; 400 if no calibration saved yet; 404 unknown `{id}`; idempotent — a second call while the job is queued/running returns 202 with the *same* `job_id` and queues nothing (D-17) |
+| AC-05 | `GET /games` | 200; bare array (D-13), each item has `id, title, status, stages, duration_s, thumb_url, recorded_at, sport` (plus `progress` only while that game has a job running, D-17); empty array when no games exist (E-01) |
+| AC-06 | `GET /games/{id}` | 200 with full `game.json`, media URLs resolved to absolute (not relative paths), plus `thumb_url`, `calib_url` (D-14) and `sport_ui`; while a job runs, `stages`/`status` come from the job record and an additive `progress` object is present (D-17); 404 unknown `{id}` |
 | AC-07 | `PATCH /games/{id}/players/{pid}` | 200 on rename or merge; request body validated (`name` non-empty string, or `merge_into` a valid existing `pid`); 404 unknown `{id}`/`{pid}`; 400 on self-merge (`merge_into === pid`) |
 | AC-08 | `POST /games/{id}/players/{pid}/render` | 202 (lazy rendition render queued); 404 unknown ids |
 | AC-09 | `PATCH /games/{id}/events/{eid}` | 200 on confirm/correct; response reflects `confirmed:true, source:"user"`; accepts `dismissed` (D-11); 404 unknown `{id}`/`{eid}`; 400 on an unsupported field |
 | AC-10 | `POST /games/{id}/events` | 201 creating a bookmark from `{t}`; response has `id` and the derived `t_start`/`t_key`/`t_end`; 422 if `t` < 0 |
 | AC-11 | `POST /games/{id}/query` | 200 with `{interpretation, clips[]}`; 400 if `text` missing; empty `clips` array (not error) when nothing matches (E-20); repeated identical requests return identical `clips` (determinism, rule-parser path) |
 | AC-12 | `GET /games/{id}/stats` | 200 with `{box_score, shots, heatmap, totals}` (D-12), dismissed events excluded; 404 unknown `{id}`; empty/zeroed structures (not error) for a game with zero events |
-| AC-13 | `POST /sessions` / WS `/sessions/{sid}` | `POST` 201 with `{id, code}`, a 4-digit pairing code; WS connect with a valid `sid` succeeds; invalid/expired `sid` closes the socket or rejects the upgrade |
+| AC-13 | `POST /sessions` / WS `/sessions/{sid}` | `POST` 201 with `{id, code}`, a 4-digit pairing code; WS connect with a valid `sid` **or** its 4-digit code succeeds and fans out between them (D-16); invalid/expired `sid` closes the socket or rejects the upgrade |
 | AC-14 | Media serving (`renditions.wide` MP4 URL, D-3) | `GET` with `Range: bytes=0-1023` → 206 with `Content-Range` and `Accept-Ranges: bytes` headers, body length 1024; full `GET` without Range → 200; `Content-Type: video/mp4` |
 | AC-15 | CORS | Preflight `OPTIONS` and actual requests from the web app's dev origin (e.g. `http://localhost:5173`) receive `Access-Control-Allow-Origin` matching that origin (or `*` if that's the chosen policy — assert whichever is implemented, but assert it explicitly, not implicitly) |
 | AC-16 | Auth (if enabled) | Any mutating route without `X-Replay-Key` → 401; with correct key → normal response; game IDs alone are not treated as sufficient auth (plan §4.6 "unguessable" is a mitigation, not a substitute, when the env var is set) |

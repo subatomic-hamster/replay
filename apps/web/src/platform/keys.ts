@@ -18,6 +18,7 @@ export type DpadAction =
   | "bookmark"
   | "spotlight"
   | "tag"
+  | "pair"
   /** Backspace, only when a handler opted into splitting it from "back" (S-25). */
   | "delete";
 
@@ -40,6 +41,7 @@ const MAP: Record<string, DpadAction> = {
   // Fire TV remote port lands.
   s: "spotlight",
   t: "tag",
+  p: "pair",
 };
 
 export function keyToAction(e: KeyboardEvent, splitDelete = false): DpadAction | null {

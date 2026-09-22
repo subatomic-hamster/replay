@@ -1,17 +1,27 @@
-// H1 per-player reel, H2 top plays, H3 query chips. Everything goes through
-// POST /games/{id}/query so the TV never re-implements the query grammar.
+// H1 per-player reel, H2 top plays, H3 query chips + free text, H4 phone companion.
+// Everything goes through POST /games/{id}/query so the TV never re-implements the
+// query grammar — a chip, the on-screen keyboard and the phone all call the same route.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import { useDpad, type DpadAction } from "../platform/keys";
 import { PlayerSurface, type PlayerHandle } from "../playback/PlayerSurface";
 import { useClockTime } from "../playback/clock";
 import { FALLBACK_CHIPS, QueryChips } from "../components/QueryChips";
-import { navigate } from "../router";
+import { TextEntryDialog } from "../components/TextEntryDialog";
+import { navigate, useLocation } from "../router";
+import { storedSession, useSessionMessages } from "../session";
 import { ApiErrorBanner, fmtDuration, useAsync } from "../ui";
 import type { Clip } from "../api/types";
 
+/** H3 free text: the last chip opens the on-screen keyboard instead of running a query. */
+const ASK_CHIP = "Ask…";
+
 export function Highlights({ gameId }: { gameId: string }) {
+  const { params } = useLocation();
   const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
+  const [session] = useState(storedSession);
+  const [asking, setAsking] = useState(false);
+  const lastPushed = useRef<string | null>(null);
   const [handle, setHandle] = useState<PlayerHandle | null>(null);
   const [clips, setClips] = useState<Clip[] | null>(null);
   const [interpretation, setInterpretation] = useState("");
@@ -28,7 +38,7 @@ export function Highlights({ gameId }: { gameId: string }) {
     const perPlayer = (game?.players ?? [])
       .filter((p) => p.name)
       .map((p) => `${p.name} — all shots`);
-    return [...perPlayer, ...chips];
+    return [...perPlayer, ...chips, ASK_CHIP];
   }, [game]);
 
   const run = useCallback(
@@ -93,8 +103,12 @@ export function Highlights({ gameId }: { gameId: string }) {
           else setIndex((i) => Math.min((clips?.length ?? 1) - 1, i + 1));
           break;
         case "select":
-          if (row === 0) run(queries[col]);
+          if (row === 0 && queries[col] === ASK_CHIP) setAsking(true);
+          else if (row === 0) run(queries[col]);
           else playClip(index);
+          break;
+        case "pair":
+          navigate(`/tv/pair?game=${gameId}`);
           break;
         case "playpause":
           handle?.toggle();
@@ -108,7 +122,26 @@ export function Highlights({ gameId }: { gameId: string }) {
     },
     [row, col, index, queries, clips, run, playClip, handle, gameId],
   );
-  useDpad(onAction);
+  useDpad(onAction, !asking);
+
+  // S-31: a query pushed from the paired phone, and the ?q= the Pair screen navigates
+  // with. Both land here so the phone needs no knowledge of the query grammar.
+  useSessionMessages(
+    session?.id,
+    useCallback(
+      (msg) => {
+        if (msg.type === "query" && msg.text) run(msg.text);
+      },
+      [run],
+    ),
+  );
+
+  const pushed = params.get("q");
+  useEffect(() => {
+    if (!game || !pushed || lastPushed.current === pushed) return;
+    lastPushed.current = pushed;
+    run(pushed);
+  }, [game, pushed, run]);
 
   if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
   if (!game) return <div className="screen">Loading…</div>;
@@ -155,7 +188,19 @@ export function Highlights({ gameId }: { gameId: string }) {
         </>
       ) : null}
 
-      <p className="hint">Arrows move · Enter plays · Escape goes back</p>
+      <p className="hint">Arrows move · Enter plays · p pairs a phone · Escape goes back</p>
+
+      {asking ? (
+        <TextEntryDialog
+          idPrefix="ask"
+          title="Ask for a highlight"
+          onCancel={() => setAsking(false)}
+          onSubmit={(text) => {
+            setAsking(false);
+            run(text);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

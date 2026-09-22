@@ -34,6 +34,7 @@ from .providers.storage import LocalStorage
 log = logging.getLogger(__name__)
 
 EVENTS_REL = "events.json"
+STAGE_ORDER = ("ingest", "detect", "track", "render", "label")
 THUMB_REL = "media/thumb.jpg"
 CALIB_REL = "media/calib.jpg"
 SOURCE_REL = "source.mp4"
@@ -150,6 +151,41 @@ def _resolve_urls(game: dict, storage: LocalStorage, base: str) -> dict:
     return g
 
 
+def _active_job(jobs: LocalJobs, game_id: str) -> dict | None:
+    """The queued/running `process` job for this game, if any."""
+    live = [
+        j
+        for j in jobs.for_game(game_id)
+        if j.get("kind") == "process" and j.get("status") in ("queued", "running")
+    ]
+    return max(live, key=lambda j: j.get("created_at") or 0.0) if live else None
+
+
+def _with_job_progress(game: dict, jobs: LocalJobs) -> dict:
+    """D-9: courtcam owns game.json while it runs, so live stage state comes from the
+    job record (data/jobs.json), merged in on read. Additive `progress` carries the
+    per-stage fraction the job last reported."""
+    job = _active_job(jobs, game["id"])
+    if job is None:
+        return game
+    names = list(game.get("stages") or STAGE_ORDER)
+    at = names.index(job["stage"]) if job.get("stage") in names else -1
+    fraction = min(1.0, max(0.0, float(job.get("fraction") or 0.0)))
+    stages, progress = {}, {}
+    for i, name in enumerate(names):
+        if i < at:
+            stages[name], progress[name] = "done", 1.0
+        elif i > at or at < 0:
+            stages[name], progress[name] = "pending", 0.0
+        else:
+            stages[name] = "done" if fraction >= 1.0 else "running"
+            progress[name] = fraction
+    game["stages"] = stages
+    game["progress"] = progress
+    game["status"] = "processing"
+    return game
+
+
 def _thumbnail_rel(game: dict, storage: LocalStorage) -> str | None:
     """Both courtcam and fake mode write `media/thumb.jpg`; it is not a game.json field."""
     rel = game.get("thumbnail") or THUMB_REL
@@ -158,7 +194,10 @@ def _thumbnail_rel(game: dict, storage: LocalStorage) -> str | None:
 
 def _summary(game: dict, storage: LocalStorage, base: str) -> dict:
     thumb = _thumbnail_rel(game, storage)
+    # `progress` rides along only while a job is running, same as GET /games/{id}.
+    extra = {"progress": game["progress"]} if game.get("progress") else {}
     return {
+        **extra,
         "id": game["id"],
         "title": game.get("title"),
         "status": game.get("status"),
@@ -243,12 +282,15 @@ def _register_routes(app: FastAPI) -> None:
     def list_games(request: Request):
         ctx = _ctx(request)
         base = _base(request)
-        return [_summary(g, ctx.storage, base) for g in ctx.index.list()]
+        return [
+            _summary(_with_job_progress(g, ctx.jobs), ctx.storage, base) for g in ctx.index.list()
+        ]
 
     @app.get("/games/{game_id}")
     def get_game(request: Request, game_id: str):
+        ctx = _ctx(request)
         game = _game_or_404(request, game_id)
-        return _resolve_urls(game, _ctx(request).storage, _base(request))
+        return _with_job_progress(_resolve_urls(game, ctx.storage, _base(request)), ctx.jobs)
 
     @app.put("/games/{game_id}/upload")
     async def upload_put(request: Request, game_id: str):
@@ -286,7 +328,9 @@ def _register_routes(app: FastAPI) -> None:
         # D-14: calibration happens before processing, so the frame to click on has to
         # exist now. One ffmpeg -frames:v 1 on a local file, ~100 ms.
         storage = _ctx(request).storage
-        adapter.grab_frame(storage.path(game["id"], SOURCE_REL), storage.path(game["id"], CALIB_REL), 5.0)
+        adapter.grab_frame(
+            storage.path(game["id"], SOURCE_REL), storage.path(game["id"], CALIB_REL), 5.0
+        )
         game["status"] = "uploaded"
         _ctx(request).index.save(game)
         return {"id": game["id"], "size": size, "status": "uploaded"}
@@ -335,6 +379,10 @@ def _register_routes(app: FastAPI) -> None:
             raise HTTPException(400, "no video uploaded for this game")
         if not game.get("court"):
             raise HTTPException(400, "game must be calibrated before processing")
+        # Idempotent: a double tap on "Start processing" must not queue a second run.
+        running = _active_job(ctx.jobs, game_id)
+        if running is not None:
+            return {"job_id": running["id"], "status": running["status"], "game_id": game_id}
         job = ctx.jobs.submit(
             "process",
             game_id,
@@ -466,7 +514,12 @@ def _register_routes(app: FastAPI) -> None:
 
     @app.websocket("/sessions/{sid}")
     async def session_ws(ws: WebSocket, sid: str):
-        session = ws.app.state.sessions.get(sid)
+        # D-16: `sid` may also be the 4-digit pairing code, so the phone companion
+        # needs no code->id lookup route.
+        sessions: dict[str, dict] = ws.app.state.sessions
+        session = sessions.get(sid) or next(
+            (s for s in sessions.values() if s["code"] == sid), None
+        )
         if session is None:
             await ws.close(code=4404)
             return
@@ -531,6 +584,7 @@ def _process_task(
                 pipeline=settings.pipeline,
                 fake_dir=settings.fake_pipeline_dir,
                 detector=settings.detector,
+                fake_delay_s=settings.fake_pipeline_delay_s,
             )
         except Exception:
             base["status"] = "failed"

@@ -5,7 +5,7 @@ import { GAME_ID, mockCalls } from "./helpers";
 test("S-29 a chip runs POST /query and builds a playlist", async ({ page }) => {
   await page.goto(`/tv/${GAME_ID}/highlights`);
   const chips = page.getByTestId("query-chip");
-  await expect(chips).toHaveCount(4); // 1 per-player reel + 3 sport_ui chips
+  await expect(chips).toHaveCount(5); // 1 per-player reel + 3 sport_ui chips + Ask
   expect(await chips.nth(0).textContent()).toContain("Marcus");
 
   // "Makes" is the third chip.
@@ -27,7 +27,7 @@ test("S-29 a chip runs POST /query and builds a playlist", async ({ page }) => {
 
 test("S-29 the same chip twice returns an identical clip list", async ({ page }) => {
   await page.goto(`/tv/${GAME_ID}/highlights`);
-  await expect(page.getByTestId("query-chip")).toHaveCount(4);
+  await expect(page.getByTestId("query-chip")).toHaveCount(5);
   const read = async () =>
     page.locator('[data-testid="reel-clip"]').evaluateAll((els) =>
       els.map((e) => `${e.getAttribute("data-event-id")}@${e.getAttribute("data-t-start")}`),
@@ -47,7 +47,7 @@ test("S-29 the same chip twice returns an identical clip list", async ({ page })
 
 test("S-27 the per-player reel holds only that player's shots", async ({ page }) => {
   await page.goto(`/tv/${GAME_ID}/highlights`);
-  await expect(page.getByTestId("query-chip")).toHaveCount(4);
+  await expect(page.getByTestId("query-chip")).toHaveCount(5);
   await page.keyboard.press("Enter"); // chip 0 — "Marcus — all shots"
   await expect(page.getByTestId("reel-clip")).toHaveCount(2);
   const ids = await page

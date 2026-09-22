@@ -71,3 +71,22 @@ source video's frame space, which is also what the pipeline homography expects.
 
 ## D-15 (2026-09-22) — courtcam schema notes
 `Event.made` is `bool | null` (`null` = not judged by the heuristic labeler, distinct from `false`). A profile may declare `court.templates: {variant: file}` instead of `court.template` (basketball needs one template per variant). Field names are unchanged from §4.5. courtcam owns `game.json` during a run (D-9); `out/_work/` holds intermediates the API never serves.
+
+## D-16 (2026-09-22) — `WS /sessions/{sid}` also accepts the 4-digit pairing code
+The phone companion (`/companion`, H4) only ever sees the code the TV shows, so it would
+need a `GET /sessions/by-code/{code}` round trip before it could open the socket. Instead
+the WebSocket route resolves `{sid}` as either a session id (`s_…`) or a pairing code
+(four digits) — the two can never collide. No new route, no lookup, and an unknown value
+still closes the socket with 4404, which the phone renders as "that code is not paired".
+Consequence: `POST /sessions` stays the only session route; `AC-13` covers both forms.
+
+## D-17 (2026-09-22) — live stage progress is merged into the read path, plus `progress`
+D-9 said per-stage progress lives in the job record; this is how it reaches clients.
+`GET /games/{id}` and `GET /games` merge the newest queued/running `process` job from
+`data/jobs.json`: `status` becomes `processing`, the job's current stage is `running`
+(`done` once its fraction hits 1.0), earlier stages are `done`, later ones `pending`, and
+an additive `progress: {stage: fraction}` object rides along (absent when no job is
+running). `game.json` is never written mid-run. `POST /games/{id}/process` is idempotent:
+while a job for that game is queued or running it returns 202 with that job's id instead
+of queuing a second run. `REPLAY_FAKE_PIPELINE_DELAY_S` (default 0) sleeps between the
+two progress reports of each fake stage so the transition is observable in tests.

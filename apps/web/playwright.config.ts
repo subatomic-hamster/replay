@@ -59,6 +59,9 @@ export default defineConfig({
         REPLAY_PIPELINE: "fake",
         REPLAY_DATA_DIR: DATA_DIR,
         REPLAY_FAKE_PIPELINE_DIR: path.join(REPO, "services/api/fixtures/fake_game"),
+        // S-08: fake mode finishes in seconds, so hold each stage long enough for the
+        // status page's 2 s poll to catch a `running` one.
+        REPLAY_FAKE_PIPELINE_DELAY_S: "1",
       },
     },
     {

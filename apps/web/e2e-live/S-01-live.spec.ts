@@ -89,6 +89,22 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   await expect(page.getByTestId("start-processing")).toBeEnabled();
   await page.getByTestId("start-processing").click();
   await page.waitForURL(new RegExp(`/upload/${gameId}/status`));
+  // S-08 / D-9: while the job runs, GET /games/{id} merges the job record's stage state,
+  // so the status page shows exactly one stage `running` with the later ones `pending`.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const status = document.querySelector('[data-testid="game-status"]')?.textContent;
+          const states = [...document.querySelectorAll('[data-testid^="stage-"]')]
+            .map((el) => el.getAttribute("data-state"))
+            .join(",");
+          return `${status} ${states}`;
+        }),
+      { timeout: 120_000 },
+    )
+    // exactly one running stage, everything before it done, everything after pending
+    .toMatch(/^processing (done,)*running(,pending)*$/);
   for (const stage of ["ingest", "detect", "track", "render", "label"]) {
     await expect(page.getByTestId(`stage-${stage}`)).toHaveAttribute("data-state", /done|partial/, {
       timeout: 240_000,
@@ -216,4 +232,55 @@ test("D-3 the wide MP4 is range-seekable and the player settles on the target", 
       return v && v.readyState >= 2 ? Math.abs(v.currentTime - 10) : 99;
     })
     .toBeLessThan(0.5);
+});
+
+// S-31 / H4 — phone companion over the session WebSocket. Two pages in one context
+// (separate tabs, so separate sessionStorage); the WS fan-out is in-process, so the mock
+// cannot stand in for it. Lives here because the live project runs one file serially.
+test("S-31 a phone query moves the TV to the matching highlights", async ({ page, context }) => {
+  expect(gameId, "S-01 must have run first").not.toBe("");
+
+  // --- TV: reach the pairing code with the remote only (`p` on Highlights) ---------
+  await page.goto(`/tv/${gameId}/highlights`);
+  await expect(page.getByTestId("query-chip").first()).toBeVisible();
+  await page.keyboard.press("p");
+  await page.waitForURL(/\/tv\/pair\?game=/);
+  await expect(page.getByTestId("pair-code")).toHaveText(/^\d{4}$/);
+  const code = (await page.getByTestId("pair-code").textContent())!.trim();
+
+  // --- phone: enter the code, then send a query ------------------------------------
+  const phone = await context.newPage();
+  await phone.goto("/companion");
+  await phone.getByTestId("companion-code-input").fill(code);
+  await phone.getByTestId("companion-connect").click();
+  await phone.waitForURL(new RegExp(`/companion/${code}`));
+  await expect(phone.getByTestId("companion-status")).toHaveAttribute("data-state", "open");
+
+  await phone.getByTestId("companion-query").fill("Marcus — all shots");
+  await phone.getByTestId("companion-send").click();
+  await expect(phone.getByTestId("companion-sent")).toContainText("Marcus");
+
+  // --- TV: jumps to the results with no remote input (within 2 s per S-31) ---------
+  await page.waitForURL(new RegExp(`/tv/${gameId}/highlights\\?q=`), { timeout: 5000 });
+  await expect(page.getByTestId("query-interpretation")).toBeVisible();
+  await expect(page.getByTestId("query-interpretation")).toContainText("Marcus");
+  await expect(page.getByTestId("reel-clip").first()).toBeVisible();
+
+  // --- a second query lands on the Highlights screen itself, still no remote --------
+  await phone.getByTestId("companion-query").fill("misses");
+  await phone.getByTestId("companion-send").click();
+  await expect(page.getByTestId("query-interpretation")).toContainText("missed shots", {
+    timeout: 5000,
+  });
+  await phone.close();
+});
+
+test("S-31/AC-13 an unpaired code reports a closed session instead of hanging", async ({
+  page,
+}) => {
+  // Pairing codes are always four digits, so this one can never resolve (D-16).
+  await page.goto("/companion/s_nope");
+  await expect(page.getByTestId("companion-status")).toHaveAttribute("data-state", "closed");
+  await expect(page.getByTestId("companion-error")).toBeVisible();
+  await expect(page.getByTestId("companion-send")).toBeDisabled();
 });

@@ -277,6 +277,37 @@ body,
   border-radius: 6px;
   color: var(--dim);
 }
+/* W4 — the followed player's frame. Amber + outer glow so it reads at 10 feet over any
+   jersey, and it survives the transport fading out. `visibility` is switched on a delay
+   equal to the fade so the box is genuinely hidden (not just transparent) once a player
+   is occluded, and snaps back instantly when their box returns. */
+.follow-frame {
+  position: absolute;
+  border: 4px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 0 28px 6px rgba(255, 176, 32, 0.45), inset 0 0 14px rgba(255, 176, 32, 0.22);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 300ms ease;
+}
+.follow-frame[data-visible="false"] {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 300ms ease, visibility 0s linear 300ms;
+}
+.follow-frame-label {
+  position: absolute;
+  top: -44px;
+  left: -4px;
+  padding: 2px 12px 3px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 26px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .spotlight {
   position: absolute;
   inset: 0;

@@ -13,6 +13,7 @@ import { PlayerSurface, type PlayerHandle } from "../playback/PlayerSurface";
 import { followSource } from "../playback/followSource";
 import { useClockTime } from "../playback/clock";
 import { CourtInset } from "../components/CourtInset";
+import { FollowFrame, cropRectAt, mapBB } from "../components/FollowFrame";
 import { SeekBarEvents } from "../components/SeekBarEvents";
 import { SelectOverlay } from "../components/SelectOverlay";
 import { TagDialog } from "../components/TagDialog";
@@ -100,9 +101,10 @@ export function Watch({ gameId }: { gameId: string }) {
   // Plan task 12: `rendition` mode plays the pre-rendered per-player MP4 when the game
   // has one; otherwise it falls back to the client transform and queues the render.
   const rendition = pid ? game?.renditions?.players?.[pid] : undefined;
+  const wideUrl = game ? api.mediaUrl(game, game.renditions.wide) : "";
   const source = followSource(
     followcam.mode,
-    game ? api.mediaUrl(game, game.renditions.wide) : "",
+    wideUrl,
     mode === "follow" && !!pid && !FORCE_SPOTLIGHT,
     rendition && game ? api.mediaUrl(game, rendition) : null,
   );
@@ -235,9 +237,11 @@ export function Watch({ gameId }: { gameId: string }) {
           break;
         case "back":
           if (mode === "follow") {
+            // W4: the wide shot keeps the amber frame on whoever was being followed,
+            // so `pid` survives the way back out — it clears only on another pick or
+            // on leaving the game.
             setMode("wide");
-            setPid(null);
-            setQuery({ mode: null, pid: null });
+            setQuery({ mode: null });
           } else if (mode === "select") {
             setMode("wide");
             setQuery({ mode: null });
@@ -281,6 +285,16 @@ export function Watch({ gameId }: { gameId: string }) {
 
   const followName = roster.find((p) => p.id === pid);
   const spotlightOn = spotlight || (mode === "follow" && FORCE_SPOTLIGHT);
+  // W4/W6: in follow mode the video carries the crop transform, so the followed player's
+  // box — the amber frame and the spotlight cutout alike — has to be mapped through the
+  // same crop rect before it can be placed in the (untransformed) overlay layer.
+  const cropRect = crop ? cropRectAt(crop, t) : null;
+  const spotPlayers = players
+    .filter((p) => p.id === pid)
+    .map((p) => ({ ...p, bb: mapBB(p.bb, cropRect) }));
+  // Track boxes describe the wide frame; a pre-rendered per-player rendition is a
+  // different picture entirely, so the frame sits that one case out.
+  const showFollowFrame = !!pid && mode !== "select" && source.src === wideUrl;
 
   return (
     <div className="screen watch" data-mode={mode}>
@@ -303,7 +317,7 @@ export function Watch({ gameId }: { gameId: string }) {
           {mode === "follow" ? (
             <>
               <SelectOverlay
-                players={players.filter((p) => p.id === pid)}
+                players={spotPlayers}
                 roster={roster}
                 focusId={pid}
                 spotlight={spotlightOn}
@@ -318,6 +332,15 @@ export function Watch({ gameId }: { gameId: string }) {
                 </div>
               ) : null}
             </>
+          ) : null}
+          {showFollowFrame && pid ? (
+            <FollowFrame
+              pid={pid}
+              label={followName?.name ?? pid}
+              tracks={tracks}
+              clock={clock}
+              crop={source.useCrop ? crop : null}
+            />
           ) : null}
         </PlayerSurface>
 

@@ -39,7 +39,8 @@ append.
   same `TextEntryDialog` the tag dialog uses, with an `ask-` prefix), `heatmap`,
   `heatmap-cell`, `heatmap-player-{pid}` (R2), `rendering-badge` (rendition follow mode),
   `companion-code-input`, `companion-connect`, `companion-query`, `companion-send`,
-  `companion-mic`, `companion-status`, `companion-sent`, `companion-error` (H4).
+  `companion-mic`, `companion-status`, `companion-sent`, `companion-error` (H4),
+  `follow-frame` with `data-pid` and `data-visible` (W4 follow frame, S-22b).
   Existing hooks also carry data attributes used as assertion
   targets: `data-focused`, `data-player-id`, `data-game-id`, `data-event-id`, `data-type`,
   `data-t-key`, `data-t-start`, `data-confidence`, `data-state`, `data-made`, `data-ok`,
@@ -279,6 +280,24 @@ Given a game with `court.variant=half` and ≥1 tracked player. When wide playba
 positions proportional to each player's `ct` (court meters) mapped into the inset's SVG/canvas
 viewBox; the selected player's dot has a distinct class/color when in follow mode.
 
+### S-22b — Follow frame on the selected player (W4)
+Appended, not a renumber: S-22 above is the court inset. This covers the amber frame the
+followed player carries.
+Given a player selected with `Enter`. **Pass**: `[data-testid=follow-frame]` with
+`data-pid=<pid>` is visible in follow mode and its bounding-box centre lies inside
+`[data-testid=player-surface]` — in follow mode the `<video>` carries the crop transform, so
+the track box must be mapped through the same crop rect (`(bb.x - crop.x) / crop.w`, …) to
+land on the player; it moves while the video plays; `Escape` back to wide keeps it on the
+same player (the selection survives the way out — only another `Enter` or leaving the game
+clears `?pid=`) and its centre is within 8 px of where `[data-testid=select-box-<pid>]` sat
+at that timestamp; at a time where the player has no track box it fades out over ~300 ms
+(`data-visible="false"`, then `visibility: hidden`) and comes back when the box returns.
+**Implemented (apps/web)**: `src/components/FollowFrame.tsx`, positioned from a rAF off
+`playback/clock.ts` rather than React state so it tracks at the video's frame rate.
+`e2e/S-22-follow-frame.spec.ts`. The mock fixture scripts a 1 s occlusion of `p1` over
+[12, 13) s in its tracks chunks (MOTION, the crop path and the heatmap stay continuous)
+so the fade-out is testable. The W6 spotlight cutout is mapped through the same crop rect.
+
 ### S-23 — Spotlight overlay fallback (W6)
 Given `followcam.mode` resolves to a state where CSS transform is unavailable (feature-flag
 override for test). When user selects a player. **Pass**: instead of a transform, all pixels
@@ -495,7 +514,7 @@ below marked "if auth enabled" are conditional on that env var being set in the 
 | W1 Library screen | S-01, S-11, S-12 | P0 | Yes |
 | W2 Wide playback transport | S-01, S-13, S-14, S-15 | P0 | Yes |
 | W3 Select mode | S-01, S-17, S-18, S-19 | P0 | Yes |
-| W4 Follow mode | S-01, S-19, S-20, S-21 | P0 | Yes |
+| W4 Follow mode | S-01, S-19, S-20, S-21, S-22b | P0 | Yes |
 | W5 Court inset | S-22 | P1 | Yes |
 | W6 Spotlight overlay | S-23 | P1 | Yes |
 | W7 Player roster tagging | S-08, S-24, S-25, S-26 | P0 | Yes |

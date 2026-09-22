@@ -86,6 +86,15 @@ const MOTION: Record<string, (t: number) => [number, number]> = {
 const BOX_W = 0.06;
 const BOX_H = 0.2;
 
+/** A scripted occlusion: p1 has no track box between these seconds, so the follow frame's
+ *  fade-out and return (S-22b) is testable. Tracks only — MOTION, the crop path and the
+ *  heatmap stay continuous, which is exactly what a real occlusion looks like. */
+const TRACK_GAP: Record<string, [number, number]> = { p1: [12, 13] };
+const tracked = (id: string, t: number) => {
+  const gap = TRACK_GAP[id];
+  return !gap || t < gap[0] || t >= gap[1];
+};
+
 function trackAt(id: string, t: number): TrackPlayer {
   const [x, y] = MOTION[id](t);
   return {
@@ -452,7 +461,10 @@ export const mockApi: ReplayApi = {
     const ids = game.players.map((p) => p.id).filter((id) => id in MOTION);
     const frames = Array.from({ length: chunkS * rate }, (_, i) => {
       const t = Number((t0 + i / rate).toFixed(3));
-      return { t, p: t <= DURATION ? ids.map((id) => trackAt(id, t)) : [] };
+      return {
+        t,
+        p: t <= DURATION ? ids.filter((id) => tracked(id, t)).map((id) => trackAt(id, t)) : [],
+      };
     });
     return delay<TracksChunk>({ schema: "replay.tracks.v1", t0, rate_hz: rate, frames });
   },

@@ -769,3 +769,417 @@ Why `template` is the right default even at 1 of 4:
 The next real step for the panoramic corpus is D-18's upgrade path — estimate `k1`/`k2`
 from the curvature of the detected court lines, undistort, then run this fitter — not more
 scoring heuristics.
+
+# Ultra-wide / fisheye — the lens model (D-22 revisited, D-24 proposed)
+
+Two 0.5×-class clips, added to the corpus for exactly this question:
+
+| clip | camera | frame | what it is meant to prove |
+|---|---|---|---|
+| `badminton_auditorium_240s.mp4` | GoPro superview, elevated, **in the plane of the net**, one court, doubles | 1920 × 1080 | a strong barrel lens end to end |
+| `basketball_ceilingcam_240s.mp4` | extreme fisheye, above *and behind* the near backboard | 1280 × 720 | the case the lens model does **not** rescue |
+
+## Calibration — `badminton_auditorium_240s.mp4`
+
+### The camera is not what `MANIFEST.md` says
+
+The manifest entry describes a camera "set well back from one baseline … looking down the
+length of the court". It is not. The camera stands beside the court **in the plane of the
+net**: the net projects to a single near-vertical line at x ≈ 930, the court's long axis
+runs left–right across the frame, and **both back boundary lines fall at or outside the
+frame edges**. That is why `corner_nl/nr/fl/fr` — the four landmarks D-19 asks for — are
+absent from `badminton_auditorium_240s.landmarks.json` by design. The manifest's "far
+baseline ≈ 1050 px, near baseline ≈ 1800 px, court height ≈ 450 px" are real measurements
+of the court's **width** direction, not its length.
+
+Reconstructed from first principles and checked before any fitting:
+
+- the four players split cleanly left/right of the net pole, two a side — doubles;
+- the centre line is present outside the short service lines and absent between them,
+  which fixes which white curve is which;
+- a 1-D projective cross-ratio on the four sideline curves at x = 930 (image y
+  983 / 902 / 530 / 516 ↔ court 0 / 0.46 / 5.64 / 6.10 m) predicts the fourth from the
+  other three to **0.3 px**. The lines are identified correctly.
+
+### The twelve landmarks
+
+Clicked on a 40-frame temporal median (players removed), each one an intersection of two
+painted lines found by sub-pixel ridge tracing plus a local degree-2 fit in a ±170 px
+window around the crossing — a global fit to a *curved* line is wrong at its ends (it
+missed `short_nl` by 26 px).
+
+Four optional landmarks were added to the profile to reach the eight the lens model
+needs: `singles_nl/nr/fl/fr`, the short-service-line ends on the **inner (singles)**
+sidelines, at (±2.59, 4.72) and (±2.59, 8.68) in `badminton_doubles.json`. They are
+`landmarks_optional` only, and only on the doubles template, so nothing the uploader is
+asked for changed.
+
+### D-22's revisit criterion is met: the residual grows with radius
+
+Least-squares pinhole homography over all twelve landmarks, residual measured in frame
+pixels, against distance from the image centre:
+
+| landmark | r (px) | pinhole resid | with `k1 = −0.653` |
+|---|---:|---:|---:|
+| `net_post_r` | 37 | 4.69 | 4.76 |
+| `short_fr` | 168 | 1.97 | 1.99 |
+| `singles_fr` | 176 | 1.33 | 0.91 |
+| `short_nr` | 215 | 4.09 | 2.53 |
+| `singles_nr` | 224 | 3.25 | 1.86 |
+| `centre_sf` | 276 | 4.71 | 2.94 |
+| `centre_sn` | 323 | 3.52 | 3.73 |
+| `net_post_l` | 444 | **41.76** | 0.18 |
+| `singles_fl` | 542 | 8.19 | 2.08 |
+| `singles_nl` | 585 | 6.51 | 1.70 |
+| `short_fl` | 619 | **18.11** | 1.41 |
+| `short_nl` | 663 | **17.17** | 1.97 |
+| **rms** | | **14.62** | **2.47** |
+| **max** | | **41.76** | **4.76** |
+
+Binned, which is the shape D-22 asked for:
+
+| radius band | n | pinhole rms | `k1` rms |
+|---|---:|---:|---:|
+| 0–200 px | 3 | 3.04 | 3.03 |
+| 200–400 px | 4 | 3.93 | 2.85 |
+| 400–600 px | 3 | **24.85** | 1.55 |
+| 600–900 px | 2 | **17.65** | 1.71 |
+
+Inside a third of the half-diagonal the two models are the same. Past it the pinhole model
+is eight times worse and the lens model is *flat*. That is radial error, not click noise.
+
+### The model
+
+`courtcam/courtcam/distortion.py` — one-parameter division (Fitzgibbon) model about the
+image centre, radius normalised by the half-diagonal:
+
+```
+r_u = r_d / (1 + k1 · r_d²)          undistort_points
+r_d = r_u · 2 / (1 + √(1 − 4·k1·r_u²))   distort_points  (exact inverse, stable at k1 → 0)
+```
+
+`estimate_k1` grid-searches 81 values over [−0.80, 0.20] then refines by golden section,
+minimising the **distorted-pixel** reprojection rms of a homography refitted on the
+undistorted points at each candidate. Measuring the error in distorted pixels is what
+stops the search running away: in undistorted space a large |k1| shrinks every distance
+and the error falls for free.
+
+Gate, in `estimate_k1` itself, so no caller can skip it: **≥ 8 landmarks and ≥ 30 %
+reduction in reprojection rms**, otherwise it returns `k1 = 0.0` and the payload is the
+old one byte for byte.
+
+| | value |
+|---|---|
+| landmarks | 12 |
+| `k1` | **−0.6530** |
+| reprojection rms, before → after | **14.621 → 2.466 px** (−83 %) |
+| worst single landmark | **4.77 px** (`net_post_r`, r = 37, the least distorted point in the set) |
+| `court_polygon_px` | 148-point polyline, 0.25 m per sample, re-distorted |
+
+`calib.json` gains three additive fields — `k1`, `image_size`, `lens_rms_px` — and
+`court_polygon_px` becomes a dense polyline instead of four corners. Everything else keeps
+its name and meaning, so `croppath.court_px_width` (D-20) and `render.render_overlay` got
+the curved court for free: both already read `court_polygon_px`.
+
+### What it is worth in metres
+
+The number that matters is not pixels, it is how wrong the court coordinates are. Each
+clicked landmark pushed through each run's own `H` and compared with the template:
+
+| | `k1 = −0.653` | `k1 = 0` |
+|---|---:|---:|
+| metre error, rms | **0.048 m** | 0.181 m |
+| metre error, max | **0.087 m** | 0.469 m |
+| error at r = 168 px | 0.084 m | 0.025 m |
+| error at r = 619 px | **0.012 m** | **0.469 m** |
+
+Half a metre of error at the frame edge on a 6.10 m-wide court is a tenth of the court.
+
+### The RANSAC trap — a real bug, in a file this task did not own
+
+`calibrate.homography()` fits with `cv2.findHomography(..., cv2.RANSAC)`. On a barrelled
+frame the pinhole model genuinely cannot fit all twelve points, so RANSAC does what it is
+built to do: it finds a **five-point consensus**, reports that consensus's error, and
+discards the rest. On this clip the lens-free calibration therefore reports
+
+```
+reproj_error_px 1.515      # the five inliers
+residuals_px    short_fl 167.0   singles_fl 103.1   short_nl 21.4   ...
+```
+
+— a 1.5 px calibration whose worst landmark is **167 px** out. It is also
+non-deterministic: run to run, `cv2.theRNG()` picks a different consensus (measured:
+52/90 px one run, 45/33/26 px the next, all reporting 1.3–2.5 px).
+
+Working around it inside code this task owns, `pipeline._refit_least_squares` replaces the
+homography with a plain least-squares fit over *all* landmarks when `k1 != 0`, and only
+when that is strictly better. Measured at `k1 = −0.6601`, 8 landmarks:
+
+| fit | worst landmark | polygon x-extent |
+|---|---:|---|
+| RANSAC | 47.5 px | −10 … 2014 |
+| least squares | **4.34 px** | −59 … 1918 |
+
+and it is now deterministic: four repeat runs give `k1 = −0.6530`, worst residual 4.77 px,
+polygon x ∈ [−61, 1922], y ∈ [515, 983].
+
+**The real fix belongs in `courtcam/courtcam/calibrate.py`** (not owned here): keep the
+RANSAC result only when `mask.sum() >= len(names) - 2`, otherwise fall back to the
+least-squares fit over every landmark. A calibration that silently drops half its evidence
+and reports the half it kept is worse than one that reports 15 px honestly.
+
+### Overlay
+
+`frames/badminton_auditorium_calib.jpg` — the twelve landmarks and the fitted polygon on
+the temporal median, labelled with `k1` and the worst residual.
+
+| frame | what it shows |
+|---|---|
+| `frames/badminton_auditorium_overlay_t100.jpg` | four players, two a side, blue/orange by net side; the yellow polygon **curves along the painted sidelines** for the whole 1920 px |
+| `frames/badminton_auditorium_overlay_t232.jpg` | same at the end of the clip — the camera is fixed, the fit holds |
+| `frames/badminton_auditorium_overlay_nok1_t2.jpg` | the same court with `k1 = 0`: a straight-edged quadrilateral, ~100 px below the paint at the bottom centre and above it at both edges |
+
+## Full run — `badminton_auditorium_240s.mp4`, with and without `k1`
+
+One YOLO pass (`_work/dets.json` shared); the post-detect stages run twice.
+
+### Timing (240 s clip, stride 2 = 3602 detected frames)
+
+| stage | s |
+|---|---:|
+| ingest | 138.7 |
+| calibrate | 0.1 |
+| detect (yolo11n, imgsz 960, CPU, contended) | 1212.9 |
+| track | 0.3 |
+| court | 0.2 |
+| identity | 0.2 |
+| tracks | 0.5 |
+| crops | 1.4 |
+| events | 0.1 |
+
+The lens model costs nothing measurable: `estimate_k1` is 81 + ~30 homography fits on 12
+points, and `to_court` adds one vectorised division per foot point.
+
+### Players
+
+Four players on court for the whole clip; the hall is otherwise empty.
+
+| | `k1 = −0.653` | `k1 = 0` |
+|---|---:|---:|
+| tracklets | 39 | 39 |
+| survive the on-court filter | 29 | 30 |
+| merged players | 9 | 9 |
+| median concurrent | **4.0** | 4.0 |
+| seconds with ≥ 4 selectable | 232 / 240 | 237 / 240 |
+| team by `net_side` wrong | **0 of 14 026 samples** | 0 of 14 043 |
+| bystanders admitted | 0 | 0 |
+
+Per-10 s selectable count, `k1` run: `4 4 4 5 4 4 5 4 4 4 4 4 4 4 4 4 5 4 4 4 4 4 4 4`.
+
+**The roster is the same with and without the lens model, and that is the honest headline.**
+On a clip whose only occupants are the four players, the on-court filter has nothing to
+decide, so a court polygon 100 px off the paint still contains exactly the same people.
+What `k1` changes is the *metres*:
+
+| | `k1 = −0.653` | `k1 = 0` | truth |
+|---|---:|---:|---:|
+| y reached, p99 | **13.34 m** | 11.71 m | court is 13.40 m long |
+| \|x\| reached, p95 | **2.21 m** | 1.92 m | half-width is 3.05 m |
+
+Without the lens model the homography is anchored on whichever five landmarks RANSAC
+liked and systematically **shrinks the court**: it reports that nobody in four minutes of
+doubles ever came within 1.7 m of a back boundary line, which is not badminton. Every
+metre-denominated product surface — the court inset dots, the review heatmap, any future
+distance or speed — is wrong by that much.
+
+### Identity
+
+Nine player ids for four people, in both runs: **five switches in 240 s**. `p1` holds one
+far-side player unbroken for the whole clip; the near-side pair breaks into six ids. The
+lens model does not help here and should not be expected to — the breaks are occlusions at
+the net and two players in near-identical dark kit, not geometry.
+
+Note that `players: {max: 4}` is **not** enforced on the merged roster: `identity.identify`
+returns nine. It is not wrong at any instant (median concurrent is 4, peak 5 during a
+handover), but "9 players" is what `game.json` says. See *Changes needed elsewhere*.
+
+### Follow-cam — measured, and the two UNMEASURED comments are gone
+
+This camera stands in the plane of the net, so the scale across the court is nearly
+uniform: person boxes run **117–483 px** tall (p50 256, p95 324, p99 369) instead of
+pickleball's 7× run from baseline to baseline. The court fills the frame
+(`court_px_width` = 1920), so:
+
+| `followcam.zoom` | window | p95 player fills | read at t = 40 s / 150 s |
+|---|---|---:|---|
+| 1.5 (copied from pickleball's pre-tuning value) | 1280 × 720 | 45 % | subject small, half the window empty court |
+| **2.0 (shipped)** | **960 × 540** | **60 %** (tallest 89 %) | whole body, racket, partner and the service lines in shot |
+
+`frames/badminton_auditorium_p1_t40.jpg` (mid-court) and
+`frames/badminton_auditorium_p1_t150.jpg` (at the back boundary).
+
+`court.margin_m` could **not** be measured on this clip and the comment in
+`badminton.yaml` now says so: sweeping it 0.5 → 3.0 m leaves 29 on-court tracklets at
+every value, worst `inside_fraction` 0.74 even at 0.5 m, because there is nobody off court
+to reject. It is set to **1.0** for two reasons that are measurable: the players' own
+excursion past the paint is p99 0.79 m / max 3.15 m, and 1.0 m is the value pickleball
+*measured*, for a failure (the adjacent court) that a badminton hall has too.
+
+### Through the product (`e2e-real/R-05-badminton.spec.ts`)
+
+Repointed from `badminton_russiaclub_*` (still uncalibratable, section above) to
+`badminton_auditorium_smoke.mp4` + `badminton_auditorium_240s.landmarks.json` — same fixed
+camera, so one landmarks file serves both cuts, exactly as R-04 does for pickleball.
+
+`REPLAY_E2E_REAL=1 pnpm exec playwright test --project=real R-05` — **1 passed (4.9 m)**
+on the 50 s smoke cut. Full Tier 1 walk: upload → calibration POST → process → select →
+follow → highlights → review. Roster 5 players, **4 selectable** at the screenshot
+instant, split 3/2 across the net.
+
+| Screenshot (1920 × 1080) | What it shows |
+|---|---|
+| `sports/badminton-select.png` | four labelled boxes, blue left of the net and orange right of it, badminton court inset bottom-right with four live dots in the right halves |
+| `sports/badminton-follow.png` | `FOLLOW • p2`, amber follow frame, cropped transform, spotlight dim, inset dot amber |
+| `sports/badminton-highlights.png` | this profile's chips, `Rallies` resolving to an interpretation (the rally detector is still a stub) |
+| `sports/badminton-review.png` | heatmap on `viewBox="-3.05 0 6.1 13.4"`, occupied cells > 0 |
+
+One wart, and it is in code this task did not own: the `reprojection_error_px` the API
+returns to the calibrate screen (and which `net-sport.ts` asserts on) comes from
+`pipeline_adapter.calibration_error`, which calls bare `calibrate()` with no lens model.
+On this clip it answers **1.5 px** for a fit whose worst landmark is 167 px out, while the
+pipeline that actually runs re-estimates `k1` and gets 4.77 px. The assertion passes for
+the wrong reason. See *Changes needed elsewhere*.
+
+`e2e-real/R-06-basketball-fisheye.spec.ts` — **1 skipped**, reason
+`samples/real/basketball_ceilingcam_240s.landmarks.json is missing; calibrate the clip
+first`. That is the intended outcome; the next section is why.
+
+## Calibration — `basketball_ceilingcam_240s.mp4` — **not achieved**, and `k1` is why not
+
+This is the negative control the corpus was missing: a lens *more* distorted than the
+badminton clip, on which the lens model correctly refuses to fire.
+
+The camera is bolted above and slightly behind the near backboard. Consequences, measured
+on a 40-frame temporal median:
+
+- the **near baseline and both near corners are occluded** — glass safety barrier across
+  the bottom of the frame, backboard rigging over the middle of it. Four of the five
+  landmarks `basketball` requires (`corner_nl`, `corner_nr`, and a trustworthy `rim`
+  ground point) cannot be clicked at all;
+- the far half runs at **4–8 px/m** in depth, among four or five overlapping multi-sport
+  line systems on the same floor;
+- the centre circle images as an ellipse with semi-axes (74, 14.5) px for a 1.8 m radius —
+  **41 px/m across, 8 px/m in depth**. That 5:1 anisotropy is the whole problem in one
+  number.
+
+Eight landmarks *are* identifiable: `ft_nl/nr`, `key_nl/nr`, `centre_l/r`, `corner_fl/fr`.
+They give a pixel-space reprojection rms of **18.27 px** with `k1 = 0` — and `k1` does not
+improve it:
+
+| `k1` | reprojection rms (px) |
+|---:|---:|
+| −0.60 | 22.12 |
+| −0.40 | 20.63 |
+| −0.20 | 19.36 |
+| −0.10 | 18.79 |
+| **0.00** | **18.27** |
+| +0.10 | 17.79 |
+
+There is no minimum at a barrel value. `estimate_k1` returns `0.0` and the 30 % gate never
+opens. **Why**, quantitatively: the half-diagonal is 734 px and every one of the eight
+landmarks sits at r = 126…395 px, i.e. **0.17–0.54 of the half-diagonal**, all of them in
+the inner half of the frame where a division model barely bends anything. The distortion
+term varies across the set by less than the 18 px of click uncertainty, so `k1` is simply
+not identifiable from these points — it is not that the lens is undistorted, it is that
+the observations cannot see the lens.
+
+Letting the clicks drift inside a ±18 px uncertainty ball while alternately refitting
+`(H, k1)` drops the rms to 3.73 px and still chooses `k1 = 0.0000` — the drift absorbs the
+distortion into the clicks. (Reassuringly, `centre_l` snaps to (374.9, 157.9), which is
+where the centre-circle ellipse independently puts it; less reassuringly `corner_fl` snaps
+to y = 79, above the wood floor.) `frames/basketball_ceilingcam_bestfit.jpg` is that best
+fit drawn on the median: the modelled three-point arc diverges from the painted one by
+55–135 px at the frame edges, which is the visible signature of distortion the landmark
+set cannot measure.
+
+So **no `samples/real/basketball_ceilingcam_240s.landmarks.json` is shipped**, and
+`e2e-real/R-06-basketball-fisheye.spec.ts` skips on the missing file with that reason —
+the same honest mechanism R-05 used while `badminton_russiaclub` was unsolved. The spec is
+kept rather than deleted: drop a landmarks file next to the clip and the whole Tier 1 walk
+runs. No full pipeline run, no follow-cam and no player counts are reported for this clip,
+because every one of them would be conditioned on a homography that is 18 px — two to four
+metres — wrong.
+
+**Does `k1` rescue the on-court filter here? No, and it could not.** The blocker is
+occlusion and 8 px/m depth resolution, not lens shape. Re-source: a fisheye that sees the
+whole floor from the *side* at half-court height, not one looking down the court from
+behind a backboard. Same lesson as `badminton_russiaclub` — the clip has to be able to
+answer the question.
+
+## D-24 (proposed) — ship the one-parameter lens model, off unless it earns itself
+
+> **D-24. A one-parameter radial lens model is fitted at calibration time and applied
+> wherever pixels and metres meet, but only when the landmarks prove it is needed.**
+>
+> D-18 deferred any lens model on the grounds that no clip in the corpus needed one, and
+> D-22 set the revisit criterion: *reprojection residuals that grow with distance from the
+> image centre*. `badminton_auditorium_240s.mp4` meets it unambiguously — pinhole residual
+> rms 3.0 px inside r = 200 px and 24.9 px beyond r = 400 px, on a 1920 × 1080 frame. So:
+>
+> 1. `courtcam.distortion` implements the division model `r_u = r_d / (1 + k1·r_d²)` about
+>    the image centre, radius normalised by the half-diagonal, with an exact closed-form
+>    inverse. One parameter, no `k2`, no principal-point search, no `cv2.calibrateCamera`:
+>    a court calibration has 12 points, not 12 views of a chessboard.
+> 2. `k1` is estimated at the calibrate stage from the clicked landmarks alone — no extra
+>    input from the uploader, no extra API field, nothing new to get wrong.
+> 3. **The gate lives inside `estimate_k1`**, not in its callers: at least **8** landmarks
+>    and at least a **30 %** cut in reprojection rms, or it returns `k1 = 0.0`. Eight is
+>    where a homography (8 dof) stops absorbing `k1` into the fit; 30 % is far above the
+>    ~10 % a spurious parameter buys on noise, and the clip that needs the model cut 83 %.
+> 4. `k1 = 0` must be **bit-identical** to the pre-D-24 payload — same `H`, same
+>    `landmarks_px`, same `reproj_error_px`. `test_distortion.py` asserts exactly that on
+>    the synthetic basketball fixture, and the golden test is unchanged.
+> 5. `calib.json` gains `k1`, `image_size` and `lens_rms_px` as additive fields, and
+>    `court_polygon_px` becomes a polyline sampled every 0.25 m and re-distorted, so the
+>    overlay and the D-20 crop-path extent both follow the curved paint with no further
+>    change.
+> 6. Consequence, to be fixed separately: `calibrate.homography()` must stop reporting a
+>    RANSAC consensus's error as the calibration's error. On a barrelled frame it happily
+>    returns 1.5 px for a fit whose worst landmark is 167 px out, which is how a lens
+>    problem hides from its own quality gate.
+>
+> **Not adopted:** `k2`, a fitted principal point, per-frame refinement, or undistorting
+> the *pixels* (as opposed to the points). Undistorting whole frames would resample every
+> frame of every rendition for an error the model already removes analytically at the
+> three places that matter — foot points, court polygon, crop-path extent.
+>
+> **Known ceiling:** one parameter about the frame centre. A lens whose barrel is not
+> centred, or a strong fisheye needing `r⁵`, will not fit; the 30 % gate will notice and
+> leave `k1 = 0` rather than fitting something wrong. `basketball_ceilingcam_240s.mp4` is
+> the standing example of a clip the gate correctly refuses.
+
+## Changes needed elsewhere (files this task did not own)
+
+1. **`courtcam/courtcam/calibrate.py`, `homography()`** — the RANSAC fallback. Keep the
+   RANSAC result only when `mask.sum() >= len(names) - 2`; otherwise refit by least
+   squares over every landmark and report *that* error. Today a barrelled frame gets a
+   five-point consensus reported as a 1.5 px calibration with a 167 px worst landmark, and
+   the consensus changes run to run with `cv2.theRNG()`. `pipeline._refit_least_squares`
+   works around it for `k1 != 0` only; the bug is there for `k1 == 0` too.
+2. **`services/api/replay_api/pipeline_adapter.py:182`** — `calibration_error()` calls
+   `calibrate(dict(landmarks_px), load_profile(sport), variant)` directly, so the number
+   the calibrate screen shows never reflects the lens model, while the pipeline started a
+   moment later does estimate `k1`. Replace that one call with
+   `pipeline.calibrate_lens(dict(landmarks_px), load_profile(sport), variant, image_size)`
+   and return its `reproj_error_px`/`residuals_px`; `image_size` is already on the game's
+   `video` record. It would also let the UI tell the uploader *why* a fisheye clip now
+   calibrates, and D-19's span-scaled gate would finally be applied to the fit that runs.
+3. **`courtcam/courtcam/identity.py`** — `players.max` is documented (in `court.on_court`)
+   as belonging on the merged roster, but `identify()` does not apply it: 240 s of doubles
+   comes back as nine players for four people. Concurrency is fine (median 4, peak 5), so
+   this is a labelling problem rather than a filtering one, but `game.json` claiming nine
+   players for a doubles match is wrong on its face.
+4. **`samples/real/MANIFEST.md`, entry #7** — the badminton auditorium camera is described
+   as being behind a baseline looking down the court. It is beside the court in the plane
+   of the net; the quoted baseline pixel spans are measurements of the court's width.
+

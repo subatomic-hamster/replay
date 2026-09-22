@@ -12,9 +12,8 @@ court:
   landmarks: [corner_nl, corner_nr, corner_fl, corner_fr, net_post_l, net_post_r]
   landmarks_optional:
     [short_nl, short_nr, short_fl, short_fr, long_nl, long_nr, long_fl, long_fr,
-     centre_n, centre_sn, centre_sf, centre_f]
-  # Smaller than pickleball's 2.5: badminton players do stand behind the back boundary
-  # to clear, but the hall wall is usually close and 2.5 m starts eating the next court.
+     centre_n, centre_sn, centre_sf, centre_f,
+     singles_nl, singles_nr, singles_fl, singles_fr]
   # D-23: prose for the vision model used by `courtcam autocalib`, not geometry.
   orientation_hint: |-
     A badminton court is a rectangle split in half by a net. The camera is normally
@@ -56,11 +55,20 @@ court:
     centre_sn: where that same centre line meets the NEAR short service line.
     centre_sf: where the FAR half's centre line meets the FAR short service line.
     centre_f: where the FAR half's centre line meets the FAR back boundary line.
-  # UNMEASURED on real footage: no badminton clip in the corpus could be calibrated
-  # (samples/real/RESULTS.md). Copied from pickleball's pre-tuning value; pickleball's
-  # own measurement then moved it to 1.0 because venues lay courts end to end. Expect to
-  # do the same here once there is a clip with a usable far half.
-  margin_m: 2.0
+    singles_nl: >-
+      where the NEAR short service line meets the INNER (singles) sideline on the `l`
+      side - about 0.5 m inside `short_nl`. Doubles-marked courts only.
+    singles_nr: the same NEAR short-service-line crossing of the `r` singles sideline.
+    singles_fl: where the FAR short service line meets the `l` singles sideline.
+    singles_fr: where the FAR short service line meets the `r` singles sideline.
+  # Measured on `badminton_auditorium_240s.mp4` (samples/real/RESULTS.md): sweeping this
+  # 0.5 -> 3.0 m changes nothing — 29 on-court tracklets at every value, worst
+  # `inside_fraction` 0.74 even at 0.5 m — because the hall is empty apart from the four
+  # players. So the clip cannot pick the value; these two facts do. The players' own
+  # excursion past the paint is p99 0.79 m / max 3.15 m, so 1.0 m covers the normal case;
+  # and 1.0 is what pickleball *measured*, for the reason that applies here too (halls lay
+  # courts side by side, and 2.5 m reached the next one).
+  margin_m: 1.0
 players: {min: 2, max: 4}
 team_rule: net_side
 teams:
@@ -74,9 +82,13 @@ tracking:
   smooth_window: 5
 events: [rally]
 rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0]}
-# Same court length as pickleball but played from deeper, so a slightly wider window.
-# Also unmeasured — pickleball's measured value is 1.2, see samples/real/RESULTS.md.
-followcam: {zoom: 1.5, lead_s: 0.3, stiffness: 7.0}
+# Measured on `badminton_auditorium_240s.mp4`: that camera stands in the plane of the net,
+# so the scale across the court is nearly uniform (person boxes 117-483 px tall, p95 324)
+# instead of pickleball's 7x run from baseline to baseline. The court fills the frame
+# (`court_px_width` 1920), so zoom 2.0 gives a 960 x 540 window: the p95 player is 60 % of
+# its height and the tallest 89 %. 1.5 (the copied pickleball-era value) left the subject
+# at 40 % with half the window empty court — read at t = 40 s and t = 150 s.
+followcam: {zoom: 2.0, lead_s: 0.3, stiffness: 7.0}
 query_vocab:
   rallies: {type: rally}
   "longest rallies": {type: rally, sort: duration_desc, limit: 10}

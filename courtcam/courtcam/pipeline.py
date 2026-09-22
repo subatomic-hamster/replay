@@ -14,13 +14,14 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+import cv2
 import numpy as np
 
 from . import calibrate as calib_mod
-from . import croppath, detect, identity
+from . import croppath, detect, distortion, identity
 from . import events as events_mod
 from . import ingest as ingest_mod
-from .court import on_court, read_court_tracks, resample, write_court_tracks
+from .court import on_court, polygon_px, read_court_tracks, resample, write_court_tracks
 from .profiles import Profile, load_profile
 from .schema import (
     CourtInfo,
@@ -125,12 +126,97 @@ def stage_ingest(input_path: Path, out_dir: Path, *, force: bool, progress: Prog
     return info
 
 
+def _refit_least_squares(calib: dict[str, Any], straight, names, template) -> None:
+    """Replace the RANSAC homography with plain least squares over every landmark.
+
+    `calibrate.homography` votes with RANSAC at `MAX_RANSAC_PX = 4 px` once there are 6+
+    landmarks. That is right for raw clicks on a 1x lens. It is wrong once `k1` has
+    already taken the radial error out: what is left is sub-5-px click noise spread over
+    a dozen points, and RANSAC keeps finding a 9-point consensus that throws the whole
+    bottom-left cluster of the badminton clip 26-45 px out while *reporting* 2.5 px —
+    a flattering number on a court polygon that is visibly off the paint. Which
+    consensus it picks also moves with `cv2.theRNG()`, so the same landmarks calibrate
+    differently in different processes.
+
+    Least squares over all of them lands every residual under 5.5 px, and it is what
+    `calibrate.py`'s own comment prescribes when there is nothing to vote out.
+
+    ponytail: this belongs in `calibrate.homography` — keep the RANSAC model only when
+    it keeps most of the points (`mask.sum() >= len(names) - 2`), else fall back to
+    least squares. That file is owned by another agent this session; see the report.
+    """
+    src = np.asarray([straight[n] for n in names], dtype=np.float64)
+    dst = template.landmark_array(names)
+    h_inv, _ = cv2.findHomography(dst, src)
+    if h_inv is None:
+        return
+    h_inv = np.asarray(h_inv, dtype=np.float64)
+    residuals = np.linalg.norm(calib_mod.project(dst, h_inv) - src, axis=1)
+    if residuals.max() >= max(calib["residuals_px"].values()):
+        return  # RANSAC already did better; leave the contract's answer alone
+    calib["H_inv"] = h_inv.tolist()
+    calib["H"] = np.linalg.inv(h_inv).tolist()
+    calib["residuals_px"] = {n: round(float(e), 3) for n, e in zip(names, residuals, strict=True)}
+    calib["reproj_error_px"] = float(residuals.max())
+    calib["court_polygon_px"] = calib_mod.project(template.polygon, h_inv).tolist()
+    if template.rim:
+        calib["rim_px"] = calib_mod.project(np.asarray([template.rim]), h_inv)[0].tolist()
+
+
+def calibrate_lens(
+    landmarks_px: dict[str, tuple[float, float]],
+    profile: Profile,
+    variant: str | None,
+    image_size: tuple[int, int],
+) -> dict[str, Any]:
+    """`calibrate.calibrate()` on lens-corrected clicks, plus the `k1` that corrected them.
+
+    `calibrate` itself stays lens-free: its gate, its residuals and its payload are the
+    contract the API and the uploader are written against. The distortion estimate lives
+    here, where the frame size is known — it straightens the clicks, hands them over, and
+    then puts the frame back the way the lens sees it:
+
+    * `H` / `H_inv` map **undistorted** pixels ↔ metres, so anything projecting a pixel
+      through them undistorts first (`court.to_court`);
+    * `landmarks_px` stays as the user clicked it, because the uploader draws dots on it;
+    * `court_polygon_px` and `rim_px` are bent back onto the frame, so the overlay, and
+      the D-20 court pixel width that sizes the follow-cam, are in frame coordinates.
+
+    `k1 = 0` on an undistorted lens reproduces the old payload exactly (D-24 gate).
+    """
+    template = profile.template(variant or profile.default_variant())
+    names = [n for n in landmarks_px if n in template.landmarks]
+    pts = np.asarray([landmarks_px[n] for n in names], dtype=np.float64)
+    k1, rms_before, rms_after = distortion.estimate_k1(
+        pts, template.landmark_array(names), image_size
+    )
+    straight = {
+        n: (float(p[0]), float(p[1]))
+        for n, p in zip(names, distortion.undistort_points(pts, k1, image_size), strict=True)
+    }
+    calib = calib_mod.calibrate({**landmarks_px, **straight}, profile, variant)
+    if k1:
+        _refit_least_squares(calib, straight, names, template)
+    h_inv = np.asarray(calib["H_inv"], dtype=np.float64)
+    calib["k1"] = k1
+    calib["image_size"] = [int(image_size[0]), int(image_size[1])]
+    calib["lens_rms_px"] = [round(rms_before, 3), round(rms_after, 3)]
+    calib["landmarks_px"] = {k: [float(v[0]), float(v[1])] for k, v in landmarks_px.items()}
+    calib["court_polygon_px"] = polygon_px(
+        template.polygon, h_inv, k1=k1, image_size=image_size
+    ).tolist()
+    if template.rim:
+        calib["rim_px"] = distortion.distort_points([calib["rim_px"]], k1, image_size)[0].tolist()
+    return calib
+
+
 def stage_calibrate(
     out_dir: Path,
     profile: Profile,
     *,
     landmarks_px: dict[str, tuple[float, float]] | None,
     variant: str | None,
+    image_size: tuple[int, int],
     force: bool,
     progress: Progress,
 ) -> dict[str, Any]:
@@ -141,7 +227,7 @@ def stage_calibrate(
     else:
         if not landmarks_px:
             raise ValueError("calibration needs --landmarks (or an existing out/calib.json)")
-        calib = calib_mod.calibrate(landmarks_px, profile, variant)
+        calib = calibrate_lens(landmarks_px, profile, variant, image_size)
         calib_mod.write_calib(path, calib)
     progress("calibrate", 1.0)
     return calib
@@ -204,7 +290,16 @@ def stage_court(
         tracklets, meta = read_tracklets(out_dir / "_work" / "tracklets.json")
         h = np.asarray(calib["H"], dtype=np.float64)
         polygon = np.asarray(calib["court_polygon_m"], dtype=np.float64)
-        write_court_tracks(path, on_court(tracklets, h, profile, polygon), meta)
+        size = calib.get("image_size")
+        tracks = on_court(
+            tracklets,
+            h,
+            profile,
+            polygon,
+            k1=float(calib.get("k1") or 0.0),
+            image_size=tuple(size) if size else None,
+        )
+        write_court_tracks(path, tracks, meta)
     progress("court", 1.0)
     return path
 
@@ -392,6 +487,7 @@ def run(
         profile,
         landmarks_px=landmarks_px,
         variant=variant,
+        image_size=(info.width, info.height),
         force=force and "calibrate" in requested,
         progress=report,
     )

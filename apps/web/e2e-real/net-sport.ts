@@ -1,13 +1,14 @@
-// Shared body of R-04 (pickleball) and R-05 (badminton): the same Tier 1 walk through
-// the product on a real net-sport clip. The two specs differ only by clip, sport and
-// landmark file, so the walk lives here once (§4.9 rule: never branch on sport name).
+// Shared body of R-04 (pickleball), R-05 (badminton) and R-06 (fisheye basketball):
+// the same Tier 1 walk through the product on a real clip. The specs differ only by
+// clip, sport and landmark file, so the walk lives here once — and it never branches on
+// the sport name (§4.9), which is why a court sport fits the same body as a net sport.
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import { API, SHOTS, clip, haveClip, shot, transform, videoState, waitForVideo } from "./helpers";
 
 export interface NetSport {
-  sport: "pickleball" | "badminton";
+  sport: string;
   variant: string;
   clip: string;
   landmarksFile: string;
@@ -100,7 +101,7 @@ export function netSportSpec(s: NetSport) {
     const selectBoxes = await boxes.count();
     expect(
       selectBoxes,
-      "a doubles rally has four players; two selectable is the floor",
+      `${s.sport}: at least the profile's minimum roster must be selectable`,
     ).toBeGreaterThanOrEqual(2);
     // W5: the court inset is drawn from the profile, so it exists for a net sport too.
     await expect(page.getByTestId("court-inset")).toBeVisible();

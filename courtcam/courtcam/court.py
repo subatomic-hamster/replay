@@ -10,8 +10,12 @@ import cv2
 import numpy as np
 
 from .calibrate import project
+from .distortion import distort_points, undistort_points
 from .profiles import Profile
 from .track import Tracklet
+
+POLYGON_STEP_M = 0.25
+"""How finely the court outline is sampled before it is bent back onto the frame."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,10 +61,49 @@ def inside(points: np.ndarray, polygon: np.ndarray, margin_m: float) -> np.ndarr
 
 
 def to_court(
-    tracklets: list[Tracklet], h: np.ndarray, *, smooth_window: int = 5
+    tracklets: list[Tracklet],
+    h: np.ndarray,
+    *,
+    smooth_window: int = 5,
+    k1: float = 0.0,
+    image_size: tuple[int, int] | None = None,
 ) -> list[np.ndarray]:
-    """Project each tracklet's foot points through `h` and smooth them."""
-    return [moving_average(project(t.feet_px(), h), smooth_window) for t in tracklets]
+    """Project each tracklet's foot points through `h` and smooth them.
+
+    `h` maps *undistorted* pixels to metres, so a lens with `k1 != 0` has its foot
+    points straightened first — on the fisheye clips that is worth metres at the frame
+    edge, which is exactly where the sidelines are (samples/real/RESULTS.md).
+    """
+    return [
+        moving_average(
+            project(undistort_points(t.feet_px(), k1, image_size) if k1 else t.feet_px(), h),
+            smooth_window,
+        )
+        for t in tracklets
+    ]
+
+
+def polygon_px(
+    polygon_m: np.ndarray,
+    h_inv: np.ndarray,
+    *,
+    k1: float = 0.0,
+    image_size: tuple[int, int] | None = None,
+    step_m: float = POLYGON_STEP_M,
+) -> np.ndarray:
+    """The court outline in frame pixels, as a polyline that follows the painted lines.
+
+    A straight court line is a curve on a fisheye frame, so each edge is sampled every
+    `step_m` and bent back through the lens; the four-corner version would cut the
+    corner by tens of pixels. With `k1 == 0` this is the old four corners, re-sampled.
+    """
+    poly = np.asarray(polygon_m, dtype=np.float64)
+    edges = [
+        np.linspace(a, b, max(int(np.ceil(np.linalg.norm(b - a) / step_m)), 1), endpoint=False)
+        for a, b in zip(poly, np.roll(poly, -1, axis=0), strict=True)
+    ]
+    px = project(np.vstack(edges), h_inv)
+    return distort_points(px, k1, image_size) if k1 else px
 
 
 def on_court(
@@ -68,6 +111,9 @@ def on_court(
     h: np.ndarray,
     profile: Profile,
     court_polygon_m: np.ndarray,
+    *,
+    k1: float = 0.0,
+    image_size: tuple[int, int] | None = None,
 ) -> list[CourtTrack]:
     """Keep tracklets that live on the court (§4.4 step 5).
 
@@ -82,7 +128,9 @@ def on_court(
     cfg = profile.tracking
     kept: list[CourtTrack] = []
     for tracklet, court_m in zip(
-        tracklets, to_court(tracklets, h, smooth_window=cfg.smooth_window), strict=True
+        tracklets,
+        to_court(tracklets, h, smooth_window=cfg.smooth_window, k1=k1, image_size=image_size),
+        strict=True,
     ):
         frac = float(np.mean(inside(court_m, court_polygon_m, profile.court.margin_m)))
         if frac < cfg.oncourt_min_fraction or tracklet.lifetime_s < cfg.min_lifetime_s:

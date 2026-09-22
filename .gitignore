@@ -1,0 +1,15 @@
+REPLAY_PLAN.md
+samples/real/*
+!samples/real/MANIFEST.md
+!samples/real/.gitkeep
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+data/
+*.pt
+.pytest_cache/
+.ruff_cache/
+test-results/
+playwright-report/

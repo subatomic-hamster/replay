@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -33,12 +34,16 @@ def _variant_of(value: str | None) -> str | None:
 
 
 _DONE: set[str] = set()
+_T0: dict[str, float] = {}
 
 
 def _echo_progress(stage: str, fraction: float) -> None:
+    """Tick one line per finished stage, with how long it took — the numbers that go
+    in a timing table."""
+    _T0.setdefault(stage, time.perf_counter())
     if fraction >= 1.0 and stage not in _DONE:
         _DONE.add(stage)
-        typer.secho(f"  ✓ {stage}", fg=typer.colors.GREEN)
+        typer.secho(f"  ✓ {stage} {time.perf_counter() - _T0[stage]:.1f}s", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -55,6 +60,9 @@ def run(
     ground_truth: Annotated[
         Path | None, typer.Option(help="ground_truth.json for --detector synthetic")
     ] = None,
+    backend: Annotated[
+        str, typer.Option(help="Inference backend: pt | openvino | onnx")
+    ] = "pt",
     stride: int | None = None,
     max_frames: int | None = None,
     stages: Annotated[
@@ -78,6 +86,7 @@ def run(
         calib=calib,
         detector=detector,
         ground_truth=ground_truth,
+        backend=backend,
         stages=[s.strip() for s in stages.split(",") if s.strip()] if stages else None,
         stride=stride,
         max_frames=max_frames,

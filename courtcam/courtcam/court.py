@@ -69,9 +69,15 @@ def on_court(
     profile: Profile,
     court_polygon_m: np.ndarray,
 ) -> list[CourtTrack]:
-    """Keep tracklets that live on the court, capped at `players.max` (§4.4 step 5).
+    """Keep tracklets that live on the court (§4.4 step 5).
 
     Drops spectators, the bench and passers-by: without this, select mode is unusable.
+
+    `players.max` is *not* applied here. Real footage breaks one player into a dozen
+    tracklets, so capping before `identity` merges them keeps whoever happened to get
+    the longest unbroken track and throws the rest of the roster away; the cap belongs
+    on merged players (`identity.identify`). `tracking.max_candidates` is only a guard
+    on the O(n^2) merge.
     """
     cfg = profile.tracking
     kept: list[CourtTrack] = []
@@ -83,7 +89,7 @@ def on_court(
             continue
         kept.append(CourtTrack(tracklet, court_m, frac))
     kept.sort(key=lambda c: c.score, reverse=True)
-    return sorted(kept[: profile.players.max], key=lambda c: c.tracklet.t_start)
+    return sorted(kept[: cfg.max_candidates], key=lambda c: c.tracklet.t_start)
 
 
 def resample(track: CourtTrack, times: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

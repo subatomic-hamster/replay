@@ -162,7 +162,10 @@ def detect_shots(
 
     # ponytail: mean abs frame difference in the rim ROI. It fires on any motion there,
     # so a defender under the basket scores like a shot; `shot.burst_sigma` is the knob
-    # and the plan says to tune it on real footage. Upgrade path: vertical optical flow
+    # and the plan says to tune it on real footage. Measured ~1/3 precision on
+    # samples/real (8 events in 240 s, 3 hand-checked); burst_sigma was left alone
+    # because the events land in the right place at the wrong moment, and the metre
+    # gate that would help needs a lens model first. Upgrade path: vertical optical flow
     # in the ROI, or hand the candidates to a VLM labeler (the `Labeler` seam is here).
     times, energy = rim_energy(
         video,

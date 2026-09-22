@@ -9,6 +9,11 @@ court:
     full: basketball_full.json
   variants: [half, full]
   landmarks: [corner_nl, corner_nr, corner_fl, corner_fr, rim]
+  # Optional extras for clips where a corner is off-frame or occluded (real footage
+  # routinely is). Any of these present in a landmarks.json is folded into the
+  # homography fit; the uploader still only asks for `landmarks` above.
+  landmarks_optional:
+    [key_nl, key_nr, ft_nl, ft_nr, key_fl, key_fr, ft_fl, ft_fr, centre_l, centre_r]
   margin_m: 1.0
 players: {min: 2, max: 10}
 team_rule: jersey_color
@@ -16,8 +21,13 @@ detection: {classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0
 tracking:
   oncourt_min_fraction: 0.6
   min_lifetime_s: 1.0
-  merge_max_gap_s: 1.5
-  merge_max_dist_m: 2.0
+  # Tuned on samples/real (see samples/real/RESULTS.md). The plan's 1.5 s / 2 m suits a
+  # clean overhead shot; in a real gym a player vanishes behind a screen for seconds at
+  # a time, and 1.5 s / 2 m left ~3 of 10 players selectable at any moment. 5 s / 7 m
+  # ("lost for a possession, reappears within a jog") gets that to ~4.5 with no dead
+  # seconds, at the cost of more identity switches — which the tag UI corrects.
+  merge_max_gap_s: 5.0
+  merge_max_dist_m: 7.0
   smooth_window: 5
 events: [shot]
 shot:

@@ -9,6 +9,15 @@ from courtcam.profiles import load_profile
 from courtcam.track import Tracklet
 
 PROFILE = load_profile("basketball")
+# The merge rules are tested against fixed thresholds, not against whatever the shipped
+# profile is tuned to this week.
+MERGE = PROFILE.model_copy(
+    update={
+        "tracking": PROFILE.tracking.model_copy(
+            update={"merge_max_gap_s": 1.5, "merge_max_dist_m": 2.0}
+        )
+    }
+)
 
 
 def _track(tid: int, t0: float, t1: float, start_m, end_m, fps: int = 15) -> CourtTrack:
@@ -33,7 +42,7 @@ def _track(tid: int, t0: float, t1: float, start_m, end_m, fps: int = 15) -> Cou
 def test_merges_across_a_short_gap_on_the_same_team():
     a = _track(1, 0.0, 4.0, (0.0, 5.0), (2.0, 6.0))
     b = _track(2, 4.8, 9.0, (2.5, 6.4), (5.0, 8.0))  # gap 0.8 s, 0.64 m away
-    groups = merge_groups([a, b], np.array([0, 0]), PROFILE)
+    groups = merge_groups([a, b], np.array([0, 0]), MERGE)
     assert groups == [[0, 1]]
 
 
@@ -42,14 +51,38 @@ def test_does_not_merge_across_a_long_gap_a_long_distance_or_teams():
     late = _track(2, 8.0, 12.0, (2.2, 6.1), (3.0, 7.0))  # gap 4 s
     far = _track(3, 4.5, 8.0, (12.0, 6.0), (13.0, 7.0))  # 10 m away
     other = _track(4, 4.5, 8.0, (2.2, 6.1), (3.0, 7.0))  # other team
-    groups = merge_groups([a, late, far, other], np.array([0, 0, 0, 1]), PROFILE)
+    groups = merge_groups([a, late, far, other], np.array([0, 0, 0, 1]), MERGE)
     assert sorted(groups) == [[0], [1], [2], [3]]
 
 
 def test_does_not_merge_tracklets_that_overlap_in_time():
     a = _track(1, 0.0, 5.0, (0.0, 5.0), (2.0, 6.0))
     b = _track(2, 2.0, 7.0, (2.1, 6.1), (3.0, 7.0))
-    assert sorted(merge_groups([a, b], np.array([0, 0]), PROFILE)) == [[0], [1]]
+    assert sorted(merge_groups([a, b], np.array([0, 0]), MERGE)) == [[0], [1]]
+
+
+def test_identify_caps_merged_players_at_max_and_prefers_fragmented_ones(tmp_path):
+    """A player split into four 4 s tracklets must outrank a bystander with one 6 s
+    track — the cap is scored on merged lifetime, not on the longest raw tracklet."""
+    from unittest.mock import patch
+
+    from courtcam.identity import identify
+
+    fragments = [
+        _track(10 + i, 5.0 * i, 5.0 * i + 4.0, (float(i), 5.0), (float(i) + 0.3, 5.2))
+        for i in range(4)
+    ]
+    loners = [_track(100 + j, 0.0, 6.0, (7.0 + j, 5.0), (7.2 + j, 5.0)) for j in range(10)]
+    tracks = fragments + loners
+    hists = np.zeros((len(tracks), 48), dtype=np.float32)
+    colors = np.full((len(tracks), 3), 128.0)
+    profile = MERGE.model_copy(update={"players": MERGE.players.model_copy(update={"max": 4})})
+    with patch("courtcam.identity.sample_appearance", return_value=(hists, colors)):
+        players = identify("unused.mp4", tracks, profile)
+
+    assert len(players) == 4
+    merged = [p for p in players if len(p.members) > 1]
+    assert merged and set(merged[0].members) == {10, 11, 12, 13}
 
 
 def test_split_teams_separates_two_jersey_clusters():

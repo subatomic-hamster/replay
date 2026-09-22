@@ -52,6 +52,7 @@ class CourtCfg(_Cfg):
     templates: dict[str, str] = Field(default_factory=dict)
     variants: list[str] = Field(default_factory=list)
     landmarks: list[str] = Field(default_factory=list)
+    landmarks_optional: list[str] = Field(default_factory=list)
     margin_m: float = 1.0
 
 
@@ -74,6 +75,7 @@ class TrackingCfg(_Cfg):
     merge_max_gap_s: float = 1.5
     merge_max_dist_m: float = 2.0
     smooth_window: int = 5
+    max_candidates: int = 400  # on-court tracklets handed to identity (merge is O(n^2))
 
 
 class FollowCamCfg(_Cfg):

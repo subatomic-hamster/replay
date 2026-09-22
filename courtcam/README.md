@@ -75,7 +75,7 @@ uv run courtcam sports                              # installed profiles
 
 Useful flags on `run`: `--stride` (detect every Nth frame; the profile's default is 2
 = 15 Hz), `--max-frames`, `--title`, `--ground-truth`, `--landmarks` (inline JSON as
-well as a path).
+well as a path), `--backend {pt,openvino,onnx}` (see "Detection speed").
 
 `courtcam render` writes `media/<player_id>.mp4` and points
 `renditions.players[<player_id>]` at it, setting `stages.render` to `partial` — that
@@ -154,15 +154,17 @@ court:
   templates: {half: basketball_half.json, full: basketball_full.json}
   variants: [half, full]
   landmarks: [corner_nl, corner_nr, corner_fl, corner_fr, rim]
+  landmarks_optional: [key_nl, ...]  # folded into the fit if present; uploader never asks
   margin_m: 1.0                 # how far off the lines a player may stray
-players: {min: 2, max: 10}      # max also caps the on-court filter
+players: {min: 2, max: 10}      # caps *merged* players, in `identity` (see below)
 team_rule: jersey_color         # or net_side
 detection: {classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25}
 tracking:
   oncourt_min_fraction: 0.6     # of its lifetime a tracklet must spend on court
   min_lifetime_s: 1.0
-  merge_max_gap_s: 1.5          # tracklet merge window
-  merge_max_dist_m: 2.0
+  merge_max_gap_s: 5.0          # tracklet merge window
+  merge_max_dist_m: 7.0
+  max_candidates: 400           # guard on the O(n^2) merge, not a roster cap
   smooth_window: 5
 events: [shot]                  # which detectors run
 shot: {rim_radius_m: 7.0, roi_px: 96, min_gap_s: 2.0, burst_sigma: 2.5, pre_s: 3.0, post_s: 2.0}
@@ -184,8 +186,40 @@ the right sideline, `+y` into the court:
  "features": {"paint": [...], "three_point": [...], "centre_line": [...]}}
 ```
 
+`landmarks` are what the uploader asks a user to click; `landmarks_optional` are extra
+named points (key corners, free-throw line ends, centre-line ends) that a
+`landmarks.json` *may* carry when a corner is off-frame or occluded, as real footage
+routinely is. Both are fed to the homography fit. Adding one never changes what the API
+requires.
+
+`players.max` is applied in `identity.identify()`, to *merged* players — not in
+`court.on_court()`. Real footage breaks one player into a dozen tracklets, so capping
+before the merge keeps whoever happened to get the longest unbroken track and throws the
+rest of the roster away.
+
 `court` is the polygon the on-court filter tests against. `features` are polylines
 for drawing only — the three-point arc is approximated as a 53-point polyline.
+
+## Detection speed
+
+Measured on 100 sampled frames of a 2560×960 whole-court clip, 16-core CPU, no GPU
+(`samples/real/RESULTS.md` has the full write-up):
+
+| model | imgsz | backend | sampled fps | boxes/frame |
+|---|---|---|---|---|
+| yolo11n | 640 | pt | 10.73 | 9.14 |
+| **yolo11n** | **960** | **pt** | **5.96** | **13.54** |
+| yolo11s | 640 | pt | 5.10 | 12.73 |
+| yolo11n | 640/960 | openvino, onnx | slower than pt | same |
+
+Defaults are the bold row. 640 is 1.8× faster and loses 32 % of the boxes — on a wide
+shot those are the far-half players, which is exactly the roster. `yolo11s` at 640 is
+slower than `yolo11n` at 960 *and* finds fewer boxes.
+
+`--backend openvino|onnx` exports once into `~/.cache/courtcam/`
+(`$COURTCAM_CACHE` overrides) keyed by model **and imgsz**, because the export bakes the
+input size in, and warns + falls back to the `.pt` model if the export or import fails.
+Both lost to plain PyTorch here; measure before switching on another box.
 
 ## Adding a sport
 
@@ -234,4 +268,10 @@ Marked in the source with `# ponytail:` comments.
   candidate clip to a VLM) rather than a better pixel heuristic.
 - **The rally detector is a stub** returning `[]`. Basketball does not emit rallies.
 - **Ingest always encodes in software.** VAAPI is roughly a 3× win on long files.
-- **Appearance sampling seeks once per sampled frame** (≤ 8 per tracklet).
+- **A single homography, no lens model.** Wide/panoramic gym cameras are barrel
+  distorted, so the fit contains the play area but does not sit on the lines. Fine for
+  the on-court filter, not for court-metre analytics. `cv2.calibrateCamera` with
+  `k1,k2` is the fix — see `samples/real/RESULTS.md`.
+- **`followcam.zoom` is a constant.** 2.0 suits a tight source and is far too wide on a
+  2560-px whole-court one, where the subject ends up ~60 px tall. It should scale with
+  the court's pixel width.

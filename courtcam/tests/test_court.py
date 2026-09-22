@@ -29,12 +29,14 @@ def test_inside_respects_the_profile_margin():
     assert list(inside(pts, poly, 1.0)) == [True, True, False]
 
 
-def test_on_court_drops_spectators_and_caps_at_max_players():
+def test_on_court_drops_spectators_but_does_not_cap_at_max_players():
+    """The `players.max` cap lives in `identity` now — capping here would throw away
+    tracklet fragments that merging is about to join into a real player."""
     on = [_tracklet(i, x=-6 + 1.2 * i, y=3.0 + 0.5 * i) for i in range(12)]
     spectators = [_tracklet(100 + j, x=9.6 + j, y=4.0 + 3 * j) for j in range(3)]
     kept = on_court(on + spectators, IDENTITY, PROFILE, TEMPLATE.polygon)
 
-    assert len(kept) == PROFILE.players.max == 10
+    assert len(kept) == 12 > PROFILE.players.max
     assert all(t.track_id < 100 for t in kept), "spectators must not survive the filter"
     assert all(t.inside_fraction >= PROFILE.tracking.oncourt_min_fraction for t in kept)
 

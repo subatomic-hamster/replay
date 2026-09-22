@@ -62,6 +62,24 @@ def _hist(crop: np.ndarray) -> np.ndarray:
     return hist / total if total else hist
 
 
+def _grab_frames(cap: cv2.VideoCapture, wanted: list[int]):
+    """Yield (index, frame) for `wanted` (sorted) in one forward pass over `cap`."""
+    todo = iter(wanted)
+    nxt = next(todo, None)
+    i = -1
+    while nxt is not None:
+        if not cap.grab():
+            return
+        i += 1
+        if i < nxt:
+            continue
+        ok, frame = cap.retrieve()
+        if ok:
+            yield i, frame
+        while nxt is not None and nxt <= i:
+            nxt = next(todo, None)
+
+
 def sample_appearance(
     video: str, tracks: list[CourtTrack], *, samples: int = 8
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -79,13 +97,10 @@ def sample_appearance(
     try:
         fh = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1
         fw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1
-        # ponytail: one seek per sampled frame. Fine at <= 8 samples/tracklet; switch to a
-        # single sequential pass if this ever shows up in a profile.
-        for frame_idx in sorted(wanted):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ok, frame = cap.read()
-            if not ok:
-                continue
+        # One sequential pass, decoding only the sampled frames. Seeking per frame cost
+        # ~20 s per 10 tracklets on real footage and grew with the candidate count; this
+        # is one decode of the file no matter how many tracklets there are.
+        for frame_idx, frame in _grab_frames(cap, sorted(wanted)):
             for i, box in wanted[frame_idx]:
                 x, y, w, h = torso_rect(box)
                 x0, y0 = max(0, x), max(0, y)
@@ -207,15 +222,21 @@ def identify(video: str, tracks: list[CourtTrack], profile: Profile) -> list[Pla
     teams = assign_teams(hists, profile)
     groups = merge_groups(tracks, teams, profile)
     team_colors = {int(t): bgr_to_hex(colors[teams == t].mean(axis=0)) for t in np.unique(teams)}
+    merged = [(g, _concat(tracks, g)) for g in groups]
+    # `players.max` caps *merged* players, not raw tracklets (§4.4 step 5 applied after
+    # step 6): a player broken into six tracklets should still beat a bystander with one
+    # long one. Score is the merged lifetime weighted by time spent on court.
+    merged.sort(key=lambda gc: gc[1].score, reverse=True)
+    merged = sorted(merged[: profile.players.max], key=lambda gc: gc[1].tracklet.t_start)
     players: list[PlayerTrack] = []
-    for n, group in enumerate(groups, start=1):
+    for n, (group, track) in enumerate(merged, start=1):
         team = int(np.bincount(teams[group]).argmax())
         players.append(
             PlayerTrack(
                 player_id=f"p{n}",
                 team=team,
                 color_hex=team_colors[team],
-                track=_concat(tracks, group),
+                track=track,
                 members=tuple(tracks[i].track_id for i in group),
             )
         )

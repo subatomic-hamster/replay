@@ -9,6 +9,9 @@ ground-truth detector stands in for YOLO in CI.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +22,44 @@ from tqdm import tqdm
 from .profiles import DetectionCfg
 
 DETS_SCHEMA = "courtcam.dets.v1"
+
+BACKENDS = ("pt", "openvino", "onnx")
+CACHE_DIR = Path(os.environ.get("COURTCAM_CACHE", Path.home() / ".cache" / "courtcam"))
+
+
+def export_dir(model: str, backend: str, imgsz: int) -> Path:
+    stem = Path(model).stem
+    suffix = "_openvino_model" if backend == "openvino" else ".onnx"
+    return CACHE_DIR / f"{stem}_{imgsz}{suffix}"
+
+
+def resolve_weights(cfg: DetectionCfg, backend: str = "pt") -> tuple[str, str]:
+    """Pick the weights to load for `backend`, exporting once into the cache if needed.
+
+    Returns (path, backend_actually_used). Any export/import failure falls back to the
+    `.pt` model, because a slow run beats a failed one.
+
+    `pt` is the default because it measured *fastest* on this CPU — see
+    "Detection speed" in the README; OpenVINO/ONNX are kept for boxes where the
+    ranking flips (measure before switching).
+    """
+    if backend not in BACKENDS:
+        raise ValueError(f"unknown backend {backend!r} (expected one of {list(BACKENDS)})")
+    if backend == "pt":
+        return cfg.model, "pt"
+    dest = export_dir(cfg.model, backend, cfg.imgsz)
+    try:
+        if not dest.exists():
+            from ultralytics import YOLO
+
+            # the export bakes in imgsz, so the cache key has to carry it too
+            out = YOLO(cfg.model).export(format=backend, imgsz=cfg.imgsz, dynamic=False)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(out), str(dest))  # the cache may be on another filesystem
+        return str(dest), backend
+    except Exception as exc:  # noqa: BLE001 — a failed export is just a slower run
+        warnings.warn(f"{backend} export failed ({exc}); falling back to {cfg.model}", stacklevel=2)
+        return cfg.model, "pt"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,17 +87,24 @@ class Detector(Protocol):
 class YoloDetector:
     """Ultralytics YOLO + built-in ByteTrack, CPU (D-5)."""
 
-    def __init__(self, cfg: DetectionCfg, fps: float = 30.0, tracker: str = "bytetrack.yaml"):
+    def __init__(
+        self,
+        cfg: DetectionCfg,
+        fps: float = 30.0,
+        tracker: str = "bytetrack.yaml",
+        backend: str = "pt",
+    ):
         self.cfg = cfg
         self.fps = fps
         self.tracker = tracker
+        self.weights, self.backend = resolve_weights(cfg, backend)
 
     def __call__(
         self, video: Path, *, stride: int, max_frames: int | None = None
     ) -> Iterator[FrameDets]:
         from ultralytics import YOLO  # slow import; keep it off the CLI's hot path
 
-        model = YOLO(self.cfg.model)
+        model = YOLO(self.weights)
         names = {v: k for k, v in model.names.items()}
         classes = [names[c] for c in self.cfg.classes if c in names] or None
         stream = model.track(
@@ -183,12 +231,17 @@ def run_detect(
 
 
 def make_detector(
-    kind: str, cfg: DetectionCfg, *, fps: float = 30.0, ground_truth: Path | None = None
+    kind: str,
+    cfg: DetectionCfg,
+    *,
+    fps: float = 30.0,
+    ground_truth: Path | None = None,
+    backend: str = "pt",
 ) -> Detector:
     if kind == "synthetic":
         if ground_truth is None:
             raise ValueError("--detector synthetic needs a ground_truth.json (--ground-truth)")
         return SyntheticDetector(ground_truth)
     if kind == "yolo":
-        return YoloDetector(cfg, fps=fps)
+        return YoloDetector(cfg, fps=fps, backend=backend)
     raise ValueError(f"unknown detector {kind!r} (expected 'yolo' or 'synthetic')")

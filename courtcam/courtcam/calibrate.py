@@ -29,6 +29,11 @@ def homography(
         )
     src = np.asarray([landmarks_px[n] for n in names], dtype=np.float64)
     dst = template.landmark_array(names)
+    # ponytail: plain homography, no lens model. Wide/panoramic gym cameras are barrel
+    # distorted, so the fit contains the play area but does not sit on the lines and the
+    # reprojection error flatters it (see samples/real/RESULTS.md). Good enough for the
+    # on-court filter, not for court-metre analytics; cv2.calibrateCamera with k1,k2
+    # estimated from the straight court lines is the upgrade.
     # float64 throughout: getPerspectiveTransform is float32 and loses ~1e-4 px
     h, _ = (
         cv2.findHomography(src, dst, cv2.RANSAC, 3.0)

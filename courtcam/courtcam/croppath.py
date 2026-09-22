@@ -33,6 +33,10 @@ def _targets(boxes_px: np.ndarray) -> np.ndarray:
 
 
 def crop_size(frame_w: int, frame_h: int, zoom: float) -> tuple[float, float]:
+    # ponytail: constant zoom from the profile. 2.0 suits a tight source; on a 2560-px
+    # whole-court clip the subject comes out ~60 px tall in a frame of empty floor. It
+    # wants to scale with the court's pixel width (calib.court_polygon_px) once some
+    # clip actually needs both.
     return frame_w / zoom, frame_h / zoom
 
 

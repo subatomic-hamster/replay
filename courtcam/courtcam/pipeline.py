@@ -154,6 +154,7 @@ def stage_detect(
     *,
     detector_kind: str,
     ground_truth: Path | None,
+    backend: str,
     stride: int,
     max_frames: int | None,
     force: bool,
@@ -165,7 +166,7 @@ def stage_detect(
         path.unlink()
     progress("detect", 0.0)
     detector = detect.make_detector(
-        detector_kind, profile.detection, fps=info.fps, ground_truth=ground_truth
+        detector_kind, profile.detection, fps=info.fps, ground_truth=ground_truth, backend=backend
     )
     detect.run_detect(
         out_dir / WIDE_REL,
@@ -318,6 +319,7 @@ def run(
     calib: Path | None = None,
     detector: str = "yolo",
     ground_truth: Path | None = None,
+    backend: str = "pt",
     stages: Sequence[str] | None = None,
     stride: int | None = None,
     max_frames: int | None = None,
@@ -396,6 +398,7 @@ def run(
             info,
             detector_kind=detector,
             ground_truth=ground_truth,
+            backend=backend,
             stride=stride,
             max_frames=max_frames,
             force=force,

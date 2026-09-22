@@ -2,6 +2,8 @@ REPLAY_PLAN.md
 samples/real/*
 !samples/real/MANIFEST.md
 !samples/real/.gitkeep
+!samples/real/RESULTS.md
+!samples/real/*.landmarks.json
 .venv/
 __pycache__/
 *.pyc

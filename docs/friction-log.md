@@ -131,3 +131,13 @@ see the reference after each title.
   more than one test configuration.
 - Date / platform / SDK version: 2026-09-22 / Fedora Linux / vite ^7.1.0,
   @playwright/test 1.60.0
+
+### FL-7: yt-dlp hangs on IPv6-first DNS when the IPv6 route is blackholed
+- Task attempted: download test clips with yt-dlp
+- Steps taken: `yt-dlp <url>` from the dev box
+- Expected: download starts within seconds
+- Actual: every request stalled 60–120 s before falling back to IPv4
+- Severity: major
+- Workaround: pass `-4` to every yt-dlp call
+- Suggestion (actionable): none for the project; environment issue worth remembering
+- Date / platform / SDK version: 2026-09-22 / Fedora Linux / yt-dlp 2026.08.19

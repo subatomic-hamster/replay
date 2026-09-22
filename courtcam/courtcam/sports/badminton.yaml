@@ -1,0 +1,82 @@
+id: badminton
+display_name: Badminton
+# Tier 1 only — see the note in pickleball.yaml.
+tier: 1
+court:
+  templates:
+    doubles: badminton_doubles.json
+    singles: badminton_singles.json
+  # Doubles first so it is the default: a club court is marked for doubles and the four
+  # outer corners the uploader asks for are the doubles ones.
+  variants: [doubles, singles]
+  landmarks: [corner_nl, corner_nr, corner_fl, corner_fr, net_post_l, net_post_r]
+  landmarks_optional:
+    [short_nl, short_nr, short_fl, short_fr, long_nl, long_nr, long_fl, long_fr,
+     centre_n, centre_sn, centre_sf, centre_f]
+  # Smaller than pickleball's 2.5: badminton players do stand behind the back boundary
+  # to clear, but the hall wall is usually close and 2.5 m starts eating the next court.
+  # D-23: prose for the vision model used by `courtcam autocalib`, not geometry.
+  orientation_hint: |-
+    A badminton court is a rectangle split in half by a net. The camera is normally
+    behind or beside one back boundary line, looking down the length of the court.
+      - The NEAR baseline is the back boundary line closest to the camera: LOWER and
+        wider in the picture.
+      - The FAR baseline is the other back boundary line, beyond the net.
+    The four corners wanted here are the OUTER (doubles) corners unless the court
+    variant is `singles`; a doubles-marked court has an extra sideline about 0.5 m
+    inside each outer one, and the outer pair is the one to click for `doubles`.
+    Which sideline is "l" and which is "r": `l` is further LEFT in the picture, `r`
+    further RIGHT. A whole-court left/right swap is corrected by the software as long
+    as you are consistent.
+  landmark_descriptions:
+    corner_nl: the court corner where the NEAR back boundary line meets the `l` sideline.
+    corner_nr: the court corner where the NEAR back boundary line meets the `r` sideline.
+    corner_fl: the court corner where the FAR back boundary line meets the `l` sideline.
+    corner_fr: the court corner where the FAR back boundary line meets the `r` sideline.
+    net_post_l: >-
+      the point on the floor where the net crosses the `l` sideline, halfway along the
+      court - the base of the left net post on a doubles court.
+    net_post_r: the same crossing on the `r` sideline.
+    short_nl: >-
+      where the short service line on the NEAR side (the line about 2 m in front of
+      the net, on the camera side) meets the `l` sideline.
+    short_nr: the same NEAR short-service-line end on the `r` sideline.
+    short_fl: where the FAR short service line meets the `l` sideline.
+    short_fr: where the FAR short service line meets the `r` sideline.
+    long_nl: >-
+      where the doubles long service line (the line about 0.75 m inside the NEAR back
+      boundary line) meets the `l` sideline. Doubles courts only.
+    long_nr: the same NEAR doubles long-service-line end on the `r` sideline.
+    long_fl: where the FAR doubles long service line meets the `l` sideline.
+    long_fr: the same FAR end on the `r` sideline.
+    centre_n: where the centre line of the NEAR half meets the NEAR back boundary line.
+    centre_sn: where that same centre line meets the NEAR short service line.
+    centre_sf: where the FAR half's centre line meets the FAR short service line.
+    centre_f: where the FAR half's centre line meets the FAR back boundary line.
+  # UNMEASURED on real footage: no badminton clip in the corpus could be calibrated
+  # (samples/real/RESULTS.md). Copied from pickleball's pre-tuning value; pickleball's
+  # own measurement then moved it to 1.0 because venues lay courts end to end. Expect to
+  # do the same here once there is a clip with a usable far half.
+  margin_m: 2.0
+players: {min: 2, max: 4}
+team_rule: net_side
+teams:
+  colors: ["#2E5EAA", "#C8452B"]
+detection: {classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25}
+tracking:
+  oncourt_min_fraction: 0.6
+  min_lifetime_s: 1.0
+  merge_max_gap_s: 3.0
+  merge_max_dist_m: 3.0
+  smooth_window: 5
+events: [rally]
+rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0]}
+# Same court length as pickleball but played from deeper, so a slightly wider window.
+# Also unmeasured — pickleball's measured value is 1.2, see samples/real/RESULTS.md.
+followcam: {zoom: 1.5, lead_s: 0.3, stiffness: 7.0}
+query_vocab:
+  rallies: {type: rally}
+  "longest rallies": {type: rally, sort: duration_desc, limit: 10}
+sport_ui:
+  chips: ["Rallies", "Longest rallies", "Bookmarks"]
+  review: [heatmap]

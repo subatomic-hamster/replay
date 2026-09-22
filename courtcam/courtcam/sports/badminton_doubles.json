@@ -1,0 +1,195 @@
+{
+ "name": "badminton_doubles",
+ "standard": "bwf",
+ "units": "m",
+ "origin": "centre of one back boundary line; +x toward the right sideline, +y toward the far back boundary",
+ "size": [
+  6.1,
+  13.4
+ ],
+ "court": [
+  [
+   -3.05,
+   0.0
+  ],
+  [
+   3.05,
+   0.0
+  ],
+  [
+   3.05,
+   13.4
+  ],
+  [
+   -3.05,
+   13.4
+  ]
+ ],
+ "net_y": 6.7,
+ "landmarks": {
+  "corner_nl": [
+   -3.05,
+   0.0
+  ],
+  "corner_nr": [
+   3.05,
+   0.0
+  ],
+  "corner_fl": [
+   -3.05,
+   13.4
+  ],
+  "corner_fr": [
+   3.05,
+   13.4
+  ],
+  "net_post_l": [
+   -3.05,
+   6.7
+  ],
+  "net_post_r": [
+   3.05,
+   6.7
+  ],
+  "short_nl": [
+   -3.05,
+   4.72
+  ],
+  "short_nr": [
+   3.05,
+   4.72
+  ],
+  "short_fl": [
+   -3.05,
+   8.68
+  ],
+  "short_fr": [
+   3.05,
+   8.68
+  ],
+  "centre_n": [
+   0.0,
+   0.0
+  ],
+  "centre_sn": [
+   0.0,
+   4.72
+  ],
+  "centre_sf": [
+   0.0,
+   8.68
+  ],
+  "centre_f": [
+   0.0,
+   13.4
+  ],
+  "long_nl": [
+   -3.05,
+   0.76
+  ],
+  "long_nr": [
+   3.05,
+   0.76
+  ],
+  "long_fl": [
+   -3.05,
+   12.64
+  ],
+  "long_fr": [
+   3.05,
+   12.64
+  ]
+ },
+ "features": {
+  "net_line": [
+   [
+    -3.05,
+    6.7
+   ],
+   [
+    3.05,
+    6.7
+   ]
+  ],
+  "short_service_near": [
+   [
+    -3.05,
+    4.72
+   ],
+   [
+    3.05,
+    4.72
+   ]
+  ],
+  "short_service_far": [
+   [
+    -3.05,
+    8.68
+   ],
+   [
+    3.05,
+    8.68
+   ]
+  ],
+  "centre_near": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    0.0,
+    4.72
+   ]
+  ],
+  "centre_far": [
+   [
+    0.0,
+    8.68
+   ],
+   [
+    0.0,
+    13.4
+   ]
+  ],
+  "long_service_near": [
+   [
+    -3.05,
+    0.76
+   ],
+   [
+    3.05,
+    0.76
+   ]
+  ],
+  "long_service_far": [
+   [
+    -3.05,
+    12.64
+   ],
+   [
+    3.05,
+    12.64
+   ]
+  ],
+  "singles_sideline_l": [
+   [
+    -2.59,
+    0.0
+   ],
+   [
+    -2.59,
+    13.4
+   ]
+  ],
+  "singles_sideline_r": [
+   [
+    2.59,
+    0.0
+   ],
+   [
+    2.59,
+    13.4
+   ]
+  ]
+ }
+}

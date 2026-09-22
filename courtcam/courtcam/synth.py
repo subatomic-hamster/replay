@@ -97,7 +97,11 @@ def _paths(
     for i in range(n):
         cx = rng.uniform(-half_w * 0.6, half_w * 0.6)
         cy = rng.uniform(inset + 1.5, l_m - inset - 1.5)
-        ax, ay = rng.uniform(1.5, half_w * 0.55), rng.uniform(1.5, (l_m - 2 * inset) * 0.35)
+        # The 1.5 m floor is a basketball number: a pickleball court is 6.1 m wide, so
+        # `half_w * 0.55` is only 1.13 m and `uniform(1.5, 1.13)` raises. Clamp the floor
+        # to half the amplitude ceiling — on a court big enough it is still exactly 1.5.
+        ax = rng.uniform(min(1.5, half_w * 0.275), half_w * 0.55)
+        ay = rng.uniform(min(1.5, (l_m - 2 * inset) * 0.175), (l_m - 2 * inset) * 0.35)
         wx, wy = rng.uniform(0.15, 0.5), rng.uniform(0.15, 0.5)
         px, py = rng.uniform(0, 2 * np.pi, 2)
         out[:, i, 0] = np.clip(cx + ax * np.sin(2 * np.pi * wx * t + px), -half_w, half_w)
@@ -189,8 +193,17 @@ def generate(
 
     n_players = profile.players.max
     w_m, l_m = template.size
-    spectators = np.array([[-w_m / 2 - 1.8, l_m * 0.25], [-w_m / 2 - 2.4, l_m * 0.7]])
+    # Off court by the profile's own `margin_m` plus a body length, or the on-court
+    # filter keeps them: pickleball's margin is 2.5 m, so a fixed 1.8 m would be inside
+    # it. (Basketball's 1.0 m margin reproduces the original 1.8 / 2.4 m exactly.)
+    off = profile.court.margin_m
+    spectators = np.array([[-w_m / 2 - off - 0.8, l_m * 0.25], [-w_m / 2 - off - 1.4, l_m * 0.7]])
     cam = make_camera(template, size, spectators)
+
+    # A sport with no rim has no shot to choreograph; `shots_at` would only drag player 0
+    # to a made-up spot and draw a ball flying at nothing.
+    if template.rim is None:
+        shots_at = ()
 
     paths = _paths(template, n_players, duration_s, fps, rng)
     rim = np.asarray(template.rim if template.rim is not None else [0.0, 2.0])

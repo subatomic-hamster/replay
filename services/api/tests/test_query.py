@@ -96,13 +96,34 @@ def test_overlapping_clips_merge():
     ]
 
 
-def test_every_profile_chip_resolves():
+PROFILES = pipeline_adapter.list_sports()
+
+
+def test_the_profile_catalog_leads_with_the_best_supported_sport():
+    """The uploader's sport picker defaults to `/sports[0]`, so the catalog is ordered
+    by tier — otherwise adding a Tier 1 sport whose name sorts early (badminton) makes
+    it the default for every new game."""
+    assert {p["id"] for p in PROFILES} >= {"basketball"}, PROFILES
+    tiers = [int(p.get("tier") or 1) for p in PROFILES]
+    assert tiers == sorted(tiers, reverse=True), [(p["id"], p.get("tier")) for p in PROFILES]
+    assert PROFILES[0]["id"] == "basketball"
+
+
+@pytest.mark.parametrize("profile", PROFILES, ids=lambda p: p["id"])
+def test_every_profile_chip_resolves(profile):
     """S-29/DoD: `sport_ui.chips` is what the TV shows, and every one of them has to hit
-    the rule grammar — a chip that returns "No match" is a dead button on the remote."""
-    profile = pipeline_adapter.get_profile("basketball")
-    assert profile, "basketball profile must load (courtcam or the static fallback)"
-    chips = profile["sport_ui"]["chips"]
-    assert chips, "the profile must ship chips"
+    the rule grammar — a chip that returns "No match" is a dead button on the remote.
+    Every installed sport, not just basketball: a new profile ships its own chips."""
+    chips = (profile.get("sport_ui") or {}).get("chips")
+    assert chips, f"{profile['id']}: the profile must ship chips"
     engine = RuleQueryEngine(merged_vocab(profile.get("query_vocab")))
     unresolved = [c for c in chips if engine.query(c, GAME, EVENTS)["interpretation"] == "No match"]
-    assert not unresolved, f"chips with no interpretation: {unresolved}"
+    assert not unresolved, f"{profile['id']}: chips with no interpretation: {unresolved}"
+
+
+@pytest.mark.parametrize("profile", PROFILES, ids=lambda p: p["id"])
+def test_every_profile_vocab_word_resolves(profile):
+    """Same rule for `query_vocab`: the words a profile advertises have to parse."""
+    engine = RuleQueryEngine(merged_vocab(profile.get("query_vocab")))
+    for phrase in profile.get("query_vocab") or {}:
+        assert engine.query(phrase, GAME, EVENTS)["interpretation"] != "No match", phrase

@@ -10,6 +10,8 @@ courtcam interface used here (verified against courtcam/courtcam/ on 2026-09-22)
     courtcam.profiles.load_profile(sport) -> Profile          # pydantic; .template(variant)
     courtcam.calibrate.calibrate(landmarks_px, profile, variant) -> dict  # reproj_error_px,
         # raises CalibrationError above 5 px
+    courtcam.autocalib.autocalibrate(frame_bgr, profile, variant, backend=...) -> Proposal
+    courtcam.autocalib.read_frame(path) -> np.ndarray
     courtcam.render.render_crop(video, CropPath, out_path, ...) -> Path
     courtcam.schema.CropPath
 
@@ -129,12 +131,18 @@ def _ui_court(template, court: dict) -> dict:
 
 
 def list_sports() -> list[dict]:
+    """The sport catalog, best-supported first.
+
+    Order is the contract: `/sports` is a bare array (D-13) and the uploader's picker
+    defaults to element 0, so the highest tier has to lead. courtcam lists its profiles
+    alphabetically, which silently made badminton the default the moment it shipped.
+    """
     try:
         from courtcam.profiles import available_sports, load_profile  # type: ignore
 
         profiles = [_profile_dict(load_profile(sid)) for sid in available_sports()]
         if profiles:
-            return profiles
+            return sorted(profiles, key=lambda p: (-int(p.get("tier") or 1), p["id"]))
     except Exception as exc:  # noqa: BLE001 - any failure means "use the fallback"
         log.warning("courtcam sport profiles unavailable (%s); serving static basketball", exc)
     return [BASKETBALL_PROFILE]
@@ -174,6 +182,62 @@ def calibration_error(sport: str, variant: str, landmarks_px: dict) -> float | N
         log.info("reprojection error unavailable (%s)", exc)
         return None
     return float(calib["reproj_error_px"])
+
+
+EMPTY_PROPOSAL: dict = {
+    "landmarks_px": {},
+    "confidence": {},
+    "snapped": {},
+    "source": "none",
+    "notes": "",
+    "ok": False,
+    "reprojection_error_px": None,
+}
+
+
+def autocalibrate(
+    frame_path: Path,
+    sport: str,
+    variant: str | None,
+    backend: str = "auto",
+    fake_dir: Path | None = None,
+    fake_delay_s: float = 0.0,
+) -> dict:
+    """D-23: propose the landmark clicks from `media/calib.jpg`. Never raises.
+
+    A failure is a proposal with `ok: False` and a note — the uploader falls back to
+    asking the user to click, which is the path that was there before.
+    """
+    if backend == "fake":
+        time.sleep(fake_delay_s)
+        court = _pipeline_keys_court(fake_dir)
+        marks = {k: [float(v[0]), float(v[1])] for k, v in (court.get("landmarks_px") or {}).items()}
+        return {
+            **EMPTY_PROPOSAL,
+            "landmarks_px": marks,
+            "confidence": dict.fromkeys(marks, 0.9),
+            "source": "fake",
+            "ok": bool(marks),
+            "reprojection_error_px": 0.02 if marks else None,
+        }
+    try:
+        from courtcam.autocalib import autocalibrate as propose  # type: ignore
+        from courtcam.autocalib import read_frame  # type: ignore
+        from courtcam.profiles import load_profile  # type: ignore
+
+        frame = read_frame(Path(frame_path))
+        return propose(frame, load_profile(sport), variant, backend=backend).as_dict()
+    except Exception as exc:  # noqa: BLE001 - autocalibration is always optional
+        log.warning("autocalibration unavailable (%s)", exc)
+        return {**EMPTY_PROPOSAL, "notes": f"autocalibration unavailable: {exc}"}
+
+
+def _pipeline_keys_court(fake_dir: Path | None) -> dict:
+    fake_dir = Path(fake_dir) if fake_dir else Path(__file__).parent.parent / "fixtures/fake_game"
+    try:
+        return json.loads((fake_dir / "game.json").read_text()).get("court") or {}
+    except (OSError, ValueError):
+        return {}
 
 
 # --------------------------------------------------------------------------- run

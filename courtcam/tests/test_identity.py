@@ -103,13 +103,65 @@ def test_bgr_to_hex():
     assert bgr_to_hex(np.array([160, 79, 31])) == "#1F4FA0"
 
 
-def test_net_side_team_rule_fails_loudly():
-    """Net sports are not supported yet; the stub must say so, not mislabel teams."""
+def _at(tid: int, times: np.ndarray, ys: np.ndarray) -> CourtTrack:
+    """A tracklet parked at x=0 whose court y follows `ys` — the only input net_side
+    looks at."""
+    court = np.column_stack([np.zeros(len(times)), ys])
+    boxes = np.column_stack([court, np.full(len(times), 40.0), np.full(len(times), 120.0)])
+    tl = Tracklet(
+        track_id=tid,
+        frames=(times * 15).astype(int),
+        times=times,
+        boxes=boxes,
+        confs=np.full(len(times), 0.9),
+    )
+    return CourtTrack(tl, court, 1.0)
+
+
+def test_net_side_splits_by_which_half_of_the_court_they_stand_in():
+    from courtcam.identity import assign_teams, net_line_y
+
+    profile = load_profile("pickleball")
+    template = profile.template()
+    net = net_line_y(template)
+    assert net == pytest.approx(6.705)
+
+    t = np.linspace(0.0, 20.0, 60)
+    near = _at(1, t, np.full(60, 2.0))
+    far = _at(2, t, np.full(60, 11.0))
+    straddling = _at(3, t, np.linspace(net - 0.3, net + 0.9, 60))  # median just past it
+    teams = assign_teams(None, [near, far, straddling], profile, template)
+    assert teams.tolist() == [0, 1, 1]
+
+
+def test_net_side_majority_votes_over_fixed_windows():
+    """Ends change between games; the coarse window vote gives the side they played
+    most. Two windows near, one far -> near."""
+    from courtcam.identity import net_side
+
+    t = np.linspace(0.0, 179.0, 360)
+    ys = np.where(t < 120.0, 2.0, 11.0)
+    assert net_side([_at(1, t, ys)], 6.7, window_s=60.0).tolist() == [0]
+    assert net_side([_at(1, t, 13.4 - ys)], 6.7, window_s=60.0).tolist() == [1]
+
+
+def test_unknown_team_rule_still_fails_loudly():
     from courtcam.identity import assign_teams
 
-    net_sport = PROFILE.model_copy(update={"team_rule": "net_side"})
-    with pytest.raises(NotImplementedError, match="net_side"):
-        assign_teams(np.zeros((4, 48), dtype=np.float32), net_sport)
+    bogus = PROFILE.model_copy(update={"team_rule": "coin_toss"})
+    with pytest.raises(ValueError, match="coin_toss"):
+        assign_teams(np.zeros((4, 48), dtype=np.float32), [], bogus, PROFILE.template("half"))
+
+
+def test_team_colors_prefer_the_profile_over_the_video():
+    from courtcam.identity import team_colors
+
+    profile = load_profile("pickleball")
+    teams = np.array([0, 1, 0])
+    assert team_colors(teams, profile, None) == {0: "#1F7A8C", 1: "#E07A25"}
+    # basketball fixes no colours, so the torso means stand
+    means = np.array([[160.0, 79.0, 31.0], [232.0, 232.0, 232.0], [160.0, 79.0, 31.0]])
+    assert team_colors(teams, PROFILE, means) == {0: "#1F4FA0", 1: "#E8E8E8"}
 
 
 def test_concurrency_cap_keeps_non_overlapping_players_beyond_max():

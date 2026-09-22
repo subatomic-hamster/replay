@@ -400,3 +400,252 @@ before / 596 after, of which > 5 m is 15 (6.4 %) before and 38 (6.4 %) after; me
 t ≈ 226.2 s** — a genuine mis-merge, which the tag UI is the correction mechanism for.
 The overlay at t = 30 / 120 / 210 s shows 10 / 9 / 9 boxes, every one of them on a real
 person, and no duplicate id on two people in the same frame.
+
+---
+
+# Net sports — pickleball and badminton (§4.9 Tier 1)
+
+Two more clips, picked to put the *lens* under test as much as the sport:
+
+| clip | camera | lens | what it is meant to prove |
+|---|---|---|---|
+| `pickleball_legacypark_240s.mp4` | fixed, on a fence post behind the near baseline, ~2 m up | 1× normal | a net sport end to end on a well-behaved lens |
+| `badminton_russiaclub_240s.mp4` | fixed, indoors, low (~2 m) and far back | 0.5× ultra-wide, visible barrel | the hard lens case |
+
+## Calibration — `pickleball_legacypark_240s.mp4`
+
+Hand-clicked, 10 landmarks (6 required + 4 optional), `variant: doubles`:
+
+| what | value |
+|---|---|
+| landmarks | `corner_nl/nr/fl/fr`, `net_post_l/r`, `kitchen_nl/nr`, `centre_n`, `centre_kn` |
+| `courtcam calibrate` reprojection error | **2.762 px** (gate: `max(5 px, 1 % of clicked span)`) |
+
+The clicks were not eyeballed. The near baseline, both sidelines, both kitchen lines and
+the centre service lines were found with `HoughLinesP` on a brightness mask, fitted by
+total least squares (SVD), and intersected as homogeneous lines (`np.cross`); the far
+baseline and the net line were derived from the vanishing point at (1133, 274) and a
+perspective parameter fitted from the baseline/kitchen pair on each sideline.
+
+Drift of the fitted polygon from the painted lines, measured per edge in pixels:
+
+| edge | mean | max |
+|---|---|---|
+| near baseline | 0.09 | 0.19 |
+| left sideline | 0.08 | 0.28 |
+| right sideline | 0.29 | 1.39 |
+| kitchen | 0.01 | 0.01 |
+| centre service | 0.84 | 2.15 |
+
+**Worst case 2.15 px** (`frames/pickleball_legacypark_calib.jpg`). Verified at t = 1 s
+and t = 200 s (fixed camera) and on
+`pickleball_legacypark_smoke.mp4`, which is the same camera — the same `landmarks.json`
+serves both, which is why `R-04` can calibrate the smoke clip by POSTing the 240 s file.
+
+**This clip needs no distortion model.** That is the useful negative result: a 1× phone
+lens on a 6.10 × 13.41 m court is a plain homography problem.
+
+### What the geometry costs anyway
+
+A fixed camera *behind* a baseline buys accuracy in the near half and pays for it in the
+far half, lens or no lens. Measured from the fitted homography, along the centre line:
+
+| court y | image y | resolution |
+|---|---|---|
+| 0.00 m (near baseline) | 871 | **201 px/m** |
+| 2.00 m | 649 | 83 px/m |
+| 4.00 m | 547 | 45 px/m |
+| 6.71 m (net) | 474 | 25 px/m |
+| 9.00 m | 437 | 17 px/m |
+| 11.00 m | 414 | 12 px/m |
+| 13.41 m (far baseline) | 394 | **9.6 px/m** |
+
+The far half of a 13.41 m court is 80 px tall. A 2 px error on a landmark at the far
+baseline is 0.2 m of court; a 2 px error in a detected foot point is the same. That is
+fine for the on-court filter (`margin_m: 2.5`) and fine for a heatmap at 0.4 m bins; it
+is not fine for anything that wants a metre.
+
+## Calibration — `badminton_russiaclub_240s.mp4` — **not achieved**
+
+This clip is not calibrated, and `samples/real/badminton_russiaclub_240s.landmarks.json`
+does not exist, so `R-05-badminton.spec.ts` skips itself by design. What follows is why,
+with numbers, because the *reason* is the finding.
+
+### It is not (mainly) the lens
+
+The barrel distortion is real — the painted lines visibly curve, and a line fitted to the
+left third of a sideline and a line fitted to its right third disagree by ~4° — but it is
+the second problem. The first is the viewing angle:
+
+| measurement | how | value |
+|---|---|---|
+| person box height, nearest / farthest | 2068 YOLO boxes on the 50 s smoke clip | 374 px / 100 px |
+| implied camera distance to near / far baseline | ratio 3.74 over a 13.40 m court | **4.9 m / 18.3 m** |
+| foot-point image span, whole court | `min/max` of box bottom | y 594 → 762 = **168 px** |
+| depth resolution at the near baseline | fitted from the above | ≈ **47 px/m** |
+| depth resolution at the far baseline | same | ≈ **3.4 px/m** |
+
+Thirteen metres of court live in 168 rows of pixels. At the far baseline **one pixel is
+0.3 m**, so a 2 px landmark error — which is *better* than a careful human click on a
+blurred, curved, 1080p line — is 0.6 m of court. The far service court is about 6 px
+tall. No homography, and no `k1`, fixes that: the information is not in the image.
+
+### And the hall is hostile
+
+Three overlapping line systems (blue badminton, red, white), at least two badminton
+courts side by side, and the played court is **not** the one whose lines fill the bottom
+of the frame — the near court's markings dominate the foreground while the rally happens
+farther away. Every automatic attempt locked onto the wrong court:
+
+- brightness/`HoughLinesP` → the wall/floor junction (the two longest "lines" in the frame)
+- blue-channel mask → the neighbouring court's sidelines
+- temporal median (removes the players) → same
+- temporal-std motion map → the play area, but only as a band, no corners
+- foot-traffic footprint from a real `detect,track` run → a band 168 px tall, confirming
+  the geometry above, still no corners
+- `courtcam autocalib --sport badminton --backend claude-cli` → timed out at 300 s under
+  load and returned 0 landmarks above confidence 0.5
+
+Evidence: `frames/badminton_russiaclub_calib.jpg` (the frame) and
+`frames/badminton_russiaclub_foottraffic.jpg` (every detected foot point over the smoke
+clip, on the temporal median). The second one is the argument in a picture: all the play
+is in one thin band, and the court lines under it belong to three different sports.
+
+### What the clip *does* prove
+
+Detection and tracking are fine: 18 tracklets on the smoke clip, of which 4 are long-lived
+(525 / 520 / 486 / … samples) and are exactly the four players. Everything downstream of
+`court` is blocked on the homography, not on the detector.
+
+### Recommendation
+
+Re-shoot or re-source: a badminton camera wants to be **above and behind** the baseline
+(3 m up is enough) so the far half is not compressed into 6 px, on a single court. This
+is a corpus problem, not a courtcam problem — and it is the same lesson as
+`basketball_parkwide` (no lines) and `basketball_pavilion` (hard cuts) in the triage table
+above: the clip has to be able to answer the question before the pipeline can.
+
+## Full run — `pickleball_legacypark_240s.mp4`
+
+One CLI run, all stages, on the calibration above. CPU-only box under load (loadavg ~27
+from the other agents' YOLO jobs), so the detect number is a ceiling, not a benchmark.
+
+| Stage | Wall clock |
+| --- | --- |
+| ingest (1920×1080 rendition) | ~3 min |
+| calibrate | < 1 s |
+| **detect** (yolo11n, `imgsz: 960`, stride 2 → 3600 inferences) | **~68 min** |
+| track + court + identity + tracks + crops + events | ~5 min |
+| `courtcam overlay` (7200 frames) | ~3 min @ 37 fps |
+| `courtcam render --player p1` (7200 frames) | 3 min 19 s @ 36 fps |
+
+`status: ready`. 660 raw tracklets in, 47 survive the on-court filter, 31 in the roster.
+
+### Players kept vs expected — and the court next door
+
+This is a public venue with courts laid **end to end**: the next court's baseline is about
+1.5 m past this one's far baseline, and at 9.6 px/m up there a body on it is ~15 px wide.
+`margin_m: 2.5` — chosen on paper, because a pickleball player stands a body-length behind
+the baseline to return a deep serve — put the on-court test at y = 15.91 m and admitted the
+**entire neighbouring game** as players.
+
+The court-y histogram of every kept sample is cleanly bimodal, with a near-empty gap at
+y ≈ 5–7 m (nobody was playing the far half of *this* court):
+
+```
+ y (m): -1    0    1    2    3    4    5   6   7   8    9   10  11  12  13   14    15   16
+count: 1685  778  829  943 1704  378   86  39  43 421  448 150  66  80 684 2471  925  107
+```
+
+Everything from y = 13 upward is the other court. Dropping to `margin_m: 1.0` (the same
+value basketball uses) cuts the cut-line to y = 14.41 m:
+
+| | `margin_m: 2.5` | `margin_m: 1.0` |
+| --- | --- | --- |
+| on-court tracklets kept | 86 | **47** |
+| roster size | 40 | **31** |
+| distinct ids per 10 s bucket, median | 5 | **3** |
+| buckets showing > 4 ids | 5 of 24 | **0 of 24** |
+| concurrency histogram (½ s instants) | {1: 9, 2: 88, 3: 185, 4: 199} | {1: 69, 2: 205, 3: 151, 4: 55, 5: 1} |
+| instants with **no** selectable player | 0 | **0** |
+
+The remaining 31 is still not 4, and that is honest: over 240 s people walk on, walk off,
+and stand at the fence. What matters for Tier 1 is the concurrency, and the `players.max: 4`
+cap is never breached by more than one instant of overlap at a merge boundary.
+
+It does not fully separate them — a real far-court player and a neighbour standing 1 m past
+the baseline are 10 px apart, so no margin can. What `margin_m: 1.0` buys is that the
+*persistent* neighbours (nine ids at 14.4 ≤ y ≤ 15.4, several with 200–450 samples) stop
+being roster players.
+
+### Identity
+
+- **p1 is one id for the whole clip**: 3578 of a possible 3600 sampled frames, t = 0.0 s to
+  239.9 s, **zero gaps longer than 1 s** (longest 0.93 s). No identity switch on the
+  subject a viewer would actually follow.
+- Tracklet merging did real work: of the 31 roster players, 8 are merges (6 × two members,
+  2 × three). Nothing merged more than three tracklets, which is the shape you want — the
+  5-member merge that `margin_m: 2.5` produced was two different people on the far court.
+- **`team_rule: net_side` is 100 % correct**: every team-0 player's median court-y is below
+  the net line (6.705 m) and every team-1 player's is above it, in both runs, with no
+  manual seeding. Jersey k-means would have had nothing to work with — this is rec play,
+  four different shirts, at night under sodium lamps.
+
+### Follow-cam — the zoom was wrong, and the frames say why
+
+`followcam.zoom` divides the court's visible pixel width (D-20). Here the court polygon
+spans 1421 px, so `zoom: 1.6` gave a **888 × 500** window. The camera sits at the near
+baseline of a 13.4 m court, and a player at that end is 600–750 px tall in the source:
+
+```
+p1 bounding-box height, px:  min 107   p50 293   p90 612   p95 656   max 745
+```
+
+A 500 px-tall window cannot contain a 612 px player. `frames/pickleball_legacypark_p1_t150.jpg`
+at zoom 1.6 was the top of a torso with the head cut off.
+
+`zoom: 1.2` → **1184 × 666**, which clears the p90 height with room and still frames a
+mid-court player at ~44 % of the window. Re-rendered and re-read:
+
+| Frame | At `zoom: 1.6` | At `zoom: 1.2` (shipped) |
+| --- | --- | --- |
+| `frames/pickleball_legacypark_p1_t40.jpg` (mid-court) | subject ~1/8 of the width | same framing, subject whole, partner and both nets in shot |
+| `frames/pickleball_legacypark_p1_t150.jpg` (near baseline) | head clipped, subject fills the frame | whole body, kitchen line and partner visible |
+
+The residual is inherent, not a tuning miss: a fixed-size pixel crop on a camera whose
+scale runs 201 px/m to 9.6 px/m along the court cannot frame both ends the same way. At the
+near baseline the subject is already 61 % of the *wide* frame height, so there is nothing
+left to zoom into; the follow-cam earns its keep up-court. A per-frame crop size driven by
+the subject's court-y would fix it — deliberately not built (see D-22 below).
+
+### Profile values this run settled
+
+| Key | Value | Why |
+| --- | --- | --- |
+| `court.margin_m` | `1.0` | 2.5 admitted the adjacent court; table above |
+| `followcam.zoom` | `1.2` | 1.6 clipped the subject's head at the near baseline |
+| `tracking.oncourt_min_fraction` | `0.6` | unchanged; drops the fence-standers without dropping a player who steps out to retrieve |
+| `tracking.merge_max_dist_m` | `3.0` | unchanged; 7 m (basketball's) reaches across a 6.7 m half |
+| `players.max` | `4` | doubles; never breached |
+| `detection.imgsz` | `960` | the far-side players are ~60 px tall; 640 loses them |
+
+### Through the product (`e2e-real/R-04-pickleball.spec.ts`)
+
+`REPLAY_E2E_REAL=1 pnpm exec playwright test --project=real R-04` — **1 passed (5.0 m)**,
+on the 35 s smoke clip (same camera, same landmarks file). Full Tier 1 walk: upload →
+calibration POST (reprojection 2.76 px) → process → select → follow → highlights → review.
+The roster it produces is 5 players, 3 selectable at the screenshot instant.
+
+| Screenshot (1920×1080) | What it shows |
+| --- | --- |
+| `sports/pickleball-select.png` | four labelled boxes, team colours by net side (blue near, orange far), pickleball court inset bottom-right with live dots |
+| `sports/pickleball-follow.png` | `FOLLOW • p2`, amber follow frame, cropped transform, inset dot amber |
+| `sports/pickleball-highlights.png` | this profile's chips, `Rallies` resolving to an interpretation (no clips — the rally detector is a stub) |
+| `sports/pickleball-review.png` | heatmap drawn on the pickleball `viewBox`, occupied cells > 0 |
+
+The same spec at `margin_m: 2.5` labelled two people on the *next* court as p3 and p5;
+after the change they are gone from `pickleball-select.png`.
+
+Overlay evidence for the same thing at 240 s: `frames/pickleball_legacypark_overlay_t140.jpg`
+— yellow court polygon exactly on the paint, blue boxes only on the three people on this
+court, and the adjacent game left as grey unpromoted tracklets (#2472, #2521, #2568).

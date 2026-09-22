@@ -1,0 +1,15 @@
+{
+ "variant": "doubles",
+ "landmarks_px": {
+  "corner_nl": [88.3, 862.6],
+  "corner_nr": [1508.8, 884.5],
+  "corner_fl": [885.2, 413.8],
+  "corner_fr": [1193.6, 372.7],
+  "net_post_l": [732.4, 499.8],
+  "net_post_r": [1237.4, 443.8],
+  "kitchen_nl": [634.8, 554.8],
+  "kitchen_nr": [1268.5, 494.3],
+  "centre_n": [635.0, 871.0],
+  "centre_kn": [920.4, 527.5]
+ }
+}

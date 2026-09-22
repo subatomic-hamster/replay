@@ -1,0 +1,90 @@
+id: pickleball
+display_name: Pickleball
+# Tier 1 only (select, follow-cam, tagging, court inset, heatmap). `events: [rally]` is
+# wired but `events.detect_rallies` is still a stub, so no rally events come out yet —
+# the tier claim in samples/real/RESULTS.md is what counts, not this number.
+tier: 1
+court:
+  template: pickleball.json
+  variants: [doubles]
+  landmarks: [corner_nl, corner_nr, corner_fl, corner_fr, net_post_l, net_post_r]
+  # Same deal as basketball: a real camera puts a corner off-frame or behind a player.
+  # Any of these present in a landmarks.json is folded into the fit; the uploader still
+  # only asks for the six above.
+  landmarks_optional:
+    [kitchen_nl, kitchen_nr, kitchen_fl, kitchen_fr, centre_n, centre_kn, centre_kf, centre_f]
+  # D-23: plain-language glossary handed to the vision model by `courtcam autocalib`.
+  # Nothing else reads these; they are prose for a model, not geometry.
+  orientation_hint: |-
+    A pickleball court is a rectangle split in half by a net. The camera is normally
+    behind or beside one baseline, looking down the length of the court.
+      - The NEAR baseline is the end line closest to the camera: the one LOWER in the
+        picture, usually the widest line across the bottom of the playing surface.
+      - The FAR baseline is the other end line, beyond the net and much narrower in
+        the picture.
+    Which sideline is "l" and which is "r": the sidelines are the two long edges
+    running between the baselines. `l` is the one further LEFT in the picture and `r`
+    the one further RIGHT. The software corrects a whole-court left/right swap on its
+    own, but only if you are consistent.
+    Many venues use PORTABLE nets whose posts stand on the floor OUTSIDE the
+    sidelines. Never click the physical post: click where the net crosses the
+    sideline.
+  landmark_descriptions:
+    corner_nl: the court corner where the NEAR baseline meets the `l` sideline.
+    corner_nr: the court corner where the NEAR baseline meets the `r` sideline.
+    corner_fl: the court corner where the FAR baseline meets the `l` sideline.
+    corner_fr: the court corner where the FAR baseline meets the `r` sideline.
+    net_post_l: >-
+      the point on the floor where the net line crosses the `l` sideline - halfway
+      along the court. If the net is a portable one whose post stands outside the
+      court, click the sideline, not the post.
+    net_post_r: the same crossing on the `r` sideline.
+    kitchen_nl: >-
+      where the non-volley-zone ("kitchen") line on the NEAR side of the net meets the
+      `l` sideline. It is the line about 2 m in front of the net on the camera side.
+    kitchen_nr: the same NEAR kitchen-line end on the `r` sideline.
+    kitchen_fl: where the kitchen line on the FAR side of the net meets the `l` sideline.
+    kitchen_fr: the same FAR kitchen-line end on the `r` sideline.
+    centre_n: >-
+      where the centre service line (the line down the middle of the NEAR half, from
+      the baseline to the kitchen line) meets the NEAR baseline.
+    centre_kn: where that same NEAR centre service line meets the NEAR kitchen line.
+    centre_kf: where the FAR half's centre service line meets the FAR kitchen line.
+    centre_f: where the FAR half's centre service line meets the FAR baseline.
+  # Measured on samples/real/pickleball_legacypark_240s.mp4: public venues put courts
+  # end to end, so the NEXT court's baseline is ~1.5 m past this one's. 2.5 m of margin
+  # admitted a whole second game as 9 extra "players"; 1.0 m still covers the
+  # body-length a deep serve pulls you behind the baseline. Numbers in
+  # samples/real/RESULTS.md.
+  margin_m: 1.0
+players: {min: 2, max: 4}
+team_rule: net_side
+teams:
+  # Jersey colour is meaningless in a net sport — rec pickleball is four people in four
+  # different shirts — so the two sides get fixed, distinct colours instead.
+  colors: ["#1F7A8C", "#E07A25"]
+detection: {classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25}
+tracking:
+  oncourt_min_fraction: 0.6
+  min_lifetime_s: 1.0
+  # Tighter than basketball (5 s / 7 m): four players who never cross the net occlude
+  # each other far less, and 7 m on a 13.4 m court reaches across the net.
+  merge_max_gap_s: 3.0
+  merge_max_dist_m: 3.0
+  smooth_window: 5
+events: [rally]
+rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0]}
+# D-20: `zoom` divides the court's *pixel* width. The camera sits at the near baseline
+# of a 13.4 m court, so a player at that end is already 600-750 px tall in the wide
+# shot: zoom 1.6 gave a 888x500 window that cut his head off for ~10 % of the clip.
+# 1.2 -> 1184x666, which clears the p90 subject height (612 px) and still frames a
+# mid-court player at ~44 % of the window. Measured in samples/real/RESULTS.md.
+followcam: {zoom: 1.2, lead_s: 0.3, stiffness: 7.0}
+query_vocab:
+  rallies: {type: rally}
+  "longest rallies": {type: rally, sort: duration_desc, limit: 10}
+sport_ui:
+  # Every chip has to resolve in the API rule engine, or it is a dead button on the
+  # remote (services/api/tests/test_query.py::test_every_profile_chip_resolves).
+  chips: ["Rallies", "Longest rallies", "Bookmarks"]
+  review: [heatmap]

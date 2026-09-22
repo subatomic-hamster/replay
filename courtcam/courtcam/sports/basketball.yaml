@@ -15,6 +15,58 @@ court:
   landmarks_optional:
     [key_nl, key_nr, ft_nl, ft_nr, key_fl, key_fr, ft_fl, ft_fr, centre_l, centre_r]
   margin_m: 1.0
+  # D-23: plain-language glossary handed to the vision model by `courtcam autocalib`.
+  # Nothing else reads these; they are prose for a model, not geometry.
+  orientation_hint: |-
+    Which end of the court is "near" (n) and which is "far" (f):
+      - Full court: the NEAR baseline is the end line under whichever basket appears
+        further LEFT in the picture, and the FAR baseline is the other end line. If
+        both baskets sit at about the same left-right position, the NEAR baseline is
+        the one closer to the camera (lower down in the picture).
+      - Half court: the NEAR baseline is the painted end line under the basket, and
+        the FAR line is the half-way line at the far end of the playing area shown.
+    A gym floor usually has several courts painted on it in different colours,
+    including small cross-courts that share the same baskets. Use the LARGEST
+    one - the court whose two baselines are furthest apart, running the long way
+    down the room - and ignore every other set of lines.
+    These cameras are wide-angle and often panoramic, so the court fills the frame and
+    its lines are curved. An end line is NOT a short vertical line under the basket and
+    it is NOT the edge of the coloured out-of-bounds border or the wall behind it: it is
+    a painted line that sweeps a long way across the picture, from one sideline to the
+    other, and near the corners it may leave the frame. Trace the painted line itself.
+    A corner is where two painted lines actually cross, out on the playing surface.
+    Which sideline is "l" and which is "r": the sidelines are the two long edges that
+    run between the two baselines. The `l` sideline is the one HIGHER in the picture
+    (further from the camera); the `r` sideline is the one LOWER in the picture
+    (nearer the camera). Use that rule even if it feels backwards — the software
+    corrects a whole-court left/right swap on its own, but only if you are consistent.
+  landmark_descriptions:
+    corner_nl: the court corner where the NEAR baseline meets the `l` sideline.
+    corner_nr: the court corner where the NEAR baseline meets the `r` sideline.
+    corner_fl: the court corner where the FAR baseline meets the `l` sideline.
+    corner_fr: the court corner where the FAR baseline meets the `r` sideline.
+    rim: >-
+      the point on the FLOOR directly underneath the centre of the hoop at the NEAR
+      basket - the centre of the small semicircular restricted-area arc painted under
+      that basket, on the centre line of the key and roughly 1.5 m in front of the
+      baseline. This is a point on the floor, NOT the hoop itself (which is 3 m up)
+      and NOT the backboard.
+    key_nl: >-
+      where the `l`-side long edge of the key (the painted rectangle in front of the
+      NEAR basket) meets the NEAR baseline.
+    key_nr: the same corner of the NEAR key on the `r` side.
+    ft_nl: >-
+      where the free-throw line at the NEAR basket meets the `l`-side long edge of the
+      NEAR key - the far corner of the painted rectangle on the `l` side.
+    ft_nr: the same free-throw-line corner of the NEAR key on the `r` side.
+    key_fl: where the `l`-side long edge of the FAR key meets the FAR baseline.
+    key_fr: the same corner of the FAR key on the `r` side.
+    ft_fl: where the free-throw line at the FAR basket meets the `l`-side edge of the FAR key.
+    ft_fr: the same free-throw-line corner of the FAR key on the `r` side.
+    centre_l: >-
+      where the half-way line (the line across the middle of the court through the
+      centre circle) meets the `l` sideline.
+    centre_r: where the half-way line meets the `r` sideline.
 # `max` is a *concurrency* cap — the most players selectable at any one instant, not the
 # size of the roster over the clip. Substitutions push the total above it.
 players: {min: 2, max: 10}

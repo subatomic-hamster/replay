@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 
 from .court import CourtTrack, track_from_json, track_json
-from .profiles import Profile
+from .profiles import CourtTemplate, Profile
 from .schema import Player as PlayerModel
 from .schema import Team as TeamModel
 from .track import Tracklet
@@ -144,18 +144,66 @@ def split_teams(hists: np.ndarray, *, k: int = 2, seed: int = 0) -> np.ndarray:
     return labels.ravel().astype(int)
 
 
-def assign_teams(hists: np.ndarray, profile: Profile) -> np.ndarray:
+# --- net side ---------------------------------------------------------------
+
+NET_WINDOW_S = 60.0
+
+
+def net_line_y(template: CourtTemplate) -> float:
+    """The net's court y. Templates state it; failing that the net is the court's
+    mid-line, which is the geometry of every net sport."""
+    if template.net_y is not None:
+        return float(template.net_y)
+    return float(np.mean(template.polygon[:, 1]))
+
+
+def net_side(
+    tracks: list[CourtTrack], net_y: float, *, window_s: float = NET_WINDOW_S
+) -> np.ndarray:
+    """Team = which side of the net the player stands on (§4.4 step 6).
+
+    Per fixed `window_s` slice of the clip: sign of (median court y - net y). The
+    tracklet's team is the majority over the slices it touches; a tie goes to side 0.
+
+    # ponytail: fixed windows, not rallies. §4.4 wants the side re-evaluated per rally
+    # so an end change is picked up exactly, but `events.detect_rallies` is a stub, so
+    # there are no rally bounds to slice on. Ceiling: an end change *inside* a 60 s
+    # window is invisible, and a tracklet straddling one gets whichever side it spent
+    # more windows on. Upgrade: feed rally bounds in place of the fixed window.
+    """
+    out = np.zeros(len(tracks), dtype=int)
+    for i, tr in enumerate(tracks):
+        slot = (tr.tracklet.times // window_s).astype(int)
+        far = [float(np.median(tr.court_m[slot == s, 1])) > net_y for s in np.unique(slot)]
+        out[i] = int(sum(far) * 2 > len(far))
+    return out
+
+
+def assign_teams(
+    hists: np.ndarray | None,
+    tracks: list[CourtTrack],
+    profile: Profile,
+    template: CourtTemplate,
+) -> np.ndarray:
     rule = profile.team_rule
     if rule == "jersey_color":
+        assert hists is not None, "jersey_color needs sampled appearance"
         return split_teams(hists)
     if rule == "net_side":
-        # ponytail: net sports are Tier 1 only so far; implement when a net-sport
-        # profile ships (needs the net line from the template + per-rally re-evaluation).
-        raise NotImplementedError(
-            "team_rule 'net_side' is not implemented yet — needs the net line from the "
-            "court template and per-rally re-evaluation (plan §4.4 step 6)"
-        )
+        return net_side(tracks, net_line_y(template))
     raise ValueError(f"unknown team_rule {rule!r}")
+
+
+def team_colors(teams: np.ndarray, profile: Profile, colors: np.ndarray | None) -> dict[int, str]:
+    """Fixed colours when the profile names them (net sports: four people, four shirts,
+    so the jersey tells you nothing), otherwise the mean torso colour per team."""
+    fixed = profile.teams.colors
+    return {
+        int(t): fixed[int(t) % len(fixed)]
+        if fixed
+        else bgr_to_hex(colors[teams == t].mean(axis=0))  # type: ignore[index]
+        for t in np.unique(teams)
+    }
 
 
 # --- merging ----------------------------------------------------------------
@@ -247,14 +295,20 @@ def _cap_concurrent(
     return kept
 
 
-def identify(video: str, tracks: list[CourtTrack], profile: Profile) -> list[PlayerTrack]:
+def identify(
+    video: str, tracks: list[CourtTrack], profile: Profile, variant: str | None = None
+) -> list[PlayerTrack]:
     """Tracklets → `p1..pN` with team labels and team colours."""
     if not tracks:
         return []
-    hists, colors = sample_appearance(video, tracks)
-    teams = assign_teams(hists, profile)
+    # Only `jersey_color` needs pixels, and decoding the clip for torso crops is the
+    # expensive half of this stage — a net sport skips it entirely.
+    hists, colors = (
+        sample_appearance(video, tracks) if profile.team_rule == "jersey_color" else (None, None)
+    )
+    teams = assign_teams(hists, tracks, profile, profile.template(variant))
     groups = merge_groups(tracks, teams, profile)
-    team_colors = {int(t): bgr_to_hex(colors[teams == t].mean(axis=0)) for t in np.unique(teams)}
+    colours = team_colors(teams, profile, colors)
     merged = [(g, _concat(tracks, g)) for g in groups]
     # `players.max` caps *merged* players, not raw tracklets (§4.4 step 5 applied after
     # step 6): a player broken into six tracklets should still beat a bystander with one
@@ -269,7 +323,7 @@ def identify(video: str, tracks: list[CourtTrack], profile: Profile) -> list[Pla
             PlayerTrack(
                 player_id=f"p{n}",
                 team=team,
-                color_hex=team_colors[team],
+                color_hex=colours[team],
                 track=track,
                 members=tuple(tracks[i].track_id for i in group),
             )

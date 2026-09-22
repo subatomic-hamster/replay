@@ -31,6 +31,7 @@ class CourtTemplate(_Cfg):
     size: tuple[float, float]
     court: list[tuple[float, float]]
     rim: tuple[float, float] | None = None
+    net_y: float | None = None
     rims: list[tuple[float, float]] = Field(default_factory=list)
     landmarks: dict[str, tuple[float, float]] = Field(default_factory=dict)
     features: dict[str, list[tuple[float, float]]] = Field(default_factory=dict)
@@ -84,6 +85,13 @@ class FollowCamCfg(_Cfg):
     stiffness: float = 7.0
 
 
+class TeamsCfg(_Cfg):
+    """Fixed team colours. Net sports have no jersey signal (four people, four shirts),
+    so `team_rule: net_side` paints the two sides from here instead of from the video."""
+
+    colors: list[str] = Field(default_factory=list)
+
+
 class ShotCfg(_Cfg):
     rim_radius_m: float = 7.0
     roi_px: int = 96
@@ -100,6 +108,7 @@ class Profile(_Cfg):
     court: CourtCfg
     players: PlayersCfg = Field(default_factory=PlayersCfg)
     team_rule: str = "jersey_color"
+    teams: TeamsCfg = Field(default_factory=TeamsCfg)
     detection: DetectionCfg = Field(default_factory=DetectionCfg)
     tracking: TrackingCfg = Field(default_factory=TrackingCfg)
     events: list[str] = Field(default_factory=list)

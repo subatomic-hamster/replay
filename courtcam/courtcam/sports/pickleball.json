@@ -1,0 +1,139 @@
+{
+ "name": "pickleball_doubles",
+ "standard": "usap",
+ "units": "m",
+ "origin": "centre of one baseline; +x toward the right sideline, +y toward the far baseline",
+ "size": [
+  6.1,
+  13.41
+ ],
+ "court": [
+  [
+   -3.05,
+   0.0
+  ],
+  [
+   3.05,
+   0.0
+  ],
+  [
+   3.05,
+   13.41
+  ],
+  [
+   -3.05,
+   13.41
+  ]
+ ],
+ "net_y": 6.705,
+ "landmarks": {
+  "corner_nl": [
+   -3.05,
+   0.0
+  ],
+  "corner_nr": [
+   3.05,
+   0.0
+  ],
+  "corner_fl": [
+   -3.05,
+   13.41
+  ],
+  "corner_fr": [
+   3.05,
+   13.41
+  ],
+  "net_post_l": [
+   -3.05,
+   6.705
+  ],
+  "net_post_r": [
+   3.05,
+   6.705
+  ],
+  "kitchen_nl": [
+   -3.05,
+   4.575
+  ],
+  "kitchen_nr": [
+   3.05,
+   4.575
+  ],
+  "kitchen_fl": [
+   -3.05,
+   8.835
+  ],
+  "kitchen_fr": [
+   3.05,
+   8.835
+  ],
+  "centre_n": [
+   0.0,
+   0.0
+  ],
+  "centre_kn": [
+   0.0,
+   4.575
+  ],
+  "centre_kf": [
+   0.0,
+   8.835
+  ],
+  "centre_f": [
+   0.0,
+   13.41
+  ]
+ },
+ "features": {
+  "net_line": [
+   [
+    -3.05,
+    6.705
+   ],
+   [
+    3.05,
+    6.705
+   ]
+  ],
+  "kitchen_near": [
+   [
+    -3.05,
+    4.575
+   ],
+   [
+    3.05,
+    4.575
+   ]
+  ],
+  "kitchen_far": [
+   [
+    -3.05,
+    8.835
+   ],
+   [
+    3.05,
+    8.835
+   ]
+  ],
+  "centre_service_near": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    0.0,
+    4.575
+   ]
+  ],
+  "centre_service_far": [
+   [
+    0.0,
+    8.835
+   ],
+   [
+    0.0,
+    13.41
+   ]
+  ]
+ }
+}

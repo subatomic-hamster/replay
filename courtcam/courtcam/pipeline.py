@@ -209,12 +209,16 @@ def stage_court(
     return path
 
 
-def stage_identity(out_dir: Path, profile: Profile, *, force: bool, progress: Progress) -> Path:
+def stage_identity(
+    out_dir: Path, profile: Profile, variant: str, *, force: bool, progress: Progress
+) -> Path:
     path = out_dir / "_work" / "players.json"
     progress("identity", 0.0)
     if force or not path.exists():
         tracks, meta = read_court_tracks(out_dir / "_work" / "court.json")
-        players = identity.identify(str(out_dir / WIDE_REL), tracks, profile)
+        # `team_rule: net_side` reads the net line off *this variant's* template, so the
+        # variant has to come along — badminton singles and doubles are different courts.
+        players = identity.identify(str(out_dir / WIDE_REL), tracks, profile, variant)
         identity.write_players(path, players, meta)
     progress("identity", 1.0)
     return path
@@ -421,7 +425,7 @@ def run(
         stage_court(out_dir, profile, calib_data, force=force, progress=report)
         _mark(out_dir, game, "court")
     if "identity" in requested:
-        stage_identity(out_dir, profile, force=force, progress=report)
+        stage_identity(out_dir, profile, game.court.variant, force=force, progress=report)
         _mark(out_dir, game, "identity")
 
     if (out_dir / "_work" / "players.json").exists():

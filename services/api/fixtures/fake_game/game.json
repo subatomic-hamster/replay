@@ -1,0 +1,88 @@
+{
+ "schema": "replay.game.v1",
+ "id": "g_fixture",
+ "title": "Fixture game",
+ "recorded_at": "2026-09-22T19:30:00-04:00",
+ "status": "ready",
+ "stages": {
+  "ingest": "done",
+  "detect": "done",
+  "track": "done",
+  "render": "done",
+  "label": "done"
+ },
+ "video": {
+  "duration_s": 20.0,
+  "fps": 30,
+  "width": 1280,
+  "height": 720
+ },
+ "sport": "basketball",
+ "court": {
+  "variant": "half",
+  "standard": "fiba",
+  "landmarks_px": {
+   "corner_nl": [
+    180.0,
+    660.0
+   ],
+   "corner_nr": [
+    1100.0,
+    660.0
+   ],
+   "corner_fl": [
+    430.0,
+    300.0
+   ],
+   "corner_fr": [
+    860.0,
+    300.0
+   ],
+   "rim": [
+    641.1,
+    583.2
+   ]
+  }
+ },
+ "renditions": {
+  "wide": "media/wide.mp4",
+  "players": {}
+ },
+ "players": [
+  {
+   "id": "p1",
+   "name": "Marcus",
+   "team": 0,
+   "color_hex": "#1F4FA0",
+   "tagged": true
+  },
+  {
+   "id": "p2",
+   "name": "Alex",
+   "team": 1,
+   "color_hex": "#E8E8E8",
+   "tagged": true
+  }
+ ],
+ "teams": [
+  {
+   "id": 0,
+   "color_hex": "#1F4FA0"
+  },
+  {
+   "id": 1,
+   "color_hex": "#E8E8E8"
+  }
+ ],
+ "tracks": {
+  "rate_hz": 10,
+  "chunk_s": 10,
+  "url_template": "tracks/{chunk:05d}.json",
+  "chunks": 2
+ },
+ "croppaths": {
+  "rate_hz": 30,
+  "url_template": "crops/{player_id}.json"
+ },
+ "events_url": "events.json"
+}

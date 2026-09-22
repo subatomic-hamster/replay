@@ -68,3 +68,6 @@ yet when `/upload/:id/calibrate` needs an image. The upload handler runs one
 `media/calib.jpg`, and `GET /games/{id}` exposes it as `calib_url` next to `thumb_url` and
 `sport_ui`. Cost is ~100 ms on a local file. Consequence: landmark pixel coordinates are in the
 source video's frame space, which is also what the pipeline homography expects.
+
+## D-15 (2026-09-22) — courtcam schema notes
+`Event.made` is `bool | null` (`null` = not judged by the heuristic labeler, distinct from `false`). A profile may declare `court.templates: {variant: file}` instead of `court.template` (basketball needs one template per variant). Field names are unchanged from §4.5. courtcam owns `game.json` during a run (D-9); `out/_work/` holds intermediates the API never serves.

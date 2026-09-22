@@ -1,5 +1,9 @@
 # courtcam
 
+![courtcam demo](docs/demo.gif)
+
+Debug overlay (boxes, ids, court polygon) next to a player follow-cam rendition, on the synthetic CI fixture.
+
 A video pipeline that turns one fixed wide shot of a court into **per-player tracks,
 follow-cam crop paths, and events** — so a TV app can let you pick a player out of
 the frame and watch the game follow them.

@@ -8,8 +8,20 @@ gitignored except this file). All clips were downloaded with `yt-dlp` and
 cut/re-encoded with `ffmpeg`. Every accepted clip below was verified by
 extracting and looking at real frames, not just judged from the title.
 
-Downloaded 2026-09-22. Total corpus size: ~523 MB (11 clips + 11 frame
+Downloaded 2026-09-22. Total corpus size: ~696 MB (13 clips + 13 frame
 JPGs). All full source downloads were deleted after cutting.
+
+**2026-09-22 second pass (elevated whole-court basketball):** the first pass's
+three basketball clips (`parkwide`, `powellgym`, `pavilion`) are all
+ground-level or corner-level cameras framing only about half the court at a
+time. This pass specifically searched for elevated (balcony/mezzanine/
+wall-mounted/auto-camera) fixed cameras showing the **whole court** — both
+baselines, all sidelines — in one shot, amateur/rec-league level. Two were
+found and accepted (`kennesawwide`, `northsidewide`), both from the same
+recreational-basketball videographer using a fixed ultra-wide/panoramic
+stitched camera mounted high in a gym corner. See rejected list below for the
+~25 candidates (Pixellot, Veo, drone, intramural, church-league, etc.) that
+were probed and did not qualify.
 
 Naming: `<sport>_<venue-slug>_<NNN>s.mp4` = a continuous stream-copied
 segment of live play (`ffmpeg -c copy`, cut on the nearest keyframe).
@@ -74,7 +86,31 @@ matching `.jpg` — one representative extracted frame.
 - **Issues:** a brief (~2-3 s) "DOUBLES" score-graphic overlay flashes intermittently at point-scoring moments — confirmed by sampling frames every 30 s through the whole 300 s source: clean at t=0,5,15,60,90,120,150,180,240s; overlay visible at t=30,210,270s. It is **not** a persistent scorebug (unlike a rejected candidate below) — most of the clip is clean gameplay. Within this specific 240 s cut, the overlay appears briefly around clip-relative t≈15s and t≈195s. Worth knowing if testing overlay-robustness of court/player detection.
 - **Note:** this replaced an initially-selected pickleball clip (see rejected list) that turned out to have a persistent, live-updating scorebug.
 
-### 5. `badminton_russiaclub_240s.mp4` + `badminton_russiaclub_smoke.mp4`
+### 5a. `basketball_kennesawwide_240s.mp4` + `basketball_kennesawwide_smoke.mp4` — **RECOMMENDED PRIMARY (elevated whole-court)**
+
+- **Source:** https://www.youtube.com/watch?v=bSbik1JWcVs — "11.28.23 - Milf-Hunters vs 24% Skyhooks - Basketball Gym Recording - Ultra Wide - 8:3 - 4K 20 FPS"
+- **Uploader:** Wong This Way (https://www.youtube.com/@wongthisway)
+- **License/terms:** Standard YouTube License (as observed; no CC marking). Local testing only, per D-7.
+- **Resolution/fps:** 2560x960 (8:3 ultra-wide panoramic stitch), VP9, **20 fps** (source; H.264 after our re-encode for the smoke clip). Note: this is a purpose-built wide/panoramic gym camera rig (not 16:9), so "height" is 960px rather than 1080 — total pixel count (2.46 MP) exceeds standard 1080p (2.07 MP), and this is the same category of exception the task brief explicitly allows for Veo-style stitched-panorama uploads. fps is 20, not 30 — flagged as an issue below.
+- **Duration:** main clip 240 s, smoke 50 s
+- **Sport:** basketball, indoor gym, Kennesaw/Acworth GA area (per companion uploads from the same channel: "Kennesaw Recreation Basketball", "Acworth Recreational Basketball" — confirms recreational-league play, not a private/paid production)
+- **Camera:** fixed, mounted high in a gym corner (roof-truss height), ultra-wide/panoramic lens or stitch — captures the **entire court in one shot**: both baselines, both hoops, all four bleacher sections, scorer's table. Verified fixed (not panning) by comparing frames at t=300s and t=1800s of the source — identical framing.
+- **Players on court:** ~10 (5v5 full-court), adult rec league (team names visible in title: "Milf-Hunters" vs "24% Skyhooks" — casual adult beer-league naming), referee and scorer's table present
+- **Issues:** a small wall-mounted electronic scoreboard is visible in the top-left of frame — confirmed by close-up crop to be a real physical LED scoreboard (blurred/pixelated as filmed through the wide lens, partially occluded by a roof-truss shadow), not a video overlay, consistent with how physical venue signage is treated elsewhere in this manifest. 20 fps (not 30) and VP9 codec (not H.264) are the two deviations from spec — the smoke-test clip re-encodes to 30 fps H.264 via `libopenh264` per this box's ffmpeg build. No cuts, no software overlay, no commentary (ambient gym/crowd audio only; mean volume -24.9 dB, consistent with room ambience, not close-mic'd narration).
+
+### 5b. `basketball_northsidewide_240s.mp4` + `basketball_northsidewide_smoke.mp4`
+
+- **Source:** https://www.youtube.com/watch?v=xglRThRzdXM — "12.5.23 - 24% Skyhooks vs Hutters - Basketball Gym Whole Court Recording - Ultra Wide - 8:3"
+- **Uploader:** Wong This Way (https://www.youtube.com/@wongthisway) — same channel/camera rig as 5a, different game/venue (Northside Hospital Cherokee-sponsored gym, per wall signage)
+- **License/terms:** Standard YouTube License. Local testing only, per D-7.
+- **Resolution/fps:** 2560x960 (8:3 ultra-wide panoramic), VP9, 20 fps (source); smoke clip re-encoded to 30 fps H.264 via `libopenh264`.
+- **Duration:** main clip 240 s, smoke 50 s
+- **Sport:** basketball, indoor gym, same recreational league as 5a (24% Skyhooks appear in both games)
+- **Camera:** fixed, elevated gym-corner mount, ultra-wide/panoramic — whole court, both baselines and hoops, all bleachers in one shot. Same rig/style as 5a, different physical gym.
+- **Players on court:** ~10 (5v5 full-court), adult rec league, referee and scorer's table present
+- **Issues:** same 20 fps / VP9 deviations as 5a. Real physical wall scoreboard + "Northside Hospital Cherokee" sponsor banner visible (venue signage, not an overlay). No cuts, no software overlay, no commentary (ambient audio; mean volume -23.7 dB).
+
+### 6. `badminton_russiaclub_240s.mp4` + `badminton_russiaclub_smoke.mp4`
 
 - **Source:** https://www.youtube.com/watch?v=p0PXNjNhE-c — "Russian badminton amateur doubles part 1"
 - **Uploader:** Grigorii (https://www.youtube.com/@Greg_tennis)
@@ -103,9 +139,28 @@ matching `.jpg` — one representative extracted frame.
 - Various high-view-count "men's league" creator videos (`7IdyAVn9jiE`, `2zW7E4mY7Fw`, `9-IhuqpU85M`, `wgyLhcrqWxo`) — not probed further; clickbait titles + large view counts strongly suggest edited/produced content with cuts, out of scope per the brief.
 - All NCAA/ACC/professional broadcast replays surfaced by generic basketball searches (Duke, UNC, Howard, etc.) — excluded outright, professional broadcast footage is out of scope.
 
+**2026-09-22 second pass (elevated whole-court basketball) — rejected candidates:**
+
+- `rrL6yv0CjIY` "Jun 26 25 Open Gym Runs *PIxellot Camera" — elevated, whole court (both hoops) in one fixed shot, but has a persistent software-composited "Pixellot Air" scorebug graphic burned into the bottom-left corner throughout (confirmed live-updating score across timestamps, distinct from the real physical wall scoreboard also in frame) — disqualified by the "no scorebug/overlay" requirement.
+- `XqPPmSHg5Yw` "LAMBS vs STORM [Pixellot View]" — same issue: persistent Pixellot Air scorebug overlay confirmed live-updating (2-0 at t≈302s, 29-45 at t≈3002s) across the whole video; also appears to be a more competitive club/travel game (bench, uniforms) rather than casual rec play.
+- `OCapTc3aTSo` / `TTGSBqjlhTc` / `hpQ8iCkms8E` — titles suggested basketball ("Church Gym", "Full Court view") but probed frames showed **volleyball** games being played on shared gym courts with a basketball hoop visible in the background — wrong sport.
+- `NfamCBgl8As` "Winter 2026 Intramural Basketball Championships" — probed frame shows a dodgeball-style game (players running with thrown balls, no dribbling/shooting) despite the "Basketball Championships" title/overlay; also has a persistent video scorebug graphic.
+- `_n3lWa5Fij0` "No Drama Basketball Pickup Game Abingdon Virginia" — camera is low/eye-level and only frames the near basket, not elevated, not whole court.
+- `ElIHjogkyOY` "Drone Basketball!! 5v5 Full Court COED 4K" — outdoor elementary-school yard with multiple half-courts, persistent "TuneSquad vs Monstars" scorebug overlay, casual/small-scale, not a genuine full 5v5 single-court game.
+- `TEYI_xRcRLc` "Winter Intramurals Recreational Basketball Game 2" — source video is sideways/rotated and low quality.
+- `1tl7FonW3qE` "Game 3 Sept 18, 2022" (Jakarta International School) — camera at low/eye-level courtside, only partial court in frame, persistent "GAME 3" score-text overlay.
+- `6IVd74XvIOI` "Saint Sabina adult open gym (Game 5)" — decent adult open-gym game but camera only captures ~3/4 of the court and has a persistent "INSTAGRAM / BALL OR NOTHING TV" text-overlay watermark.
+- `lFdJR9KwY20` "University of Oregon club open gym" — handheld/walking camera (visible shake), not a fixed mount.
+- `FxYDGj6_qzE` "SNC employees at Reyes Gym (Yi 4K action camera)" — camera at low/child-eye height, only one basket clearly in frame, not elevated.
+- `Pr1X_g1ZFb0`, `9JoQ5sxyEhM` (Scout AI Test Boys Varsity Basketball), `gA1GcQPvwDk` (Surrey Winter Rec), `_htpkrwH-wg` (Iowa City corner camera), `RXJaRA_lDoM` (Evergreen v Clover Hill Rec), `BiQwvJekkwg` (Timberland Large Gym Recording), `l4ZiCbg-At8` (Gym Camera Recording) — all returned "This video is not available" / extraction errors when probed; not evaluable.
+- Generic Pixellot/Veo/XbotGo/BallHawk/Scout-AI product-demo and marketing videos (`TU3o3DlyShY`, `-J0XbwP8qUk`, `BS9iZQG5jkc`, `hGexK8fifns`, `QJEIORttKgI`, etc.) — short promotional clips, not usable full-game footage.
+- Numerous high-view "men's league"/AAU/travel-club highlight-reel channels and all D1/pro/Olympic/NBA/NCAA broadcast results surfaced by the broader queries — out of scope (edited/produced or professional).
+
+**Verdict on this pass:** genuine elevated, whole-court, fixed-camera, overlay-free amateur basketball footage **does exist on YouTube and is findable** — but it is a narrow niche. The two accepted clips come from a single hobbyist videographer (same channel, same custom ultra-wide panoramic camera rig) filming a Georgia recreational league; most other "elevated"-looking candidates turned out to be auto-production systems (Pixellot/Veo) with baked-in scorebug overlays that violate the "no overlay" requirement, or were mislabeled (wrong sport, dodgeball, intramural livestream chapters), or had cameras that were elevated but not truly whole-court. Expect to spend real search time (or accept a persistent-scorebug clip as a documented compromise) if more than 2 such clips are needed.
+
 ---
 
 ## Disk usage
 
-- `samples/real/` total: **~523 MB** (11 video clips + 11 JPEG frames)
+- `samples/real/` total: **~696 MB** (15 video clips + 15 JPEG frames)
 - All intermediate/full source downloads were deleted after cutting.

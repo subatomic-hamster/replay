@@ -7,7 +7,8 @@ test("S-02/S-09 the form creates a game and lands on its upload page", async ({ 
 
   // S-09: only sports from GET /sports are offered.
   await expect(page.getByTestId("sport-option-basketball")).toBeVisible();
-  await expect(page.locator('input[name="sport"]')).toHaveCount(1);
+  await expect(page.getByTestId("sport-option-pickleball")).toBeVisible();
+  await expect(page.locator('input[name="sport"]')).toHaveCount(2);
 
   await page.getByTestId("game-title-input").fill("Tuesday Run");
   await page.getByTestId("sport-option-basketball").check();

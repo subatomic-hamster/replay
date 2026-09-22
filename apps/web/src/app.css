@@ -983,6 +983,13 @@ body,
 .calib-actions .calib-error {
   margin: 0;
 }
+/* Which click is furthest off, once RANSAC stops the worst one poisoning the number. */
+.calib-worst {
+  margin: 0;
+  flex-basis: 100%;
+  font-size: 0.85em;
+  color: var(--dim);
+}
 
 /* D-23 auto-calibration. */
 .autocalib {

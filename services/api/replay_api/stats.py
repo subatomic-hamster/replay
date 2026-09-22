@@ -14,8 +14,21 @@ import itertools
 import math
 from collections.abc import Iterable
 
-HEATMAP_BINS = (15, 14)  # x, y — one bin per court metre on a FIBA half court
+MIN_HEATMAP_BINS = 4  # a 6.1 m wide pickleball court still wants a usable grid
 SMOOTH_WIN = 5  # track samples (10 Hz -> 0.5 s) for distance covered
+
+
+def _heatmap_bins(x_range: list[float], y_range: list[float]) -> tuple[int, int]:
+    """~1 m square cells, from the court's own extents.
+
+    Was hardcoded (15, 14) — a FIBA half court — so every net sport binned a 6.1 x 13.4 m
+    court into basketball's grid and drew 2.5:1 cells over the wrong ranges. The TV reads
+    `cols`/`rows` off the response, so nothing downstream assumes the counts.
+    """
+    return (
+        max(MIN_HEATMAP_BINS, round(x_range[1] - x_range[0])),
+        max(MIN_HEATMAP_BINS, round(y_range[1] - y_range[0])),
+    )
 
 
 def _court_ranges(profile: dict | None) -> tuple[list[float], list[float]]:
@@ -41,7 +54,7 @@ def _moving_average(pts: list[tuple[float, float]], win: int) -> list[tuple[floa
 def compute(game: dict, events: list[dict], frames: Iterable[dict], profile: dict | None) -> dict:
     players = game.get("players") or []
     x_range, y_range = _court_ranges(profile)
-    nx, ny = HEATMAP_BINS
+    nx, ny = _heatmap_bins(x_range, y_range)
 
     grids = {p["id"]: [[0] * nx for _ in range(ny)] for p in players}
     paths: dict[str, list[tuple[float, float]]] = {p["id"]: [] for p in players}

@@ -163,25 +163,31 @@ def get_profile(sport: str, variant: str | None = None) -> dict | None:
     return next((p for p in list_sports() if p.get("id") == sport), None)
 
 
-def calibration_error(sport: str, variant: str, landmarks_px: dict) -> float | None:
-    """Reprojection error in px; None when courtcam cannot compute it.
+def calibration_error(
+    sport: str, variant: str, landmarks_px: dict
+) -> tuple[float | None, dict[str, float]]:
+    """`(reprojection error in px, per-landmark residuals)`.
 
-    Raises CalibrationRejected when the clicks are too far off to be usable.
+    The error is None when courtcam cannot compute it, and the residuals are then empty.
+    They are what lets the uploader point at the one click that is off instead of just
+    printing a number (bug 3). Raises CalibrationRejected when the clicks are unusable.
     """
     try:
         from courtcam.calibrate import CalibrationError, calibrate  # type: ignore
         from courtcam.profiles import load_profile  # type: ignore
     except Exception as exc:  # noqa: BLE001
         log.info("courtcam calibration unavailable (%s)", exc)
-        return None
+        return None, {}
     try:
         calib = calibrate(dict(landmarks_px), load_profile(sport), variant)
     except CalibrationError as exc:
         raise CalibrationRejected(str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - bad template/landmarks: not fatal to the API
         log.info("reprojection error unavailable (%s)", exc)
-        return None
-    return float(calib["reproj_error_px"])
+        return None, {}
+    return float(calib["reproj_error_px"]), {
+        k: float(v) for k, v in (calib.get("residuals_px") or {}).items()
+    }
 
 
 EMPTY_PROPOSAL: dict = {

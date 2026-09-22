@@ -145,7 +145,10 @@ export const httpApi: ReplayApi = {
   // The API takes `variant` and answers 200 `{court, reprojection_error_px}` /
   // 400 `{detail}`; the screens want a flat ok/error result.
   calibrate: (gameId, payload) =>
-    req<{ reprojection_error_px?: number | null }>(`/games/${gameId}/calibration`, {
+    req<{
+      reprojection_error_px?: number | null;
+      residuals_px?: Record<string, number> | null;
+    }>(`/games/${gameId}/calibration`, {
       method: "POST",
       json: {
         sport: payload.sport,
@@ -153,7 +156,11 @@ export const httpApi: ReplayApi = {
         landmarks_px: payload.landmarks_px,
       },
     }).then(
-      (r): CalibrationResult => ({ ok: true, reprojection_error_px: r.reprojection_error_px ?? undefined }),
+      (r): CalibrationResult => ({
+        ok: true,
+        reprojection_error_px: r.reprojection_error_px ?? undefined,
+        residuals_px: r.residuals_px ?? undefined,
+      }),
       (e: Error) => ({ ok: false, error: e.message }),
     ),
   startAutoCalibration: (gameId, sport, variant) =>

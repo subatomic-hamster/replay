@@ -44,6 +44,7 @@ def test_shot_chart_points_are_court_metres():
 def test_heatmap_grid():
     out = result()
     heat = out["heatmap"][0]
+    # ~1 m cells over the FIBA half court the fixture was recorded on
     assert (heat["cols"], heat["rows"]) == (15, 14)
     assert len(heat["values"]) == 15 * 14
     # 20 s at 10 Hz, every sample inside the court
@@ -71,3 +72,21 @@ def test_distance_covered_matches_the_fixture_path():
 def test_empty_game_does_not_explode():
     out = stats.compute({"id": "g_x", "players": [], "video": {}}, [], iter([]), BASKETBALL_PROFILE)
     assert out["box_score"] == [] and out["totals"] == {"attempts": 0, "makes": 0}
+
+
+def test_heatmap_bins_follow_the_court_not_a_basketball_constant():
+    """Bug 5: the grid was hardcoded (15, 14), so a 6.1 x 13.41 m pickleball court was
+    binned into basketball's cells."""
+    pickleball = {"court": {"x_range": [-3.05, 3.05], "y_range": [0.0, 13.41]}}
+    heat = stats.compute(GAME, EVENTS, frames(), pickleball)["heatmap"][0]
+    assert (heat["cols"], heat["rows"]) == (6, 13)
+    assert len(heat["values"]) == 6 * 13
+    # every cell is within 15 % of square
+    cw = (heat["x_range"][1] - heat["x_range"][0]) / heat["cols"]
+    ch = (heat["y_range"][1] - heat["y_range"][0]) / heat["rows"]
+    assert 0.85 < cw / ch < 1.15
+
+    # and a court smaller than the floor still gets a usable grid
+    tiny = {"court": {"x_range": [0.0, 1.0], "y_range": [0.0, 2.0]}}
+    tiny_heat = stats.compute(GAME, EVENTS, frames(), tiny)["heatmap"][0]
+    assert (tiny_heat["cols"], tiny_heat["rows"]) == (stats.MIN_HEATMAP_BINS,) * 2

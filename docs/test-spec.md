@@ -23,7 +23,11 @@ append.
   `pnpm exec playwright test`. The `live` project's tests all live in one file and share
   the game S-01 uploads, because `fullyParallel: false` only serialises *within* a file.
   Its uvicorn runs with `REPLAY_FAKE_PIPELINE_DELAY_S=1` so S-08's `running` stage is
-  observable (fake mode is otherwise instant).
+  observable (fake mode is otherwise instant). `workers` is pinned to 4 (2 in CI): the
+  Playwright default is half the logical cores, which on a 16-core box puts 8 browsers on
+  one uvicorn and three vite servers and turns timing assertions into coin flips. Any
+  `expect.poll` timeout must be <= the enclosing test's timeout, or the test dies before
+  its own assertion can fail — S-04 raises its test timeout to 90 s for the 40 s stage poll.
 - **Selectors**: tests key off `data-testid`. Referenced here as `[data-testid=x]`.
   Implementation must add these hooks; exact naming may be adjusted but must stay documented
   in this file when changed (plan §12 rule 3 applies to test hooks by extension).
@@ -34,7 +38,8 @@ append.
   `court-dot-{pid}`, `nav-{library|highlights|review}`, `tag-dialog`, `tag-value`,
   `tag-key-{label}`, `pair-code`, `game-title-input`, `create-game`, `file-input`,
   `go-calibrate`, `calib-image`, `calib-prompt`, `calib-undo`, `landmark-{name}`,
-  `variant-{half|full}`, `roster-row`, `roster-name-{pid}`, `roster-save-{pid}`,
+  `variant-{name}` (one radio per `profile.variants`; **absent entirely when the profile
+  has a single variant** — see §10 bug 1), `calib-worst` (§10 bug 3), `roster-row`, `roster-name-{pid}`, `roster-save-{pid}`,
   `roster-merge-{pid}`, `ask-dialog`, `ask-value`, `ask-key-{label}` (H3 free text — the
   same `TextEntryDialog` the tag dialog uses, with an `ask-` prefix), `heatmap`,
   `heatmap-cell`, `heatmap-player-{pid}` (R2), `rendering-badge` (rendition follow mode),
@@ -625,3 +630,37 @@ clip, and `samples/real/` is gitignored (D-7). It writes an overlay per clip to
 Added to `apps/web`: `autocalib-status` (with `data-state` = `queued|running|done|failed|applied|manual`),
 `autocalib-busy`, `autocalib-accept`, `autocalib-adjust`, `autocalib-manual`,
 `landmark-handle-{name}`, and `data-confidence` on the existing `landmark-{name}`.
+
+---
+
+## 10. Fix-up wave after multi-sport + auto-calibration — appended
+
+Six defects found by driving the pickleball profile (D-21..D-23) through screens that had
+only ever seen basketball. Each has a named regression test; nothing below changes a
+contract in §4.5/§4.6 except the two additive response fields called out.
+
+| # | Where | Defect | Fix | Regression test |
+|---|---|---|---|---|
+| 1 | `apps/web/src/screens/Upload.tsx` (Calibrate) | `useState("half")` hardcoded basketball's variant: a profile whose `variants` are `["doubles"]` showed no checked radio and still posted `variant:"half"`, which the API 400s | the variant is derived — picked value, else `profile.variants[0]` — and the radio group is not rendered at all when a profile has exactly one variant | `e2e/S-04-calibration.spec.ts` → *S-05b a single-variant sport hides the picker and posts its own variant* |
+| 2 | `services/api/replay_api/main.py` `calibrate_auto` | only the sport was validated, so a wrong variant was swallowed and surfaced much later as a failed proposal | both routes now go through `_court_or_400(sport, variant)`, so a bad variant is a 400 on `POST /calibration/auto` exactly as on `POST /calibration` | `services/api/tests/test_calibration_auto.py::test_auto_validates_the_variant` |
+| 3 | `courtcam/courtcam/calibrate.py` | `findHomography(src, dst, RANSAC, 3.0)` had `dst` in **metres**, so the threshold meant "3 court metres" and rejected nothing | the fit runs metres→pixels (threshold `MAX_RANSAC_PX = 4.0` px) and is inverted; RANSAC only above `RANSAC_MIN_POINTS = 6`, plain least squares below it; clicks that are collinear are rejected explicitly because OpenCV only checks the *source* set. `reproj_error_px` is now the worst residual among the points RANSAC kept, and every residual is reported | `courtcam/tests/test_calibrate.py::test_ransac_votes_out_one_badly_placed_click`, `::test_with_five_points_a_bad_click_still_fails_the_gate`; `services/api/tests/test_routes.py::test_calibration_reports_per_landmark_residuals` |
+| 4 | `apps/web/src/screens/Review.tsx` | `sport_ui.review` was ignored, so a net sport declaring `review: [heatmap]` still drew an empty shot chart and an empty box score | only the listed panels render (`shot_chart`, `heatmap`, `box_score`; names normalised case/punctuation-insensitively). Absent field ⇒ all panels. The **review queue is not a panel** — it is the screen's job and renders for every sport, which is why no profile lists it | `e2e/S-36-review-queue.spec.ts` → *S-33/S-35 only the panels in sport_ui.review are rendered* |
+| 5 | `services/api/replay_api/stats.py` | `HEATMAP_BINS = (15, 14)` was a FIBA half court, so a 6.1 × 13.41 m pickleball court got basketball's grid | bins come from the court's own `x_range`/`y_range` at ~1 m per cell, floored at `MIN_HEATMAP_BINS = 4`. Basketball is unchanged at (15, 14); pickleball is (6, 13). The TV reads `cols`/`rows` off the response, so no consumer assumed the counts | `services/api/tests/test_stats.py::test_heatmap_bins_follow_the_court_not_a_basketball_constant` |
+| 6 | `e2e/S-04-calibration.spec.ts`, `e2e-live/S-01-live.spec.ts`, `playwright.config.ts` | a 40 s `expect.poll` inside a 30 s test; the live spec hardcoded "rim" as point 5; `workers` defaulted to half the cores | test timeout raised above the poll; the live spec reads the click order from `GET /sports` → `landmarks` (D-13) and asserts "point *n* of *N*" from it; `workers: 4` | the same specs (see §0) |
+
+### 10.1 Additive response fields
+
+- `POST /games/{id}/calibration` → 200 now also carries
+  `residuals_px: {landmark: px}`, the per-landmark reprojection error. Needed because #3
+  lets RANSAC vote a bad click out of the fit: the single `reprojection_error_px` is then
+  the *fit's* quality and no longer points at the bad click. The calibrate page renders the
+  worst one as `[data-testid=calib-worst]`.
+- `courtcam`'s `calib.json` (`courtcam.calib.v1`) carries the same `residuals_px` map.
+  Both fields are optional and additive; nothing reads them but the uploader.
+
+### 10.2 Mock fixtures added (`apps/web/src/api/mock.ts`)
+
+`GET /sports` serves basketball **and** pickleball (`variants: ["doubles"]`,
+`sport_ui.review: ["heatmap"]`, six landmarks), and the seeded library gains
+`g_pickle4` ("Sunday doubles — court 3"), exported from `e2e/helpers.ts` as `NET_GAME_ID`.
+Library card counts in S-11/S-12 are 4, and S-02 expects two sport radios.

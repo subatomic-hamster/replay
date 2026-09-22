@@ -1,5 +1,5 @@
 // R5 review queue, R1 shot chart, R2 heatmap, R3 box score lite — all "auto-detected".
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { courtViewBox } from "../components/CourtInset";
 import { REVIEW_CONFIDENCE_THRESHOLD } from "../config";
@@ -71,6 +71,13 @@ const ACTIONS: { label: string; patch: Partial<GameEvent> }[] = [
 
 const COURT_FALLBACK: [number, number] = [15, 14];
 
+// §4.8: no sport-name branching — the profile says which panels this sport has
+// (`sport_ui.review`, e.g. basketball `[shot_chart, heatmap]`, pickleball `[heatmap]`).
+// A profile that does not say gets all of them. The review queue is not in that list:
+// it is the screen's job, not a stat, and every sport has events to confirm.
+const ALL_PANELS = ["shot_chart", "heatmap", "box_score"];
+const panelName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+
 export function Review({ gameId }: { gameId: string }) {
   const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
   const [queue, setQueue] = useState<GameEvent[]>([]);
@@ -80,7 +87,12 @@ export function Review({ gameId }: { gameId: string }) {
   // Two focusable rows: the review answers, then the heatmap's player picker.
   const [row, setRow] = useState(0);
   const [heatFocus, setHeatFocus] = useState(0);
-  const heatmap = stats?.heatmap ?? [];
+  const panels = useMemo(() => {
+    const listed = game?.sport_ui?.review;
+    return new Set(listed?.length ? listed.map(panelName) : ALL_PANELS);
+  }, [game]);
+  // Empty when the sport has no heatmap panel, so the D-pad's second row disappears too.
+  const heatmap = panels.has("heatmap") ? (stats?.heatmap ?? []) : [];
 
   useEffect(() => {
     if (!game) return;
@@ -179,6 +191,7 @@ export function Review({ gameId }: { gameId: string }) {
       </section>
 
       <section className="stats stats-grid">
+        {panels.has("shot_chart") ? (
         <div className="stats-panel">
         <h2>Shot chart</h2>
         <svg className="shot-chart" data-testid="shot-chart" viewBox={viewBox.attr}>
@@ -203,6 +216,7 @@ export function Review({ gameId }: { gameId: string }) {
           ))}
         </svg>
         </div>
+        ) : null}
 
         {heatmap.length ? (
           <div className="stats-panel">
@@ -232,6 +246,7 @@ export function Review({ gameId }: { gameId: string }) {
           </div>
         ) : null}
 
+        {panels.has("box_score") ? (
         <div className="stats-panel">
         <h2>Box score lite</h2>
         <table className="box-score">
@@ -255,6 +270,7 @@ export function Review({ gameId }: { gameId: string }) {
           </tbody>
         </table>
         </div>
+        ) : null}
       </section>
 
       <p className="hint">

@@ -4,7 +4,7 @@ import { GAME_ID, video } from "./helpers";
 // S-12 — Open game from library, S-13 play/pause, S-14 ±10 s seek.
 test("S-12 Enter on a card opens the watch screen and the video plays", async ({ page }) => {
   await page.goto("/tv");
-  await expect(page.getByTestId("game-card")).toHaveCount(3);
+  await expect(page.getByTestId("game-card")).toHaveCount(4);
   await page.keyboard.press("Enter");
   await expect.poll(() => new URL(page.url()).pathname).toBe(`/tv/${GAME_ID}`);
 
@@ -40,7 +40,7 @@ test("S-14 ±10 s seek clamps at both ends", async ({ page }) => {
 
 test("E-02 a processing game opens its status view, not the watch surface", async ({ page }) => {
   await page.goto("/tv");
-  await expect(page.getByTestId("game-card")).toHaveCount(3);
+  await expect(page.getByTestId("game-card")).toHaveCount(4);
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");

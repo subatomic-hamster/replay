@@ -5,7 +5,8 @@ test.describe("S-11 library", () => {
   test("renders game cards and moves focus with the D-pad", async ({ page }) => {
     await page.goto("/tv");
     const cards = page.getByTestId("game-card");
-    await expect(cards).toHaveCount(3);
+    // 3 basketball + the pickleball fixture the sport_ui.review test uses.
+    await expect(cards).toHaveCount(4);
 
     const focused = page.locator('[data-testid="game-card"][data-focused="true"]');
     await expect(focused).toHaveCount(1);

@@ -236,11 +236,19 @@ export function Calibrate({ gameId }: { gameId: string }) {
     () => Promise.all([api.getGame(gameId), api.listSports()]),
     [gameId],
   );
-  const [variant, setVariant] = useState("half");
+  // Bug 1: this used to be `useState("half")`, which is basketball's. A profile whose
+  // only variant is `doubles` then had no radio checked and posted `variant: "half"`,
+  // which the API 400s. The picked value wins; otherwise the profile's first variant.
+  const [pickedVariant, setPickedVariant] = useState<string | null>(null);
   const [more, setMore] = useState(false);
   const [marks, setMarks] = useState<Record<string, [number, number]>>({});
   const [step, setStep] = useState(0);
-  const [result, setResult] = useState<{ ok: boolean; px?: number; msg?: string } | null>(null);
+  const [result, setResult] = useState<{
+    ok: boolean;
+    px?: number;
+    msg?: string;
+    residuals?: Record<string, number>;
+  } | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   // D-23 state. `weak` are proposed points below the confidence bar: drawn hollow, not
@@ -252,11 +260,16 @@ export function Calibrate({ gameId }: { gameId: string }) {
   const [dragging, setDragging] = useState<string | null>(null);
   const marksRef = useRef(marks);
   marksRef.current = marks;
-  const variantRef = useRef(variant);
-  variantRef.current = variant;
 
   const game = data?.[0];
   const profile = data?.[1].find((s) => s.id === game?.sport) ?? data?.[1][0];
+  const variants = useMemo(
+    () => (profile?.variants?.length ? profile.variants : ["half", "full"]),
+    [profile],
+  );
+  const variant = pickedVariant ?? variants[0];
+  const variantRef = useRef(variant);
+  variantRef.current = variant;
   const required = useMemo(() => profile?.landmarks ?? [], [profile]);
   const optional = useMemo(() => profile?.landmarks_optional ?? [], [profile]);
   const names = useMemo(
@@ -279,7 +292,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
         .then((r) =>
           setResult(
             r.ok
-              ? { ok: true, px: r.reprojection_error_px }
+              ? { ok: true, px: r.reprojection_error_px, residuals: r.residuals_px }
               : { ok: false, msg: r.error ?? "invalid points" },
           ),
         )
@@ -343,6 +356,10 @@ export function Calibrate({ gameId }: { gameId: string }) {
   // 5 px is unreachable by hand on a 2560-px panorama — courtcam.calibrate). A 200 is a
   // usable fit, with or without a number attached; a 400 comes back as `ok: false`.
   const valid = !!result?.ok;
+  // The homography now votes an outlying click out of the fit rather than letting it
+  // poison the error (courtcam.calibrate), so the number alone no longer says which
+  // point is wrong — the per-landmark residuals do.
+  const worst = Object.entries(result?.residuals ?? {}).sort((a, b) => b[1] - a[1])[0];
 
   const advance = (pts: Record<string, [number, number]>) => {
     setMarks(pts);
@@ -397,20 +414,23 @@ export function Calibrate({ gameId }: { gameId: string }) {
   return (
     <div className="screen phone calibrate">
       <h1>Calibrate</h1>
-      <div className="variant">
-        {(profile.variants ?? ["half", "full"]).map((v) => (
-          <label key={v} className="radio">
-            <input
-              type="radio"
-              name="variant"
-              checked={variant === v}
-              data-testid={`variant-${v}`}
-              onChange={() => setVariant(v)}
-            />
-            {v}
-          </label>
-        ))}
-      </div>
+      {/* One variant is not a choice — a radio group of one is just a thing to get wrong. */}
+      {variants.length > 1 ? (
+        <div className="variant">
+          {variants.map((v) => (
+            <label key={v} className="radio">
+              <input
+                type="radio"
+                name="variant"
+                checked={variant === v}
+                data-testid={`variant-${v}`}
+                onChange={() => setPickedVariant(v)}
+              />
+              {v}
+            </label>
+          ))}
+        </div>
+      ) : null}
 
       <div className="autocalib">
         <p
@@ -560,6 +580,11 @@ export function Calibrate({ gameId }: { gameId: string }) {
               ? result.msg
               : `need ${Math.max(0, required.length - placed.length)} more points`}
         </p>
+        {worst ? (
+          <p className="calib-worst" data-testid="calib-worst">
+            worst point: {worst[0].replace(/_/g, " ")} · {worst[1].toFixed(1)} px
+          </p>
+        ) : null}
         <button
           type="button"
           className="secondary"

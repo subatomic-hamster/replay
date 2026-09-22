@@ -178,6 +178,20 @@ def _autocalib_job(jobs: LocalJobs, game_id: str) -> dict | None:
     return max(mine, key=lambda j: j.get("created_at") or 0.0) if mine else None
 
 
+def _court_or_400(sport: str, variant: str) -> dict:
+    """The profile's `court` block, or a 400. Shared by the calibration commit and the
+    auto-calibration job: the job used to validate only the sport, so a variant the
+    profile has never heard of was swallowed and only surfaced as a failed proposal."""
+    profile = adapter.get_profile(sport)
+    if profile is None:
+        raise HTTPException(400, f"unknown sport {sport!r}")
+    court = profile.get("court") or {}
+    variants = court.get("variants") or []
+    if variants and variant not in variants:
+        raise HTTPException(400, f"variant must be one of {variants}")
+    return court
+
+
 def _autocalib_backend(settings: Settings, requested: str | None) -> str:
     """`fake` in fake-pipeline mode unless something explicitly asked for otherwise."""
     if requested:
@@ -364,13 +378,7 @@ def _register_routes(app: FastAPI) -> None:
     @app.post("/games/{game_id}/calibration")
     def calibrate(request: Request, game_id: str, body: Calibration):
         game = _game_or_404(request, game_id)
-        profile = adapter.get_profile(body.sport)
-        if profile is None:
-            raise HTTPException(400, f"unknown sport {body.sport!r}")
-        court = profile.get("court") or {}
-        variants = court.get("variants") or []
-        if variants and body.variant not in variants:
-            raise HTTPException(400, f"variant must be one of {variants}")
+        court = _court_or_400(body.sport, body.variant)
 
         marks = body.landmarks_px
         # D-19: a homography needs 4 points the *template* knows, not specifically the 4
@@ -384,7 +392,7 @@ def _register_routes(app: FastAPI) -> None:
             raise HTTPException(400, f"at least 4 known landmarks are required, got {usable}")
 
         try:
-            error_px = adapter.calibration_error(body.sport, body.variant, marks)
+            error_px, residuals = adapter.calibration_error(body.sport, body.variant, marks)
         except adapter.CalibrationRejected as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -398,7 +406,13 @@ def _register_routes(app: FastAPI) -> None:
             "calibrated" if game["status"] in ("created", "uploaded") else game["status"]
         )
         _ctx(request).index.save(game)
-        return {"id": game_id, "court": game["court"], "reprojection_error_px": error_px}
+        return {
+            "id": game_id,
+            "court": game["court"],
+            "reprojection_error_px": error_px,
+            # Per-landmark, so the uploader can name the worst click (bug 3).
+            "residuals_px": residuals,
+        }
 
     @app.post("/games/{game_id}/calibration/auto", status_code=202)
     def calibrate_auto(request: Request, game_id: str, body: AutoCalibration):
@@ -411,8 +425,9 @@ def _register_routes(app: FastAPI) -> None:
         _game_or_404(request, game_id)
         if not ctx.storage.path(game_id, CALIB_REL).is_file():
             raise HTTPException(400, "no calibration frame yet — upload the video first")
-        if adapter.get_profile(body.sport) is None:
-            raise HTTPException(400, f"unknown sport {body.sport!r}")
+        # Same gate as POST /calibration: a bad variant used to be swallowed here and
+        # only surface as a failed proposal much later.
+        _court_or_400(body.sport, body.variant)
         live = _autocalib_job(ctx.jobs, game_id)
         if live is not None and live["status"] in ("queued", "running"):
             return {"job_id": live["id"], "status": live["status"], "game_id": game_id}

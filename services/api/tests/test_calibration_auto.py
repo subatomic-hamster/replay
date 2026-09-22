@@ -102,6 +102,24 @@ def test_auto_validates_the_sport(client: TestClient):
     )
 
 
+def test_auto_validates_the_variant(client: TestClient):
+    """Bug 2: only the sport was checked, so `variant: "half"` posted for a sport that has
+    no half court was swallowed here and only surfaced as a failed proposal."""
+    gid = uploaded_game(client)
+    r = client.post(f"/games/{gid}/calibration/auto", json={**AUTO, "variant": "octagon"})
+    assert r.status_code == 400 and "variant must be one of" in r.json()["detail"]
+    # ...and the same wrong variant is a 400 on the commit route, as it always was
+    assert (
+        client.post(
+            f"/games/{gid}/calibration",
+            json={**AUTO, "variant": "octagon", "landmarks_px": CALIB["landmarks_px"]},
+        ).status_code
+        == 400
+    )
+    # nothing was queued
+    assert client.get(f"/games/{gid}/calibration/auto").json()["status"] == "idle"
+
+
 def test_auto_on_a_missing_game_is_404(client: TestClient):
     assert client.post("/games/g_nope/calibration/auto", json=AUTO).status_code == 404
     assert client.get("/games/g_nope/calibration/auto").status_code == 404

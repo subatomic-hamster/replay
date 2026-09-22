@@ -230,6 +230,8 @@ export interface CalibrationResult {
   ok: boolean;
   /** Reprojection error in pixels; gate is < 5 (§4.4 stage 2). */
   reprojection_error_px?: number;
+  /** Per-landmark reprojection error in pixels, so the worst click can be named. */
+  residuals_px?: Record<string, number>;
   error?: string;
 }
 

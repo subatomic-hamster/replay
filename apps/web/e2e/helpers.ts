@@ -2,6 +2,8 @@ import { expect, type Page } from "@playwright/test";
 
 export const FRAME = 1 / 30;
 export const GAME_ID = "g_mock01";
+/** A net sport: one court variant, and `sport_ui.review` lists only the heatmap. */
+export const NET_GAME_ID = "g_pickle4";
 
 export interface MockCall {
   method: string;

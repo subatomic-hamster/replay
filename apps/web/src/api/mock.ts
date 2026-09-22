@@ -67,7 +67,7 @@ const BASKETBALL: SportProfile = {
   variants: ["half", "full"],
   sport_ui: {
     chips: ["All shots", "Makes", "Misses"],
-    review: ["shot_chart", "box_score"],
+    review: ["shot_chart", "heatmap", "box_score"],
     court: {
       size_m: [15, 14],
       polygons: {
@@ -82,6 +82,35 @@ const BASKETBALL: SportProfile = {
           [9.95, 0],
           [9.95, 5.8],
           [5.05, 5.8],
+        ],
+      },
+    },
+  },
+};
+
+/** A net sport, so the variant picker and `sport_ui.review` have a second shape to be
+ *  right about: one variant (no radio to check) and no shot chart or box score. */
+const PICKLEBALL: SportProfile = {
+  id: "pickleball",
+  display_name: "Pickleball",
+  tier: 1,
+  landmarks: ["corner_nl", "corner_nr", "corner_fl", "corner_fr", "net_post_l", "net_post_r"],
+  variants: ["doubles"],
+  sport_ui: {
+    chips: ["Rallies", "Longest rallies", "Bookmarks"],
+    review: ["heatmap"],
+    court: {
+      size_m: [6.1, 13.41],
+      polygons: {
+        outer: [
+          [0, 0],
+          [6.1, 0],
+          [6.1, 13.41],
+          [0, 13.41],
+        ],
+        net: [
+          [0, 6.705],
+          [6.1, 6.705],
         ],
       },
     },
@@ -222,7 +251,11 @@ function seed() {
     "ready",
   );
   const g3 = baseGame("g_proc03", "Friday scrimmage", "processing");
-  for (const g of [g1, g2, g3]) games.set(g.id, g);
+  const g4 = baseGame("g_pickle4", "Sunday doubles — court 3", "ready");
+  g4.sport = "pickleball";
+  g4.sport_ui = PICKLEBALL.sport_ui;
+  g4.court = { ...g4.court, variant: "doubles" };
+  for (const g of [g1, g2, g3, g4]) games.set(g.id, g);
   events.set("g_mock01", [
     ev("e_0001", 3.0, "p1", true, 0.82, [4.0, 5.0]),
     ev("e_0002", 8.0, "p2", false, 0.74, [9.0, 6.5]),
@@ -231,6 +264,7 @@ function seed() {
   ]);
   events.set("g_mock02", []);
   events.set("g_proc03", []);
+  events.set("g_pickle4", []);
 }
 seed();
 
@@ -277,7 +311,7 @@ function matchEvents(list: GameEvent[], text: string, players: Player[]): GameEv
 export const mockApi: ReplayApi = {
   listSports: () => {
     log("GET", "/sports");
-    return delay([BASKETBALL]);
+    return delay([BASKETBALL, PICKLEBALL]);
   },
 
   createGame(title, sport) {
@@ -353,9 +387,15 @@ export const mockApi: ReplayApi = {
     // Not a homography — just something that moves when a point moves, so the UI can
     // prove it re-validates after a drag (S-04b).
     const spread = pts.reduce((a, [x, y]) => a + x + y, 0);
+    const err = Math.round((1 + (spread % 290) / 100) * 10) / 10;
     return delay<CalibrationResult>({
       ok: true,
-      reprojection_error_px: Math.round((1 + (spread % 290) / 100) * 10) / 10,
+      reprojection_error_px: err,
+      // Not a real residual either — just per-landmark and with one clear worst, which
+      // is all the `calib-worst` readout needs.
+      residuals_px: Object.fromEntries(
+        Object.keys(payload.landmarks_px).map((n, i) => [n, Number((err / (i + 1)).toFixed(2))]),
+      ),
     });
   },
 

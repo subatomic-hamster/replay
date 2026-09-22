@@ -33,7 +33,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  // `undefined` is "half the logical cores" — 8 on this 16-core box, which oversubscribes
+  // one uvicorn + three vite servers and makes the suite flaky under load (bug 6).
+  workers: process.env.CI ? 2 : 4,
   reporter: [["list"]],
   use: {
     trace: "retain-on-failure",

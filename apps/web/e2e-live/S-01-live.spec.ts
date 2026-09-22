@@ -11,7 +11,8 @@ const FIXTURE = path.join(REPO, "services/api/fixtures/tiny.mp4");
 const API = "http://localhost:8000";
 
 /** Landmarks projected from courtcam's basketball_half template onto a 1280x720 frame
- *  (the same values services/api/tests/conftest.py calibrates with: ~0.02 px error). */
+ *  (the same values services/api/tests/conftest.py calibrates with: ~0.02 px error).
+ *  The *order* is not asserted from here — the profile owns it (see `landmarkOrder`). */
 const LANDMARKS: Record<string, [number, number]> = {
   corner_nl: [180, 660],
   corner_nr: [1100, 660],
@@ -21,6 +22,23 @@ const LANDMARKS: Record<string, [number, number]> = {
 };
 
 let gameId = "";
+
+/** The click order the uploader walks, straight from the profile. Hardcoding it here
+ *  meant the spec asserted "rim" for point 5 and broke whenever a profile reordered its
+ *  landmarks — the contract is `GET /sports` -> `landmarks` (D-13), so read it. */
+async function landmarkOrder(page: Page, sport: string): Promise<string[]> {
+  const names = await page.evaluate(
+    async ([api, id]) => {
+      const sports: { id: string; landmarks?: string[] }[] = await fetch(`${api}/sports`).then(
+        (r) => r.json(),
+      );
+      return (sports.find((s) => s.id === id) ?? sports[0])?.landmarks ?? [];
+    },
+    [API, sport] as const,
+  );
+  expect(names.length, "GET /sports carries the landmark click order").toBeGreaterThanOrEqual(4);
+  return names;
+}
 
 test.describe.configure({ mode: "serial" });
 
@@ -74,8 +92,14 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   expect(frame.w).toBeGreaterThan(0); // D-14: the frame exists before processing
 
   const box = (await img.boundingBox())!;
-  for (const [name, [x, y]] of Object.entries(LANDMARKS)) {
+  const order = await landmarkOrder(page, "basketball");
+  for (const [i, name] of order.entries()) {
+    const [x, y] = LANDMARKS[name] ?? [];
+    expect(x, `this spec has a pixel for every landmark the profile asks for (${name})`).toBeDefined();
     await expect(page.getByTestId("calib-prompt")).toContainText(name.replace(/_/g, " "));
+    await expect(page.getByTestId("calib-prompt")).toContainText(
+      `point ${i + 1} of ${order.length}`,
+    );
     await page.mouse.click(box.x + (x / frame.w) * box.width, box.y + (y / frame.h) * box.height);
     await expect(page.getByTestId(`landmark-${name}`)).toBeVisible();
   }

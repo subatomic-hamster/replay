@@ -13,10 +13,10 @@ const LANDMARK_CLICKS = [
   { x: 0.5, y: 0.36 }, // rim
 ];
 
-async function createAndUpload(page: Page) {
+async function createAndUpload(page: Page, sport = "basketball") {
   await page.goto("/upload");
   await page.getByTestId("game-title-input").fill("Test Game");
-  await page.getByTestId("sport-option-basketball").check();
+  await page.getByTestId(`sport-option-${sport}`).check();
   await page.getByTestId("create-game").click();
   await expect.poll(() => new URL(page.url()).pathname).toMatch(/^\/upload\/g_/);
 
@@ -45,6 +45,9 @@ async function clickLandmarks(page: Page, n = 5) {
 }
 
 test("S-04/S-06 five landmarks give a reprojection error and unlock Start", async ({ page }) => {
+  // The stage poll below waits up to 40 s; the default test timeout is 30 s, so under
+  // load the test died before its own assertion could fail (bug 6).
+  test.setTimeout(90_000);
   const id = await createAndUpload(page);
 
   // E-05: the gate is shut and the error field says what is missing, not a stale number.
@@ -64,6 +67,9 @@ test("S-04/S-06 five landmarks give a reprojection error and unlock Start", asyn
   const px = Number((await page.getByTestId("calib-error").textContent())!.replace(/[^\d.]/g, ""));
   expect(px).toBeLessThan(5);
   await expect(page.getByTestId("start-processing")).toBeEnabled();
+  // Bug 3: the API reports a residual per landmark, so the page can name the worst click
+  // instead of only printing one number.
+  await expect(page.getByTestId("calib-worst")).toContainText(/worst point: \w+.* · [\d.]+ px/);
 
   const calib = (await mockCalls(page)).filter((c) => c.path.endsWith("/calibration"));
   expect(calib).toHaveLength(1);
@@ -139,4 +145,44 @@ test("E-03 a non-video file is rejected before it is uploaded", async ({ page })
   await expect(page.getByTestId("upload-error")).toBeVisible();
   const uploads = (await mockCalls(page)).filter((c) => c.method === "PUT");
   expect(uploads).toHaveLength(0);
+});
+
+// Bug 1: `variant` was `useState("half")` — basketball's. A sport whose only variant is
+// `doubles` had no radio checked and still posted `half`, which the API 400s.
+test("S-05b a single-variant sport hides the picker and posts its own variant", async ({
+  page,
+}) => {
+  await createAndUpload(page, "pickleball");
+
+  // One variant is not a choice: no radios at all, for any name.
+  await expect(page.locator('input[name="variant"]')).toHaveCount(0);
+  await expect(page.getByTestId("variant-half")).toHaveCount(0);
+  await expect(page.getByTestId("variant-doubles")).toHaveCount(0);
+
+  // pickleball asks for 6 landmarks, not basketball's 5
+  await expect(page.getByTestId("calib-prompt")).toContainText("point 1 of 6");
+  await expect(page.getByTestId("calib-prompt")).toContainText("corner nl");
+  await clickLandmarks(page, 5);
+  const img = page.getByTestId("calib-image");
+  const box = (await img.boundingBox())!;
+  await img.click({ position: { x: box.width * 0.2, y: box.height * 0.55 } });
+
+  await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "true");
+  const calib = (await mockCalls(page)).filter((c) => c.path.endsWith("/calibration"));
+  const body = calib.at(-1)!.body as {
+    sport: string;
+    court_variant: string;
+    landmarks_px: Record<string, [number, number]>;
+  };
+  expect(body.sport).toBe("pickleball");
+  // D-13: the client's `court_variant` is `variant` on the wire.
+  expect(body.court_variant).toBe("doubles");
+  expect(Object.keys(body.landmarks_px)).toEqual([
+    "corner_nl",
+    "corner_nr",
+    "corner_fl",
+    "corner_fr",
+    "net_post_l",
+    "net_post_r",
+  ]);
 });

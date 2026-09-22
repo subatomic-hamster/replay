@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { GAME_ID, mockCalls } from "./helpers";
+import { GAME_ID, NET_GAME_ID, mockCalls } from "./helpers";
 
 // S-36 confirm, S-37 correct, E-19 confidence indicator, R1/R3 shot chart + box score.
 test("S-36 confirming Made PATCHes the event and clears the queue", async ({ page }) => {
@@ -59,4 +59,22 @@ test("R3 stats recompute after a review answer", async ({ page }) => {
   await expect
     .poll(async () => (await p3.locator("td").allTextContents()).slice(1, 3))
     .toEqual(["1", "0"]);
+});
+
+// Bug 4: `sport_ui.review` was ignored, so a net sport declaring `[heatmap]` still drew
+// an empty shot chart and an empty box score.
+test("S-33/S-35 only the panels in sport_ui.review are rendered", async ({ page }) => {
+  await page.goto(`/tv/${GAME_ID}/review`);
+  // basketball lists all three
+  await expect(page.getByTestId("shot-chart")).toBeVisible();
+  await expect(page.getByTestId("heatmap")).toBeVisible();
+  await expect(page.getByTestId("box-score-row").first()).toBeVisible();
+
+  await page.goto(`/tv/${NET_GAME_ID}/review`);
+  // pickleball lists only the heatmap
+  await expect(page.getByTestId("heatmap")).toBeVisible();
+  await expect(page.getByTestId("shot-chart")).toHaveCount(0);
+  await expect(page.getByTestId("box-score-row")).toHaveCount(0);
+  // the queue is the screen's job, not a stat, so it stays for every sport
+  await expect(page.getByTestId("review-empty")).toBeVisible();
 });

@@ -118,6 +118,17 @@ def test_calibration_validation(client: TestClient):
     assert client.post(f"/games/{gid}/calibration", json={"sport": "basketball"}).status_code == 422
 
 
+def test_calibration_reports_per_landmark_residuals(client: TestClient):
+    """Bug 3: a 200 used to carry one number, so the uploader could not say which click
+    was the bad one."""
+    gid = new_game(client)
+    body = client.post(f"/games/{gid}/calibration", json=CALIB).json()
+    residuals = body["residuals_px"]
+    assert set(residuals) == set(CALIB["landmarks_px"])
+    assert max(residuals.values()) >= body["reprojection_error_px"] - 1e-9
+    assert all(v >= 0 for v in residuals.values())
+
+
 def test_calibration_stores_court(client: TestClient):
     gid = new_game(client)
     r = client.post(f"/games/{gid}/calibration", json=CALIB)

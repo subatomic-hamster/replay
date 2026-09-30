@@ -22,7 +22,7 @@ async function seekTo(page: Page, t: number) {
 async function followP1(page: Page) {
   await openWatch(page);
   await enterSelectMode(page);
-  expect(await focusedBoxId(page)).toBe("p1"); // leftmost box is the default focus
+  await expect.poll(() => focusedBoxId(page)).toBe("p1"); // leftmost box is the default focus
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("followcam-active")).toHaveAttribute("data-player-id", "p1");
 }
@@ -59,7 +59,7 @@ test("S-22b the follow frame tracks the player inside the zoomed viewport", asyn
 test("S-22b Escape keeps the frame on the same player in the wide shot", async ({ page }) => {
   await openWatch(page);
   await enterSelectMode(page);
-  expect(await focusedBoxId(page)).toBe("p1");
+  await expect.poll(() => focusedBoxId(page)).toBe("p1");
   // Where p1's select box sits at this (paused) timestamp.
   const boxAt = await centre(page.getByTestId("select-box-p1"));
 

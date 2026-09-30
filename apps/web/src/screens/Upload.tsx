@@ -1,13 +1,12 @@
 // Phone uploader (I1, I2, I3, I5, W7-from-phone). Touch/mouse, not D-pad — these pages
 // never run on the TV.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api } from "../api/client";
 import { API_BASE } from "../config";
 import { navigate, useLocation } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
 import type { AutoCalibration, Game, SportProfile } from "../api/types";
 
-const STAGES = ["ingest", "detect", "track", "render", "label"] as const;
 // What courtcam's homography needs; the API enforces the same floor (D-19).
 const MIN_LANDMARKS = 4;
 // D-23: below this a proposed landmark is drawn hollow and is not committed until
@@ -258,6 +257,12 @@ export function Calibrate({ gameId }: { gameId: string }) {
   const [taken, setTaken] = useState<"none" | "applied" | "manual">("none");
   const [adjust, setAdjust] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
+  // A drag moves a point; a tap (no movement) selects it, so the next frame tap or
+  // "Not visible" acts on that point instead of the walk cursor.
+  const dragFrom = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  // Points taken off by "Not visible" on a selection: the walk must not ask for them again.
+  const [skipped, setSkipped] = useState<string[]>([]);
   const marksRef = useRef(marks);
   marksRef.current = marks;
 
@@ -276,6 +281,11 @@ export function Calibrate({ gameId }: { gameId: string }) {
     () => (more ? [...required, ...optional] : required),
     [more, required, optional],
   );
+  // The walk cursor is the first landmark at or after `step` that is neither placed nor
+  // skipped. In the manual walk that is just `names[step]`; after a proposal is applied
+  // it jumps over the proposed points to whatever the proposal left out.
+  const pendingFrom = (list: readonly string[], from: number, pts: object, skip: string[]) =>
+    list.filter((n, i) => i >= from && !(n in pts) && !skip.includes(n));
 
   const submit = useCallback(
     (pts: Record<string, [number, number]>) => {
@@ -303,7 +313,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
 
   // Re-validate when the variant changes, once the required walk is behind us.
   useEffect(() => {
-    if (step >= required.length) submit(marks);
+    if (pendingFrom(required, step, marks, skipped).length === 0) submit(marks);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variant]);
 
@@ -350,7 +360,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
   if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
   if (!game || !profile) return <div className="screen phone">Loading…</div>;
 
-  const next: string | undefined = names[step];
+  const next: string | undefined = selected ?? pendingFrom(names, step, marks, skipped)[0];
   const placed = Object.keys(marks);
   // The API owns the threshold (it scales with the clicked court's pixel span, because
   // 5 px is unreachable by hand on a 2560-px panorama — courtcam.calibrate). A 200 is a
@@ -361,10 +371,45 @@ export function Calibrate({ gameId }: { gameId: string }) {
   // point is wrong — the per-landmark residuals do.
   const worst = Object.entries(result?.residuals ?? {}).sort((a, b) => b[1] - a[1])[0];
 
-  const advance = (pts: Record<string, [number, number]>) => {
+  const dropWeak = (name: string) =>
+    setWeak((w) => {
+      if (!(name in w)) return w;
+      const rest = { ...w };
+      delete rest[name];
+      return rest;
+    });
+
+  /** Walk past `name` (placed or skipped), validating once no required point is left. */
+  const advance = (pts: Record<string, [number, number]>, name: string) => {
+    const at = names.indexOf(name) + 1;
     setMarks(pts);
-    setStep(step + 1);
-    if (step + 1 >= required.length) submit(pts);
+    marksRef.current = pts;
+    dropWeak(name);
+    setStep(at);
+    if (pendingFrom(required, at, pts, skipped).length === 0) submit(pts);
+  };
+
+  /** A tap on the frame places the selected point, else the walk's next one. E-07:
+   *  coordinates come from the image rect, so a tap never lands outside the frame. */
+  const tapFrame = (clientX: number, clientY: number) => {
+    if (!next) return;
+    const px = pointAt(clientX, clientY);
+    if (!px) return;
+    if (selected) place(selected, px);
+    else advance({ ...marks, [next]: px }, next);
+  };
+
+  /** Re-place (`px`) or take off (`null`) the selected point, outside the walk order. */
+  const place = (name: string, px: [number, number] | null) => {
+    const pts = { ...marksRef.current };
+    if (px) pts[name] = px;
+    else delete pts[name];
+    setMarks(pts);
+    marksRef.current = pts;
+    dropWeak(name);
+    setSkipped((s) => (px ? s.filter((n) => n !== name) : [...s, name]));
+    setSelected(null);
+    submit(pts);
   };
 
   const proposal = auto?.status === "done" ? auto.proposal : undefined;
@@ -391,7 +436,10 @@ export function Calibrate({ gameId }: { gameId: string }) {
     setMarks(strong);
     marksRef.current = strong;
     setWeak(hollow);
-    setStep(names.length);
+    // Not parked past the end: whatever the proposal did not find is still walked.
+    setStep(0);
+    setSkipped([]);
+    setSelected(null);
     setTaken("applied");
     setAdjust(intoAdjust);
     submit(strong);
@@ -400,12 +448,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
   const moveHandle = (name: string, clientX: number, clientY: number) => {
     const px = pointAt(clientX, clientY);
     if (!px) return;
-    setWeak((w) => {
-      if (!(name in w)) return w;
-      const rest = { ...w };
-      delete rest[name];
-      return rest;
-    });
+    dropWeak(name);
     const next = { ...marksRef.current, [name]: px };
     marksRef.current = next;
     setMarks(next);
@@ -441,7 +484,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
             ? "Placing the points by hand."
             : taken === "applied"
               ? adjust
-                ? "Drag any point that looks wrong."
+                ? "Drag any point that looks wrong, or tap it to re-place it or mark it not visible."
                 : "Using the proposed points."
               : pending
                 ? "Finding the court…"
@@ -480,6 +523,8 @@ export function Calibrate({ gameId }: { gameId: string }) {
               setMarks({});
               marksRef.current = {};
               setWeak({});
+              setSkipped([]);
+              setSelected(null);
               setResult(null);
             }}
           >
@@ -488,10 +533,12 @@ export function Calibrate({ gameId }: { gameId: string }) {
         ) : null}
       </div>
 
-      <p className="calib-prompt" data-testid="calib-prompt">
-        {next
-          ? `Tap ${next.replace(/_/g, " ")} — point ${step + 1} of ${names.length}`
-          : "All landmarks placed."}
+      <p className="calib-prompt" data-testid="calib-prompt" data-target={next ?? ""}>
+        {selected
+          ? `Tap where ${selected.replace(/_/g, " ")} really is, or "Not visible" if it is off the frame.`
+          : next
+            ? `Tap ${next.replace(/_/g, " ")} — point ${names.indexOf(next) + 1} of ${names.length}`
+            : "All landmarks placed."}
       </p>
 
       <div className="calib-frame">
@@ -500,13 +547,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
           src={api.mediaUrl(game, game.calib_url ?? "calib.jpg")}
           alt="Calibration frame"
           data-testid="calib-image"
-          onClick={(e) => {
-            // E-07: coordinates are derived from the image rect, so a click can never
-            // land outside [0,naturalWidth] x [0,naturalHeight].
-            if (!next) return;
-            const px = pointAt(e.clientX, e.clientY);
-            if (px) advance({ ...marks, [next]: px });
-          }}
+          onClick={(e) => tapFrame(e.clientX, e.clientY)}
         />
         {dots.map(([name, p, conf]) => {
           const img = imgRef.current;
@@ -514,6 +555,11 @@ export function Calibrate({ gameId }: { gameId: string }) {
           const h = img?.naturalHeight || 1;
           const hollow = conf < MIN_CONFIDENCE;
           const at = { left: `${(p[0] / w) * 100}%`, top: `${(p[1] / h) * 100}%` };
+          // A proposed point can sit off the frame (an invented corner); its 44 px handle
+          // is kept fully inside the frame so it can still be tapped and marked "Not
+          // visible". The dot itself stays where the point really is.
+          const pin = (v: number, max: number) => `clamp(22px, ${(v / max) * 100}%, 100% - 22px)`;
+          const handleAt = { left: pin(p[0], w), top: pin(p[1], h) };
           return (
             <span key={name} style={{ display: "contents" }}>
               <span
@@ -534,17 +580,23 @@ export function Calibrate({ gameId }: { gameId: string }) {
               {adjust ? (
                 <button
                   type="button"
-                  className="landmark-handle"
+                  className={`landmark-handle${selected === name ? " selected" : ""}`}
                   data-testid={`landmark-handle-${name}`}
                   aria-label={`Move ${name.replace(/_/g, " ")}`}
-                  style={at}
+                  aria-pressed={selected === name}
+                  style={handleAt}
                   onPointerDown={(e) => {
                     e.preventDefault();
                     e.currentTarget.setPointerCapture(e.pointerId);
+                    dragFrom.current = { x: e.clientX, y: e.clientY, moved: false };
                     setDragging(name);
                   }}
                   onPointerMove={(e) => {
-                    if (dragging === name) moveHandle(name, e.clientX, e.clientY);
+                    const from = dragFrom.current;
+                    if (dragging !== name || !from) return;
+                    if (!from.moved && Math.hypot(e.clientX - from.x, e.clientY - from.y) < 5) return;
+                    from.moved = true;
+                    moveHandle(name, e.clientX, e.clientY);
                   }}
                   onPointerUp={(e) => {
                     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -552,8 +604,21 @@ export function Calibrate({ gameId }: { gameId: string }) {
                     }
                     if (dragging !== name) return;
                     setDragging(null);
-                    moveHandle(name, e.clientX, e.clientY);
-                    submit(marksRef.current);
+                    if (dragFrom.current?.moved) {
+                      moveHandle(name, e.clientX, e.clientY);
+                      setSelected(null);
+                      submit(marksRef.current);
+                    } else {
+                      // A tap, not a drag. While a point is waiting to be placed (the
+                      // selected one, else the walk's next) the tap is a frame tap for
+                      // *that* point: landmarks can sit 15 px apart, well inside a 44 px
+                      // handle, and a handle that swallowed the tap would silently pick
+                      // the wrong point. With nothing waiting it selects this one; the
+                      // chips under the frame select at any time.
+                      if (next) tapFrame(e.clientX, e.clientY);
+                      else setSelected(name);
+                    }
+                    dragFrom.current = null;
                   }}
                 />
               ) : null}
@@ -567,6 +632,23 @@ export function Calibrate({ gameId }: { gameId: string }) {
           </div>
         ) : null}
       </div>
+
+      {adjust && dots.length > 0 ? (
+        <div className="calib-points" role="group" aria-label="Placed points">
+          {dots.map(([name]) => (
+            <button
+              key={name}
+              type="button"
+              className="secondary"
+              data-testid={`calib-point-${name}`}
+              aria-pressed={selected === name}
+              onClick={() => setSelected(selected === name ? null : name)}
+            >
+              {name.replace(/_/g, " ")}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="calib-actions">
         <p
@@ -592,9 +674,10 @@ export function Calibrate({ gameId }: { gameId: string }) {
           disabled={!next}
           onClick={() => {
             if (!next) return;
+            if (selected) return place(selected, null);
             const pts = { ...marks };
             delete pts[next];
-            advance(pts);
+            advance(pts, next);
           }}
         >
           Not visible
@@ -605,10 +688,13 @@ export function Calibrate({ gameId }: { gameId: string }) {
           data-testid="calib-undo"
           disabled={step === 0}
           onClick={() => {
+            const last = names[step - 1];
             const pts = { ...marks };
-            delete pts[names[step - 1]];
+            delete pts[last];
             setMarks(pts);
             marksRef.current = pts;
+            setSkipped((s) => s.filter((n) => n !== last));
+            setSelected(null);
             setStep(step - 1);
             setResult(null);
           }}
@@ -674,13 +760,25 @@ export function UploadStatus({ gameId }: { gameId: string }) {
       <p>
         Status: <strong data-testid="game-status">{game?.status ?? "…"}</strong>
       </p>
+      {/* The API's `stages` keys are the pipeline's own list, in run order (S-08), so the
+          page renders whatever it is sent rather than a copy that goes stale. */}
       <ol className="stages">
-        {STAGES.map((s) => {
-          const state = game?.stages?.[s] ?? "pending";
+        {Object.entries(game?.stages ?? {}).map(([s, state]) => {
+          const frac = state === "running" ? game?.progress?.[s] : undefined;
           return (
-            <li key={s} className={`stage ${state}`} data-testid={`stage-${s}`} data-state={state}>
+            <li
+              key={s}
+              className={`stage ${state}`}
+              data-testid={`stage-${s}`}
+              data-state={state}
+              data-progress={frac ?? ""}
+              style={frac != null ? ({ "--p": frac } as CSSProperties) : undefined}
+            >
               <span className="stage-name">{s}</span>
-              <span className="stage-state">{state}</span>
+              <span className="stage-state">
+                {state}
+                {frac != null ? ` · ${Math.round(frac * 100)}%` : ""}
+              </span>
             </li>
           );
         })}

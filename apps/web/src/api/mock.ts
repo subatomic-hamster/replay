@@ -156,6 +156,28 @@ function trackAt(id: string, t: number): TrackPlayer {
   };
 }
 
+// courtcam's own stage list (courtcam/courtcam/pipeline.py STAGES), which the API sends
+// as the ordered keys of `stages` (S-08). The screens never hardcode it; only the mock does.
+const STAGE_ORDER = [
+  "ingest",
+  "calibrate",
+  "detect",
+  "track",
+  "court",
+  "identity",
+  "tracks",
+  "crops",
+  "events",
+] as const;
+
+/** Stages before `running` done, that one running, the rest pending. */
+const stagesAt = (running: number): Game["stages"] =>
+  Object.fromEntries(
+    STAGE_ORDER.map((s, i) => [s, i < running ? "done" : i === running ? "running" : "pending"]),
+  );
+const progressAt = (running: number, frac: number): Record<string, number> =>
+  Object.fromEntries(STAGE_ORDER.map((s, i) => [s, i < running ? 1 : i === running ? frac : 0]));
+
 function baseGame(id: string, title: string, status: Game["status"]): Game {
   const done = status === "ready";
   return {
@@ -164,9 +186,8 @@ function baseGame(id: string, title: string, status: Game["status"]): Game {
     title,
     recorded_at: "2026-09-29T19:30:00-04:00",
     status,
-    stages: done
-      ? { ingest: "done", detect: "done", track: "done", render: "partial", label: "done" }
-      : { ingest: "done", detect: "running", track: "pending", render: "pending", label: "pending" },
+    stages: stagesAt(done ? STAGE_ORDER.length : 2),
+    ...(done ? {} : { progress: progressAt(2, 0.5) }),
     video: { duration_s: DURATION, fps: FPS, width: 1280, height: 720 },
     sport: "basketball",
     court: {
@@ -268,25 +289,21 @@ function seed() {
 }
 seed();
 
-const STAGE_ORDER = ["ingest", "detect", "track", "render", "label"] as const;
-
-/** Advance one stage per poll so the status screen finishes in a few seconds. */
+/** Finish one stage per poll (the next one shows as half done) so the status screen
+ *  runs through courtcam's nine stages in ~20 s. */
 function advance(g: Game) {
   if (g.status !== "processing") return;
-  for (const s of STAGE_ORDER) {
-    if (g.stages[s] === "pending") {
-      g.stages[s] = "running";
-      return;
-    }
-    if (g.stages[s] === "running") {
-      g.stages[s] = s === "render" ? "partial" : "done";
-      if (s === "label") {
-        g.status = "ready";
-        g.players = baseGame(g.id, g.title, "ready").players;
-      }
-      return;
-    }
+  const at = STAGE_ORDER.findIndex((s) => g.stages[s] !== "done");
+  if (at + 1 < STAGE_ORDER.length) {
+    g.stages = stagesAt(at + 1);
+    g.progress = progressAt(at + 1, 0.5);
+    return;
   }
+  // `progress` rides along only while a job runs (D-17).
+  g.stages = stagesAt(STAGE_ORDER.length);
+  delete g.progress;
+  g.status = "ready";
+  g.players = baseGame(g.id, g.title, "ready").players;
 }
 
 function needGame(id: string): Game {
@@ -403,7 +420,8 @@ export const mockApi: ReplayApi = {
     log("POST", `/games/${gameId}/process`);
     const g = needGame(gameId);
     g.status = "processing";
-    g.stages = { ingest: "running", detect: "pending", track: "pending", render: "pending", label: "pending" };
+    g.stages = stagesAt(0);
+    g.progress = progressAt(0, 0);
     return delay(undefined);
   },
 
@@ -419,6 +437,7 @@ export const mockApi: ReplayApi = {
         duration_s: g.video.duration_s,
         thumb_url: g.thumb_url,
         stages: g.stages,
+        ...(g.progress ? { progress: g.progress } : {}),
       }));
     return delay(out);
   },

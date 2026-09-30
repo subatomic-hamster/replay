@@ -41,12 +41,11 @@ const sh = (cmd: string, args: string[]) =>
 type Px = [number, number];
 
 /** Where a source pixel lands on screen. The frame is drawn letterbox-free but scaled
- *  (`.wide-app .calib-frame img` caps it at `100vh - 300px`), so the mapping has to come
+ *  (`.wide-app .calib-frame img` is capped by the viewport), so the mapping has to come
  *  from the image's own natural size — not from 1920x1080.
  *
- *  The bounding box is re-read on every call, deliberately: taking the proposal removes
- *  the two "Looks right / Adjust" buttons above the frame, which slides the image ~150 px
- *  up the page. A mapping cached before that lands every later click somewhere else. */
+ *  The bounding box is re-read on every call, deliberately: on a narrow viewport taking
+ *  the proposal removes the buttons stacked above the frame and slides the image up. */
 async function mapper(page: Page) {
   const img = page.getByTestId("calib-image");
   await expect(img).toBeVisible();
@@ -64,20 +63,45 @@ async function mapper(page: Page) {
   };
 }
 
-/** Drag a proposed landmark onto its true pixel. The mouse is walked to the handle
- *  first and the drag is stepped, so the cursor motion is visible in the recording. */
-async function dragLandmark(page: Page, name: string, to: { x: number; y: number }) {
-  const handle = page.getByTestId(`landmark-handle-${name}`);
-  if (!(await handle.count())) return false;
-  const from = (await handle.boundingBox())!;
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2, { steps: 15 });
-  await beat(page, 500);
-  await page.mouse.down();
-  await page.mouse.move(to.x, to.y, { steps: 30 });
+/** Pick a placed point from the chips under the frame (S-04b-7). */
+async function pickPoint(page: Page, name: string) {
+  const chip = page.getByTestId(`calib-point-${name}`);
+  const box = (await chip.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 15 });
   await beat(page, 400);
-  await page.mouse.up();
+  await chip.click();
+  await expect(page.getByTestId("calib-prompt")).toHaveAttribute("data-target", name);
+  await beat(page, 700);
+}
+
+/** Put a proposed landmark on its true pixel. Dragged when its handle is the one on top
+ *  at its own centre — the legible move for the video; the mouse is walked there first
+ *  and the drag is stepped. A proposal can pile several points inside one 44 px handle,
+ *  and a drag there grabs whichever handle is on top, so then the point is picked from
+ *  the chips and placed with a tap instead. */
+async function correctLandmark(page: Page, name: string, to: { x: number; y: number }) {
+  const handle = page.getByTestId(`landmark-handle-${name}`);
+  if (!(await handle.count())) return;
+  const onTop = await handle.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === el;
+  });
+  if (onTop) {
+    const from = (await handle.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2, { steps: 15 });
+    await beat(page, 500);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 30 });
+    await beat(page, 400);
+    await page.mouse.up();
+  } else {
+    await pickPoint(page, name);
+    await page.mouse.move(to.x, to.y, { steps: 20 });
+    await beat(page, 300);
+    await page.mouse.click(to.x, to.y);
+    await expect(page.getByTestId(`calib-point-${name}`)).toHaveAttribute("aria-pressed", "false");
+  }
   await beat(page, 800);
-  return true;
 }
 
 /** Walk the prompt: click the landmarks we have a ground-truth pixel for, and press
@@ -110,21 +134,13 @@ async function walkPrompts(
 
 // ------------------------------------------------------------------------------ TV
 
-/** Space until the wide shot is actually rolling.
- *
- *  `PlayerSurface.toggle` is `v.play().catch(() => {})`, and a `play()` issued while the
- *  element is still settling on its source comes back rejected — `paused` flips straight
- *  back to true and the keypress is silently lost. Measured on this clip: the first Space
- *  after `readyState >= 2` took >5 s to stick. A demo cannot narrate a dead keypress, so
- *  press again rather than poll longer. `paused` is checked first, so a Space that did
- *  land is never undone by the retry. */
+/** One Space, then wait for it to land. `PlayerSurface` holds a play request that the
+ *  still-settling source rejects and retries it once the element can play (S-13), so a
+ *  single press is enough — this used to have to press again. */
 async function setPlaying(p: Page, want: boolean) {
-  for (let i = 0; i < 6; i++) {
-    if ((await videoState(p))?.paused === !want) return;
-    await p.keyboard.press("Space");
-    await p.waitForTimeout(1200);
-  }
-  expect((await videoState(p))?.paused, `video paused=${!want}`).toBe(!want);
+  if ((await videoState(p))?.paused === !want) return;
+  await p.keyboard.press("Space");
+  await expect.poll(async () => (await videoState(p))?.paused, { timeout: 15_000 }).toBe(!want);
 }
 
 // ------------------------------------------------------------------------- ffmpeg
@@ -132,6 +148,14 @@ async function setPlaying(p: Page, want: boolean) {
 const FONT = ["/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"].find(
   (f) => fs.existsSync(f),
 );
+// The laptop's ffmpeg has only openh264, the box's static build only x264.
+const H264 = (() => {
+  try {
+    return /\blibopenh264\b/.test(sh("ffmpeg", ["-hide_banner", "-encoders"])) ? "libopenh264" : "libx264";
+  } catch {
+    return "libx264";
+  }
+})();
 const HAS_DRAWTEXT = (() => {
   try {
     return /\bdrawtext\b/.test(sh("ffmpeg", ["-hide_banner", "-filters"])) && !!FONT;
@@ -141,7 +165,7 @@ const HAS_DRAWTEXT = (() => {
 })();
 
 /** webm -> constant-30-fps mp4, with the segment caption burnt in when drawtext exists.
- *  libopenh264, not libx264: this ffmpeg build has no x264.
+ *  H.264 through whichever encoder this ffmpeg build has (`H264`).
  *
  *  `cut` drops one [from, to] window. The only thing it is used for is the D-23 model
  *  wait: `courtcam autocalib --backend template` is a measured 46 s on this frame, and a
@@ -162,7 +186,7 @@ function encode(src: string, dst: string, caption: string, cut?: [number, number
     "-y", "-i", src,
     "-filter_complex", graph, "-map", "[out]",
     "-an",
-    "-c:v", "libopenh264", "-b:v", "8M", "-pix_fmt", "yuv420p",
+    "-c:v", H264, "-b:v", "8M", "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
     dst,
   ]);
@@ -219,9 +243,10 @@ test("R-07 demo video: phone upload+calibrate, then the TV loop", async ({
     await a.waitForURL(/\/calibrate$/);
 
     // --- calibrate, part 1: what the model proposes, and dragging it ----------------
-    let at = await mapper(a);
-    // Badminton has two variants (doubles, singles), so the picker IS rendered; doubles
-    // is `variants[0]` and therefore already the checked default.
+    const at = await mapper(a);
+    // Only a profile with more than one court variant renders the picker (badminton's
+    // doubles/singles may be merged into one); when it is there, doubles is `variants[0]`
+    // and therefore already the checked default.
     const doubles = a.getByTestId(`variant-${VARIANT}`);
     if (await doubles.count()) {
       await expect(doubles).toBeChecked();
@@ -237,35 +262,42 @@ test("R-07 demo video: phone upload+calibrate, then the TV loop", async ({
     if (spinTo - spinFrom > 8) spinner = [spinFrom + 3, spinTo - 0.5];
     await beat(a, 2500); // let the viewer read "Found N points · … · needs a check"
 
-    if (await a.getByTestId("autocalib-adjust").count()) {
+    const adjusted = (await a.getByTestId("autocalib-adjust").count()) > 0;
+    if (adjusted) {
       await a.getByTestId("autocalib-adjust").click();
       await expect(status).toHaveAttribute("data-state", "applied");
       await beat(a, 1200);
-      // The two landmarks this camera can actually see, dragged onto the painted net
-      // posts. The template fit is ~70 px out on this clip, so these are big, legible
-      // drags rather than nudges, and `calib-error` moves while they land.
-      await dragLandmark(a, "net_post_l", await at(truth.net_post_l));
-      await dragLandmark(a, "net_post_r", await at(truth.net_post_r));
-      await beat(a, 2500);
+
+      // --- calibrate, part 2: correct the proposal in place ---------------------------
+      // Every proposed point we have a true pixel for goes onto it (the net posts are
+      // the two this camera sees best; the template fit can be ~70 px out here, so these
+      // are big, legible moves and `calib-error` changes as they land). The fit also
+      // proposes points that are physically off-frame on this clip, `corner_*` among
+      // them; D-19 wants those left out, not guessed at, so each is picked from the
+      // chips and marked "Not visible".
+      const proposed = await a
+        .locator('[data-testid^="landmark-handle-"]')
+        .evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")!.slice(16)));
+      const posts = proposed.filter((n) => n.startsWith("net_post"));
+      for (const name of [...posts, ...proposed.filter((n) => !posts.includes(n))]) {
+        if (truth[name]) {
+          await correctLandmark(a, name, await at(truth[name]));
+          continue;
+        }
+        await pickPoint(a, name);
+        await a.getByTestId("calib-skip").click();
+        await expect(a.getByTestId(`landmark-${name}`)).toHaveCount(0);
+        await beat(a, 900);
+      }
+    } else {
+      // No proposal to correct: "Place points myself" is the whole walk.
+      await a.getByTestId("autocalib-manual").click();
+      await expect(status).toHaveAttribute("data-state", "manual");
+      await beat(a, 1200);
     }
 
-    // --- calibrate, part 2: place them by hand --------------------------------------
-    // Dragging cannot finish this clip. The fit also proposes three `corner_*` that are
-    // physically off-frame here, and once the proposal is applied "Not visible" is
-    // disabled (the walk cursor is parked past the last required landmark), so an
-    // invented required point can only be taken off by undoing back through everything
-    // that was just dragged. Coming back to the page resets the screen to `taken:none`,
-    // where "Place points myself" is the honest action for a proposal this far out.
-    // The re-queued proposal is ignored: the busy overlay is click-through by design and
-    // goes away the moment the manual walk starts.
-    await a.goto(`/upload/${gameId}/calibrate`);
-    at = await mapper(a);
-    await beat(a, 1200);
-    await a.getByTestId("autocalib-manual").click();
-    await expect(status).toHaveAttribute("data-state", "manual");
-    await beat(a, 1200);
-
-    // Required: four off-frame corners -> "Not visible", two net posts -> clicked.
+    // Whatever the proposal left out: clicked when we have a true pixel, else
+    // "Not visible". After a manual start this is the whole required walk.
     await walkPrompts(a, truth, at);
     await beat(a, 1000);
 

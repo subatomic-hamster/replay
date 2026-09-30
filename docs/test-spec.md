@@ -28,6 +28,9 @@ append.
   one uvicorn and three vite servers and turns timing assertions into coin flips. Any
   `expect.poll` timeout must be <= the enclosing test's timeout, or the test dies before
   its own assertion can fail — S-04 raises its test timeout to 90 s for the 40 s stage poll.
+  The uvicorn launcher is `uv run --package replay-api uvicorn` unless `REPLAY_API_CMD`
+  overrides it (the shared GPU box has no uv: `REPLAY_API_CMD="python -m uvicorn"` with
+  `PYTHONPATH=<repo>/courtcam:<repo>/services/api`).
 - **Selectors**: tests key off `data-testid`. Referenced here as `[data-testid=x]`.
   Implementation must add these hooks; exact naming may be adjusted but must stay documented
   in this file when changed (plan §12 rule 3 applies to test hooks by extension).
@@ -37,7 +40,9 @@ append.
   `clip-counter`, `review-empty`, `review-action-{made|missed|not-a-shot}`, `shot-marker`,
   `court-dot-{pid}`, `nav-{library|highlights|review}`, `tag-dialog`, `tag-value`,
   `tag-key-{label}`, `pair-code`, `game-title-input`, `create-game`, `file-input`,
-  `go-calibrate`, `calib-image`, `calib-prompt`, `calib-undo`, `landmark-{name}`,
+  `go-calibrate`, `calib-image`, `calib-prompt` (with `data-target` = the landmark the next
+  frame tap or "Not visible" applies to), `calib-undo`, `calib-skip` ("Not visible"),
+  `calib-more`, `landmark-{name}`,
   `variant-{name}` (one radio per `profile.variants`; **absent entirely when the profile
   has a single variant** — see §10 bug 1), `calib-worst` (§10 bug 3), `roster-row`, `roster-name-{pid}`, `roster-save-{pid}`,
   `roster-merge-{pid}`, `ask-dialog`, `ask-value`, `ask-key-{label}` (H3 free text — the
@@ -171,12 +176,21 @@ Given valid calibration saved. When user clicks Start Processing.
 **Pass**: `POST /games/{id}/process` → 202; `game.json.stages.ingest` transitions from
 absent/`pending` to `running` within 5 s of enqueue (polled via `GET /games/{id}`).
 
-### S-08 — Stage progress display, all 5 stages
+### S-08 — Stage progress display, the pipeline's own stages
 Given processing enqueued for the synthetic sample. When user watches the status page.
-**Pass**: `[data-testid=stage-ingest|detect|track|render|label]` each visible and their text
-content cycles `pending → running → done` (render may end `partial`) in that left-to-right
-order; no stage shows `done` before its predecessor does; final state
-`[data-testid=game-status]` text = "ready".
+**Pass**: one `[data-testid=stage-{name}]` row per key of the API's `stages`, in that
+order — the page hardcodes no list. `POST /process` sets `stages` to the running
+pipeline's list (`pipeline_adapter.stage_names`): courtcam's nine
+(`ingest calibrate detect track court identity tracks crops events`, from
+`courtcam.pipeline.STAGES`), fake mode's five (`ingest detect track render label`). Each
+row's `data-state` cycles `pending → running → done` (render may end `partial`) left to
+right; no stage shows `done` before its predecessor does; the running row carries
+`data-progress` (the job's fraction) and shows it as a percentage; final state
+`[data-testid=game-status]` text = "ready". (Before: five hardcoded rows, all `pending`
+for a whole real run, because courtcam's stage names are different.)
+Tests: `e2e/S-04-calibration.spec.ts` → *S-08 the status page lists the API's own
+stages…* (mock, courtcam's nine); `services/api/tests/test_progress.py::
+test_process_lists_the_pipelines_own_stages_in_order`, `::test_stage_names_is_courtcams_list_when_courtcam_is_installed`.
 **Implemented (services/api + apps/web)**: while a job is queued or running, `GET /games/{id}`
 and `GET /games` merge it from `data/jobs.json` (D-9, D-17) — `status: "processing"`, the
 job's stage `running`, earlier ones `done`, later ones `pending`, plus an additive
@@ -211,7 +225,11 @@ Given a game card focused on `/tv`. When user presses `Enter`.
 ### S-13 — Wide playback: play/pause
 Given `/tv/{gameId}` loaded, video paused at t=0. When user presses `Space`.
 **Pass**: `video.paused === false`; after another `Space`, `video.paused === true` and
-`video.currentTime` unchanged for ≥1 s after pause (no drift).
+`video.currentTime` unchanged for ≥1 s after pause (no drift). A `play()` that the
+element aborts while it settles on its source (a reload, or not playable yet) must not
+lose the keypress: `PlayerSurface` holds the request until `playing`, re-issues it on
+`canplay` (or on a 100 ms timer when the element is still ready, max 5 retries), and a
+second `Space` while it is pending cancels it. `e2e/S-13-play-pause.spec.ts`.
 
 ### S-14 — Wide playback: ±10 s seek
 Given video playing at t=50.0. When user presses `,`. **Pass**: `video.currentTime` within
@@ -591,6 +609,8 @@ back on the manual path with the gate shut.
 | S-04b-3 | Adjust and drag | Press `[data-testid=autocalib-adjust]`, drag `[data-testid=landmark-handle-corner_nl]` 30 px | Every landmark gets a >= 44 px handle; the dot follows the pointer; releasing re-POSTs `/calibration` and the error text changes | P1 |
 | S-04b-4 | Low-confidence points are the user's job | Inspect the dots of a proposal with a landmark under 0.5 | That dot renders hollow (`.landmark.hollow`), is excluded from the accepted set, and can be dragged into place | P1 |
 | S-04b-5 | Opt out | Press `[data-testid=autocalib-manual]` | The proposed dots disappear, the walk restarts at the first landmark, and S-04's flow passes unchanged | P1 |
+| S-04b-7 | Correct a proposal in place | In Adjust, press the chip `[data-testid=calib-point-corner_fl]`, then `[data-testid=calib-skip]`; tap the pending hollow `rim`'s handle; tap `landmark-handle-corner_nr` and then the frame | The chip selects (`aria-pressed="true"` on chip and handle, `calib-prompt[data-target=corner_fl]`) without moving the point; "Not visible" removes it and the walk never asks for it again; the walk carries on with what the proposal left uncommitted (the hollow `rim`). While a point is pending, a tap (no drag) on any handle is a frame tap for *that* point — two badminton landmarks sit 15 px apart, inside one 44 px handle; with nothing pending it selects the handle's point, and a frame tap re-places a selected one. Before: after Adjust the walk cursor was parked past the end, so "Not visible" was disabled. Handles are clamped inside the frame so an off-frame proposed point stays grabbable | P1 |
+| S-04b-8 | 1080p fits | 1920×1080, proposal panel up | Frame, the three proposal buttons, the actions and `start-processing` all end ≤ 1080 px, no page scroll, frame ≥ 700 px tall. At ≥ 1100 px wide the controls take a 420 px side column; narrower, the page stacks (S-04b-9, 390×844: no horizontal scroll, prompt above the frame) | P1 |
 | S-04b-6 | Nothing is committed until the user says so | Wait for a proposal, then `GET /games/{id}` | `court` is still absent and `POST /process` is still 400 | P0 |
 
 ### 9.2 API checks
@@ -629,7 +649,9 @@ clip, and `samples/real/` is gitignored (D-7). It writes an overlay per clip to
 
 Added to `apps/web`: `autocalib-status` (with `data-state` = `queued|running|done|failed|applied|manual`),
 `autocalib-busy`, `autocalib-accept`, `autocalib-adjust`, `autocalib-manual`,
-`landmark-handle-{name}`, and `data-confidence` on the existing `landmark-{name}`.
+`landmark-handle-{name}` (with `aria-pressed` when selected, S-04b-7), `calib-point-{name}`
+(Adjust only: one chip per point, selects it), and `data-confidence`
+on the existing `landmark-{name}`. Status rows `stage-{name}` carry `data-progress`.
 
 ---
 
@@ -699,3 +721,14 @@ reported against a 167 px worst landmark, before).
 | PC-20 | Same landmarks, three calls | Identical residuals every time (`::test_the_barrelled_fit_is_deterministic`) |
 | AC-03b | `POST /calibration` with those landmarks and a 1920×1080 `media/calib.jpg` | 200; `k1 < -0.5`, `lens_rms_px` ≈ `[14.6, 2.5]`, `reprojection_error_px < 6` (`services/api/tests/test_routes.py::test_calibration_reports_the_lens_model_the_pipeline_will_run`) |
 | AC-03c | `POST /calibration` with the 5-landmark basketball fixture | `k1 == 0.0` — under `distortion.MIN_POINTS`, so the payload is the pre-D-25 one (`::test_an_undistorted_lens_reports_k1_zero`) |
+
+## 12. Rally segmentation and the one-court badminton profile — appended
+
+| ID | Check | Expected |
+|---|---|---|
+| PC-21 | `events.detect_rallies` on synthetic tracks: 4 players still (1 cm jitter), three bursts of ~2.5 m/s movement, one player strolling between two of them | exactly three `rally` events, each IoU ≥ 0.6 with its burst and starting no later than 0.5 s after it (the serve is inside the clip), for both the badminton and pickleball profiles (`courtcam/tests/test_events.py`) |
+| PC-22 | Same, everyone still / no players | no events (`::test_still_players_and_no_players_give_no_rallies`) |
+| PC-23 | Net-sport synth run | every event is a `rally` inside `[0, duration]` (`test_net_sports.py::test_only_rally_events_inside_the_clip`) |
+| PC-24 | Real clips (manual, local-only labels `samples/real/*.rallies.json`) | rally P/R at IoU ≥ 0.5 as recorded in `samples/real/RESULTS.md` "Rally segmentation"; `badminton_auditorium_smoke.mp4` must give ≥ 1 rally |
+| PC-25 | Badminton profile | `court.variants == ["doubles"]` (so S-05b applies: no picker); `template("singles")` still loads the doubles template; unknown variants still raise (`test_net_sports.py::test_badminton_is_one_court_and_singles_still_loads`) |
+| AC-03d | `POST /calibration` with `sport: badminton, variant: singles` | 200 — the retired name is a `court.variant_aliases` key; `GET /sports` badminton `variants == ["doubles"]` (`services/api/tests/test_routes.py::test_badminton_is_one_court_and_the_retired_singles_name_still_posts`) |

@@ -924,7 +924,36 @@ body,
 .wide-app .calib-frame img {
   width: auto;
   max-width: 100%;
-  max-height: calc(100vh - 300px);
+}
+/* A landscape screen cannot stack frame and controls: title + auto-calibration panel +
+   prompt + actions + Start are ~600 px, which left a 1080p frame ~460 px tall (and
+   `100vh - 300px` pushed Start off the bottom). So the controls take a side column and
+   the frame gets the full height. Narrower than this, it stacks and scrolls (phones). */
+@media (min-width: 1100px) {
+  .wide-app .calibrate {
+    display: grid;
+    grid-template-columns: auto 420px;
+    /* up to seven control rows; the last absorbs the frame's extra height */
+    grid-template-rows: repeat(6, auto) 1fr;
+    gap: 12px 32px;
+    align-items: start;
+    justify-content: center;
+    height: 100vh;
+  }
+  .wide-app .calibrate > * {
+    grid-column: 2;
+    width: auto;
+    margin-top: 0;
+  }
+  .wide-app .calibrate > .calib-frame {
+    grid-column: 1;
+    grid-row: 1 / -1;
+  }
+  .wide-app .calib-frame img {
+    /* viewport minus the 420 px column, the gap and the .phone padding */
+    max-width: calc(100vw - 420px - 32px - 40px);
+    max-height: calc(100vh - 76px);
+  }
 }
 .calib-frame {
   position: relative;
@@ -1059,6 +1088,28 @@ body,
 .landmark-handle:active {
   cursor: grabbing;
 }
+/* Adjust: one chip per point, the list way to select one (S-04b-7). */
+.calib-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.phone .calib-points button {
+  margin: 0;
+  min-height: 44px;
+  padding: 8px 14px;
+  font-size: 16px;
+  text-transform: capitalize;
+}
+.calib-points button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+/* Tapped: the next frame tap or "Not visible" applies to this point. */
+.landmark-handle.selected {
+  border: 3px solid var(--accent);
+  box-shadow: var(--ring-tight);
+}
 .phone [data-testid="start-processing"] {
   width: 100%;
 }
@@ -1138,7 +1189,12 @@ body,
 }
 .stage.running {
   color: var(--accent);
-  background: var(--raised);
+  /* `--p` is the stage's reported fraction (0..1), set inline by the status page. */
+  background: linear-gradient(
+    90deg,
+    rgba(255, 176, 32, 0.16) calc(var(--p, 0) * 100%),
+    var(--raised) 0
+  );
 }
 .stage.running::before {
   background: var(--accent);

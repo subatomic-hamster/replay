@@ -34,7 +34,6 @@ from .providers.storage import LocalStorage
 log = logging.getLogger(__name__)
 
 EVENTS_REL = "events.json"
-STAGE_ORDER = ("ingest", "detect", "track", "render", "label")
 THUMB_REL = "media/thumb.jpg"
 CALIB_REL = "media/calib.jpg"
 # D-23: the *proposal*, not the calibration. POST /calibration is still the commit.
@@ -187,7 +186,8 @@ def _court_or_400(sport: str, variant: str) -> dict:
         raise HTTPException(400, f"unknown sport {sport!r}")
     court = profile.get("court") or {}
     variants = court.get("variants") or []
-    if variants and variant not in variants:
+    # A retired name (badminton `singles`) still posts: courtcam maps it to its variant.
+    if variants and variant not in [*variants, *(court.get("variant_aliases") or {})]:
         raise HTTPException(400, f"variant must be one of {variants}")
     return court
 
@@ -208,7 +208,7 @@ def _with_job_progress(game: dict, jobs: LocalJobs) -> dict:
     job = _active_job(jobs, game["id"])
     if job is None:
         return game
-    names = list(game.get("stages") or STAGE_ORDER)
+    names = list(game.get("stages") or adapter.FAKE_STAGES)
     at = names.index(job["stage"]) if job.get("stage") in names else -1
     fraction = min(1.0, max(0.0, float(job.get("fraction") or 0.0)))
     stages, progress = {}, {}
@@ -487,13 +487,17 @@ def _register_routes(app: FastAPI) -> None:
         running = _active_job(ctx.jobs, game_id)
         if running is not None:
             return {"job_id": running["id"], "status": running["status"], "game_id": game_id}
+        # S-08: the stage list is the pipeline's own (courtcam reports nine, fake mode
+        # five), so the status page renders whatever keys arrive, in this order. Saved
+        # before the job is queued, so the task and the read path both see it.
+        game["stages"] = dict.fromkeys(adapter.stage_names(ctx.settings.pipeline), "pending")
+        game["status"] = "queued"
+        ctx.index.save(game)
         job = ctx.jobs.submit(
             "process",
             game_id,
             _process_task(ctx.settings, ctx.storage, ctx.index, ctx.jobs, game_id),
         )
-        game["status"] = "queued"
-        ctx.index.save(game)
         return {"job_id": job["id"], "status": job["status"], "game_id": game_id}
 
     # ---------------------------------------------------------------- players

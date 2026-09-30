@@ -364,3 +364,22 @@ def test_an_undistorted_lens_reports_k1_zero(client: TestClient):
     body = client.post(f"/games/{gid}/calibration", json=CALIB).json()
     assert body["k1"] == 0.0
     assert body["reprojection_error_px"] < 5.0
+
+
+def test_badminton_is_one_court_and_the_retired_singles_name_still_posts(
+    client: TestClient, settings: Settings
+):
+    """One variant hides the uploader's picker; a client still sending `singles` gets
+    the doubles-marked court instead of a 400."""
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    sport = next(s for s in client.get("/sports").json() if s["id"] == "badminton")
+    assert sport["variants"] == ["doubles"]
+    gid = new_game(client)
+    frame = settings.games_dir / gid / "media" / "calib.jpg"
+    frame.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(frame), np.zeros((1080, 1920, 3), np.uint8))
+    r = client.post(
+        f"/games/{gid}/calibration", json={**BADMINTON_AUDITORIUM, "variant": "singles"}
+    )
+    assert r.status_code == 200, r.text

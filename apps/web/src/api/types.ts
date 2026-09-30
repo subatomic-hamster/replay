@@ -1,7 +1,6 @@
 // Hand-written from REPLAY_PLAN.md §4.5 (data contracts) and §4.6 (API).
 // Source of truth is the plan; if the backend diverges, fix this file, not the callers.
 
-export type StageName = "ingest" | "detect" | "track" | "render" | "label";
 export type StageState = "pending" | "running" | "done" | "partial" | "error";
 export type GameStatus = "created" | "uploading" | "processing" | "ready" | "error";
 
@@ -56,9 +55,10 @@ export interface Game {
   title: string;
   recorded_at?: string;
   status: GameStatus;
-  stages: Partial<Record<StageName, StageState>>;
+  /** Ordered: the keys are the pipeline's own stage list, in run order (S-08). */
+  stages: Record<string, StageState>;
   /** D-9/S-08: per-stage fraction, merged in from the job record while a job runs. */
-  progress?: Partial<Record<StageName, number>>;
+  progress?: Record<string, number>;
   video: { duration_s: number; fps: number; width: number; height: number };
   sport: string;
   court: {
@@ -86,8 +86,8 @@ export interface GameSummary {
   recorded_at?: string;
   duration_s?: number | null;
   thumb_url?: string | null;
-  stages?: Partial<Record<StageName, StageState>>;
-  progress?: Partial<Record<StageName, number>>;
+  stages?: Record<string, StageState>;
+  progress?: Record<string, number>;
 }
 
 export interface TrackPlayer {

@@ -26,6 +26,9 @@ const REAL = !!process.env.REPLAY_E2E_REAL;
 const REAL_PORT = 5179;
 const REAL_API_PORT = 8010;
 const REAL_API_BASE = `http://localhost:${REAL_API_PORT}`;
+// How to launch uvicorn. The laptop has uv; the shared box has only a venv, so there it is
+// REPLAY_API_CMD="python -m uvicorn" with PYTHONPATH=<repo>/courtcam:<repo>/services/api.
+const UVICORN = process.env.REPLAY_API_CMD ?? "uv run --package replay-api uvicorn";
 const REAL_DATA_DIR =
   process.env.REPLAY_E2E_REAL_DATA ?? path.join(os.tmpdir(), "replay-e2e-real-data");
 
@@ -79,7 +82,7 @@ export default defineConfig({
       env: { VITE_MOCK_API: "1" },
     },
     {
-      command: `rm -rf ${DATA_DIR} && uv run --package replay-api uvicorn replay_api.main:app --port ${API_PORT}`,
+      command: `rm -rf ${DATA_DIR} && ${UVICORN} replay_api.main:app --port ${API_PORT}`,
       cwd: REPO,
       url: `${API_BASE}/healthz`,
       // never reuse: the data dir is wiped by the command, so a stale process would
@@ -106,7 +109,7 @@ export default defineConfig({
       ? [
           {
             // REPLAY_PIPELINE is deliberately unset: this one runs courtcam for real.
-            command: `uv run --package replay-api uvicorn replay_api.main:app --port ${REAL_API_PORT}`,
+            command: `${UVICORN} replay_api.main:app --port ${REAL_API_PORT}`,
             cwd: REPO,
             url: `${REAL_API_BASE}/healthz`,
             reuseExistingServer: true,

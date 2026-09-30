@@ -2,6 +2,7 @@
 
 courtcam interface used here (verified against courtcam/courtcam/ on 2026-09-22):
 
+    courtcam.pipeline.STAGES -> tuple[str, ...]   # the stage names `run` reports, in order
     courtcam.pipeline.run(input_path, out_dir, *, sport, variant, landmarks_px, detector,
                           title, game_id, recorded_at, progress, show_progress) -> Path
         # writes out_dir/{game.json, media/wide.mp4, media/thumb.jpg, tracks/, crops/,
@@ -38,6 +39,24 @@ from .providers.query import DEFAULT_VOCAB
 log = logging.getLogger(__name__)
 
 Progress = Callable[[str, float], None]
+
+# What `_run_fake` reports, in order.
+FAKE_STAGES = ("ingest", "detect", "track", "render", "label")
+
+
+def stage_names(pipeline: str) -> tuple[str, ...]:
+    """The stages `run` will report, in run order: the status page's list (S-08).
+
+    courtcam owns its list (`courtcam.pipeline.STAGES`); if it cannot be imported, `run`
+    falls back to fake mode, and so does this."""
+    if pipeline != "fake":
+        try:
+            from courtcam.pipeline import STAGES  # type: ignore
+
+            return tuple(STAGES)
+        except Exception:  # noqa: BLE001, S110
+            pass
+    return FAKE_STAGES
 
 # Pipeline-owned keys of game.json (§4.5). Identity keys (id/title/sport/court/...) are
 # owned by the API and survive a re-process.
@@ -406,7 +425,7 @@ def _run_fake(
     )
     # Reported in order so the merged read path (D-9) never shows a later stage done
     # before an earlier one. REPLAY_FAKE_PIPELINE_DELAY_S widens each `running` window.
-    for stage in ("detect", "track", "render", "label"):
+    for stage in FAKE_STAGES[1:]:
         progress(stage, 0.5)
         if delay_s > 0:
             time.sleep(delay_s)

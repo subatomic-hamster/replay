@@ -1,7 +1,7 @@
 // §4.8 platform adapter: the only component that touches a media element. Screens talk
 // to it through PlayerHandle. Phase 3 swaps the <video> for react-native-video / the Vega
 // media player and keeps this API.
-import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 import { createClock, type Clock } from "./clock";
 import type { CropPath } from "../api/types";
 
@@ -42,9 +42,37 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
   const timeRef = useRef(0);
   const lastSrc = useRef(src);
   const resumeAt = useRef<{ t: number; playing: boolean } | null>(null);
+  // A play request that has not landed yet. `play()` issued while the element is still
+  // settling on its source can be aborted (a reload, or not playable yet) and `paused`
+  // flips back to true; swallowing that silently lost the keypress. The request is held
+  // until the element reports `playing`, re-issued on every `canplay` meanwhile (and on a
+  // timer if the rejection leaves the element ready), and cancelled by pause().
+  const wantPlay = useRef(false);
+  const tries = useRef(0);
+  const tryPlay = useCallback(() => {
+    const v = videoRef.current;
+    if (!v || !wantPlay.current || !v.paused) return;
+    v.play().catch((err: DOMException) => {
+      // NotAllowedError needs a fresh user gesture; retrying cannot fix it.
+      if (err.name === "NotAllowedError" || ++tries.current > 5) {
+        wantPlay.current = false;
+        return;
+      }
+      // Still ready, so no `canplay` is coming to retry on.
+      if (v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) setTimeout(tryPlay, 100);
+    });
+  }, []);
+  const requestPlay = useCallback(() => {
+    wantPlay.current = true;
+    tries.current = 0;
+    tryPlay();
+  }, [tryPlay]);
   if (lastSrc.current !== src) {
     lastSrc.current = src;
-    resumeAt.current = { t: timeRef.current, playing: !(videoRef.current?.paused ?? true) };
+    resumeAt.current = {
+      t: timeRef.current,
+      playing: !(videoRef.current?.paused ?? true) || wantPlay.current,
+    };
   }
 
   useEffect(() => {
@@ -53,11 +81,18 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
     const clock = createClock(v);
     clockRef.current = clock;
     setReady((n) => n + 1);
+    const landed = () => {
+      wantPlay.current = false;
+    };
+    v.addEventListener("canplay", tryPlay);
+    v.addEventListener("playing", landed);
     return () => {
       clock.stop();
       clockRef.current = null;
+      v.removeEventListener("canplay", tryPlay);
+      v.removeEventListener("playing", landed);
     };
-  }, []);
+  }, [tryPlay]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -66,23 +101,30 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
     resumeAt.current = null;
     const apply = () => {
       v.currentTime = resume.t;
-      if (resume.playing) void v.play().catch(() => {});
+      if (resume.playing) requestPlay();
     };
     if (v.readyState >= 1) apply();
     else v.addEventListener("loadedmetadata", apply, { once: true });
     return () => v.removeEventListener("loadedmetadata", apply);
-  }, [src]);
+  }, [src, requestPlay]);
 
   useImperativeHandle(
     ref,
     (): PlayerHandle => ({
-      play: () => void videoRef.current?.play().catch(() => {}),
-      pause: () => videoRef.current?.pause(),
+      play: requestPlay,
+      pause: () => {
+        wantPlay.current = false;
+        videoRef.current?.pause();
+      },
       toggle: () => {
         const v = videoRef.current;
         if (!v) return;
-        if (v.paused) void v.play().catch(() => {});
-        else v.pause();
+        // A pending request counts as playing, so a second press cancels it.
+        if (v.paused && !wantPlay.current) requestPlay();
+        else {
+          wantPlay.current = false;
+          v.pause();
+        }
       },
       seek: (t) => {
         const v = videoRef.current;
@@ -91,12 +133,12 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
       },
       currentTime: () => videoRef.current?.currentTime ?? 0,
       duration: () => videoRef.current?.duration ?? 0,
-      paused: () => videoRef.current?.paused ?? true,
+      paused: () => (videoRef.current?.paused ?? true) && !wantPlay.current,
       get clock() {
         return clockRef.current;
       },
     }),
-    [],
+    [requestPlay],
   );
 
   // Follow-cam: recompute the transform every animation frame from the crop rect at the

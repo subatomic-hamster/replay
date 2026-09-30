@@ -19,7 +19,6 @@ import {
 
 const CLIP = "basketball_kennesawwide_smoke.mp4";
 const TITLE = "Kennesaw wide";
-const STAGES = ["ingest", "detect", "track", "render", "label"];
 
 test.describe.configure({ mode: "serial" });
 
@@ -73,11 +72,16 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
     .toMatch(/^processing (done,)*running(,pending)*$/);
   await shot(page, "05-status-phone-midrun");
 
-  for (const stage of STAGES) {
-    await expect(page.getByTestId(`stage-${stage}`)).toHaveAttribute("data-state", /done|partial/, {
-      timeout: 1_000_000,
-    });
-  }
+  // S-08: the rows are whatever stage list courtcam reports; every one ends done.
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('[data-testid^="stage-"]')
+          .evaluateAll((els) => els.map((e) => e.getAttribute("data-state")).join(",")),
+      { timeout: 1_000_000, intervals: [5000] },
+    )
+    .toMatch(/^((done|partial),)*(done|partial)$/);
   await expect(page.getByTestId("game-status")).toHaveText("ready");
 
   // --- TV: library -> open with the D-pad only ---------------------------

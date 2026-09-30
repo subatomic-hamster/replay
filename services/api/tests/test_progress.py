@@ -5,7 +5,9 @@ from __future__ import annotations
 import threading
 import time
 
+import pytest
 from fastapi.testclient import TestClient
+from replay_api import pipeline_adapter as adapter
 from replay_api.config import Settings
 
 from .conftest import CALIB, TINY_MP4, new_game, ready_game
@@ -96,6 +98,40 @@ def test_process_is_idempotent_while_a_job_is_active(client: TestClient, setting
     finally:
         gate.set()
     assert client.app.state.jobs.wait_idle(5)
+
+
+COURTCAM_NINE = (
+    "ingest",
+    "calibrate",
+    "detect",
+    "track",
+    "court",
+    "identity",
+    "tracks",
+    "crops",
+    "events",
+)
+
+
+def test_process_lists_the_pipelines_own_stages_in_order(client: TestClient, monkeypatch):
+    """S-08: the status page renders the `stages` keys it is sent, so they must be the
+    running pipeline's list — courtcam's nine, not the five the API was created with."""
+    monkeypatch.setattr(adapter, "stage_names", lambda pipeline: COURTCAM_NINE)
+    gid = new_game(client, "Nine stages")
+    assert client.put(f"/games/{gid}/upload", content=TINY_MP4.read_bytes()).status_code == 200
+    assert client.post(f"/games/{gid}/calibration", json=CALIB).status_code == 200
+    assert client.post(f"/games/{gid}/process").status_code == 202
+    assert list(client.get(f"/games/{gid}").json()["stages"]) == list(COURTCAM_NINE)
+    assert client.app.state.jobs.wait_idle(10)
+    done = client.get(f"/games/{gid}").json()
+    assert list(done["stages"]) == list(COURTCAM_NINE)
+    assert set(done["stages"].values()) == {"done"}
+
+
+def test_stage_names_is_courtcams_list_when_courtcam_is_installed():
+    pipeline = pytest.importorskip("courtcam.pipeline")
+    assert adapter.stage_names("courtcam") == tuple(pipeline.STAGES)
+    assert adapter.stage_names("fake") == adapter.FAKE_STAGES
 
 
 def test_ws_accepts_the_pairing_code_as_well_as_the_session_id(client: TestClient):

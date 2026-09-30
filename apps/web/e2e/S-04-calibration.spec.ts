@@ -36,6 +36,11 @@ async function createAndUpload(page: Page, sport = "basketball") {
   return new URL(page.url()).pathname.split("/")[2];
 }
 
+const stageStates = (page: Page) =>
+  page
+    .locator('[data-testid^="stage-"]')
+    .evaluateAll((els) => els.map((e) => e.getAttribute("data-state")).join(","));
+
 async function clickLandmarks(page: Page, n = 5) {
   const img = page.getByTestId("calib-image");
   const box = (await img.boundingBox())!;
@@ -99,13 +104,10 @@ test("S-04/S-06 five landmarks give a reprojection error and unlock Start", asyn
   await page.getByTestId("start-processing").click();
   await expect.poll(() => new URL(page.url()).pathname).toBe(`/upload/${id}/status`);
   await expect(page.getByTestId("stage-ingest")).toBeVisible();
-  for (const stage of ["ingest", "detect", "track", "render", "label"]) {
-    await expect
-      .poll(() => page.getByTestId(`stage-${stage}`).getAttribute("data-state"), {
-        timeout: 40_000,
-      })
-      .toMatch(/done|partial/);
-  }
+  // Whatever stage list the API sent, every row ends done (or partial).
+  await expect
+    .poll(() => stageStates(page), { timeout: 40_000 })
+    .toMatch(/^((done|partial),)*(done|partial)$/);
   await expect(page.getByTestId("game-status")).toHaveText("ready");
 });
 
@@ -185,4 +187,30 @@ test("S-05b a single-variant sport hides the picker and posts its own variant", 
     "net_post_l",
     "net_post_r",
   ]);
+});
+
+// S-08: the status page used to hardcode ingest/detect/track/render/label and showed all
+// five "pending" for a whole real run, because courtcam reports nine different stages.
+test("S-08 the status page lists the API's own stages, in order, with progress", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  // g_proc03 is seeded mid-run (`detect` running).
+  await page.goto("/upload/g_proc03/status");
+  const rows = page.locator('[data-testid^="stage-"]');
+  await expect(rows).toHaveCount(9);
+  expect(
+    await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")!.slice(6))),
+  ).toEqual(["ingest", "calibrate", "detect", "track", "court", "identity", "tracks", "crops", "events"]);
+  await expect(page.getByTestId("game-status")).toHaveText("processing");
+  // Exactly one running stage, everything before it done, everything after pending...
+  expect(await stageStates(page)).toMatch(/^(done,)*running(,pending)*$/);
+  // ...and it carries the fraction the job reported.
+  const running = page.locator('[data-testid^="stage-"][data-state="running"]');
+  await expect(running).toHaveAttribute("data-progress", "0.5");
+  await expect(running).toContainText("50%");
+  await expect
+    .poll(() => stageStates(page), { timeout: 40_000 })
+    .toMatch(/^(done,){8}done$/);
+  await expect(page.getByTestId("game-status")).toHaveText("ready");
 });

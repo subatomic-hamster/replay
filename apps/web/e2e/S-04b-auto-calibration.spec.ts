@@ -130,3 +130,123 @@ test("S-04b the manual walk is still there for anyone who wants it", async ({ pa
   await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "true");
   await expect(page.getByTestId("start-processing")).toBeEnabled();
 });
+
+// Recording R-07 hit a dead end: after "Adjust" the walk cursor was parked past the last
+// landmark, so "Not visible" was disabled and a wrongly proposed required point (an
+// invented off-frame corner) could only be removed by undoing back through every drag.
+test("S-04b-7 in Adjust, a selected point can be marked not visible and the rest walked", async ({
+  page,
+}) => {
+  await createUploadAndCalibrate(page);
+  await waitForProposal(page);
+  await page.getByTestId("autocalib-adjust").click();
+  await expect(page.getByTestId("autocalib-status")).toHaveAttribute("data-state", "applied");
+
+  // The walk carries on with what the proposal left uncommitted: `rim` is hollow.
+  await expect(page.getByTestId("calib-prompt")).toContainText("Tap rim — point 5 of 5");
+  await expect(page.getByTestId("calib-skip")).toBeEnabled();
+  // One chip per point: the list way to pick one, whatever the walk is waiting for.
+  await expect(page.locator('[data-testid^="calib-point-"]')).toHaveCount(5);
+
+  const posts = async () =>
+    (await mockCalls(page)).filter((c) => c.path.endsWith("/calibration")) as {
+      body: { landmarks_px: Record<string, [number, number]> };
+    }[];
+  const before = (await page.getByTestId("landmark-corner_fl").boundingBox())!;
+  await page.getByTestId("calib-point-corner_fl").click();
+  await expect(page.getByTestId("calib-point-corner_fl")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("landmark-handle-corner_fl")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("calib-prompt")).toHaveAttribute("data-target", "corner_fl");
+  expect((await page.getByTestId("landmark-corner_fl").boundingBox())!.x).toBeCloseTo(before.x, 0);
+
+  // "Not visible" takes it off; three points are below the API's floor of four, so the
+  // gate shuts and nothing is posted.
+  const sent = (await posts()).length;
+  await page.getByTestId("calib-skip").click();
+  await expect(page.getByTestId("landmark-corner_fl")).toHaveCount(0);
+  await expect(page.getByTestId("landmark-handle-corner_fl")).toHaveCount(0);
+  await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "false");
+  await expect(page.getByTestId("start-processing")).toBeDisabled();
+  expect((await posts()).length).toBe(sent);
+
+  // The walk does not ask for it again: next up is still the hollow rim. Tapping right on
+  // rim's own handle places rim there — while a point is pending, a handle tap is a
+  // frame tap (R-07: two landmarks 15 px apart share one 44 px handle's footprint).
+  await expect(page.getByTestId("calib-prompt")).toHaveAttribute("data-target", "rim");
+  await page.getByTestId("landmark-handle-rim").click();
+  await expect(page.getByTestId("landmark-rim")).not.toHaveClass(/hollow/);
+  await expect(page.getByTestId("calib-prompt")).toContainText("All landmarks placed.");
+  await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("start-processing")).toBeEnabled();
+  expect(Object.keys((await posts()).at(-1)!.body.landmarks_px).sort()).toEqual([
+    "corner_fr",
+    "corner_nl",
+    "corner_nr",
+    "rim",
+  ]);
+
+  // Nothing pending now, so tapping a handle (no drag) selects it; a frame tap re-places it.
+  await page.getByTestId("landmark-handle-corner_nr").click();
+  await expect(page.getByTestId("landmark-handle-corner_nr")).toHaveAttribute("aria-pressed", "true");
+  const img = page.getByTestId("calib-image");
+  const frame = (await img.boundingBox())!;
+  await img.click({ position: { x: frame.width * 0.8, y: frame.height * 0.8 } });
+  await expect(page.getByTestId("landmark-handle-corner_nr")).toHaveAttribute("aria-pressed", "false");
+  const body = (await posts()).at(-1)!.body;
+  expect(Object.keys(body.landmarks_px).sort()).toEqual([
+    "corner_fr",
+    "corner_nl",
+    "corner_nr",
+    "rim",
+  ]);
+  expect(body.landmarks_px.corner_nr[0]).toBeCloseTo(1280 * 0.8, -1);
+  expect(body.landmarks_px.corner_nr[1]).toBeCloseTo(720 * 0.8, -1);
+});
+
+// R-07 again: at 1920x1080 with the auto-calibration panel up, `100vh - 300px` left
+// Start processing below the fold.
+test("S-04b-8 frame and controls fit a 1080p viewport with the proposal panel up", async ({
+  page,
+}) => {
+  await createUploadAndCalibrate(page);
+  await waitForProposal(page);
+  const bottom = async (id: string) => {
+    const b = (await page.getByTestId(id).boundingBox())!;
+    return b.y + b.height;
+  };
+  for (const id of ["calib-image", "autocalib-manual", "calib-skip", "start-processing"]) {
+    expect(await bottom(id), `${id} is on screen`).toBeLessThanOrEqual(1080);
+  }
+  const doc = await page.evaluate(() => ({
+    h: document.documentElement.scrollHeight,
+    w: document.documentElement.scrollWidth,
+  }));
+  expect(doc.h).toBeLessThanOrEqual(1080);
+  expect(doc.w).toBeLessThanOrEqual(1920);
+  // The frame still gets most of the screen: tap precision is the point (RESULTS.md).
+  expect((await page.getByTestId("calib-image").boundingBox())!.height).toBeGreaterThanOrEqual(700);
+  // Adjust swaps the panel's buttons for the point chips; still no scrolling.
+  await page.getByTestId("autocalib-adjust").click();
+  await expect(page.getByTestId("calib-point-rim")).toBeVisible();
+  for (const id of ["calib-image", "calib-point-rim", "calib-skip", "start-processing"]) {
+    expect(await bottom(id), `${id} is on screen in Adjust`).toBeLessThanOrEqual(1080);
+  }
+});
+
+test("S-04b-9 on a phone the calibrate page stacks and never scrolls sideways", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await createUploadAndCalibrate(page);
+  await waitForProposal(page);
+  const img = (await page.getByTestId("calib-image").boundingBox())!;
+  expect(img.x).toBeGreaterThanOrEqual(0);
+  expect(img.x + img.width).toBeLessThanOrEqual(390);
+  const prompt = (await page.getByTestId("calib-prompt").boundingBox())!;
+  expect(prompt.y, "stacked: the prompt sits above the frame").toBeLessThan(img.y);
+  const w = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(w).toBeLessThanOrEqual(390);
+  await page.getByTestId("autocalib-accept").click();
+  await page.getByTestId("start-processing").scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("start-processing")).toBeEnabled();
+});

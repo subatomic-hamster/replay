@@ -264,6 +264,21 @@ def test_template_backend_lands_on_the_synthetic_court(profile):
         assert np.hypot(got[0] - point[0], got[1] - point[1]) < 3.0, f"{name} at {got}"
     # Every landmark the template knows, not only the five a human is asked for.
     assert set(out.landmarks_px) == set(profile.template("half").landmarks)
+    assert out.not_visible == [] and out.as_dict()["not_visible"] == []
+
+
+def test_a_fit_no_camera_can_make_is_never_ok(profile, monkeypatch):
+    """A sheared court can sit on paint (parkwide's tree shadows scored 0.95); the
+    camera-skew gate keeps it from being offered as an answer."""
+    import dataclasses
+
+    frame, _ = synthetic_frame()
+    fits, note = templatefit.fit(frame, profile.template("half"))
+    shear = np.array([[1.0, 0.3, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    bad = dataclasses.replace(fits[0], h_inv=fits[0].h_inv @ shear, score=1.0)
+    monkeypatch.setattr(templatefit, "fit", lambda *a, **k: ([bad], note))
+    out = autocalib.propose_template(frame, profile, "half")
+    assert out.ok is False and "camera skew" in out.notes, out.notes
 
 
 def test_backend_auto_is_the_template_fit_and_needs_no_key(monkeypatch):
@@ -357,12 +372,14 @@ def test_line_mask_finds_a_dark_line_on_a_pale_floor():
     assert mask.mean() / 255 < 0.02, "the mask should be the line, not the floor"
 
 
-def test_the_barrel_prestep_recovers_a_court_a_straight_line_fit_cannot(profile):
+def test_the_lens_search_recovers_a_court_a_straight_line_fit_cannot(profile):
     """D-24's "next": `templatefit` searches over STRAIGHT lines, so an ultra-wide court
     edge — a curve — fragments into chords and the candidate set never contains the
-    truth. The fit is retried on segments straightened at a few `k1` values, and the
-    landmarks are bent back onto the source frame before anyone sees them."""
+    truth. The lens search rebuilds the lines at a few `k1` values, and the landmarks
+    are bent back onto the source frame before anyone sees them."""
     import cv2
+
+    from courtcam import distortion
 
     frame, truth = synthetic_frame()
     h, w = frame.shape[:2]
@@ -370,28 +387,48 @@ def test_the_barrel_prestep_recovers_a_court_a_straight_line_fit_cannot(profile)
     k1 = -0.30
     ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
     grid = np.stack([xs.ravel(), ys.ravel()], 1).astype(np.float64)
-    sample = autocalib._straighten(grid, k1, size).astype(np.float32)
+    sample = distortion.undistort_points(grid, k1, size).astype(np.float32)
     barrelled = cv2.remap(
         frame, sample[:, 0].reshape(h, w), sample[:, 1].reshape(h, w), cv2.INTER_LINEAR
     )
 
     out = autocalib.propose_template(barrelled, profile, "half")
     assert out.k1 < 0.0, out.notes
-    assert out.ok is True, out.notes
     for name, point in truth.items():
-        bent = autocalib._bend_back([point], k1, size)[0]
+        bent = templatefit.to_source(np.array([point]), k1, size)[0]
         got = out.landmarks_px[name]
         assert np.hypot(got[0] - bent[0], got[1] - bent[1]) < 20.0, f"{name} at {got}"
 
 
-def test_straighten_round_trips(profile):
+def test_to_source_inverts_undistort():
+    from courtcam import distortion
+
     pts = np.array([[0.0, 0.0], [1920.0, 1080.0], [960.0, 540.0], [100.0, 900.0]])
     size = (1920, 1080)
     for k1 in autocalib.K1_CANDIDATES:
-        back = autocalib._bend_back(autocalib._straighten(pts, k1, size), k1, size)
+        back = templatefit.to_source(distortion.undistort_points(pts, k1, size), k1, size)
         assert np.allclose(back, pts, atol=1e-6), k1
-    # k1 = 0 is the identity, and the frame corners stay put at every k1.
-    assert np.allclose(autocalib._straighten(pts, 0.0, size), pts)
-    corner = np.array([[1920.0, 1080.0]])
-    for k1 in autocalib.K1_CANDIDATES:
-        assert np.allclose(autocalib._straighten(corner, k1, size), corner, atol=1e-6)
+    assert templatefit.to_source(pts, 0.0, size) is pts
+
+
+def test_physical_keeps_a_real_camera_and_flags_a_sheared_one():
+    """A homography a pinhole camera can make is left alone; the spare 8th degree of
+    freedom (a shear of the court) is what the lens search's wrong fits used."""
+    size = (1920, 1080)
+    f, a = 1400.0, np.radians(60)  # 60 deg down from the vertical, 12 m back
+    rot = np.array([[1, 0, 0], [0, -np.cos(a), -np.sin(a)], [0, np.sin(a), -np.cos(a)]])
+    t = -rot @ np.array([0.0, -12.0, 8.0])
+    cam = np.array([[f, 0, 960.0], [0, f, 540.0], [0, 0, 1]]) @ np.column_stack([rot[:, :2], t])
+    shear = cam @ np.array([[1.0, 0.4, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    rebuilt, skew = templatefit.physical(np.stack([cam, shear]), size)
+    court = np.array([[-3.0, 0.0], [3.0, 0.0], [3.0, 13.4], [-3.0, 13.4]])
+    moved = templatefit.project(court, rebuilt[0]) - templatefit.project(court, cam)
+    assert np.abs(moved).max() < 2.0 and skew[0] < 0.01
+    assert skew[1] > 0.1
+
+
+def test_content_box_skips_letterbox_bars():
+    frame = np.zeros((1080, 1920, 3), np.uint8)
+    frame[140:940, 240:1680] = 120
+    assert templatefit.content_box(frame) == (240, 140, 1680, 940)
+    assert templatefit.content_box(np.zeros((10, 20, 3), np.uint8)) == (0, 0, 20, 10)

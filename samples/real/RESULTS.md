@@ -640,7 +640,7 @@ The roster it produces is 5 players, 3 selectable at the screenshot instant.
 | --- | --- |
 | `sports/pickleball-select.png` | four labelled boxes, team colours by net side (blue near, orange far), pickleball court inset bottom-right with live dots |
 | `sports/pickleball-follow.png` | `FOLLOW • p2`, amber follow frame, cropped transform, inset dot amber |
-| `sports/pickleball-highlights.png` | this profile's chips, `Rallies` resolving to an interpretation (no clips — the rally detector is a stub) |
+| `sports/pickleball-highlights.png` | this profile's chips, `Rallies` resolving to an interpretation (no clips at the time — the rally detector was a stub; see "Rally segmentation") |
 | `sports/pickleball-review.png` | heatmap drawn on the pickleball `viewBox`, occupied cells > 0 |
 
 The same spec at `margin_m: 2.5` labelled two people on the *next* court as p3 and p5;
@@ -1040,7 +1040,7 @@ instant, split 3/2 across the net.
 |---|---|
 | `sports/badminton-select.png` | four labelled boxes, blue left of the net and orange right of it, badminton court inset bottom-right with four live dots in the right halves |
 | `sports/badminton-follow.png` | `FOLLOW • p2`, amber follow frame, cropped transform, spotlight dim, inset dot amber |
-| `sports/badminton-highlights.png` | this profile's chips, `Rallies` resolving to an interpretation (the rally detector is still a stub) |
+| `sports/badminton-highlights.png` | this profile's chips, `Rallies` resolving to an interpretation (no clips at the time — the rally detector was a stub; see "Rally segmentation") |
 | `sports/badminton-review.png` | heatmap on `viewBox="-3.05 0 6.1 13.4"`, occupied cells > 0 |
 
 One wart, and it is in code this task did not own: the `reprojection_error_px` the API
@@ -1178,8 +1178,279 @@ answer the question.
    as belonging on the merged roster, but `identify()` does not apply it: 240 s of doubles
    comes back as nine players for four people. Concurrency is fine (median 4, peak 5), so
    this is a labelling problem rather than a filtering one, but `game.json` claiming nine
-   players for a doubles match is wrong on its face.
+   players for a doubles match is wrong on its face. **Done 2026-09-30:** four ids — see
+   "Detection on the GPU, identity stitching, bystanders" at the end of this file.
 4. **`samples/real/MANIFEST.md`, entry #7** — the badminton auditorium camera is described
    as being behind a baseline looking down the court. It is beside the court in the plane
    of the net; the quoted baseline pixel spans are measurements of the court's width.
 
+
+# Auto-calibration on the fisheye clip — lens search (fix wave, 2026-09-30)
+
+The uploader's "Found 21 points · needs a check" on `badminton_auditorium` was a wrong
+court: dots stacked along the bottom-right edge of the frame, `corner_*` points invented
+off-frame. Causes, each measured:
+
+- **The lens prestep shrank the court.** It re-drew a straightened mask per `k1` and
+  rescaled it by `1 + k1` to keep it on the canvas; at `k1 = -0.65` the court shrank to
+  a third and the true fit scored 0.000. Now lines and quads are built in undistorted
+  pixels and every mask read goes back to the source frame, so one distance map serves
+  every `k1` and scores at different `k1` compare.
+- **Letterbox bar edges were the two longest lines** in the frame. `content_box` finds
+  the picture; the mask is cut to it and "in frame" means inside it.
+- **Wrong fits were cameras that cannot exist.** A homography has 8 dof, a pinhole
+  camera over a plane has 7 (principal point at the lens centre). The spare one is a
+  shear, and every wrong badminton fit used it. For `K = diag(f, f, 1)` the court's two
+  axes in camera space must be orthogonal and equal: that **skew** is 0.002-0.023 on all
+  five hand-clicked clips and 0.1-1.1 on nearly every wrong fit. `templatefit.physical`
+  snaps a fit to the nearest real camera; the lens search only ever scores those.
+- **Explained paint length rewards stacking.** With a strong `k1` several court lines
+  bend onto one bright curve and each is paid for the same pixels: a court folded onto
+  the arc at the bottom of the auditorium frame out-scored the true court by 20 %.
+  `templatefit.covered` counts each painted pixel once (4 px cells) and is the lens rank.
+
+Search now: the straight D-24 fit first (unchanged; pickleball stops here). If it is not
+`ok`, fit at `k1` in (-0.2, -0.4, -0.6) with physical cameras, refine corners and `k1`
+on explained length with bigger first steps, and rank the lens winners *and* the
+straight fit by covered paint. Candidates are first scored against 600 template
+samples and only the best 128 of each order in full (identical winners, ~30 % faster).
+Off-frame required landmarks are reported in `Proposal.not_visible` (and the note), not
+invented. `ok` additionally needs camera skew <= 0.05.
+
+### Before / after
+
+`courtcam autocalib-eval --samples <frames> --clips kennesawwide,northsidewide,powellgym,legacypark,auditorium,badminton_auditorium_smoke`
+on hfbox, 6 threads, same frames and the same (extended) eval for both columns; "before"
+is the pre-wave `templatefit`/`autocalib`. Errors are over the landmarks the fit and the
+clicks share, under the best of four relabellings (the template is symmetric and the
+auditorium clicks are mirrored against the fitter's winding); the smoke frame is scored
+against the 240 s clicks (same fixed camera: the truth homography lands within 2 px).
+
+| clip | before: ok, median / worst px, s | after: ok, median / worst px, s |
+|---|---|---|
+| `badminton_auditorium_240s` | false, 800 / 1274, 2.4 | false, **24.8 / 84.9**, 10.9 |
+| `badminton_auditorium_smoke` | false, 478 / 1472, 9.9 | false, **37.7 / 51.0**, 10.9 |
+| `pickleball_legacypark_240s` | **true**, 2.4 / 12.2, 1.0 | **true**, 2.4 / 12.2, 1.1 |
+| `basketball_powellgym_240s` | false, 55.6 / 394, 6.9 | false, 55.6 / 394, 9.5 |
+| `basketball_kennesawwide_240s` | false, 629 / 2318, 9.5 | false, 550 / 1562, 10.6 |
+| `basketball_northsidewide_240s` | false, 587 / 1870, 2.4 | false, 801 / 1169, 10.9 |
+| synthetic `basketball_half` (unit test) | true, < 3 px | true, < 3 px |
+
+No ground truth, `ok` only: `basketball_parkwide` (no court paint at all) was **`ok =
+true` before** (a wedge of court over the sky, score 0.968) and is false now (skew 0.59 on
+the straight fit; the lens fit then fails the reprojection check, 153 px).
+`badminton_russiaclub`, `basketball_pavilion`, `basketball_ceilingcam`: false before and
+after.
+
+**Target missed:** the brief wanted < 10 px median on the auditorium clip; it is 25 px
+(240 s) and 38 px (smoke): the right court, one line off in places, and never `ok`
+(score 0.49-0.51 < 0.90). The ceiling is D-25's model, not the search: with one `k1`
+about the frame centre the *hand-clicked* court only scores 0.60-0.63, and with a free
+distortion centre (+58, -87 px) 0.81. Any fit within ~30 px ties with it on every paint
+measure tried (fraction, explained, covered, precision), so which of them wins is noise
+(8-25 px across small changes to the search). A principal-point offset in `distortion`
+is the next step, and it is a D-25 change. Runtime on clips that fail the straight fit
+went from 2-10 s to 10-11 s (three lens passes); a straight `ok` clip is unchanged.
+
+# Rally segmentation (net sports) — `events.detect_rallies`
+
+Before this, `detect_rallies` returned `[]`, so the TV's default `Rallies` chip was empty
+on every badminton and pickleball game. It is now a motion segmenter over the identified
+players' court tracks, with no sport-specific code: thresholds are the profile's `rally:`
+block (`profiles.RallyCfg` defaults).
+
+**How.** Per 0.1 s tick: each player's court speed (m/s), speeds > 6 m/s dropped as
+tracker/homography jumps, **median** over the players on court, 2.5 s moving average.
+A rally is a run above 0.5 m/s that peaks at ≥ 0.9 m/s; it ends 0.5 s after its last
+tick ≥ 0.9 m/s (the walk back after a point stays above 0.5), starts 1.0 s before the run
+(the serve comes from stillness — every labelled serve below is preceded by ≥ 1 s at
+0.1–0.3 m/s), gaps < 1.5 s are bridged and results < 2 s dropped. Median, not mean: one
+player walking to pick up the shuttle is not a rally. `contacts` stays null (no audio).
+
+**Ground truth.** Hand-labelled from 2 fps contact sheets with a > 2.5 kHz audio
+transient strip underneath (shuttle hits are clean spikes in the auditorium; a
+badminton rally never goes > ~2 s without one, so gaps in the strip mark dead time).
+Labels live in `samples/real/<clip>.rallies.json` (gitignored with the footage) and are
+copied here:
+
+- `badminton_auditorium_240s`: 14 rallies — 3.3–17.0, 28.4–31.0 (uncertain), 37.9–45.5,
+  56.7–62.5, 85.0–93.0, 100.2–105.0, 112.0–116.8, 123.9–129.9, 136.6–146.5,
+  156.4–164.8, 171.4–178.0, 184.5–198.3, 206.0–215.0, 222.7–237.0. (76.3–77.8, a
+  serve and one return, is under the 2 s floor and excluded.)
+- `badminton_auditorium_smoke` = the first 50 s of that clip (MANIFEST §7): the first three.
+- `pickleball_legacypark_smoke`: 12.7–23.8, 30.3–35.0 (clip end). Lower confidence:
+  the far pair is ~40 px tall and the audio is useless — every neighbouring court pops.
+- `pickleball_legacypark_240s`: **not labelled.** From stills the near pair (a metre
+  from the lens, often out of frame) cannot be told apart between dinking and waiting to
+  serve, and the audio cannot help. The segmenter emits 12 rallies there (unscored).
+
+**Scores** (one-to-one matching, IoU ≥ 0.5). Two sets of tracks per clip, because
+detect/track/identity were being changed by another agent during this work: "A" is the
+first run, "B" a fresh full run on the later tree (same labels, same segmenter).
+
+| clip | stub | first cut (mean speed, no end trim) | final, tracks A | final, tracks B |
+|---|---|---|---|---|
+| `badminton_auditorium_240s` (14) | 0 events, R 0 | P 0.77 R 0.71 | **P 1.00 R 0.93** (13/13) | P 0.92 R 0.86 (12/13) |
+| `badminton_auditorium_smoke` (3) | 0 events, R 0 | P 0.67 R 0.67 | **P 1.00 R 1.00** | P 1.00 R 0.67 |
+| `pickleball_legacypark_smoke` (2) | 0 events, R 0 | P 0.67 R 1.00 | **P 1.00 R 1.00** | P 1.00 R 1.00 |
+
+Honest caveats: the thresholds were chosen by a sweep over these same labels (~20
+rallies; the plateau is wide — dozens of settings within 0.05 F1 — but it is in-sample),
+and the labels are one person's. Misses are the calm rallies: 156–165 s on the badminton
+clip runs at a median 0.6–0.9 m/s, and track set B cuts it at 160 s. Starts land ~1 s
+early and the long rallies end a few seconds early (a dip in the median mid-rally), which
+IoU ≥ 0.5 tolerates but a tighter criterion would not.
+
+End to end: a fresh `courtcam run` on `badminton_auditorium_smoke.mp4`
+(`--calib badminton_auditorium_240s.landmarks.json`, `--variant singles` to exercise the
+alias) finishes `ready` with 4 players and `events.json` holding two `rally` events,
+1.2–12.6 s and 28.0–33.1 s.
+
+---
+
+# Detection on the GPU, identity stitching, bystanders (fix wave, 2026-09-30)
+
+Box: shared AMD RX 9070 XT (ROCm torch 2.14, reports as `cuda`), 16 cores, other agents'
+jobs running alongside, so throughput is a floor, not a benchmark. Clips ingested once;
+every variant below reuses the same `media/wide.mp4` + `calib.json` and re-runs
+`detect,track,court,identity`. Metrics come from a scratch script over `_work/`:
+**on-court boxes/frame** (detected feet inside the court + 1 m — the recall proxy),
+**raw / on-court tracklets** (fragmentation at the source), **roster** (player ids in
+`game.json`), **concurrency** (players alive per instant), **> 5 m jumps** (consecutive
+samples of one player more than 5 m apart — an identity-switch proxy) and
+**bystanders** (a player with p90 radius < 1 m over >= 20 s, or inside the painted lines
+< 40 % of the time).
+
+## Model x stride (ByteTrack, identity code unchanged)
+
+240 s clips. `x RT` = clip seconds per wall second of `detect` (higher is faster; the
+CPU reference is Kennesaw yolo11n = 709 s, **0.34x**).
+
+| clip | model | stride | detect s | x RT | boxes/frame on court | raw tracklets | on-court tracklets |
+|---|---|---|---:|---:|---:|---:|---:|
+| kennesawwide | n | 2 | 37 | 6.4 | 11.0 | 737 | 400 (capped) |
+| kennesawwide | s | 2 | 41 | 5.8 | 13.6 | 690 | 333 |
+| kennesawwide | **m** | **2** | **52** | **4.6** | **13.2** | **585** | **301** |
+| kennesawwide | l | 2 | 59 | 4.1 | 12.8 | 506 | 273 |
+| kennesawwide | m | 1 | 95 | 2.5 | 13.5 | 949 | 352 |
+| powellgym | n | 2 | 36 | 6.6 | 8.5 | 489 | 326 |
+| powellgym | s | 2 | 35 | 7.0 | 9.0 | 412 | 281 |
+| powellgym | **m** | **2** | **55** | **4.4** | **9.5** | **397** | **271** |
+| powellgym | l | 2 | 68 | 3.6 | 9.4 | 388 | 258 |
+| legacypark (pickleball) | n | 2 | 36 | 6.7 | 2.60 | 679 | 47 |
+| legacypark | **m** | **2** | **56** | **4.3** | **2.98** | **601** | **35** |
+| legacypark | l | 2 | 68 | 3.5 | 2.95 | 584 | 34 |
+| auditorium (badminton) | n | 2 | 48 | 5.0 | 3.88 | 39 | 28 |
+| auditorium | **m** | **2** | **58** | **4.1** | **3.90** | **29** | **22** |
+| auditorium | m | 1 | 106 | 2.3 | 3.91 | 40 | 25 |
+
+- **yolo11m finds 12-20 % more on-court people than yolo11n** on the three clips with
+  small far players and cuts raw tracklets by 11-26 %; `l` adds nothing over `m`; `s` is
+  as fast as `n` (decode and the tracker, not the GPU, bound `n`/`s`) but fragments more
+  than `m`. Badminton is saturated at 4 people for every model.
+- **Stride 1 is worse, not better**: twice the wall time and *more* tracklets (the tracker
+  buffer is counted in sampled frames, so it covers half the time).
+- **Shipped:** on a GPU, `detection.gpu_model: yolo11m.pt` replaces `model`, stride stays 2.
+  Without a GPU nothing changes (`yolo11n`, CPU).
+
+## Tracker (yolo11m, stride 2, final identity code)
+
+| tracker | Kennesaw roster | Kennesaw > 5 m jumps | Powell roster / jumps | badminton ids | badminton left pair |
+|---|---:|---:|---:|---:|---|
+| `bytetrack.yaml` (stock) | 47 | 29 | 45 / 22 | 4 | red / blue shirts **swap** at ~180 s |
+| bytetrack, buffer 90 | 40 | 31 | — | 4 | swap |
+| botsort, buffer 30, no GMC | 49 | 23 | 46 / 27 | 4 | no swap |
+| **botsort, buffer 90, no GMC** (`courtcam/botsort.yaml`) | **43** | **18** | 43 / 28 | **4** | **no swap** |
+| botsort + ReID (detector features) | 50 | 16 | — | 4 | no swap |
+
+The badminton swap was checked by mean torso colour of every member tracklet of each
+player: with ByteTrack the red-shirt lane picks up the blue-shirt player at 179 s (a swap
+*inside* a ByteTrack tracklet, which no merge can undo); with BoT-SORT the red lane is
+red for all 240 s. ReID costs the same wall time and gains nothing measurable here, so it
+is off. GMC is off because the camera does not move. Same speed as ByteTrack.
+
+## Identity: what was wrong, and the fix
+
+1. **A one-frame handover killed whole players.** ByteTrack starts a person's new id a
+   frame before it drops the old one. `merge_groups` refused any overlap, and
+   `_cap_concurrent` counted that single frame as a fifth person and rejected the whole
+   group: on the badminton clip a 57 s far-side tracklet (103-160 s) was dropped
+   outright — the 3/4 concurrency dip in the old run. Both now tolerate
+   `tracking.merge_overlap_s: 1.0`.
+2. **Earliest-first merging.** A fragment went to whichever old track *started* first
+   among those in reach, not the one that ended where it appeared. Links are now taken
+   closest-first, one predecessor and one successor per tracklet.
+3. **Every remaining badminton break was a 3-9 m foot jump at an occlusion** (the net, the
+   partner, the frame edge the back court runs off), just past `merge_max_dist_m: 3.0`,
+   while the other three players were tracked throughout. New `identity._stitch`, after
+   the concurrency cap: walk players in start order with "lanes" per team; a player who
+   appears while their team is below its share of `players.max` continues the nearest
+   lane that ended within `stitch_max_gap_s` (5 s) and within
+   `merge_max_dist_m + max_speed_mps (8) x max(gap, 1 s)`, and only if the interpolated
+   gap does not push the frame past `players.max` boxes. The roster is what says it is
+   the same person; nothing is inferred from shirts.
+
+## Bystanders: what was wrong, and the fix
+
+The on-court test (>= 60 % of samples inside court + 1 m) is right for fragments and
+wrong for people who never move: on Kennesaw the scorer's table is *inside* the calibrated
+polygon and the bench sits on the baseline inside the 1 m margin, and because they never
+move they had the best scores in the concurrency cap — 2-3 of the 10 selectable slots for
+the whole clip (frames `ken_base` vs `ken_final` in the scratch run: the two seated
+officials and the bench were boxed; after, the far-left players and the referee they
+displaced are). Two rules, in `court.py`:
+
+- `stationary`: alive >= `stationary_min_s` (20 s) with p90 radius < `stationary_max_m`
+  (0.5 m). Applied to tracklets in `on_court` (before they can merge into a player) and
+  to merged players. 1.0 m was tried first and dropped a real badminton player who stood
+  25 s within 0.86 m; seated officials measure 0.04-0.22 m.
+- `bystander` (merged players): inside the painted lines, no margin, less than
+  `inside_min_fraction` (0.4) of the time. Real players measured >= 0.53 (the pickleball
+  near pair, who serve from behind the line; basketball >= 0.85); the Kennesaw bench and
+  the neighbouring pickleball court's baseline measure 0.0-0.31.
+
+## Before / after, per clip
+
+"Before" = yolo11n + ByteTrack + the old identity (= the previous default, on the GPU).
+"Code only" = the same dets with the new identity/court code. "Final" = the new default
+path end to end (`courtcam run --stages detect,track,court,identity,tracks,crops` on the
+GPU box: yolo11m + `botsort.yaml` + new code).
+
+| clip | | ids (roster) | median / p10 concurrent | mean selectable (of which bystanders) | > 5 m jumps | detect s |
+|---|---|---:|---|---|---:|---:|
+| badminton auditorium (4 players) | before | 9 | 4 / 3 | 3.70 (0) | 0 | 48 |
+| | code only | **4** | 4 / 4 | 4.00 (0) | 0 | |
+| | final | **4** | 4 / 4 | 4.00 (0), min 4 | 3 | 54 |
+| kennesawwide | before | 55 | 10 / 8 | 9.39 (**2.32**) | 40 | 37 |
+| | code only | 50 | 10 / 8 | — (1 official left) | 36 | |
+| | final | 43 | 9 / 8 | 9.36 (**0**), min 7 real | **18** | 50 |
+| powellgym | before | 57 | 9 / 8 | 9.23 (0.29) | 50 | 36 |
+| | code only | 51 | 10 / 8 | — | 25 | |
+| | final | 43 | 10 / 9 | 9.46 (0) | 28 | 56 |
+| pickleball legacypark | before | 36 | 2 / 1 | 2.38 (0.29) | 0 | 36 |
+| | code only | 15 | 2 / 1 | — | 2 | |
+| | final | 9 | 2 / 2 | 2.36 (0) | 1 | 57 |
+
+Kennesaw holds 8.4-10 selectable per 10 s chunk (mean 9.36), now all of them on court;
+the officials no longer hold slots, so the concurrency number reads 9 instead of
+10 while the number of *real* players selectable went from ~7.1 to ~9.4. Pickleball's
+concurrent 2 is the real near pair — the far half of this court is empty and the old
+third "player" was the next court's baseline (RESULTS above).
+
+courtcam tests on the box: **94 passed**, 2 failed — both in `test_autocalib.py`, from
+another agent's in-flight `autocalib` edits in the same tree (`_straighten`/`_bend_back`
+missing); every identity/court/pipeline/net-sport test passes. `services/api`: 80 passed.
+`ruff check` clean on every file this work touched.
+
+## Still wrong
+
+- **Identity within a same-looking pair is unverified.** Badminton's right-hand pair wear
+  near-identical dark kit; torso colour cannot say whether their two lanes swapped. The
+  left pair (red / blue) is clean for 240 s with BoT-SORT.
+- **Merged officials with a box that flips between two seated people** (Kennesaw, CPU
+  `yolo11n` only: one player, p90 radius 0.83 m) and a seated spectator on the Powell far
+  sideline whose 28 s tracklet briefly jumped onto a passing player (p90 6.8 m) survive the
+  stationary rule. Both are one slot for part of the clip, down from 2-3 slots always.
+- **Referees are players** to every rule here (they move and stay inside the lines).
+- A stitched or merged gap is **interpolated** (`court.resample`), so for up to 5 s a box
+  slides between where a player vanished and where they reappeared.

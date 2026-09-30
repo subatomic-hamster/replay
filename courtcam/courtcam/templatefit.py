@@ -24,6 +24,14 @@ The pipeline, in the order the functions appear:
 6. `fit` — the best scoring (quad, rectangle, corner assignment), then coordinate
    descent on the four corners.
 
+Lens (D-25's one-parameter division model): `fit(..., k1=...)` builds its lines and
+quads in UNDISTORTED pixels — where a barrelled court edge is straight again — but every
+read of the mask goes back through `distortion.distort_points` to the SOURCE frame. So
+there is one mask, one distance map and one score for every `k1`, and scores at different
+`k1` are the same measurement. (The first cut redrew a straightened mask per `k1` and
+rescaled it by `1 + k1` to keep it on the canvas; at `k1 = -0.65` that shrank the court
+to a third and the true fit scored 0.000.)
+
 ponytail: no vanishing-point RANSAC to split the lines into two families. With 30 lines
 there are only ~95k pair-of-pairs to enumerate and numpy prunes them in under a second,
 and a family split is exactly the thing that breaks on a panorama, where a baseline and
@@ -38,6 +46,7 @@ from itertools import combinations
 import cv2
 import numpy as np
 
+from . import distortion
 from .profiles import CourtTemplate
 
 #: L/S-channel contrast a pixel needs over BOTH flanks to count as line paint.
@@ -64,25 +73,137 @@ MAX_SAMPLES = 2400
 #: otherwise the best fit is always the one that shrinks the court onto one bright line.
 MIN_INFRAME_FRAC = 0.30
 FULL_COVER_FRAC = 0.60
-#: Corner refinement: pixel steps, tried in this order until nothing improves.
+#: Corner refinement: pixel steps, tried in this order until nothing improves. The lens
+#: search starts bigger: its seeds are further off (a quad at the wrong `k1`).
 REFINE_STEPS = (8, 4, 2, 1)
+LENS_REFINE_STEPS = (32, 16, 8, 4, 2, 1)
+#: Candidates are first scored against this many template samples, and only the best
+#: `RESCORE` of each order are scored in full: the full pass over ~30k candidates was
+#: most of `fit`'s time.
+COARSE_SAMPLES = 600
+RESCORE = 128
+#: `covered` counts painted pixels in cells this big.
+COVER_CELL_PX = 4
 #: Cap on one sample's image-arc weight, so a single huge jump cannot carry a fit.
 MAX_STEP_PX = 40.0
 #: Hardest perspective a court camera is allowed to have (near edge : far edge).
 MAX_SQUASH = 8.0
 #: Two fits are "the same answer" when every corner is within this many pixels.
 SAME_FIT_PX = 20.0
+#: Letterbox detection: a row/column is picture when this fraction of it is brighter
+#: than `BAR_LEVEL`. A 16:9 export of a 4:3 action cam has black bars whose edges are the
+#: two longest straight "lines" in the frame.
+BAR_LEVEL = 40
+BAR_FRAC = 0.05
+#: Corner refinement moves `k1` by this much per pixel of corner step (8 px -> 0.04).
+K1_PER_PX = 0.005
+#: Focal lengths a court camera can have, as multiples of the frame width (118 deg to
+#: 9.5 deg horizontal field of view in undistorted pixels), and the grid `physical`
+#: searches them on.
+FOCAL_RANGE = (0.3, 6.0)
+FOCAL_STEPS = 48
 
 
 @dataclass
 class Fit:
     """One scored homography and where it came from."""
 
-    h_inv: np.ndarray  # metres -> pixels
-    corners_px: np.ndarray  # (4, 2) the matched quad, in template-rectangle order
+    h_inv: np.ndarray  # metres -> UNDISTORTED pixels (plain pixels when k1 == 0)
+    corners_px: np.ndarray  # (4, 2) the matched quad in SOURCE pixels, rectangle order
     rect_m: np.ndarray  # (4, 2) which template rectangle those corners are
-    score: float
+    score: float  # fraction of the in-frame template on paint: the quality gate
     inframe_frac: float
+    k1: float = 0.0
+    explained_px: float = 0.0  # source pixels of template line on paint (lens refine)
+    covered_px: float = 0.0  # the same, each painted pixel counted once (the lens rank)
+
+
+Box = tuple[int, int, int, int]  # x0, y0, x1, y1 of the picture, in source pixels
+
+
+def content_box(frame_bgr: np.ndarray) -> Box:
+    """The picture inside any letterbox or pillarbox bars."""
+    lit = frame_bgr.max(axis=2) > BAR_LEVEL
+    rows = np.flatnonzero(lit.mean(axis=1) > BAR_FRAC)
+    cols = np.flatnonzero(lit.mean(axis=0) > BAR_FRAC)
+    h, w = lit.shape
+    if not len(rows) or not len(cols):
+        return 0, 0, w, h
+    return int(cols[0]), int(rows[0]), int(cols[-1]) + 1, int(rows[-1]) + 1
+
+
+def physical(h_inv: np.ndarray, size: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
+    """(N, 3, 3) the nearest homographies a real camera can make, and each one's (N,) skew.
+
+    A homography has 8 degrees of freedom; a pinhole camera looking at a plane has 7
+    (focal length, rotation, position) once the principal point is fixed at the
+    distortion centre. The spare one is a shear of the court, and it is what every wrong
+    fit on the fisheye badminton clip used to put template lines on paint they do not
+    belong to. For K = diag(f, f, 1), the first two columns of K^-1 H are the court's two
+    axes in camera space and must be orthogonal and of equal length: the skew is how far
+    from that they are at the best f. Measured: 0.002-0.023 on all five hand-clicked
+    clips, 0.1-1.1 on nearly every wrong fit. The nearest camera is then rebuilt at that
+    f with the two axes made orthonormal (polar decomposition).
+    """
+    w, h = size
+    centre = np.array([[1.0, 0.0, -w / 2.0], [0.0, 1.0, -h / 2.0], [0.0, 0.0, 1.0]])
+    g = np.einsum("ij,njk->nik", centre, h_inv)
+
+    def skew_at(f: np.ndarray) -> np.ndarray:  # f: (N, F) -> (N, F)
+        r1 = g[:, None, :2, 0] / f[:, :, None]
+        r2 = g[:, None, :2, 1] / f[:, :, None]
+        z1, z2 = g[:, None, 2, 0], g[:, None, 2, 1]
+        n1 = np.sqrt((r1 * r1).sum(2) + z1 * z1)
+        n2 = np.sqrt((r2 * r2).sum(2) + z2 * z2)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out = np.hypot(((r1 * r2).sum(2) + z1 * z2) / (n1 * n2), (n1 - n2) / (n1 + n2))
+        return np.nan_to_num(out, nan=9.0)
+
+    # Coarse log grid, then a fine one between the neighbours of the coarse minimum: the
+    # rebuilt camera is sensitive to f (3 % off moves a wide-angle court by 30 px).
+    coarse = np.geomspace(FOCAL_RANGE[0] * w, FOCAL_RANGE[1] * w, FOCAL_STEPS)
+    f = np.broadcast_to(coarse, (len(g), FOCAL_STEPS))
+    k = skew_at(f).argmin(1)
+    ratio = coarse[1] / coarse[0]
+    f = coarse[k][:, None] * ratio ** np.linspace(-1.0, 1.0, 41)[None]
+    skew = skew_at(f)
+    best = skew.argmin(1)
+    fb = f[np.arange(len(g)), best]
+    scale = np.stack([1.0 / fb, 1.0 / fb, np.ones_like(fb)], axis=1)  # (N, 3)
+    m = g * scale[:, :, None]
+    norms = np.linalg.norm(m[:, :, 0], axis=1) + np.linalg.norm(m[:, :, 1], axis=1)
+    lam = 2.0 / np.maximum(norms, 1e-12)
+    u, _, vt = np.linalg.svd(m[:, :, :2] * lam[:, None, None], full_matrices=False)
+    axes = u @ vt
+    rebuilt = np.concatenate([axes, m[:, :, 2:] * lam[:, None, None]], axis=2) / scale[:, :, None]
+    return np.einsum("ij,njk->nik", np.linalg.inv(centre), rebuilt), skew[np.arange(len(g)), best]
+
+
+def to_source(xy: np.ndarray, k1: float, size: tuple[int, int]) -> np.ndarray:
+    """Undistorted pixels (any leading shape) -> source pixels. Identity at k1 = 0."""
+    if not k1:
+        return xy
+    return distortion.distort_points(xy.reshape(-1, 2), k1, size).reshape(xy.shape)
+
+
+def covered(
+    h_inv: np.ndarray, samples: np.ndarray, dist: np.ndarray, *, k1: float = 0.0, box: Box
+) -> float:
+    """Pixels of paint the fit's lines lie on, each counted once (in `COVER_CELL_PX` cells).
+
+    The explained length counts a painted pixel once per template line on it, so a
+    strong `k1` that bends several court lines onto one bright curve is paid several
+    times over: on the fisheye badminton clip that stack (all the lines on the arc at
+    the bottom of the frame) out-scored the true court by 20 %. Counting cells ranks it
+    last. Too coarse to refine on (it is flat within a few pixels), so it only ranks.
+    """
+    h, w = dist.shape
+    x0, y0, x1, y1 = box
+    p = to_source(project(samples, h_inv), k1, (w, h))
+    inside = (p[:, 0] >= x0) & (p[:, 0] < x1) & (p[:, 1] >= y0) & (p[:, 1] < y1)
+    xi = np.clip(np.rint(p[inside]), 0, [w - 1, h - 1]).astype(np.int64)
+    on = xi[dist[xi[:, 1], xi[:, 0]] <= 2.0 * SIGMA_PX] // COVER_CELL_PX
+    return float(len(np.unique(on[:, 1] * w + on[:, 0])) * COVER_CELL_PX)
 
 
 # --------------------------------------------------------------------------- the mask
@@ -111,6 +232,12 @@ def line_mask(
         | _ridge(255 - lightness, tau, delta)  # dark lines on a pale gym floor
         | _ridge(saturation, tau, delta)  # blue/red lines on a pale gym floor
     )
+    # The bar edges are ridges too (JPEG ringing), and the longest lines in the frame.
+    x0, y0, x1, y1 = content_box(frame_bgr)
+    if (x0, y0, x1, y1) != (0, 0, raw.shape[1], raw.shape[0]):
+        keep = np.zeros_like(raw)
+        keep[y0 + tau + 1 : y1 - tau - 1, x0 + tau + 1 : x1 - tau - 1] = 1
+        raw &= keep
     count, labels, stats, _ = cv2.connectedComponentsWithStats(raw, 8)
     if count < 2:
         return raw * 255
@@ -232,10 +359,16 @@ def intersections(lines: Lines, *, min_sin: float = 0.10) -> tuple[np.ndarray, n
 
 
 def quads(
-    lines: Lines, dist: np.ndarray, *, max_quads: int = MAX_QUADS
+    lines: Lines,
+    dist: np.ndarray,
+    *,
+    max_quads: int = MAX_QUADS,
+    k1: float = 0.0,
+    box: Box | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Convex quadrilaterals two pairs of lines make, best-supported first.
 
+    `lines` are in undistorted pixels at `k1`; `dist` is always the SOURCE frame's.
     Returns (K, 4, 2) corners in cyclic order and their (K,) edge-support prescore.
     """
     h, w = dist.shape
@@ -290,24 +423,32 @@ def quads(
     if not len(corner):
         return np.empty((0, 4, 2)), np.empty(0)
 
-    prescore = _edge_support(corner, dist)
+    prescore = _edge_support(corner, dist, k1=k1, box=box)
     order = np.argsort(-prescore)[:max_quads]
     return corner[order], prescore[order]
 
 
-def _edge_support(corner: np.ndarray, dist: np.ndarray, *, samples: int = 16) -> np.ndarray:
+def _edge_support(
+    corner: np.ndarray,
+    dist: np.ndarray,
+    *,
+    samples: int = 16,
+    k1: float = 0.0,
+    box: Box | None = None,
+) -> np.ndarray:
     """Fraction of the quad's four edges that runs along painted pixels."""
     h, w = dist.shape
+    x0, y0, x1, y1 = box or (0, 0, w, h)
     t = np.linspace(0.04, 0.96, samples)
     out = np.empty(len(corner))
     for lo in range(0, len(corner), 20000):
         block = corner[lo : lo + 20000]
         nxt = np.roll(block, -1, axis=1)
         pts = block[:, :, None, :] + t[None, None, :, None] * (nxt - block)[:, :, None, :]
-        pts = pts.reshape(len(block), -1, 2)
+        pts = to_source(pts.reshape(len(block), -1, 2), k1, (w, h))
         x = np.rint(pts[:, :, 0]).astype(np.int32)
         y = np.rint(pts[:, :, 1]).astype(np.int32)
-        inside = (x >= 0) & (x < w) & (y >= 0) & (y < h)
+        inside = (x >= x0) & (x < x1) & (y >= y0) & (y < y1)
         on = np.zeros(x.shape, bool)
         xi, yi = np.clip(x, 0, w - 1), np.clip(y, 0, h - 1)
         on[inside] = dist[yi[inside], xi[inside]] <= 2.5
@@ -369,9 +510,7 @@ def _all_painted(edges: np.ndarray, p: np.ndarray, q: np.ndarray, step: float = 
     pts = p + np.linspace(0.0, 1.0, n)[:, None] * (q - p)
     a, b = edges[:, 0], edges[:, 1]
     ab = b - a
-    t = np.clip(
-        ((pts[:, None, :] - a) * ab).sum(2) / np.maximum((ab * ab).sum(1), 1e-12), 0.0, 1.0
-    )
+    t = np.clip(((pts[:, None, :] - a) * ab).sum(2) / np.maximum((ab * ab).sum(1), 1e-12), 0.0, 1.0)
     foot = a + t[:, :, None] * ab
     return bool((np.linalg.norm(foot - pts[:, None, :], axis=2).min(1) < 1e-6).all())
 
@@ -461,8 +600,46 @@ def score(
     outline_m: np.ndarray,
     *,
     sigma: float = SIGMA_PX,
+    k1: float = 0.0,
+    box: Box | None = None,
+    absolute: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Score (N,) and in-frame fraction (N,) for N metres->pixels homographies.
+
+    `absolute=True` returns the EXPLAINED arc length instead of the fraction: source
+    pixels of template line that land on paint. See `_score`.
+    """
+    fraction, explained, frac = _score(
+        h_inv, samples, link, dist, outline_m, sigma=sigma, k1=k1, box=box
+    )
+    return (explained if absolute else fraction), frac
+
+
+def _score(
+    h_inv: np.ndarray,
+    samples: np.ndarray,
+    link: np.ndarray,
+    dist: np.ndarray,
+    outline_m: np.ndarray,
+    *,
+    sigma: float = SIGMA_PX,
+    k1: float = 0.0,
+    box: Box | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(fraction, explained px, in-frame fraction), each (N,).
+
+    The fraction of the in-frame template that lands on paint is the honest quality
+    number (it is what `ok` is gated on) but a bad thing to rank by: it pays a fit for
+    piling the template onto a few strong lines and leaving the rest of the court off
+    frame or collapsed. On the fisheye badminton clip, where one `k1` cannot bend the
+    frame edges right, the true court reaches 0.63-0.70 while a court collapsed onto the
+    near sideline reaches 0.77. The lens search refines on the explained length
+    (unnormalised) instead, and ranks on `covered`, which also stops a fit being paid
+    twice for stacking lines.
+
+    The homographies land in undistorted pixels at `k1`; samples are bent back onto the
+    source frame before anything is looked up or counted, so "in frame" means inside
+    `box` (the picture, bars excluded) and a step's weight is its SOURCE arc length.
 
     `outline_m` is the court outline in metres, and it is a *guard*, not part of the
     score: without it the winning fit is always a projective collapse. Wrap the court
@@ -471,9 +648,11 @@ def score(
     every clip until the sign of w and the projected court area were checked.
     """
     h, w = dist.shape
+    x0, y0, x1, y1 = box or (0, 0, w, h)
     hom = np.concatenate([samples, np.ones((len(samples), 1))], axis=1)
     guard = np.concatenate([outline_m, np.ones((len(outline_m), 1))], axis=1)
     out = np.zeros(len(h_inv))
+    expl = np.zeros(len(h_inv))
     frac = np.zeros(len(h_inv))
     for lo in range(0, len(h_inv), 256):  # chunked: (N, S, 3) is the memory hog
         chunk = h_inv[lo : lo + 256]
@@ -481,11 +660,14 @@ def score(
         z = proj[:, :, 2]
         good = np.abs(z) > 1e-9
         with np.errstate(divide="ignore", invalid="ignore"):
-            x = np.where(good, proj[:, :, 0] / z, -1.0)
-            y = np.where(good, proj[:, :, 1] / z, -1.0)
+            x = np.where(good, proj[:, :, 0] / z, -1e6)
+            y = np.where(good, proj[:, :, 1] / z, -1e6)
+        if k1:
+            src = to_source(np.stack([x, y], axis=2), k1, (w, h))
+            x, y = src[:, :, 0], src[:, :, 1]
         xi = np.clip(np.rint(x), 0, w - 1).astype(np.int32)
         yi = np.clip(np.rint(y), 0, h - 1).astype(np.int32)
-        inside = good & (x >= 0) & (x < w) & (y >= 0) & (y < h)
+        inside = good & (x >= x0) & (x < x1) & (y >= y0) & (y < y1)
         d = dist[yi, xi]
         hit = np.exp(-(d * d) / (2.0 * sigma * sigma))
         # Weight each sample by the IMAGE arc length it stands for, not by its 10 cm of
@@ -500,8 +682,8 @@ def score(
         total = weight.sum(1)
         seen = inside.sum(1)
         f = seen / samples.shape[0]
-        s = (hit * weight).sum(1) / np.maximum(total, 1e-9)
-        s = s * np.clip(f / FULL_COVER_FRAC, 0.0, 1.0)
+        e = (hit * weight).sum(1)
+        s = e / np.maximum(total, 1e-9) * np.clip(f / FULL_COVER_FRAC, 0.0, 1.0)
 
         corners = np.einsum("nij,sj->nsi", chunk, guard)
         cz = corners[:, :, 2]
@@ -532,8 +714,9 @@ def score(
             & (squash <= MAX_SQUASH)
         )
         out[lo : lo + 256] = np.where(sane, s, 0.0)
+        expl[lo : lo + 256] = np.where(sane, e, 0.0)
         frac[lo : lo + 256] = f
-    return out, frac
+    return out, expl, frac
 
 
 def _orderings(corner: np.ndarray, rect: np.ndarray, near_left: bool) -> np.ndarray:
@@ -593,12 +776,36 @@ def _refine(
     outline_m: np.ndarray,
     *,
     steps: tuple[int, ...] = REFINE_STEPS,
+    box: Box | None = None,
+    lens_search: bool = False,
 ) -> Fit:
-    """Coordinate descent on the four image corners, largest step first."""
-    best_px, best_score = candidate.corners_px, candidate.score
+    """Coordinate descent on the four image corners, largest step first.
+
+    With `lens_search` it also moves `k1`, keeps every trial a real camera (`physical`)
+    and climbs the explained length instead of the fraction (see `_score`). The corners
+    move in SOURCE pixels, so a `k1` step bends the rest of the court about the matched
+    quad instead of dragging the quad itself off the paint.
+    """
+    size = (dist.shape[1], dist.shape[0])
+    rect = candidate.rect_m
+
+    def run(pix: np.ndarray, k1: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        und = distortion.undistort_points(pix.reshape(-1, 2), k1, size).reshape(pix.shape)
+        h_inv = _batch_homography(np.repeat(rect[None], len(pix), axis=0), und)
+        if lens_search:
+            h_inv, _ = physical(h_inv, size)
+        return (h_inv, *_score(h_inv, samples, link, dist, outline_m, k1=k1, box=box))
+
+    def objective(fraction: np.ndarray, explained: np.ndarray) -> np.ndarray:
+        return explained if lens_search else fraction
+
+    best_px, best_k1 = candidate.corners_px, candidate.k1
+    best = float(objective(np.array([candidate.score]), np.array([candidate.explained_px]))[0])
     offsets = np.array([(dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if (dx, dy) != (0, 0)])
+    lo, hi = distortion.K1_RANGE
     for step in steps:
         for _ in range(12):
+            improved = False
             trials = [best_px]
             for k in range(4):
                 for off in offsets * step:
@@ -606,15 +813,20 @@ def _refine(
                     moved[k] = moved[k] + off
                     trials.append(moved)
             pix = np.asarray(trials)
-            met = np.repeat(candidate.rect_m[None], len(pix), axis=0)
-            scores, _ = score(_batch_homography(met, pix), samples, link, dist, outline_m)
-            k = int(np.argmax(scores))
-            if scores[k] <= best_score + 1e-9:
+            _, r, e, _ = run(pix, best_k1)
+            got = objective(r, e)
+            k = int(np.argmax(got))
+            if got[k] > best + 1e-9:
+                best_px, best, improved = pix[k], float(got[k]), True
+            for k1 in (best_k1 + step * K1_PER_PX, best_k1 - step * K1_PER_PX):
+                if lens_search and lo <= k1 <= hi:
+                    _, r, e, _ = run(best_px[None], k1)
+                    if objective(r, e)[0] > best + 1e-9:
+                        best_k1, best, improved = k1, float(objective(r, e)[0]), True
+            if not improved:
                 break
-            best_px, best_score = pix[k], float(scores[k])
-    h_inv = _batch_homography(candidate.rect_m[None], best_px[None])
-    s, f = score(h_inv, samples, link, dist, outline_m)
-    return Fit(h_inv[0], best_px, candidate.rect_m, float(s[0]), float(f[0]))
+    h_inv, r, e, f = run(best_px[None], best_k1)
+    return Fit(h_inv[0], best_px, rect, float(r[0]), float(f[0]), best_k1, float(e[0]))
 
 
 def _leash(
@@ -643,12 +855,11 @@ def _leash(
     )
 
 
-def _same_fit(a: Fit, b: Fit, outline_m: np.ndarray) -> bool:
+def _same_fit(a: Fit, b: Fit, outline_m: np.ndarray, size: tuple[int, int]) -> bool:
     """Same answer? Compare where the COURT lands, not which quad or rectangle made it."""
-    return bool(
-        np.linalg.norm(project(outline_m, a.h_inv) - project(outline_m, b.h_inv), axis=1).max()
-        < SAME_FIT_PX
-    )
+    pa = to_source(project(outline_m, a.h_inv), a.k1, size)
+    pb = to_source(project(outline_m, b.h_inv), b.k1, size)
+    return bool(np.linalg.norm(pa - pb, axis=1).max() < SAME_FIT_PX)
 
 
 def fit(
@@ -660,22 +871,34 @@ def fit(
     refine: bool = True,
     prior_quad: np.ndarray | None = None,
     prior_radius: float | None = None,
+    k1: float = 0.0,
+    lens_search: bool = False,
 ) -> tuple[list[Fit], str]:
     """Best homographies for this frame, best first, plus a one-line note.
+
+    `k1` is the lens to search under: lines and quads are built in undistorted pixels
+    and the score reads the source frame. `lens_search` is the second pass `autocalib`
+    runs when the straight one fails: every candidate is made a real camera
+    (`physical`), `k1` is refined too (on explained paint rather than the fraction:
+    `_score` says why) and fits are ranked by `covered` paint; seeds come from both
+    orders.
 
     `prior_quad` is where something else (a vision model, a previous calibration) thinks
     the court outline is, as 4 image points in the template's outline order. It is used
     as a *leash*, not an answer: candidates whose court lands more than `prior_radius`
-    from it are dropped, the prior itself is added as one more candidate so the line
-    refinement can start from it, and if the leash leaves nothing the search runs
-    unrestricted rather than returning nothing.
+    from it (in undistorted pixels) are dropped, the prior itself is added as one more
+    candidate so the line refinement can start from it, and if the leash leaves nothing
+    the search runs unrestricted rather than returning nothing.
     """
     if mask is None:
         mask = line_mask(frame_bgr)
     dist = distance_map(mask)
+    box = content_box(frame_bgr)
+    size = (mask.shape[1], mask.shape[0])
     segs = segments(mask)
-    lines = longest(merge_collinear(segs, mask.shape))
-    corner, _ = quads(lines, dist)
+    straight = distortion.undistort_points(segs.reshape(-1, 2), k1, size).reshape(-1, 4)
+    lines = longest(merge_collinear(straight, mask.shape))
+    corner, _ = quads(lines, dist, k1=k1, box=box)
     note = f"{len(segs)} segments, {len(lines)} lines, {len(corner)} quads"
     if not len(corner):
         return [], note + " - nothing to fit"
@@ -691,25 +914,48 @@ def fit(
             pix,
             met,
             outline,
-            np.asarray(prior_quad, float),
+            distortion.undistort_points(prior_quad, k1, size),
             prior_radius or 0.15 * frame_bgr.shape[1],
         )
         note += f", prior kept {kept}"
     h_inv = _batch_homography(met, pix)
-    s, f = score(h_inv, samples, link, dist, outline)
+    if lens_search:
+        h_inv, _ = physical(h_inv, size)
+    if len(h_inv) > 2 * RESCORE:
+        coarse = template_samples(template, cap=COARSE_SAMPLES)
+        fraction, explained, _ = _score(h_inv, *coarse, dist, outline, k1=k1, box=box)
+        best = [np.argsort(-fraction)[:RESCORE], np.argsort(-explained)[:RESCORE]]
+        pick = np.unique(np.concatenate(best))
+        pix, met, h_inv = pix[pick], met[pick], h_inv[pick]
+    fraction, explained, frac = _score(h_inv, samples, link, dist, outline, k1=k1, box=box)
     out: list[Fit] = []
-    for i in np.argsort(-s):
-        if s[i] <= 0.0:
-            break
-        candidate = Fit(h_inv[i], pix[i], met[i], float(s[i]), float(f[i]))
-        if any(_same_fit(candidate, done, outline) for done in out):
-            continue
-        out.append(candidate)
-        if len(out) >= keep:
-            break
+    for order in (-fraction, -explained) if lens_search else (-fraction,):
+        taken = 0
+        for i in np.argsort(order):
+            if fraction[i] <= 0.0 or taken >= keep:
+                break
+            candidate = Fit(
+                h_inv[i],
+                to_source(pix[i], k1, size),
+                met[i],
+                float(fraction[i]),
+                float(frac[i]),
+                k1,
+                float(explained[i]),
+            )
+            if any(_same_fit(candidate, done, outline, size) for done in out):
+                continue
+            out.append(candidate)
+            taken += 1
     if refine:
-        out = [_refine(c, samples, link, dist, outline) for c in out]
-    out.sort(key=lambda c: -c.score)
+        steps = LENS_REFINE_STEPS if lens_search else REFINE_STEPS
+        out = [
+            _refine(c, samples, link, dist, outline, steps=steps, box=box, lens_search=lens_search)
+            for c in out
+        ]
+    for c in out:
+        c.covered_px = covered(c.h_inv, samples, dist, k1=c.k1, box=box)
+    out.sort(key=lambda c: -(c.covered_px if lens_search else c.score))
     return out, note + f", {len(rects)} template rectangles"
 
 

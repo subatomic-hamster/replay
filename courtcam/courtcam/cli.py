@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from pathlib import Path
 from typing import Annotated, Any
@@ -71,6 +72,9 @@ def run(
         Path | None, typer.Option(help="ground_truth.json for --detector synthetic")
     ] = None,
     backend: Annotated[str, typer.Option(help="Inference backend: pt | openvino | onnx")] = "pt",
+    model: Annotated[
+        str | None, typer.Option(help="YOLO weights, e.g. yolo11m.pt (default: the profile's)")
+    ] = None,
     stride: int | None = None,
     max_frames: int | None = None,
     stages: Annotated[
@@ -95,6 +99,7 @@ def run(
         detector=detector,
         ground_truth=ground_truth,
         backend=backend,
+        model=model,
         stages=[s.strip() for s in stages.split(",") if s.strip()] if stages else None,
         stride=stride,
         max_frames=max_frames,
@@ -208,19 +213,38 @@ def autocalib_eval(
     misses: `northsidewide.corner_fl` sits at x = 2709 on a 2560 px frame and neither
     2560 px clip has a `corner_fr` at all. A backend that refuses to invent a point it
     cannot see is right to, so scoring it against one is scoring the wrong thing.
+
+    Errors are taken under whichever whole-court relabelling (as clicked, l<->r, n<->f,
+    or both) fits best: the template is symmetric, the fit's labelling follows a winding
+    convention (`templatefit._orderings`) that a hand-clicked set need not, and the
+    homography is the same court either way. The relabelling used is printed.
+
+    A `<clip>_smoke` frame named in full in `--clips` is scored against the clip's
+    `_240s` ground truth (same fixed camera).
     """
     from . import autocalib as auto_mod
 
     frames_dir = samples / "frames"
     tag = "" if backend in ("auto", "vlm", "claude-cli") else f"{backend}_"
     wanted = {c.strip() for c in clips.split(",")} if clips else None
-    rows: list[tuple[str, dict[str, float], float, dict]] = []
-    for jpg in sorted(samples.glob("*_240s.jpg")):
+    relabels = {
+        "as clicked": lambda n: n,
+        "l<->r": lambda n: auto_mod._swap(n, "l", "r"),
+        "n<->f": lambda n: auto_mod._swap(n, "n", "f"),
+        "rotated": lambda n: auto_mod._swap(auto_mod._swap(n, "l", "r"), "n", "f"),
+    }
+    rows: list[tuple[str, dict[str, float], float, dict, bool, float, str]] = []
+    jpgs = sorted(samples.glob("*_240s.jpg")) + sorted(
+        samples / f"{c}.jpg" for c in wanted or () if c.endswith("_smoke")
+    )
+    for jpg in jpgs:
         stem = jpg.stem
         if wanted and stem not in wanted and stem.split("_")[1] not in wanted:
             continue
         truth_path = samples / f"{stem}.landmarks.json"
         if not truth_path.is_file():
+            truth_path = samples / f"{stem.removesuffix('_smoke')}_240s.landmarks.json"
+        if not jpg.is_file() or not truth_path.is_file():
             continue
         truth_doc = json.loads(truth_path.read_text(encoding="utf-8"))
         frame_size = _frame_size(jpg)
@@ -231,6 +255,7 @@ def autocalib_eval(
         }
         offframe = len(truth_doc["landmarks_px"]) - len(truth)
         cache = frames_dir / f"autocalib_{tag}{stem}.json"
+        runtime = float("nan")
         if reuse and cache.is_file():
             doc = json.loads(cache.read_text(encoding="utf-8"))
             proposal = auto_mod.Proposal(
@@ -254,7 +279,8 @@ def autocalib_eval(
                 backend=backend,
                 optional=ask_optional,
             )
-            proposal.notes = f"{proposal.notes} [{time.perf_counter() - t0:.0f}s]".strip()
+            runtime = time.perf_counter() - t0
+            proposal.notes = f"{proposal.notes} [{runtime:.0f}s]".strip()
             frames_dir.mkdir(parents=True, exist_ok=True)
             cache.write_text(json.dumps(proposal.as_dict(), indent=1), encoding="utf-8")
             auto_mod.draw_overlay(
@@ -264,20 +290,33 @@ def autocalib_eval(
                 truth,
                 template=profile.template(truth_doc.get("variant")),
             )
-        errors = {
-            name: float(
-                (
-                    (proposal.landmarks_px[name][0] - p[0]) ** 2
-                    + (proposal.landmarks_px[name][1] - p[1]) ** 2
-                )
-                ** 0.5
+        got = proposal.landmarks_px
+
+        def errors_as(rename, got=got, truth=truth) -> dict[str, float]:
+            return {
+                name: math.dist(got[rename(name)], p)
+                for name, p in truth.items()
+                if rename(name) in got
+            }
+
+        def median(errs: dict[str, float]) -> float:
+            return sorted(errs.values())[len(errs) // 2] if errs else float("inf")
+
+        relabel = min(relabels, key=lambda k: median(errors_as(relabels[k])))
+        errors = errors_as(relabels[relabel])
+        rows.append(
+            (
+                stem,
+                errors,
+                proposal.reprojection_error_px or float("nan"),
+                truth,
+                proposal.ok,
+                runtime,
+                relabel,
             )
-            for name, p in truth.items()
-            if name in proposal.landmarks_px
-        }
-        rows.append((stem, errors, proposal.reprojection_error_px or float("nan"), truth))
+        )
         typer.echo(
-            f"\n{stem}  source={proposal.source} ok={proposal.ok}"
+            f"\n{stem}  source={proposal.source} ok={proposal.ok}  labels {relabel}"
             + (f"  ({offframe} ground-truth landmark(s) off-frame, skipped)" if offframe else "")
         )
         if proposal.notes:
@@ -295,19 +334,25 @@ def autocalib_eval(
         typer.echo("no clips with ground truth found")
         raise typer.Exit(1)
     typer.echo("\n== summary (* = headline: 4 corners + rim) ==")
-    typer.echo(f"{'clip':<32}{'n':>4}{'mean px':>10}{'<20px':>8}{'head<20':>9}{'reproj':>9}")
-    for stem, errors, reproj, truth in rows:
+    typer.echo(
+        f"{'clip':<32}{'ok':>6}{'n':>4}{'median':>8}{'worst':>8}{'mean px':>9}{'<20px':>7}"
+        f"{'head<20':>9}{'reproj':>8}{'time s':>8}"
+    )
+    nan = float("nan")
+    for stem, errors, reproj, truth, ok, runtime, _ in rows:
         head = [errors[n] for n in HEADLINE if n in errors]
         want = [n for n in HEADLINE if n in truth]
-        values = list(errors.values())
+        values = sorted(errors.values())
         typer.echo(
-            f"{stem:<32}{len(values):>4}"
-            f"{(sum(values) / len(values) if values else float('nan')):>10.1f}"
-            f"{(sum(v <= NEAR_PX for v in values) / max(len(values), 1)):>8.0%}"
+            f"{stem:<32}{ok!s:>6}{len(values):>4}"
+            f"{(values[len(values) // 2] if values else nan):>8.1f}"
+            f"{(values[-1] if values else nan):>8.1f}"
+            f"{(sum(values) / len(values) if values else nan):>9.1f}"
+            f"{(sum(v <= NEAR_PX for v in values) / max(len(values), 1)):>7.0%}"
             f"{sum(v <= NEAR_PX for v in head):>5}/{len(want):<3}"
-            f"{reproj:>9.1f}"
+            f"{reproj:>8.1f}{runtime:>8.1f}"
         )
-    allv = [v for _, e, _, _ in rows for v in e.values()]
+    allv = [v for row in rows for v in row[1].values()]
     typer.echo(
         f"{'ALL':<32}{len(allv):>4}{(sum(allv) / max(len(allv), 1)):>10.1f}"
         f"{(sum(v <= NEAR_PX for v in allv) / max(len(allv), 1)):>8.0%}"

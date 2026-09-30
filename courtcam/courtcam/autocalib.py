@@ -39,7 +39,6 @@ import cv2
 import numpy as np
 
 from . import calibrate as calib_mod
-from . import distortion
 from . import templatefit as tfit
 from .profiles import Profile
 
@@ -59,22 +58,21 @@ MIN_TEMPLATE_SCORE = 0.90
 #: A fit with most of the template off-frame is unconstrained — badminton_auditorium
 #: scored 0.94 for a court 858 px wrong at 65 % in frame.
 MIN_INFRAME_FRAC = 0.85
+#: ...and one no pinhole camera can make is a wedge of court drawn over the sky:
+#: `basketball_parkwide` (no court paint at all) scored 0.95-0.97 with camera skew 0.13
+#: (`templatefit.physical`). Every hand-clicked court is 0.002-0.023.
+MAX_CAMERA_SKEW = 0.05
 SNAP_RADIUS_PX = 40.0
-#: Barrel pre-step for the template fit (D-24's "next", D-25's model). `templatefit`
-#: searches over STRAIGHT lines; on an ultra-wide or panoramic camera a court edge is a
-#: curve, so it fragments into short chords pointing different ways and no `HoughLinesP`
-#: line represents it — the candidate set does not contain the truth, which is why the
-#: three basketball panoramas fail (samples/real/RESULTS.md). So the detected segments
-#: are straightened at a few `k1` values and the fit re-run on each.
-K1_CANDIDATES = (0.0, -0.2, -0.4, -0.6)
-#: Wall clock for the whole fit, every candidate included. One fit is 4-12 s on the
-#: corpus, so the last candidates are skipped on a slow frame rather than run.
+#: The lens search (D-24's "next", D-25's model), run when the straight fit is not `ok`.
+#: `templatefit` searches over STRAIGHT lines; on an ultra-wide camera a court edge is a
+#: curve that fragments into chords no `HoughLinesP` line represents, so the segments
+#: are straightened at each of these `k1` and the fit re-run there; the refinement then
+#: moves `k1` continuously (`templatefit.K1_PER_PX`), so the grid only has to land in
+#: the right basin. No 0.0: the straight pass is that, and the refinement reaches it.
+K1_CANDIDATES = (-0.2, -0.4, -0.6)
+#: Wall clock for the whole fit, every candidate included; the last candidates are
+#: skipped on a slow frame rather than run.
 TEMPLATE_BUDGET_S = 40.0
-#: How much better a straightened candidate has to score before it is preferred. Its
-#: mask is redrawn from Hough segments and is therefore sparser than the raw ridge mask
-#: the `k1 = 0` fit sees, so the scores are close but not identical measurements; the
-#: margin keeps a 1x lens (where the model buys nothing) on the path it was measured on.
-MIN_K1_MARGIN = 0.02
 #: Wall clock per model call. The brief's 90 s is not survivable through the
 #: `claude` CLI — a measured pass on a 2560 px panorama is 100-240 s — so the default
 #: is 420 s and the two passes run concurrently — a measured pass on the 2560 px
@@ -112,6 +110,10 @@ class Proposal:
     #: metres -> pixels, when the backend fitted one. Deliberately NOT in `as_dict`:
     #: the API contract is landmark pixels, and the uploader commits those.
     h_inv: np.ndarray | None = field(default=None, repr=False)
+    #: Required landmarks (`profile.court.landmarks`) the fit puts outside the picture.
+    #: They are absent from `landmarks_px`, which the uploader already reads as "Not
+    #: visible"; this names them so the notes and the UI do not have to work it out.
+    not_visible: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -123,6 +125,7 @@ class Proposal:
             "ok": self.ok,
             "reprojection_error_px": self.reprojection_error_px,
             "k1": self.k1,
+            "not_visible": list(self.not_visible),
         }
 
 
@@ -584,44 +587,6 @@ def _prior_quad(
     return tfit.project(tfit.rectangles(template)[0], np.linalg.inv(h))
 
 
-def _straighten(pts, k1: float, size: tuple[int, int]) -> np.ndarray:
-    """Source pixels -> lens-corrected pixels, rescaled to stay on the same canvas.
-
-    `distortion.undistort_points` pushes everything outward when `k1 < 0`, which throws
-    the court edges — the part that matters — off the frame the fit runs in. A uniform
-    scale about the centre is absorbed by the homography, so the fit does not care, and
-    `1 + k1` is exactly the factor that puts the frame corners back where they were.
-    """
-    c = np.asarray(size, dtype=np.float64) / 2.0
-    return (distortion.undistort_points(pts, k1, size) - c) * (1.0 + k1) + c
-
-
-def _bend_back(pts, k1: float, size: tuple[int, int]) -> np.ndarray:
-    """The exact inverse of `_straighten`: lens-corrected pixels -> source pixels."""
-    c = np.asarray(size, dtype=np.float64) / 2.0
-    pts = (np.asarray(pts, dtype=np.float64).reshape(-1, 2) - c) / (1.0 + k1) + c
-    return distortion.distort_points(pts, k1, size)
-
-
-def _straight_mask(mask: np.ndarray, k1: float, size: tuple[int, int]) -> np.ndarray:
-    """The line mask with the barrel taken out, redrawn from its own Hough segments.
-
-    Undistorting the *frame* would resample two megapixels per candidate and blur the
-    1-2 px paint the ridge filter is looking for. The fit only ever reads the mask, and
-    a segment is three points: two ends and a midpoint, which is enough to keep a chord
-    of a curve on the curve once it is straightened.
-    """
-    out = np.zeros_like(mask)
-    segs = tfit.segments(mask)
-    if not len(segs):
-        return out
-    ends = segs.reshape(-1, 2, 2)
-    triples = np.stack([ends[:, 0], ends.mean(axis=1), ends[:, 1]], axis=1)  # (N, 3, 2)
-    straight = _straighten(triples.reshape(-1, 2), k1, size).reshape(len(segs), 3, 2)
-    cv2.polylines(out, np.rint(straight).astype(np.int32), False, 255, 2)
-    return out
-
-
 def propose_template(
     frame_bgr: np.ndarray,
     profile: Profile,
@@ -631,12 +596,15 @@ def propose_template(
 ) -> Proposal:
     """Fit the court template to the painted lines and read the landmarks off the fit.
 
-    Every landmark comes from one homography, so the proposal is self-consistent by
-    construction — which the two-pass model proposal never was. Landmarks that project
-    outside the frame are left out rather than guessed at; `landmarks_optional` are
-    included, because they cost nothing here and a clip with a corner off-frame needs
-    them (D-19).
+    Every landmark comes from one homography (and one `k1`), so the proposal is
+    self-consistent by construction — which the two-pass model proposal never was.
+    Landmarks that land outside the picture (letterbox bars excluded) are left out rather
+    than guessed at, and the required ones among them are named in `not_visible`;
+    `landmarks_optional` are included, because they cost nothing here and a clip with a
+    corner off-frame needs them (D-19).
     """
+    from .pipeline import calibrate_lens  # the commit path; imported late, it is heavy
+
     template = profile.template(variant)
     quad = _prior_quad(prior, profile, variant) if prior else None
     h, w = frame_bgr.shape[:2]
@@ -646,28 +614,31 @@ def propose_template(
 
     fits, note = tfit.fit(frame_bgr, template, mask=mask, prior_quad=quad)
     notes = [note] if note else []
-    k1 = 0.0
-    plain = fits[0].score if fits else 0.0
-    beat = plain + MIN_K1_MARGIN
+    plain = fits[0] if fits else None
+    straight_ok = (
+        plain is not None
+        and plain.score >= MIN_TEMPLATE_SCORE
+        and plain.inframe_frac >= MIN_INFRAME_FRAC
+        and tfit.physical(plain.h_inv[None], size)[1][0] <= MAX_CAMERA_SKEW
+    )
     skipped = []
-    # A fit that already sits on the paint has no barrel to take out, and the pre-step
-    # is 3-4 more fits at 4-12 s each. Measured: pickleball scores 0.922 straight away
-    # and stays a 4 s, 10/10 answer; the clips that fall through here are the ones the
-    # straight-line search has already failed on.
-    for candidate in K1_CANDIDATES if plain < MIN_TEMPLATE_SCORE else ():
-        if not candidate:
-            continue  # k1 = 0 is the fit already done, on the raw mask
+    lens: list[tfit.Fit] = []
+    # A straight fit that already sits on the paint, with the court in the picture, has
+    # no barrel to take out: pickleball passes here and stays a 1-4 s, 10/10 answer. The
+    # rest get the lens search; its fits and the straight one are ranked by covered
+    # paint (`templatefit.covered`), the one measure that means the same at every k1.
+    for candidate in () if straight_ok else K1_CANDIDATES:
         if time.monotonic() > deadline:
             skipped.append(candidate)
             continue
-        bent = None if quad is None else _straighten(quad, candidate, size)
         got, _ = tfit.fit(
-            frame_bgr, template, mask=_straight_mask(mask, candidate, size), prior_quad=bent
+            frame_bgr, template, mask=mask, prior_quad=quad, k1=candidate, lens_search=True
         )
-        if got and got[0].score > beat:
-            fits, k1, beat = got, candidate, got[0].score
-    if k1:
-        notes.append(f"k1 {k1:+.2f} straightened the lines ({plain:.3f} -> {fits[0].score:.3f})")
+        lens += got[:1]
+    if lens:
+        # The straight fit competes too: on powellgym it is right at the near basket
+        # and the lens search is not.
+        fits = sorted([*lens, *fits[:1]], key=lambda c: -c.covered_px)
     if skipped:
         notes.append(f"skipped k1 {skipped} — {TEMPLATE_BUDGET_S:.0f} s budget")
     if quad is not None and prior:
@@ -676,24 +647,31 @@ def propose_template(
         return Proposal(source="template", notes="; ".join(notes))
 
     best = fits[0]
+    k1 = best.k1
+    if lens and best is not plain:
+        notes.append(
+            f"lens search: k1 {k1:+.3f}, straight fit scored {plain.score if plain else 0.0:.3f}"
+        )
     runner = fits[1].score if len(fits) > 1 else 0.0
     margin = best.score - runner
     # Two numbers the user can act on: is the fit good in absolute terms, and was it
     # the only good one? A clip with two equally good answers is a clip to check.
     confidence = round(float(min(1.0, best.score) * (0.6 + 0.4 * min(1.0, margin / 0.03))), 3)
-    names = [n for n in template.landmarks]
-    # The fit lives in straightened pixels when k1 fired; the UI draws on the source
-    # frame, so every landmark is bent back onto it before anything else sees it.
-    points = _bend_back(tfit.project(template.landmark_array(names), best.h_inv), k1, size)
+    names = list(template.landmarks)
+    # The fit lives in undistorted pixels; the UI draws on the source frame.
+    points = tfit.to_source(tfit.project(template.landmark_array(names), best.h_inv), k1, size)
+    x0, y0, x1, y1 = tfit.content_box(frame_bgr)
     landmarks = {
         n: (float(x), float(y))
         for n, (x, y) in zip(names, points, strict=True)
-        if 0 <= x < w and 0 <= y < h
+        if x0 <= x < x1 and y0 <= y < y1
     }
+    hidden = [n for n in profile.court.landmarks if n in template.landmarks and n not in landmarks]
     notes.append(
         f"score {best.score:.3f} (runner-up {runner:.3f}), "
         f"{best.inframe_frac:.0%} of the template in frame, "
         f"{len(template.landmarks) - len(landmarks)} landmark(s) off-frame"
+        + (f" (not visible: {', '.join(hidden)})" if hidden else "")
     )
     proposal = Proposal(
         landmarks_px=landmarks,
@@ -701,9 +679,10 @@ def propose_template(
         source="template",
         h_inv=best.h_inv,
         k1=k1,
+        not_visible=hidden,
     )
     try:
-        calib = calib_mod.calibrate(landmarks, profile, variant)
+        calib = calibrate_lens(landmarks, profile, variant, size)
     except calib_mod.CalibrationError as exc:
         notes.append(str(exc))
     except Exception as exc:  # noqa: BLE001 - a bad fit is a UI state, not a crash
@@ -714,18 +693,23 @@ def propose_template(
         # the same homography, so it measures nothing at all. The line score is the only
         # honest quality signal, so `ok` (which the uploader reads as "offer Accept")
         # rides on that instead.
-        proposal.ok = best.score >= MIN_TEMPLATE_SCORE and best.inframe_frac >= MIN_INFRAME_FRAC
-        if not proposal.ok:
-            note = (
+        skew = float(tfit.physical(best.h_inv[None], size)[1][0])
+        why = []
+        if best.score < MIN_TEMPLATE_SCORE:
+            why.append(
                 f"score {best.score:.2f} < {MIN_TEMPLATE_SCORE}: the court template does "
-                "not sit on the paint, so these are dots to drag, not dots to accept"
+                "not sit on the paint"
             )
-            if best.inframe_frac < MIN_INFRAME_FRAC:
-                note += (
-                    f"; only {best.inframe_frac:.0%} of the template is in frame "
-                    f"(< {MIN_INFRAME_FRAC:.0%})"
-                )
-            notes.append(note)
+        if best.inframe_frac < MIN_INFRAME_FRAC:
+            why.append(
+                f"only {best.inframe_frac:.0%} of the template is in frame "
+                f"(< {MIN_INFRAME_FRAC:.0%})"
+            )
+        if skew > MAX_CAMERA_SKEW:
+            why.append(f"camera skew {skew:.2f} > {MAX_CAMERA_SKEW}: no real camera sees that")
+        proposal.ok = not why
+        if why:
+            notes.append("; ".join(why) + ", so these are dots to drag, not dots to accept")
     proposal.notes = "; ".join(n for n in notes if n)
     return proposal
 
@@ -865,9 +849,10 @@ def draw_overlay(
     if template is not None and proposal.h_inv is not None:
         size = (frame_bgr.shape[1], frame_bgr.shape[0])
         for poly in tfit.template_segments(template):
-            pts = tfit.project(poly, proposal.h_inv)
-            if proposal.k1:
-                pts = _bend_back(pts, proposal.k1, size)
+            # Densified, so a court line bends with the lens instead of being a chord.
+            t = np.linspace(0.0, 1.0, 24)[:, None]
+            dense = np.vstack([p + t * (q - p) for p, q in zip(poly[:-1], poly[1:], strict=True)])
+            pts = tfit.to_source(tfit.project(dense, proposal.h_inv), proposal.k1, size)
             if np.isfinite(pts).all():
                 cv2.polylines(img, [pts.astype(np.int32)], False, (0, 200, 0), 2, cv2.LINE_AA)
     for name, (x, y) in (truth or {}).items():

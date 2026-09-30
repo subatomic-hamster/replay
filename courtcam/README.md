@@ -79,7 +79,8 @@ uv run courtcam sports                              # installed profiles
 
 Useful flags on `run`: `--stride` (detect every Nth frame; the profile's default is 2
 = 15 Hz), `--max-frames`, `--title`, `--ground-truth`, `--landmarks` (inline JSON as
-well as a path), `--backend {pt,openvino,onnx}` (see "Detection speed").
+well as a path), `--backend {pt,openvino,onnx}`, `--model <weights>` (see "Detection
+speed").
 
 `courtcam render` writes `media/<player_id>.mp4` and points
 `renditions.players[<player_id>]` at it, setting `stages.render` to `partial` — that
@@ -120,8 +121,9 @@ recompute; delete the directory to start over from the mezzanine.
 | `crops` | players | `crops/*.json` |
 | `events` | players + `wide.mp4` | `events.json` |
 
-Detection and ByteTrack association happen in the same Ultralytics pass, so `detect`
-emits track ids and `track` only has to group them into tracklets.
+Detection and tracker association (BoT-SORT, `courtcam/botsort.yaml`) happen in the
+same Ultralytics pass, so `detect` emits track ids and `track` only has to group them
+into tracklets.
 
 ## Using it from Python
 
@@ -224,6 +226,14 @@ slower than `yolo11n` at 960 *and* finds fewer boxes.
 (`$COURTCAM_CACHE` overrides) keyed by model **and imgsz**, because the export bakes the
 input size in, and warns + falls back to the `.pt` model if the export or import fails.
 Both lost to plain PyTorch here; measure before switching on another box.
+
+**On a GPU** (torch sees `cuda`, which includes ROCm) detection runs there and swaps in
+`detection.gpu_model` (default `yolo11m.pt`) for `model`; `--model <weights>` overrides
+both. Ultralytics downloads a bare weights name into the current directory, so pass a
+path (`--model /path/to/yolo11m.pt`) to keep weights elsewhere. On an RX 9070 XT,
+stride 2, 240 s clips: yolo11n 5-7x realtime, yolo11m 4.1-4.6x, with 12-20 % more
+on-court boxes and 11-26 % fewer raw tracklets than yolo11n (RESULTS.md, "Detection on
+the GPU"). Stride 1 halves throughput and *raises* fragmentation, so stride stays 2.
 
 ## Adding a sport
 

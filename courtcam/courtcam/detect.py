@@ -1,6 +1,6 @@
 """Stage 3 — person detection (plan §4.4 step 3).
 
-Ultralytics runs detection and ByteTrack association in one pass (D-5), so the
+Ultralytics runs detection and tracker association (BoT-SORT) in one pass (D-5), so the
 detector already emits track ids; `track.py` turns those per-frame rows into
 tracklets. A `Detector` is just a callable, which is how the synthetic
 ground-truth detector stands in for YOLO in CI.
@@ -24,6 +24,7 @@ from .profiles import DetectionCfg
 DETS_SCHEMA = "courtcam.dets.v1"
 
 BACKENDS = ("pt", "openvino", "onnx")
+TRACKER = str(Path(__file__).parent / "botsort.yaml")
 CACHE_DIR = Path(os.environ.get("COURTCAM_CACHE", Path.home() / ".cache" / "courtcam"))
 
 
@@ -84,20 +85,35 @@ class Detector(Protocol):
     ) -> Iterator[FrameDets]: ...
 
 
+def gpu_available() -> bool:
+    """True when torch sees a GPU. ROCm builds report through `torch.cuda` too."""
+    try:
+        import torch
+    except ImportError:
+        return False
+    return bool(torch.cuda.is_available())
+
+
 class YoloDetector:
-    """Ultralytics YOLO + built-in ByteTrack, CPU (D-5)."""
+    """Ultralytics YOLO + its built-in BoT-SORT (`botsort.yaml`); on the GPU when there
+    is one, with `gpu_model` in place of `model`."""
 
     def __init__(
         self,
         cfg: DetectionCfg,
         fps: float = 30.0,
-        tracker: str = "bytetrack.yaml",
+        tracker: str = TRACKER,
         backend: str = "pt",
     ):
         self.cfg = cfg
         self.fps = fps
         self.tracker = tracker
+        # the OpenVINO/ONNX exports are CPU paths; only plain torch weights go on the GPU
+        gpu = backend == "pt" and gpu_available()
+        if gpu and cfg.gpu_model:
+            cfg = cfg.model_copy(update={"model": cfg.gpu_model})
         self.weights, self.backend = resolve_weights(cfg, backend)
+        self.device = "0" if gpu else "cpu"
 
     def __call__(
         self, video: Path, *, stride: int, max_frames: int | None = None
@@ -116,6 +132,7 @@ class YoloDetector:
             imgsz=self.cfg.imgsz,
             conf=self.cfg.conf,
             vid_stride=stride,
+            device=self.device,
             verbose=False,
         )
         next_id = -1
@@ -132,7 +149,7 @@ class YoloDetector:
                 for j in range(len(xywh)):
                     cx, cy, w, h = (float(v) for v in xywh[j])
                     if ids is None:
-                        # ByteTrack drops low-confidence boxes before assigning an id;
+                        # the tracker drops low-confidence boxes before assigning an id;
                         # give them a throwaway negative id so nothing merges onto them.
                         tid = next_id
                         next_id -= 1

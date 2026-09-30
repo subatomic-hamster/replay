@@ -110,3 +110,16 @@ def test_matches_the_golden_within_tolerance(game: Game, pipeline_out: Path):
 
     n_events = len(read_json(pipeline_out / "events.json", Events).events)
     assert abs(n_events - golden["events"]) <= EVENT_TOL
+
+
+def test_detection_moves_to_the_gpu_model_only_when_there_is_a_gpu(monkeypatch):
+    from courtcam import detect
+    from courtcam.profiles import DetectionCfg
+
+    cfg = DetectionCfg(model="yolo11n.pt", gpu_model="yolo11m.pt")
+    monkeypatch.setattr(detect, "gpu_available", lambda: True)
+    d = detect.YoloDetector(cfg)
+    assert (d.weights, d.device) == ("yolo11m.pt", "0")
+    monkeypatch.setattr(detect, "gpu_available", lambda: False)
+    d = detect.YoloDetector(cfg)
+    assert (d.weights, d.device) == ("yolo11n.pt", "cpu")

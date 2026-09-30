@@ -13,7 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .court import CourtTrack, track_from_json, track_json
+from .court import CourtTrack, bystander, track_from_json, track_json
 from .profiles import CourtTemplate, Profile
 from .schema import Player as PlayerModel
 from .schema import Team as TeamModel
@@ -211,9 +211,37 @@ def team_colors(teams: np.ndarray, profile: Profile, colors: np.ndarray | None) 
 
 def merge_groups(tracks: list[CourtTrack], teams: np.ndarray, profile: Profile) -> list[list[int]]:
     """Group tracklet indices that are the same person: small time gap, small court
-    distance, same team (§4.4 step 6). Union-find, earliest-first."""
+    distance, same team (§4.4 step 6).
+
+    Links are taken cheapest (closest) first, and each tracklet gets at most one
+    predecessor and one successor, so a group is a chain through time. Earliest-first
+    used to hand a fragment to whichever old track *started* first even when another
+    one had ended right where it appeared.
+
+    A link may overlap by up to `merge_overlap_s`: ByteTrack gives a person a new id a
+    frame or so before it drops the old one, and on the badminton clip that one-frame
+    overlap alone kept a 57 s tracklet out of every group (samples/real/RESULTS.md).
+    """
     cfg = profile.tracking
-    parent = list(range(len(tracks)))
+    n = len(tracks)
+    starts = np.asarray([t.tracklet.t_start for t in tracks])
+    ends = np.asarray([t.tracklet.t_end for t in tracks])
+    links: list[tuple[float, int, int]] = []
+    for a in range(n):
+        gap = starts - ends[a]
+        cand = np.flatnonzero(
+            (gap >= -cfg.merge_overlap_s)
+            & (gap <= cfg.merge_max_gap_s)
+            & (ends > ends[a])  # a continuation outlives what it continues
+            & (teams == teams[a])
+        )
+        for b in cand:
+            here = tracks[a].court_at(starts[b]) if gap[b] < 0 else tracks[a].court_m[-1]
+            dist = float(np.linalg.norm(tracks[b].court_m[0] - here))
+            if dist <= cfg.merge_max_dist_m:
+                links.append((dist, a, int(b)))
+
+    parent = list(range(n))
 
     def find(i: int) -> int:
         while parent[i] != i:
@@ -221,42 +249,39 @@ def merge_groups(tracks: list[CourtTrack], teams: np.ndarray, profile: Profile) 
             i = parent[i]
         return i
 
-    spans = [[t.tracklet.t_start, t.tracklet.t_end] for t in tracks]
-    order = sorted(range(len(tracks)), key=lambda i: tracks[i].tracklet.t_start)
-    for bi, b in enumerate(order):
-        for a in order[:bi]:
-            ra, rb = find(a), find(b)
-            if ra == rb or teams[a] != teams[b]:
-                continue
-            gap = tracks[b].tracklet.t_start - tracks[a].tracklet.t_end
-            if not 0.0 <= gap <= cfg.merge_max_gap_s:
-                continue
-            dist = float(np.linalg.norm(tracks[b].court_m[0] - tracks[a].court_m[-1]))
-            if dist > cfg.merge_max_dist_m:
-                continue
-            if spans[rb][0] < spans[ra][1]:  # the two merged lives would overlap in time
-                continue
-            parent[rb] = ra
-            spans[ra] = [min(spans[ra][0], spans[rb][0]), max(spans[ra][1], spans[rb][1])]
+    has_next, has_prev = [False] * n, [False] * n
+    for _, a, b in sorted(links):
+        if has_next[a] or has_prev[b] or find(a) == find(b):
+            continue
+        parent[find(b)] = find(a)
+        has_next[a] = has_prev[b] = True
 
     groups: dict[int, list[int]] = {}
-    for i in range(len(tracks)):
+    for i in range(n):
         groups.setdefault(find(i), []).append(i)
-    out = [sorted(g, key=lambda i: tracks[i].tracklet.t_start) for g in groups.values()]
-    return sorted(out, key=lambda g: tracks[g[0]].tracklet.t_start)
+    out = [sorted(g, key=lambda i: starts[i]) for g in groups.values()]
+    return sorted(out, key=lambda g: starts[g[0]])
 
 
 def _concat(tracks: list[CourtTrack], group: list[int]) -> CourtTrack:
+    """One track from a time-ordered group; where two members overlap (a handover),
+    the later member's samples before the earlier one's end are dropped."""
     members = [tracks[i] for i in group]
+    keep, last = [], -np.inf
+    for m in members:
+        k = m.tracklet.times > last
+        keep.append(k)
+        if k.any():
+            last = float(m.tracklet.times[k][-1])
     tl = [m.tracklet for m in members]
     merged = Tracklet(
         track_id=tl[0].track_id,
-        frames=np.concatenate([t.frames for t in tl]),
-        times=np.concatenate([t.times for t in tl]),
-        boxes=np.concatenate([t.boxes for t in tl]),
-        confs=np.concatenate([t.confs for t in tl]),
+        frames=np.concatenate([t.frames[k] for t, k in zip(tl, keep, strict=True)]),
+        times=np.concatenate([t.times[k] for t, k in zip(tl, keep, strict=True)]),
+        boxes=np.concatenate([t.boxes[k] for t, k in zip(tl, keep, strict=True)]),
+        confs=np.concatenate([t.confs[k] for t, k in zip(tl, keep, strict=True)]),
     )
-    court = np.concatenate([m.court_m for m in members])
+    court = np.concatenate([m.court_m[k] for m, k in zip(members, keep, strict=True)])
     lifetime = sum(t.lifetime_s for t in tl) or 1.0
     frac = sum(m.inside_fraction * (t.lifetime_s or 1.0) for m, t in zip(members, tl, strict=True))
     return CourtTrack(merged, court, frac / lifetime)
@@ -276,7 +301,7 @@ def _fits(span: tuple[float, float], accepted: list[tuple[float, float]], max_n:
 
 
 def _cap_concurrent(
-    merged: list[tuple[list[int], CourtTrack]], max_n: int
+    merged: list[tuple[list[int], CourtTrack]], max_n: int, overlap_s: float = 0.0
 ) -> list[tuple[list[int], CourtTrack]]:
     """Keep at most `max_n` players alive at any instant, best score first.
 
@@ -284,15 +309,77 @@ def _cap_concurrent(
     240 s clip need not be contemporaneous, and capping globally left 2-3 selectable
     boxes late in the Kennesaw clip while ten people were on court (samples/real/
     RESULTS.md). Greedy by score; the output can hold more than `max_n` players.
+
+    An id handover overlaps the old id by a frame or two; the last `overlap_s` of each
+    life is not counted, or that one frame rejects the whole new player.
     """
     kept: list[tuple[list[int], CourtTrack]] = []
     spans: list[tuple[float, float]] = []
     for g, c in merged:
-        span = (c.tracklet.t_start, c.tracklet.t_end)
+        t0, t1 = c.tracklet.t_start, c.tracklet.t_end
+        span = (t0, max(t0, t1 - overlap_s))
         if _fits(span, spans, max_n):
             kept.append((g, c))
             spans.append(span)
     return kept
+
+
+STITCH_SLACK_S = 1.0
+"""A player half hidden by the net, a partner or the frame edge has a foot point that is
+off by about a second of running at either end of the break."""
+
+
+def _stitch(
+    tracks: list[CourtTrack], groups: list[list[int]], teams: np.ndarray, profile: Profile
+) -> list[list[int]]:
+    """Chain whole players into one when the roster says they must be one person.
+
+    Walk players in start order and keep "lanes" per team. A player who appears while
+    their team has fewer than its share of `players.max` alive continues the nearest
+    lane that ended within `stitch_max_gap_s` and is within running reach. This is what
+    the concurrency cap (D-21) knows and `merge_groups` cannot: on the badminton clip
+    every remaining break was a 3-9 m foot jump at an occlusion by the net or at the
+    frame edge, past `merge_max_dist_m`, while the other three players were all still
+    tracked.
+
+    The stitched player's box is interpolated across the gap (`court.resample`), so a
+    stitch whose gap would take the frame past `players.max` boxes is refused.
+    """
+    cfg = profile.tracking
+    per_team = -(-profile.players.max // max(1, len(np.unique(teams))))
+    lanes: list[list[int]] = []  # each lane is a list of group indices, in time order
+    start = [tracks[g[0]].tracklet.t_start for g in groups]
+    ends = [max(tracks[i].tracklet.t_end for i in g) for g in groups]
+    alive = [(s, max(s, e - cfg.merge_overlap_s)) for s, e in zip(start, ends, strict=True)]
+
+    def last_pos(gi: int) -> np.ndarray:
+        last = max(groups[gi], key=lambda i: tracks[i].tracklet.t_end)
+        return tracks[last].court_m[-1]
+
+    for gi in sorted(range(len(groups)), key=lambda i: start[i]):
+        team, s = teams[groups[gi][0]], start[gi]
+        mine = [ln for ln in lanes if teams[groups[ln[0]][0]] == team]
+        busy = sum(ends[ln[-1]] > s + cfg.merge_overlap_s for ln in mine)
+        best, best_d = None, np.inf
+        if busy < per_team:
+            for ln in mine:
+                gap = s - ends[ln[-1]]
+                if not -cfg.merge_overlap_s <= gap <= cfg.stitch_max_gap_s:
+                    continue
+                d = float(np.linalg.norm(tracks[groups[gi][0]].court_m[0] - last_pos(ln[-1])))
+                reach = cfg.merge_max_dist_m + cfg.max_speed_mps * max(gap, STITCH_SLACK_S)
+                if d > reach or d >= best_d:
+                    continue
+                if gap > 0 and not _fits((ends[ln[-1]], s), alive, profile.players.max):
+                    continue
+                best, best_d = ln, d
+        if best is None:
+            lanes.append([gi])
+        else:
+            if s > ends[best[-1]]:
+                alive.append((ends[best[-1]], s))
+            best.append(gi)
+    return [[i for gi in ln for i in groups[gi]] for ln in lanes]
 
 
 def identify(
@@ -309,13 +396,20 @@ def identify(
     teams = assign_teams(hists, tracks, profile, profile.template(variant))
     groups = merge_groups(tracks, teams, profile)
     colours = team_colors(teams, profile, colors)
-    merged = [(g, _concat(tracks, g)) for g in groups]
+    polygon = profile.template(variant).polygon
+    merged = [
+        (g, c) for g in groups if not bystander(c := _concat(tracks, g), polygon, profile.tracking)
+    ]
     # `players.max` caps *merged* players, not raw tracklets (§4.4 step 5 applied after
     # step 6): a player broken into six tracklets should still beat a bystander with one
     # long one. Score is the merged lifetime weighted by time spent on court, and the cap
-    # is on how many are alive at once — so ids come out in acceptance (best-first) order.
+    # is on how many are alive at once. Ids follow the score of the stitched players.
     merged.sort(key=lambda gc: gc[1].score, reverse=True)
-    merged = _cap_concurrent(merged, profile.players.max)
+    merged = _cap_concurrent(merged, profile.players.max, profile.tracking.merge_overlap_s)
+    groups = _stitch(tracks, [g for g, _ in merged], teams, profile)
+    merged = sorted(
+        ((g, _concat(tracks, g)) for g in groups), key=lambda gc: gc[1].score, reverse=True
+    )
     players: list[PlayerTrack] = []
     for n, (group, track) in enumerate(merged, start=1):
         team = int(np.bincount(teams[group]).argmax())

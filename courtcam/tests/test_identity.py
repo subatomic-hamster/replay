@@ -72,7 +72,9 @@ def test_identify_caps_merged_players_at_max_and_prefers_fragmented_ones(tmp_pat
         _track(10 + i, 5.0 * i, 5.0 * i + 4.0, (float(i), 5.0), (float(i) + 0.3, 5.2))
         for i in range(4)
     ]
-    loners = [_track(100 + j, 0.0, 6.0, (7.0 + j, 5.0), (7.2 + j, 5.0)) for j in range(10)]
+    loners = [
+        _track(100 + j, 0.0, 6.0, (-6.0 + 1.3 * j, 9.0), (-5.8 + 1.3 * j, 9.0)) for j in range(10)
+    ]
     tracks = fragments + loners
     hists = np.zeros((len(tracks), 48), dtype=np.float32)
     colors = np.full((len(tracks), 3), 128.0)
@@ -173,3 +175,48 @@ def test_concurrency_cap_keeps_non_overlapping_players_beyond_max():
 
     both = [([i], _track(i, 0.0, 10.0, (float(i), 5.0), (float(i), 6.0))) for i in range(3)]
     assert len(_cap_concurrent(both, 2)) == 2
+
+
+def test_a_one_frame_handover_overlap_still_merges():
+    """ByteTrack re-ids a person a frame before it drops the old id."""
+    a = _track(1, 0.0, 4.0, (0.0, 5.0), (2.0, 6.0))
+    b = _track(2, 3.95, 9.0, (2.0, 6.0), (5.0, 8.0))
+    assert merge_groups([a, b], np.array([0, 0]), MERGE) == [[0, 1]]
+
+
+def test_merge_takes_the_closest_continuation_not_the_earliest():
+    early = _track(1, 0.0, 4.0, (0.0, 5.0), (0.0, 5.0))
+    late = _track(2, 1.0, 4.1, (1.5, 5.0), (1.5, 5.0))
+    new = _track(3, 4.5, 9.0, (1.6, 5.0), (3.0, 5.0))  # within reach of both
+    groups = merge_groups([early, late, new], np.zeros(3, dtype=int), MERGE)
+    assert sorted(groups) == [[0], [1, 2]]
+
+
+def test_concurrency_cap_ignores_a_handover_overlap():
+    from courtcam.identity import _cap_concurrent
+
+    a = ([0], _track(0, 0.0, 10.0, (0.0, 5.0), (1.0, 5.0)))
+    b = ([1], _track(1, 9.95, 20.0, (1.0, 5.0), (2.0, 5.0)))
+    assert len(_cap_concurrent([a, b], 1)) == 1
+    assert len(_cap_concurrent([a, b], 1, overlap_s=1.0)) == 2
+
+
+def test_stitch_joins_a_break_only_when_the_roster_says_it_is_one_person():
+    """Doubles: two a side. A near player whose foot point jumps 3.5 m at an occlusion
+    is still one person while their partner is the only other near player alive."""
+    from courtcam.identity import _stitch
+
+    profile = MERGE.model_copy(update={"players": MERGE.players.model_copy(update={"max": 4})})
+    partner = _track(1, 0.0, 10.0, (0.0, 2.0), (1.0, 2.0))
+    before = _track(2, 0.0, 5.0, (-2.0, 3.0), (-2.0, 3.0))
+    after = _track(3, 5.2, 10.0, (1.5, 3.0), (1.0, 3.0))  # 3.5 m > merge_max_dist_m
+    far = _track(4, 0.0, 10.0, (0.0, 10.0), (0.0, 11.0))
+    tracks, teams = [partner, before, after, far], np.array([0, 0, 0, 1])
+    groups = _stitch(tracks, [[0], [1], [2], [3]], teams, profile)
+    assert sorted(groups) == [[0], [1, 2], [3]]
+
+    # a third near player alive means the side is full: the newcomer is someone else
+    extra = _track(5, 0.0, 10.0, (2.0, 4.0), (2.0, 4.0))
+    tracks, teams = [*tracks, extra], np.array([0, 0, 0, 1, 0])
+    groups = _stitch(tracks, [[0], [1], [2], [3], [4]], teams, profile)
+    assert sorted(groups) == [[0], [1], [2], [3], [4]]

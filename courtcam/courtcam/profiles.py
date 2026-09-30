@@ -89,6 +89,10 @@ class TrackingCfg(_Cfg):
     # wide (p90 radius) is not a player. See court.stationary.
     stationary_min_s: float = 20.0
     stationary_max_m: float = 0.5
+    # A merged player inside the painted lines (no margin) less than this share of the
+    # time is the bench or the next court. Real players measured >= 0.53 (pickleball
+    # near pair, who serve from behind the line); the bench / neighbours <= 0.31.
+    inside_min_fraction: float = 0.4
     max_candidates: int = 400  # on-court tracklets handed to identity (merge is O(n^2))
 
 

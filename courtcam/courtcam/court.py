@@ -11,7 +11,7 @@ import numpy as np
 
 from .calibrate import project
 from .distortion import distort_points, undistort_points
-from .profiles import Profile
+from .profiles import Profile, TrackingCfg
 from .track import Tracklet
 
 POLYGON_STEP_M = 0.25
@@ -58,6 +58,30 @@ def inside(points: np.ndarray, polygon: np.ndarray, margin_m: float) -> np.ndarr
     return np.asarray(
         [cv2.pointPolygonTest(poly, (float(p[0]), float(p[1])), True) >= -margin_m for p in points]
     )
+
+
+def stationary(track: CourtTrack, cfg: TrackingCfg) -> bool:
+    """A seated official, the bench, a parent at the fence: alive for a long time and
+    never leaving a ~0.5 m circle. No player stands that still for `stationary_min_s`.
+
+    The on-court test cannot catch these on its own: the scorer's table is inside the
+    court polygon on the Kennesaw calibration and the bench sits inside the 1 m margin,
+    and because they never move they out-scored real players for the concurrency cap.
+    """
+    if track.tracklet.lifetime_s < cfg.stationary_min_s:
+        return False
+    c = track.court_m
+    radius = np.linalg.norm(c - np.median(c, axis=0), axis=1)
+    return float(np.percentile(radius, 90)) < cfg.stationary_max_m
+
+
+def bystander(track: CourtTrack, polygon_m: np.ndarray, cfg: TrackingCfg) -> bool:
+    """Not a player, whatever the on-court test said: never moves (`stationary`), or
+    lives mostly *outside the painted lines* and inside only the margin - the bench at
+    the Kennesaw baseline, the next pickleball court's baseline. Judged on merged
+    players; a single fragment of a player chasing a ball out is fine."""
+    strict = float(np.mean(inside(track.court_m, polygon_m, 0.0)))
+    return stationary(track, cfg) or strict < cfg.inside_min_fraction
 
 
 def to_court(
@@ -118,6 +142,9 @@ def on_court(
     """Keep tracklets that live on the court (§4.4 step 5).
 
     Drops spectators, the bench and passers-by: without this, select mode is unusable.
+    A tracklet that never moves is dropped here too (`stationary`), before it can be
+    merged into a player; `identity` repeats the test on merged players for the
+    officials whose track breaks into pieces shorter than `stationary_min_s`.
 
     `players.max` is *not* applied here. Real footage breaks one player into a dozen
     tracklets, so capping before `identity` merges them keeps whoever happened to get
@@ -135,7 +162,9 @@ def on_court(
         frac = float(np.mean(inside(court_m, court_polygon_m, profile.court.margin_m)))
         if frac < cfg.oncourt_min_fraction or tracklet.lifetime_s < cfg.min_lifetime_s:
             continue
-        kept.append(CourtTrack(tracklet, court_m, frac))
+        track = CourtTrack(tracklet, court_m, frac)
+        if not stationary(track, cfg):
+            kept.append(track)
     kept.sort(key=lambda c: c.score, reverse=True)
     return sorted(kept[: cfg.max_candidates], key=lambda c: c.tracklet.t_start)
 

@@ -11,13 +11,14 @@ TEMPLATE = PROFILE.template("half")
 IDENTITY = np.eye(3)  # keep the test in court metres: "pixels" are already metres
 
 
-def _tracklet(tid: int, x: float, y: float, *, duration_s: float = 3.0, fps: int = 15) -> Tracklet:
+def _tracklet(
+    tid: int, x: float, y: float, *, duration_s: float = 3.0, fps: int = 15, sway_m: float = 0.0
+) -> Tracklet:
     n = int(duration_s * fps)
     times = np.arange(n) / fps
-    # foot point (bottom-centre of the box) must land on (x, y)
-    boxes = np.column_stack(
-        [np.full(n, x - 0.25), np.full(n, y - 1.8), np.full(n, 0.5), np.full(n, 1.8)]
-    )
+    # foot point (bottom-centre of the box) must land on (x, y), swaying +-sway_m in x
+    xs = x - 0.25 + sway_m * np.sin(times)
+    boxes = np.column_stack([xs, np.full(n, y - 1.8), np.full(n, 0.5), np.full(n, 1.8)])
     return Tracklet(
         track_id=tid, frames=np.arange(n) * 2, times=times, boxes=boxes, confs=np.full(n, 0.9)
     )
@@ -51,3 +52,26 @@ def test_moving_average_smooths_without_shifting_or_shrinking():
     out = moving_average(pts, 5)
     assert out.shape == pts.shape
     assert np.allclose(out[5:-5], pts[5:-5])  # a straight line survives a centred average
+
+
+def test_a_seated_official_is_not_a_player():
+    """The scorer's table sits inside the Kennesaw court polygon and never moves;
+    samples/real/RESULTS.md. A player who stands still for a few seconds survives."""
+    official = _tracklet(1, 7.0, 3.0, duration_s=40.0, sway_m=0.1)
+    player = _tracklet(2, 0.0, 5.0, duration_s=40.0, sway_m=2.0)
+    free_throw = _tracklet(3, 0.0, 5.0, duration_s=10.0)
+    kept = on_court([official, player, free_throw], IDENTITY, PROFILE, TEMPLATE.polygon)
+    assert [t.track_id for t in kept] == [2, 3]
+
+
+def test_the_bench_inside_the_margin_is_a_bystander():
+    """The Kennesaw bench sits on the baseline, inside `margin_m`: it passes the on-court
+    test but a player is inside the painted lines most of the time."""
+    from courtcam.court import bystander
+
+    bench = _tracklet(1, 8.0, 5.0, duration_s=10.0, sway_m=0.3)  # sideline is x = 7.5
+    player = _tracklet(2, 6.5, 5.0, duration_s=10.0, sway_m=1.5)  # steps out and back
+    kept = on_court([bench, player], IDENTITY, PROFILE, TEMPLATE.polygon)
+    assert sorted(t.track_id for t in kept) == [1, 2]
+    verdict = {t.track_id: bystander(t, TEMPLATE.polygon, PROFILE.tracking) for t in kept}
+    assert verdict == {1: True, 2: False}

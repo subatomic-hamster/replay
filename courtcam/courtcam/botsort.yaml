@@ -1,0 +1,19 @@
+# courtcam's tracker: ultralytics BoT-SORT, tuned for a fixed camera (D-5 revisited,
+# measured in samples/real/RESULTS.md "Detection on the GPU").
+# vs stock bytetrack.yaml on yolo11m, stride 2: Kennesaw > 5 m id jumps 29 -> 18, and the
+# badminton auditorium pair no longer swap identities at ~180 s.
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+# frames of the *sampled* stream: 90 at stride 2 = 6 s behind a screen or the net
+track_buffer: 90
+match_thresh: 0.8
+fuse_score: True
+# the camera does not move; optical-flow motion compensation is pure CPU cost
+gmc_method: none
+proximity_thresh: 0.5
+appearance_thresh: 0.8
+# ReID (detector features) measured no better on these clips: roster 43 -> 50 on Kennesaw
+with_reid: False
+model: auto

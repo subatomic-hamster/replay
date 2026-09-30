@@ -144,3 +144,12 @@ Virtually every hall is marked for doubles and the singles sidelines are already
 
 ## D-27 (2026-09-30) — Rally segmentation is motion-only: median player court speed with hysteresis
 Net-sport rallies come from the identified players' court tracks: median speed over players on court (jumps > 6 m/s dropped, 2.5 s smoothing); a rally is a run above 0.5 m/s peaking ≥ 0.9 m/s, ending 0.5 s after the last peak and starting 1 s early for the serve; gaps < 1.5 s bridged, results < 2 s dropped. Thresholds are the profile's `rally:` block (`RallyCfg`). Audio onsets (plan §4.4) deferred: neighbouring courts make audio useless at the pickleball venue; `contacts` stays null. Measured at IoU ≥ 0.5 against hand labels: badminton 240 s P 1.00 / R 0.93 (0.92 / 0.86 on later tracks), badminton smoke 3/3, pickleball smoke 2/2 — in-sample (samples/real/RESULTS.md).
+
+## D-28 (2026-09-30) — The stage list comes from the pipeline
+`POST /process` sets `game.stages` to the running pipeline's own ordered list (`pipeline_adapter.stage_names`: courtcam's nine from `courtcam.pipeline.STAGES`, fake mode's five); clients render the keys they get and hardcode none. `progress` stays additive while a job runs (D-17). Before this the status page showed its own five stages "pending" for a whole real run. The game is saved before the job is queued, so a fast job can no longer be overwritten back to `queued`.
+
+## D-29 (2026-09-30) — Calibration Adjust is correctable in place
+The walk cursor is "first landmark at or after `step` that is neither placed nor skipped", so applying a proposal no longer parks it past the end. In Adjust, point chips select any point; "Not visible" and frame taps then act on the selection. On a handle a drag (> 5 px) moves the point and a tap goes to the point waiting to be placed (landmarks can sit 15 px apart inside one 44 px handle). Off-frame handles are clamped inside the frame. At ≥ 1100 px wide the controls take a side column so the frame fits a 1080 p viewport.
+
+## D-30 (2026-09-30) — Play requests are held until playback starts
+`PlayerSurface` keeps a play request (`wantPlay`) until the element fires `playing`, re-issues it on `canplay` or a 100 ms timer (max 5 retries; `NotAllowedError` not retried) and cancels it on pause; a pending request counts as playing for toggle. Chromium can leave a play promise interrupted by a load unsettled, so the fix cannot rely on the rejection.

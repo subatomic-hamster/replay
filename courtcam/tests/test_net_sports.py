@@ -21,7 +21,7 @@ from courtcam.profiles import load_profile
 from courtcam.schema import Game, read_json
 from courtcam.synth import generate
 
-NET_SPORTS = [("pickleball", "doubles"), ("badminton", "singles")]
+NET_SPORTS = [("pickleball", "doubles"), ("badminton", "doubles")]
 COURT_TOL_M = 0.25
 DURATION_S = 8.0
 
@@ -134,8 +134,20 @@ def test_court_positions_track_the_ground_truth(net_run):
     assert checked > 10, "the golden checked almost nothing — synth or ids changed"
 
 
-def test_no_events_are_emitted_yet(net_run):
-    """Tier 1: `events: [rally]` is wired but the shared rally detector is a stub, so
-    the honest output is an empty list, not a crash and not made-up rallies."""
+def test_only_rally_events_inside_the_clip(net_run):
+    """`events: [rally]` is all a net sport emits; segmentation itself is covered on
+    hand-built tracks in test_events.py (the synth players never stop moving)."""
     _, _, _, out = net_run
-    assert json.loads((out / "events.json").read_text())["events"] == []
+    for e in json.loads((out / "events.json").read_text())["events"]:
+        assert e["type"] == "rally"
+        assert 0.0 <= e["t_start"] <= e["t_key"] < e["t_end"] <= DURATION_S + 1e-6
+
+
+def test_badminton_is_one_court_and_singles_still_loads():
+    """The web uploader hides its picker for a one-variant profile. A game.json or
+    landmarks.json written while `singles` was a variant must still load."""
+    profile = load_profile("badminton")
+    assert profile.court.variants == ["doubles"]
+    assert profile.template("singles").name == profile.template().name == "badminton_doubles"
+    with pytest.raises(ValueError):
+        profile.template("octagon")

@@ -13,8 +13,9 @@ from typing import Any, Protocol
 import cv2
 import numpy as np
 
+from .court import moving_average, resample
 from .identity import PlayerTrack
-from .profiles import Profile
+from .profiles import Profile, RallyCfg
 from .schema import Event
 
 
@@ -209,13 +210,81 @@ def detect_shots(
     return events
 
 
+def court_activity(
+    players: list[PlayerTrack], *, rate_hz: float, smooth_s: float, max_speed_mps: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Median court speed (m/s) of the players on court at each tick, smoothed.
+
+    Median, not mean: one player strolling to pick up the shuttle is not a rally, and
+    one tracker jump does not drag the other three along. Speeds above `max_speed_mps`
+    are an id switch or a homography jump, not a person, and are dropped.
+    Returns (times, speed).
+    """
+    if not players:
+        return np.zeros(0), np.zeros(0)
+    times = np.arange(0.0, max(p.t_end for p in players) + 1e-9, 1.0 / rate_hz)
+    speeds = np.full((len(players), len(times)), np.nan)
+    for i, p in enumerate(players):
+        _, court, _ = resample(p.track, times)
+        if len(times) > 1:
+            speeds[i] = np.linalg.norm(np.gradient(court, axis=0), axis=1) * rate_hz
+    speeds[speeds > max_speed_mps] = np.nan
+    live = np.isfinite(speeds).any(axis=0)
+    median = np.zeros(len(times))
+    median[live] = np.nanmedian(speeds[:, live], axis=0)
+    return times, moving_average(median[:, None], max(1, int(round(smooth_s * rate_hz))))[:, 0]
+
+
+def rally_segments(
+    times: np.ndarray, activity: np.ndarray, cfg: RallyCfg
+) -> list[tuple[float, float, float]]:
+    """Runs above `off_mps` that peak above `on_mps`. A run ends `tail_s` after its last
+    peak above `on_mps` — the walk back after a point is still above `off_mps` — then
+    gaps under `max_gap_s` are bridged and runs under `min_duration_s` dropped.
+    Returns (start, end, peak) per rally."""
+    runs: list[list[float]] = []
+    start = None
+    for i, a in enumerate(np.append(activity, -np.inf)):
+        if start is None and a > cfg.off_mps:
+            start = i
+        elif start is not None and a <= cfg.off_mps:
+            hot = np.nonzero(activity[start:i] >= cfg.on_mps)[0]
+            if len(hot):
+                t0 = float(times[start])
+                t1 = min(float(times[i - 1]), float(times[start + hot[-1]]) + cfg.tail_s)
+                peak = float(activity[start:i].max())
+                if runs and t0 - runs[-1][1] < cfg.max_gap_s:
+                    runs[-1][1], runs[-1][2] = t1, max(runs[-1][2], peak)
+                else:
+                    runs.append([t0, t1, peak])
+            start = None
+    return [(t0, t1, pk) for t0, t1, pk in runs if t1 - t0 >= cfg.min_duration_s]
+
+
 def detect_rallies(
     video: Path, players: list[PlayerTrack], profile: Profile, calib: dict[str, Any], **_: Any
 ) -> list[Event]:
-    """Shared net-sport rally detector."""
-    # ponytail: stub. Basketball does not emit rallies, so nothing depends on it yet;
-    # implement (motion energy + audio onsets, §4.4 step 10) with the first net sport.
-    return []
+    """Shared net-sport rally detector: bursts of player movement on court (plan §4.4
+    step 10). Nothing sport-specific; the thresholds are the profile's `rally:` block."""
+    # ponytail: motion only — no audio onsets, so `contacts` stays null. Ceiling: a
+    # slow dinking exchange looks like people standing still. Upgrade: count racket
+    # transients in the rally window with `expected_contact_hz` as the gate.
+    cfg = profile.rally
+    times, activity = court_activity(
+        players, rate_hz=cfg.rate_hz, smooth_s=cfg.smooth_s, max_speed_mps=cfg.max_speed_mps
+    )
+    return [
+        Event(
+            id=f"e_{n:04d}",
+            type="rally",
+            t_start=round(max(0.0, t0 - cfg.lead_s), 3),
+            t_key=round(max(0.0, t0 - cfg.lead_s), 3),
+            t_end=round(t1, 3),
+            confidence=round(min(0.95, 0.5 + 0.2 * (peak / cfg.on_mps - 1.0)), 3),
+            source="heuristic",
+        )
+        for n, (t0, t1, peak) in enumerate(rally_segments(times, activity, cfg))
+    ]
 
 
 DETECTORS: dict[str, Callable[..., list[Event]]] = {

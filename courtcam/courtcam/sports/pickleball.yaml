@@ -1,8 +1,7 @@
 id: pickleball
 display_name: Pickleball
-# Tier 1 only (select, follow-cam, tagging, court inset, heatmap). `events: [rally]` is
-# wired but `events.detect_rallies` is still a stub, so no rally events come out yet —
-# the tier claim in samples/real/RESULTS.md is what counts, not this number.
+# Tier 1 (select, follow-cam, tagging, court inset, heatmap) plus motion-based rally
+# events — the tier claim in samples/real/RESULTS.md is what counts, not this number.
 tier: 1
 court:
   template: pickleball.json

@@ -253,8 +253,8 @@ A net sport has no jersey signal (four people, four shirts), so its profile fixe
 two team colours in `teams.colors` and `identity` never decodes the clip for torso
 crops at all.
 
-The plan wants the side re-evaluated **per rally**; `events.detect_rallies` is still a
-stub, so the fixed window stands in — see the `# ponytail:` note on `identity.net_side`.
+The plan wants the side re-evaluated **per rally**; identity runs before
+`events.detect_rallies` (which needs the identified players), so the fixed window stands in — see the `# ponytail:` note on `identity.net_side`.
 
 ### Installed profiles
 
@@ -262,7 +262,7 @@ stub, so the fixed window stands in — see the `# ponytail:` note on `identity.
 |---|---|---|---|---|---|
 | `basketball` | half, full | 2 | jersey_color | 15 × 14 / 15 × 28 | shot events |
 | `pickleball` | doubles | 1 | net_side | 6.10 × 13.41 | kitchen 2.13 m from the net |
-| `badminton` | doubles, singles | 1 | net_side | 6.10 × 13.40 / 5.18 × 13.40 | short service line 1.98 m from the net |
+| `badminton` | doubles (`singles` is an alias) | 1 | net_side | 6.10 × 13.40 | short service line 1.98 m from the net; singles sidelines are optional landmarks |
 
 `/sports` serves these ordered by tier (highest first), because the uploader's picker
 defaults to the first entry.

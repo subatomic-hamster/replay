@@ -23,8 +23,8 @@ re-measured value is used and the earlier claim is shown next to it. Git range: 
     mostly not re-measured.
   - The Fire TV APK has never run on a device or an emulator.
   - Basketball tracking is weak on small, bunched players (synthetic IDF1 0.31 / 0.25).
-  - The X-gesture rule regressed on GT poses (P 0.38, R 0.73). A fix is being made at the time of
-    writing.
+  - "Clip that" gesture works on clean poses (synthetic GT poses 22/22, 0 false, after the D-68 fix
+    of a D-61 regression) but not on far players: ViTPose 9/22, default YOLO pose 0/22.
   - Real shot recall is 3 of 6 on Kennesaw.
   - Nothing ran on AWS.
   - The app carries the AGPL through `courtcam[yolo]`.
@@ -69,7 +69,7 @@ docs/progress.md.
 | 14 | Tier D research | experiments only | experiments/tierd-{pointmaps,vggt-static,dynamic}/ | M12/, docs/tier-d.md | See §6 | Not shipped (D-62) |
 | 15 | Ball arcs | partial | Tier B/C geometry and the telestrator arc | M9/synth_bb_pl_0002_make_overhead.gif | Arcs are modelled (shooter to the 3.05 m rim), not tracked | No ball model outside basketball (progress.md:88) |
 | 16 | TV angle switching | done (web); native untested | apps/tv/src/screens/Replay.tsx, packages/tv-core/src/replays.ts | M8/tv/ | Media time held within 8 ms through the real API (progress.md:85) | The native loop/src-swap path is untested on a device (D-57) |
-| 17 | Gesture trigger (X overhead) | partial, **being fixed at time of writing (D-68 expected)** | courtcam/courtcam/triggers.py, pose.py | M5/accuracy_*_on_synthetic_x_holds.png | GT poses P 0.38 / R 0.73 (16 TP, 26 FP); YOLO pose 0/22; ViTPose 9/22 at P 1.00 (M5/metrics.json) | A regression from 22/22 with no false triggers (progress.md:54). Synthetic only |
+| 17 | Gesture trigger (X overhead) | partial | courtcam/courtcam/triggers.py, pose.py | M5/README.md, M5/accuracy_*_on_synthetic_x_holds.png | GT poses 22/22, 0 FP after D-68 (was 16 TP / 26 FP / 6 FN after D-61); YOLO pose 0/22; ViTPose 9/22 at P 1.00 (M5/metrics.json) | Far players (≤ 56 px) mostly missed; synthetic only; real footage 0 false triggers in 480 s |
 | 18 | Voice trigger | partial | courtcam triggers (whisper-small, `courtcam[asr]`) | M5/trigger_voice_*.mp4 (older render) | 37/37; named subject 18/18; clip right 30/37 (M5/metrics.json) | Untested on real game audio. No voice-enrollment route (field always false). No wake word shipped |
 | 19 | Tap trigger (phone) | done | `POST /games/{id}/triggers`, apps/web/src/screens/Companion.tsx | M13-ui/tv-synthetic-live/03 | Clip right 10/14 (GT poses), 9/14 (YOLO) (M5/metrics.json) | Misses are missed plays (D-50) |
 | 20 | Play grammars, trigger resolution, trim UI | done (basketball + net sports) | courtcam/courtcam/plays.py, sports/*.yaml `plays:`; apps/tv/src/screens/Clips.tsx | M4/timeline_*.png, M13-ui/…/04 | Resolution 73/73 on GT plays; plays P 0.83 / R 0.79 (M4/metrics.json) | Volleyball attack P 0.30 / R 0.50. Pickleball doubles second-server rule wrong (D-61) |
@@ -100,7 +100,7 @@ docs/progress.md.
 | M11 discovery | 0c60be2, 529f4ec (API/worker in 4c6c02a) | M11/ | Hype, condensed, rally browser, 9:16, shot chart, box score, review queue |
 | Accuracy pass | 35e7909, 011f452 | M4/, M5/ "accuracy pass" sections | Shot confirm, relaxed X rule (D-61), ViTPose opt-in, point winners |
 | M12 Tier D | ea7f1df, 3864bbf | M12/, docs/tier-d.md | MoGe-2, VGGT, dynamic-splat feasibility |
-| M13 polish | 26bc0ef + 60f140e (TV integration), 5c152b2 + 28a9b4b (backend fixes, D-63), fc22eed + 1b7f300 (extras, `make demo`, perf, README), f001b43 + 752bd6c (D-67), e4b79bf (re-measured metrics) | M13/, M13-ui/, docs/perf.md | TV/web for M5-M11, edits overlay, packaging, demo, perf, demo script, this report |
+| M13 polish | 26bc0ef + 60f140e (TV integration), 5c152b2 + 28a9b4b (backend fixes, D-63), fc22eed + 1b7f300 (extras, `make demo`, perf, README), f001b43 + 752bd6c (D-67), e4b79bf (re-measured metrics), 2a5d085 + 50c0cdf (report, doc fixes), 9aa0e00 (gesture fix, D-68) | M13/, M13-ui/, docs/perf.md | TV/web for M5-M11, edits overlay, packaging, demo, perf, demo script, this report |
 
 ## 5. Metrics
 
@@ -120,8 +120,7 @@ numbers were not re-run on HEAD.
 | volleyball indoor | 0.91 | 0.75 | 37 | 0.32 | 1.00 / 1.00 |
 
 - **Claimed earlier vs re-measured:** the basketball values were originally logged higher
-  (progress.md:30). progress.md:33 still says "IDF1 0.40–0.49"; the re-measured values are 0.31
-  and 0.25.
+  ("IDF1 0.40–0.49"); progress.md now carries the re-measured 0.31 and 0.25 (fixed in 50c0cdf).
 - **Real footage (local):** Kennesaw 150-210 s has about 38 visible ID changes across 19 ids
   (progress.md:118). ReID, tighter BoT-SORT, 1280 px detection and gated merging all failed to
   help.
@@ -154,15 +153,16 @@ numbers were not re-run on HEAD.
 
 | trigger | GT poses | YOLO pose | ViTPose |
 |---|---|---|---|
-| gesture (22 truth) | 16 TP / 26 FP / 6 FN, P 0.38 / R 0.73; who 16/16; clip right 11/22 | 0/22 | 9 TP / 0 FP, P 1.00 / R 0.41; who 9/9; clip right 8 |
+| gesture (22 truth) | 22 TP / 0 FP / 0 FN, P 1.00 / R 1.00; who 22/22; clip right 16/22 | 0/22 | 9 TP / 0 FP, P 1.00 / R 0.41; who 9/9; clip right 8 |
 | voice (37, whisper-small) | 37/37; subject 18/18; clip right 30/37 | 37/37; subject 16/18; clip right 31/37 | — |
 | tap (14) | clip right 10/14 | clip right 9/14 | — |
 | resolution rule on GT plays | 73/73 | — | — |
 
 - **Claimed earlier vs re-measured:**
-  - Gesture with GT poses was 22/22 with 0 FP at M5. It is now P 0.38 / R 0.73, a real regression
-    from the D-61 relaxed rule (progress.md:54). This row is **being fixed at time of writing
-    (D-68 expected)**.
+  - Gesture with GT poses was 22/22 with 0 FP at M5. The D-61 relaxed rule regressed it to
+    16 TP / 26 FP / 6 FN (P 0.38 / R 0.73; all 26 false triggers were synthetic jump shots). D-68
+    restored 22/22 with 0 FP without changing ViTPose (9/22) or real footage (0 false in 480 s);
+    the before/after is in M5/README.md.
   - Whisper: the earlier "8/9 crowd-noise mixes" claim is superseded by 37/37 lines heard in 9/9
     clips. The script behind the old claim was not found (M1/README.md:38-39).
 - **Real footage:** 0 false gesture triggers in 480 s (progress.md:117). Real gesture and voice
@@ -349,9 +349,9 @@ docs/aws-integrations.md:60-67. The HLS/MediaConvert ladder is not built (perf.m
      GPU cost, key codes and the 120 ms JS key-repeat, rapid angle cuts, seek latency, decode,
      memory.
    - Every replay-angle cut is a new source load of a 720p file with no audio track (perf.md:182-184).
-2. **The X-gesture regression on GT poses** (P 0.38, 26 false triggers). It is **being fixed at
-   time of writing (D-68 expected)**. Far-player recall is 0.41 with ViTPose and 0/22 with YOLO
-   pose.
+2. **The X gesture misses far players**: recall 0.41 with ViTPose and 0/22 with the default YOLO
+   pose (synthetic). The GT-pose regression from D-61 is fixed (D-68: 22/22, 0 false). A held
+   two-hands-overhead call for the ball (≥ 0.9 s, elbows wide) would still read as an X.
 3. **Validation is mostly synthetic.**
    - There is no staged real gesture or voice footage, and ASR is untested on real game audio.
    - There is no CC volleyball footage.
@@ -410,8 +410,8 @@ docs/aws-integrations.md:60-67. The HLS/MediaConvert ladder is not built (perf.m
   the affected chunks. Corrections made before D-63 cannot be recovered.
 - The Highlights reel plays wide only.
 - Courtcam source edits invalidate courtcam stage caches once.
-- `samples/cc` is still not in `.gitignore` (test-data.md:160).
-- Stale docs: see the final message to the orchestrator.
+- The stale docs found while writing this report (`samples/cc` not ignored, unmeasured metric
+  claims, missing M2 entry, licence rows, AWS map) were fixed in 50c0cdf.
 
 ### Privacy posture
 

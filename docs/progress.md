@@ -61,7 +61,7 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 ## M5 — "Replay, clip that" (backend) (2026-10-06)
 
 - Works: gesture (X overhead held ≥ 0.8 s), voice ("Replay, clip that / clip <name>", whisper-small) and tap (`POST /games/{id}/triggers`) triggers resolve to the play that just ended and produce attributed clips; `GET /games/{id}/clips`, `PATCH /games/{id}/clips/{id}` trims (source user).
-- Verified on hfbox, re-measured on current code (2026-10-06, docs/evidence/M5/metrics.json), synthetic with GT poses: gesture 16 TP / 26 FP / 6 FN (P 0.38, R 0.73; who 16/16, clip right 11/22), voice 37/37 (named subject 18/18, clip right 30/37), tap clip right 10/14; resolution rule exact on GT plays 73/73. The gesture regression is real: at M5 it was logged as 22/22 with no false triggers, and the accuracy pass's relaxed "hands together overhead" rule (D-61), tuned for far YOLO/ViTPose players, fires on GT poses 26 times. Real footage (local only, not re-measured): 0 false triggers in 480 s.
+- Verified on hfbox, re-measured on current code (2026-10-06, docs/evidence/M5/metrics.json), synthetic with GT poses: gesture 22 TP / 0 FP / 0 FN (who 22/22, clip right 16/22) after the D-68 fix, voice 37/37 (named subject 18/18, clip right 30/37), tap clip right 10/14; resolution rule exact on GT plays 73/73. History: at M5 the gesture was logged as 22/22; the accuracy pass's relaxed rule (D-61) regressed it to 16 TP / 26 FP / 6 FN (P 0.38, R 0.73; all 26 false gestures were synthetic jump shots); D-68 restored it (before/after in docs/evidence/M5/README.md). Real footage: 0 false triggers in 480 s with YOLO and ViTPose (re-run with the D-68 rule; local only).
 - Evidence: docs/evidence/M5/README.md + metrics.json, trigger_{gesture,voice,tap}_synthetic_basketball_half_s7.mp4 (older renders), timeline_synthetic_badminton_doubles_s7.png
 - Left / known issues: no staged real gesture/voice footage (synthetic only); gesture via YOLO-pose 0/22 on far synthetic players (re-measured; docs/evidence/M5/README.md); TV trim UI pending the integration wave.
 
@@ -128,7 +128,7 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Tracking unchanged: synthetic basketball players IDF1 0.31 / 0.31 / 0.25 with 122–157 ID switches; Kennesaw 150–210 s ≈ 38 visible ID changes across 19 ids. ReID on, tighter BoT-SORT, 1280 px detection and gated merging all failed to help (details in samples/real/RESULTS.md).
 - Evidence: docs/evidence/{M4,M5}/metrics.json "accuracy pass" sections (re-measured 2026-10-06: shots 21/27 at P 1.00, ViTPose 19/27, winner_side 27/33, X gesture vit 9/22 at P 1.00, YOLO pose 0/22 — all match; the "before" values are history), docs/evidence/M4/accuracy_timeline_yolo_*.png, docs/evidence/M5/accuracy_*_on_synthetic_x_holds.png · docs/evidence/local/{M1,M4,M5}/accuracy_* (Kennesaw)
 - Decisions: D-61.
-- Left / known issues: the relaxed X-gesture rule regressed the GT-pose gesture test from 22/22 with no false triggers to P 0.38 / R 0.73 (26 false gestures; see M5) — needs a stricter rule for clean, near poses; gesture recall 0.41 vs the 0.8 target on far players (misses are players ≤ 56 px tall); ViTPose not default yet (deps + lock); tracking needs tracklet-level association (real ReID or a stronger small-player detector); real shot recall dropped; contact `side_ok` near chance; pickleball doubles second-server rule.
+- Left / known issues: the relaxed X-gesture rule regressed the GT-pose gesture test to P 0.38 / R 0.73 (fixed afterwards by D-68, see "Gesture fix" below); gesture recall 0.41 vs the 0.8 target on far players (misses are players ≤ 56 px tall); ViTPose not default yet (deps + lock); tracking needs tracklet-level association (real ReID or a stronger small-player detector); real shot recall dropped; contact `side_ok` near chance; pickleball doubles second-server rule.
 
 ## M12 — Tier D experiments (2026-10-06)
 
@@ -173,3 +173,11 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Works: play grammars skip user-dismissed events; the TV Watch `?t=` restore and the profile reel stop polling once a video has failed (web build now shows the "Video unavailable" overlay too); declining a profile link suggestion is persisted by the API and stays gone after reopening, in both TV clients.
 - Verified on hfbox: each fix had a failing test first (courtcam test_plays 1, api test_profiles 2, tv Playwright 3), then passed. Staged snapshot, `scripts/box-test.sh` ALL GREEN: courtcam 184, api 220 + 1 skipped, worker 24, render 49, web Playwright 100 passed; apps/tv tsc/eslint clean, Playwright tv 48 passed + 1 skipped.
 - Decisions: D-67.
+
+## Gesture fix (2026-10-06)
+
+- Works: the X-gesture rule no longer fires on synthetic jump shots (ball overhead, hands together, elbows out, held < 0.9 s) and accepts side-on crossed X holds again: confident crossings skip the elbow-spread gate; uncrossed holds must keep the arms overhead ≥ 0.9 s (= `shot.release_max_s`).
+- Verified on hfbox with the committed harness (docs/evidence/M4/eval): GT-pose gesture 22/22 with 0 FP (was 16 TP / 26 FP / 6 FN); `--pose vit` 9/22 at P 1.00 (unchanged); YOLO pose 0/22; real 480 s (Kennesaw + badminton auditorium) 0 false triggers with YOLO and ViTPose; M4 shot/contact/rally and voice/tap numbers unchanged; courtcam pytest 185 passed. The YOLO-step triggers were re-scored on the fixed code from tracks/poses computed before the fix (they do not depend on the gesture rule; stated in metrics.json).
+- Evidence: docs/evidence/M5/README.md ("Gesture fix (D-68)": before → after) + metrics.json
+- Decisions: D-68.
+- Left / known issues: far-player X under ViTPose capped at 9/22 (arm keypoints score ≈ 0.1 on 48–56 px players); a held two-hands-overhead ball call (≥ 0.9 s, elbows wide) would read as an X; the synthetic rig's shot pose has the hands closer than the ball is wide (rig realism, left to keep goldens).

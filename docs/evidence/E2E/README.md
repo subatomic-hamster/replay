@@ -107,3 +107,214 @@ Times are in `replay-e2e.mp4`. Nothing was cut: the uploaded clip's pipeline run
   then scrub with the D-pad). (2) Re-runs against the shared demo dir inherited the
   previous run's profile link: the TV then refused it with "Not linked: … is linked to
   another profile", which is correct. Each run now serves a fresh copy.
+
+# E2E on REAL footage: basketball and volleyball, with Free view (local only)
+
+The same spec, script and compositor, run on **real** corpus clips with `REC_REAL=<sport>`.
+Nothing derived from these runs is committed: `samples/real` is local-test footage (D-7),
+and the volleyball clip, although CC BY, shows minors (D-76). This section describes the
+runs; it contains no frames. The recordings, `beats.json`, `beats.md` and 20–21 key
+frames per run are in `docs/evidence/local/E2E-real/{basketball,volleyball}/` (gitignored);
+the full-quality 1920×1080 copies are on the box in
+`/workspace/wt/replay-recreal/out-real-{basketball,volleyball}/replay-e2e-full.mp4`.
+
+Run of 2026-10-06 on hfbox, commit d352ad3 + the harness changes below: **basketball
+16 / 16 beats PASS, volleyball 17 / 17 beats PASS.**
+
+## Reproduce
+
+```sh
+make record-e2e-real SPORT=basketball    # or SPORT=volleyball
+```
+
+or on the box: `REC_REAL=basketball bash scripts/record-e2e.sh <copy dir>`. Differences
+from the synthetic run:
+
+- **Clip:** a 90 s cut of live play, re-encoded to H.264 by the script:
+  `basketball_kennesawwide_240s` t 130–220 s (2560×960, 20 fps, panoramic) and
+  `volleyball_westwashington_240s` t 0–90 s (1920×1080, 30 fps).
+- **No demo games.** The library starts empty; every TV beat uses the uploaded game.
+- **Calibration by hand.** The phone first shows what auto-calibration proposed. Both
+  proposals were ok=false, so the D-72 refusal is on screen (Accept disabled). The run then
+  takes "Place points myself" and clicks the clip's tracked hand-clicked
+  `samples/real/*.landmarks.json` at its pixels, including the profile's optional points
+  ("More points"). It never ticks the override.
+- **Opt-in stages.** The API is served with `REPLAY_WORKER_STAGES=hype,replays,scene`. This
+  is a new API setting: the worker's opt-in stages run on every upload after its default
+  ones. Before it, an uploaded game could not get replays or a scene package through the
+  API at all. The status page reads `ready` only after these stages finish too.
+- **Captions on every frame:** "REAL footage — local test only (D-7)" (volleyball: "D-76:
+  CC BY, but minors — never published"), "TV = react-native-web build in Chrome, NOT a
+  Fire TV", and the beat with its PASS/FAIL.
+- **Processing wait:** cut in post. The caption names the real elapsed time.
+
+## Basketball (Kennesaw, 3:04, 5.3 MB)
+
+Processing: 6 min 48 s real elapsed (6 min 33 s cut at 0:46). The worker ran 53 tasks,
+all cache misses. The largest stage times were:
+
+| stage | tasks | time |
+|---|---|---|
+| SAM 2.1 `segment` | 3 plays | 171 s |
+| `tierb` | 9 angles | 110 s |
+| `scene` | 3 plays | 57 s |
+| `pose` | – | 36 s |
+| `plate` | – | 32 s |
+| YOLO `detect` | – | 20 s |
+
+The pipeline found 6 possession changes and 4 turnovers, and **no shot**.
+
+| # | beat | video time | result | what is asserted |
+|---|---|---|---|---|
+| 1 | TV settings: test connection | 0:02.5–0:08.9 | PASS | `Connected · 0 games` (empty library) |
+| 2 | Phone: create game + upload | 0:08.9–0:13.8 | PASS | basketball game, 90 s clip uploaded |
+| 3 | Phone: calibrate | 0:13.8–0:33.8 | PASS | proposal "Found 9 points · needs a check" (score 0.61 < 0.90) refused, Accept disabled; 14 points placed by hand; fit 3.3 px |
+| 4 | Phone: process | 0:33.8–0:51.6 | PASS | a stage `running`, then `ready` |
+| 5 | TV: the uploaded game plays | 0:51.6–0:58.4 | PASS | card in the library, plays past 2 s |
+| 6 | Watch: event markers + hype | 0:58.4–1:07.0 | PASS | hype meter, > 0 event markers |
+| 7 | Select → follow → spotlight → inset | 1:07.0–1:19.8 | PASS | select boxes, follow-cam, spotlight, court inset with > 1 dot |
+| 8 | Replay angles | 1:19.8–1:38.6 | PASS | 6 angles; tiers seen are Real video (A) and 2.5D (B) |
+| 9 | Free view: enter | 1:38.6–1:47.5 | PASS | Down at 2.23 s: mode `free`, scene frame = the angle's time (±1 frame), preset `real`, the package's honesty label, view-limit line and gauge, no SYNTHETIC tag. Envelope az −7.5…+5°, el 12.1…17.1° |
+| 10 | Free view: orbit to both azimuth limits | 1:47.5–1:59.7 | PASS | `data-az` stops exactly at −7.5 and +5.0; edge bar and gauge shown; one more press does not move it |
+| 11 | Free view: elevation limit | 1:59.7–2:09.1 | PASS | stops at 17.1° (top) and 12.1°, edge bars shown |
+| 12 | Free view: dolly in and out | 2:09.1–2:16.8 | PASS | Menu → zoom mode; 17.1 m (gauge "closest") ↔ 19.9 m |
+| 13 | Free view: cycle all presets | 2:16.8–2:39.7 | PASS | FF: Real camera → Broadcast high → Orbit left → Orbit right → Push-in → wrap; each preset's az/el equal `presetState`; Rew back |
+| 14 | Free view: play, then Back to the angle | 2:39.7–2:47.5 | PASS | the atlas frame advances; paused at 7.05 s; Back → angles mode, video at 7.05 s (< 0.05 s), paused |
+| 15 | Highlights | 2:47.5–2:55.2 | PASS | "All shots" → "No clips match that query" (0 shots detected; see notes) |
+| 16 | Review + box score | 2:55.2–3:01.1 | PASS | auto-detected label, shot chart, box-score rows, the first review answer moves the queue |
+
+## Volleyball (West Washington, 4:05, 9.1 MB)
+
+Processing: 6 min 28 s real elapsed (6 min 13 s cut at 0:48). The worker ran 54 tasks.
+The largest stage times were:
+
+| stage | tasks | time |
+|---|---|---|
+| SAM `segment` | 3 plays | 204 s |
+| `tierb` | 9 angles | 79 s |
+| `pose` | – | 40 s |
+| `scene` | 3 plays | 33 s |
+| `plate` | – | 30 s |
+| `detect` | – | 24 s |
+| `condensed` (rendered on the TV's request) | 1 | 25 s |
+
+The pipeline found 3 rallies, 3 serves, 3 points and 14 blocks.
+
+| # | beat | video time | result | what is asserted |
+|---|---|---|---|---|
+| 1 | TV settings: test connection | 0:02.5–0:08.9 | PASS | as above |
+| 2 | Phone: create game + upload | 0:08.9–0:13.8 | PASS | volleyball game, 90 s clip uploaded |
+| 3 | Phone: calibrate | 0:13.8–0:35.7 | PASS | proposal "Found 8 points · needs a check" (score 0.888 < 0.90) refused, Accept disabled; 10 points by hand (6 + 4 optional); fit 2.0 px |
+| 4 | Phone: process | 0:35.7–0:53.5 | PASS | `running`, then `ready` |
+| 5 | TV: the uploaded game plays | 0:53.5–1:00.2 | PASS | |
+| 6 | Watch: event markers + hype | 1:00.2–1:09.0 | PASS | |
+| 7 | Select → follow → spotlight → inset | 1:09.0–1:21.7 | PASS | |
+| 8 | Replay angles | 1:21.7–1:40.9 | PASS | 6 angles: Real video + 2.5D |
+| 9 | Free view: enter | 1:40.9–1:49.7 | PASS | at 2.34 s; envelope az −17…+17°, el 15.6…32.6° |
+| 10 | Free view: orbit to both azimuth limits | 1:49.7–2:09.0 | PASS | −17.0 / +17.0, edge bars, gauge |
+| 11 | Free view: elevation limit | 2:09.0–2:22.7 | PASS | 32.6° / 15.6° |
+| 12 | Free view: dolly in and out | 2:22.7–2:36.1 | PASS | 9.9 m ↔ 16.0 m |
+| 13 | Free view: cycle all presets | 2:36.1–2:59.4 | PASS | the five presets, wrap, Rew |
+| 14 | Free view: play, then Back to the angle | 2:59.4–3:07.5 | PASS | paused at 7.44 s; the angle at 7.44 s |
+| 15 | Highlights | 3:07.5–3:15.3 | PASS | "Rallies" → a reel of 3 clips |
+| 16 | Review: heatmap | 3:15.3–3:20.9 | PASS | heatmap with cells, no shot chart (the volleyball profile's review panel) |
+| 17 | Volleyball rallies + condensed | 3:20.9–3:59.7 | PASS | rally rows; Longest plays with the rally counter; the condensed game rendered on request and plays with `RALLY n / 3` (60 s of play in 1:30) |
+
+## Beats not in the real runs, and why
+
+- **Broadcast + commentary, Search.** These need the `broadcast` / narration and
+  `search_index` stages, which `REPLAY_WORKER_STAGES` does not run on the upload.
+- **Pair phone + Clip that, 9:16 share, Player profile + card.** These do not depend on the
+  footage, and the synthetic run covers them. Linking a profile to a real person is
+  deliberately not done; for the volleyball minors it never is.
+- **Tier C (3D) angles.** The `tierc*` stages are not in the opt-in list. The replay
+  angles here are Tier A + B only.
+- **Volleyball** has no shot chart or box score: its review panel is the heatmap. Its
+  highlights chip is "Rallies", not "All shots".
+
+## What the key frames show (read off the frames, honestly)
+
+**Basketball, Free view** (Kennesaw panoramic corner rig):
+
+- **Void.** A large dark void fills the upper right of every view, including the Real
+  camera preset. The backdrop plane covers only the left part of the panorama, so the far
+  wall and bleachers on the right exist only where the floor plate reaches.
+- **Floating hoops.** The modelled hoop primitives do not sit on the real baskets:
+  - a white backboard outline with an orange rim floats near the top-left basket, offset
+    from it;
+  - the far hoop is drawn as a large grey board with an orange ring hanging in the void
+    at the top right (D-53's panoramic hoop-height ceiling).
+- **Smeared floor.** Ghost streaks of players are baked into the floor plate near the far
+  bleachers. The scorer's table at the bottom left is a flat, stretched smear on the floor
+  that slides at the azimuth limits.
+- **Players.** The cutouts themselves are clean and stand on their feet.
+- **Tier B "Broadcast high" angle** (server-rendered) shows the same faults: black voids on
+  both sides, the floating modelled backboard, and a cluster of players whose cutouts
+  overlap.
+
+**Volleyball, Free view** (fixed elevated camera, in the net plane):
+
+- **The best case for 2.5D.** It has the widest envelope of any package so far (±17°).
+- **Voids.** The Real camera preset does not fill the frame: the backdrop and floor plates
+  end, leaving black wedges at the left, right and bottom.
+- **Double net.** The modelled net (a white top line and a translucent band) does not
+  coincide with the real net. The real net is baked flat into the floor plate as a dark
+  blue stripe, which visibly diverges from the modelled post at az −17°. This is D-75's
+  "static objects baked flat into the floor".
+- **Line judge** (red flag) and a spectator at the right edge are partly baked into the
+  plates and smear when the camera orbits.
+- **Mask errors.** On dolly-in, a near player's legs are doubled (two overlapping players
+  in one cutout) with a pink smear at the feet.
+- **Dead-ball window.** At 2.3 s into the first highlight both teams are still huddled, so
+  the Free view stills show huddles rather than a rally in play. The play window starts
+  before the serve.
+
+**Both:**
+
+- Free view runs in headless Chromium, so WebGL is SwiftShader on the CPU. Motion in the
+  video is not representative of a device's frame rate, and fps was not measured in these
+  runs.
+- The auto-calibration status shows "0.0 px" next to "needs a check". The proposals'
+  `reprojection_error_px` is about 1e-4 px (they are template fits, exact by construction),
+  so that number says nothing about whether the fit is right. The score (0.61 / 0.888 vs
+  0.90) is what refused them.
+- **No shot in the basketball cut.** The real pipeline found no shot in Kennesaw 130–220 s,
+  although the scene agent's full 240 s run found one at 133 s. This cut was calibrated
+  from the UI clicks (3.3 px) rather than the landmarks file, and is a 20 fps H.264
+  re-encode. So the shot chart is empty and "All shots" has no clips; the TV says so
+  correctly.
+- **Likely false positives.** 14 volleyball blocks in 90 s is implausible; volleyball
+  event precision is known to be low (docs/progress.md).
+
+## Harness changes for the real runs
+
+- `scripts/record-e2e.sh`: `REC_REAL=basketball|volleyball` cuts the clip, copies its
+  landmarks, sets `REPLAY_WORKER_STAGES`, serves an empty library, writes
+  `out-real-<sport>/` (plus the upload's `worker.jsonl`), and passes the real captions to
+  the compositor.
+- `apps/tv/e2e-recording/replay-e2e.spec.ts`: `REPLAY_REC_REAL` / `REPLAY_REC_SPORT`; the
+  hand walk includes optional landmarks; the shared beats (select/follow, review, rallies)
+  are functions; there are six new Free view beats, plus highlights and heatmap beats; key
+  frames go to `frames/`.
+- `scripts/record_e2e_compose.py`: `--title` and `--caveat`.
+- `make record-e2e-real SPORT=…`.
+- `services/api`: `REPLAY_WORKER_STAGES` (config, pipeline adapter, a test).
+- `scripts/box-demo.sh`: passes `REPLAY_WORKER_STAGES` to the API window.
+
+The synthetic `make record-e2e` path was restructured, not changed in intent. It was not
+re-recorded in this run.
+
+## Bugs found while recording the real runs
+
+- **Product gap (fixed):** the API had no way to run the opt-in replay and scene stages on
+  an upload (`pipeline_adapter.run` always ran the worker's default DAG). So Free view
+  could never appear on a game uploaded from the phone. `REPLAY_WORKER_STAGES` adds them.
+- **Spec bugs (fixed):**
+  - The spec assumed a non-empty library.
+  - It read the play id from the page URL, but the TV navigates in memory, so the URL is
+    still `/tv/<game>` on the Replay screen. It now reads the focused replay card's
+    `data-play-id`.
+  - The recorded basketball beat 15 caption reads "detected no all shots"; the wording was
+    fixed in the spec after the run.
+- No TV or Free view bug: every Free view assertion passed on both sports at the first run
+  where the spec itself was right.

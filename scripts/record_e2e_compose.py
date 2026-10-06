@@ -41,12 +41,12 @@ def font(size: int, bold: bool = False):
         return ImageFont.load_default(size)
 
 
-def background(path: Path) -> None:
+def background(path: Path, caveat: str = CAVEAT) -> None:
     im = Image.new("RGB", (W, H), (12, 14, 18))
     d = ImageDraw.Draw(im)
     d.text((TV[0], BAND_Y), "TV (1920×1080, D-pad = keyboard)", font=font(22), fill=(150, 160, 175))
     d.text((PHONE[0], BAND_Y), "Phone companion (390×844)", font=font(22), fill=(150, 160, 175))
-    d.text((TV[0], H - 40), CAVEAT, font=font(22), fill=(240, 190, 80))
+    d.text((TV[0], H - 40), caveat, font=font(22), fill=(240, 190, 80))
     im.save(path)
 
 
@@ -97,6 +97,8 @@ def main() -> int:
     ap.add_argument("full")
     ap.add_argument("small")
     ap.add_argument("--max-mb", type=float, default=25)
+    ap.add_argument("--caveat", default=CAVEAT, help="the line on every frame")
+    ap.add_argument("--title", default="Replay — recorded end-to-end test")
     a = ap.parse_args()
     doc = json.loads(Path(a.beats).read_text())
     beats, cuts, videos = doc["beats"], doc["cuts"], doc["videos"]
@@ -104,12 +106,10 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        background(tmp / "bg.png")
+        background(tmp / "bg.png", a.caveat)
         overlays: list[tuple[Path, float, float]] = []
         first = beats[0]["start"] if beats else tv_dur
-        caption(
-            tmp / "c_intro.png", "Replay — recorded end-to-end test", None, "opening the TV library"
-        )
+        caption(tmp / "c_intro.png", a.title, None, "opening the TV library")
         overlays.append((tmp / "c_intro.png", 0, first))
         for i, b in enumerate(beats):
             p = tmp / f"c_{i}.png"

@@ -1,7 +1,8 @@
 // Recorded end-to-end run (opt-in project `recording`, scripts/record-e2e.sh): the TV app's
 // web build and the phone companion, two browser contexts, against the real services/api
-// with REPLAY_PIPELINE=worker on hfbox. Nothing is mocked. Footage is SYNTHETIC only: a
-// short `courtcam synth` clip uploaded through the phone, and the `make demo` games.
+// with REPLAY_PIPELINE=worker on hfbox. Nothing is mocked. By default the footage is
+// SYNTHETIC: a short `courtcam synth` clip uploaded through the phone, and the `make demo`
+// games (REAL mode below).
 //
 // Every beat asserts what the viewer should see. A beat that fails is recorded as failed
 // (with the first line of the error) and the run moves on to the next beat, so one broken
@@ -14,11 +15,23 @@
 //   REPLAY_REC_PHONE     the phone companion (apps/web)
 //   REPLAY_REC_CLIP      the synthetic clip to upload
 //   REPLAY_REC_LANDMARKS its landmarks.json from `courtcam synth` (manual-walk fallback)
-//   REPLAY_REC_OUT       where beats.json and the phone video go
+//   REPLAY_REC_OUT       where beats.json, the phone video and the key frames go
+//
+// REAL mode (REPLAY_REC_REAL=1, `make record-e2e-real`, LOCAL ONLY under D-7/D-76): the clip
+// is a cut of a samples/real clip, REPLAY_REC_LANDMARKS its tracked hand-clicked
+// landmarks.json, REPLAY_REC_SPORT its sport (basketball | volleyball). The phone always
+// places those landmarks by hand (after showing what auto-calibration proposed, and the D-72
+// refusal when it is ok=false), the API runs the worker with the opt-in replay + scene
+// stages (REPLAY_WORKER_STAGES), and every TV beat uses the uploaded game: watch/follow,
+// replay angles, Free view (envelope edges, dolly, presets, play, Back), then the sport's
+// own screens. There are no demo games in that run.
+//   REPLAY_REC_CLIP_LABEL  how the captions name the clip
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import type { SceneLayout } from "../../../packages/tv-core/src/types";
 import { enterSelectMode, menuTo } from "../e2e/helpers";
+import { presetState } from "../src/scene/camera";
 
 const env = (k: string) => process.env[k] ?? "";
 const API = env("REPLAY_REC_API");
@@ -26,9 +39,12 @@ const PHONE = env("REPLAY_REC_PHONE");
 const CLIP = env("REPLAY_REC_CLIP");
 const LANDMARKS = env("REPLAY_REC_LANDMARKS");
 const OUT = env("REPLAY_REC_OUT") || "test-results/recording";
+const REAL = env("REPLAY_REC_REAL") === "1";
+const SPORT = env("REPLAY_REC_SPORT") || "basketball";
+const CLIP_LABEL = env("REPLAY_REC_CLIP_LABEL") || (REAL ? `a REAL ${SPORT} clip` : "a 20 s SYNTHETIC clip");
 const BB = "g_demo_basketball";
 const PB = "g_demo_pickleball";
-const UPLOAD_TITLE = "SYNTHETIC upload (recording)";
+const UPLOAD_TITLE = REAL ? `REAL ${SPORT} (local test only)` : "SYNTHETIC upload (recording)";
 const DWELL = 2500; // after each beat, so a viewer can read the screen
 
 interface Beat {
@@ -118,6 +134,43 @@ async function typeKeys(page: Page, prefix: string, labels: string[]) {
   }
 }
 
+let shots = 0;
+/** A full-resolution key frame of the TV (the README's artefact notes are read off these). */
+async function keyFrame(page: Page, name: string) {
+  fs.mkdirSync(path.join(OUT, "frames"), { recursive: true });
+  const file = `${String(++shots).padStart(2, "0")}_${name}.jpg`;
+  await page.screenshot({ path: path.join(OUT, "frames", file), type: "jpeg", quality: 88 });
+}
+
+const replayAttr = (page: Page, name: string) => page.getByTestId("replay").getAttribute(`data-${name}`);
+
+/** Watch ▸ Replays ▸ the first highlight, on its first angle; returns its play id. */
+async function openFirstReplay(page: Page, gameId: string): Promise<string> {
+  await page.goto(`/tv/${gameId}`);
+  await videoReady(page);
+  await menuTo(page, "nav-replays");
+  await page.keyboard.press("Enter");
+  const card = page.locator('[data-testid="replay-card"][data-focused="true"]');
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  const play = (await card.getAttribute("data-play-id")) ?? "";
+  await page.waitForTimeout(1500);
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("replay-angle-pos")).toHaveText(/^1 \/ \d+$/, { timeout: 15_000 });
+  await videoReady(page);
+  return play;
+}
+
+/** Free view: press `key` (one 2.5° / 5 % step each, paced for a viewer) until the envelope
+ *  edge `edge` is reported; the presses it took. */
+async function pushTo(page: Page, key: string, edge: string, max = 40) {
+  for (let i = 0; i < max; i++) {
+    if ((await replayAttr(page, "edges"))?.split(" ").includes(edge)) return i;
+    await page.keyboard.press(key);
+    await page.waitForTimeout(300);
+  }
+  throw new Error(`${edge} not reached with ${key}`);
+}
+
 test("Replay end to end: phone upload → worker pipeline → TV demo beats", async ({ page, browser }) => {
   test.setTimeout(75 * 60_000);
   for (const [k, v] of Object.entries({ API, PHONE, CLIP, LANDMARKS })) expect(v, `REPLAY_REC_${k}`).not.toBe("");
@@ -133,12 +186,14 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
   T0.phone = Date.now();
   await phone.goto(`${PHONE}/upload`);
   await page.goto("/");
-  await expect(page.getByTestId("game-card").first()).toBeVisible({ timeout: 30_000 });
+  // REAL mode starts on an empty library: the upload will be its only game.
+  const library = page.getByTestId("game-card").first().or(page.getByTestId("library-empty"));
+  await expect(library).toBeVisible({ timeout: 30_000 });
   await page.waitForTimeout(2000);
 
   // ------------------------------------------------------------------ TV settings
   await beat(page, "TV settings: test connection", "TV: Library → Settings → Test connection", async () => {
-    await expect(page.getByTestId("game-card").first()).toHaveAttribute("data-focused", "true");
+    if (!REAL) await expect(page.getByTestId("game-card").first()).toHaveAttribute("data-focused", "true");
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowRight");
     await expect(page.getByTestId("library-settings")).toHaveAttribute("data-focused", "true");
@@ -153,15 +208,15 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
     await page.waitForTimeout(2000);
     await page.keyboard.press("ArrowRight"); // Done
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("game-card").first()).toBeVisible();
+    await expect(library).toBeVisible();
   });
 
   // ------------------------------------------------------------------ phone upload
   let gameId = "";
-  await beat(phone, "Phone: create game + upload", "Phone: create a game and upload a 20 s SYNTHETIC clip", async () => {
-    await expect(phone.getByTestId("sport-option-basketball")).toBeVisible({ timeout: 20_000 });
+  await beat(phone, "Phone: create game + upload", `Phone: create a ${SPORT} game and upload ${CLIP_LABEL}`, async () => {
+    await expect(phone.getByTestId(`sport-option-${SPORT}`)).toBeVisible({ timeout: 20_000 });
     await phone.getByTestId("game-title-input").fill(UPLOAD_TITLE);
-    await phone.getByTestId("sport-option-basketball").check();
+    await phone.getByTestId(`sport-option-${SPORT}`).check();
     await phone.waitForTimeout(1000);
     await phone.getByTestId("create-game").click();
     await phone.waitForURL(/\/upload\/g_[a-z0-9]+/);
@@ -176,26 +231,41 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
   await beat(phone, "Phone: calibrate", "Phone: auto-calibration proposes the court landmarks", async () => {
     // D-72: an ok proposal is accepted as-is; a low-confidence one needs a hand (here the
     // manual walk, clicked at the clip's own landmark pixels). Never the override box.
-    await phone.getByTestId("variant-half").check(); // the clip is a half court
+    // REAL mode always walks by hand, at the tracked hand-clicked landmarks.
+    const marks = JSON.parse(fs.readFileSync(LANDMARKS, "utf8"));
+    const variant = (marks.variant as string | undefined) ?? "half"; // the synthetic clip is a half court
+    if (await phone.getByTestId(`variant-${variant}`).count()) await phone.getByTestId(`variant-${variant}`).check();
     await expect(phone.getByTestId("autocalib-status")).not.toHaveText(/^$/, { timeout: 60_000 });
-    await expect(phone.getByTestId("autocalib-busy")).toHaveCount(0, { timeout: 90_000 });
+    await expect(phone.getByTestId("autocalib-busy")).toHaveCount(0, { timeout: 180_000 });
     await phone.waitForTimeout(2000);
     const accept = phone.getByTestId("autocalib-accept");
+    const proposed = (await phone.getByTestId("autocalib-status").textContent()) ?? "";
     let path = "Phone: auto-calibration proposal accepted (ok)";
-    if ((await accept.count()) && (await accept.isEnabled())) {
+    if (!REAL && (await accept.count()) && (await accept.isEnabled())) {
       await accept.click();
     } else {
-      // D-72 refusal on screen: the weak-fit note, Accept disabled until a drag or the confirm
-      await expect(phone.getByTestId("autocalib-weak")).toBeVisible();
-      await expect(accept).toBeDisabled();
+      if (await phone.getByTestId("autocalib-weak").count()) {
+        // D-72 refusal on screen: the weak-fit note, Accept disabled until a drag or the confirm
+        await expect(accept).toBeDisabled();
+        path = `Phone: auto-calibration “${proposed}” refused (D-72, Accept disabled) → landmarks placed by hand`;
+      } else if (REAL) {
+        path = `Phone: auto-calibration “${proposed}” — not used: the tracked hand-clicked landmarks are placed by hand`;
+      } else {
+        throw new Error(`no usable proposal and no D-72 note: ${proposed}`);
+      }
       await phone.waitForTimeout(3000);
-      path = "Phone: low-confidence proposal refused (D-72) → landmarks placed by hand";
       await phone.getByTestId("autocalib-manual").click();
-      const truth = JSON.parse(fs.readFileSync(LANDMARKS, "utf8")).landmarks_px as Record<string, [number, number]>;
-      const sports: { id: string; landmarks?: string[] }[] = await (await phone.request.get(`${API}/sports`)).json();
-      const order = sports.find((s) => s.id === "basketball")?.landmarks ?? [];
+      const truth = marks.landmarks_px as Record<string, [number, number]>;
+      const sports: { id: string; landmarks?: string[]; landmarks_optional?: string[] }[] = await (
+        await phone.request.get(`${API}/sports`)
+      ).json();
+      const profile = sports.find((s) => s.id === SPORT);
+      const optional = (profile?.landmarks_optional ?? []).filter((n) => truth[n]);
+      if (optional.length) await phone.getByTestId("calib-more").click(); // "More points"
+      const order = [...(profile?.landmarks ?? []), ...(optional.length ? (profile?.landmarks_optional ?? []) : [])];
       const img = phone.getByTestId("calib-image");
       const frame = await img.evaluate((el: HTMLImageElement) => ({ w: el.naturalWidth, h: el.naturalHeight }));
+      let placed = 0;
       for (const name of order) {
         await expect(phone.getByTestId("calib-prompt")).toContainText(name.replace(/_/g, " "));
         const box = await img.boundingBox();
@@ -206,26 +276,35 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
         }
         const [x, y] = truth[name];
         await phone.mouse.click(box.x + (x / frame.w) * box.width, box.y + (y / frame.h) * box.height);
+        placed++;
         await phone.waitForTimeout(500);
       }
+      if (REAL) path += ` (${placed} points)`;
     }
     await expect(phone.getByTestId("calib-error")).toHaveAttribute("data-ok", "true");
+    if (REAL) path += ` · fit ${(await phone.getByTestId("calib-error").textContent())?.trim()}`;
     await phone.getByTestId("start-processing").scrollIntoViewIfNeeded();
     await expect(phone.getByTestId("start-processing")).toBeEnabled();
     return path;
   });
 
-  await beat(phone, "Phone: process (real worker pipeline)", "Phone: start processing — the real worker pipeline runs on hfbox", async () => {
+  const processing = REAL
+    ? "Phone: start processing — the real worker pipeline (YOLO, + replays and 2.5D scene stages) on hfbox"
+    : "Phone: start processing — the real worker pipeline runs on hfbox";
+  await beat(phone, "Phone: process (real worker pipeline)", processing, async () => {
     await phone.getByTestId("start-processing").click();
+    const started = now();
     await phone.waitForURL(new RegExp(`/upload/${gameId}/status`));
     await expect(phone.locator('[data-testid^="stage-"][data-state="running"]').first()).toBeVisible({ timeout: 120_000 });
     const waitFrom = now() + 10;
     await expect(phone.getByTestId("game-status")).toHaveText(/^(ready|failed)$/, { timeout: 40 * 60_000 });
     const waitTo = now() - 3;
+    const mmss = (s: number) => `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
     if (waitTo - waitFrom > 20) {
-      cuts.push({ from: waitFrom, to: waitTo, note: `${Math.round((waitTo - waitFrom) / 60)} min of processing cut` });
+      cuts.push({ from: waitFrom, to: waitTo, note: `processing took ${mmss(now() - started)} (real elapsed); ${mmss(waitTo - waitFrom)} of waiting cut` });
     }
     await expect(phone.getByTestId("game-status")).toHaveText("ready");
+    return `${processing} · ready after ${mmss(now() - started)}`;
   });
 
   await beat(page, "TV: the uploaded game plays", "TV: the uploaded game is in the library, ready — Watch", async () => {
@@ -237,7 +316,215 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
     await page.keyboard.press("Enter");
   });
 
-  // ------------------------------------------------------------------ demo beats
+  if (REAL) await realBeats(page, gameId);
+  else await demoBeats(page, phone);
+
+  // ------------------------------------------------------------------ wrap up
+  await phoneCtx.close(); // flushes the phone video
+  videos.phone = (await phone.video()?.path()) ?? "";
+  videos.tv = test.info().outputPath("video.webm"); // where `video: on` saves it after the test
+  save();
+  expect(beats.filter((b) => !b.ok).map((b) => `${b.name}: ${b.error}`)).toEqual([]);
+});
+
+// -------------------------------------------------------------------- REAL footage beats
+async function realBeats(page: Page, gameId: string) {
+  await beat(page, "Watch: event markers + hype", "TV: Watch the uploaded REAL game (event markers, hype meter)", async () => {
+    await openFromLibrary(page, gameId);
+    await expect(page.getByTestId("hype-meter")).toBeVisible({ timeout: 15_000 });
+    expect(await page.getByTestId("event-marker").count()).toBeGreaterThan(0);
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await media(page))?.paused).toBe(false);
+    await page.waitForTimeout(5000);
+    await keyFrame(page, "watch");
+  });
+  await selectFollow(page);
+
+  await beat(page, "Replay angles", "Replays: the first highlight's angles — Tier A real video, Tier B 2.5D cutouts", async () => {
+    await openFirstReplay(page, gameId);
+    await page.waitForTimeout(2500);
+    await page.keyboard.press("Enter"); // pause: the playhead stays put across cuts
+    const n = Number(((await page.getByTestId("replay-angle-pos").textContent()) ?? "").split("/")[1]);
+    const tiers = new Set<string>([(await page.getByTestId("replay-tier-badge").textContent()) ?? ""]);
+    for (let i = 2; i <= n; i++) {
+      await page.keyboard.press("ArrowRight");
+      await expect(page.getByTestId("replay-angle-pos")).toHaveText(`${i} / ${n}`);
+      await expect.poll(async () => (await media(page))?.ready ?? 0, { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+      const tier = (await page.getByTestId("replay-tier-badge").textContent()) ?? "";
+      if (!tiers.has(tier)) await keyFrame(page, `angle_${tier.replace(/\W+/g, "")}`);
+      tiers.add(tier);
+      await page.waitForTimeout(2200);
+    }
+    expect([...tiers]).toContain("Real video");
+    expect([...tiers]).toContain("2.5D");
+    return `Replays: ${n} angles of the first highlight — ${[...tiers].sort().join(" + ")}`;
+  });
+
+  // Free view (D-75/D-77): the core of the REAL run. Each step is its own beat.
+  let lay: SceneLayout | null = null;
+  const need = () => {
+    if (!lay) throw new Error("Free view was not entered");
+    return lay;
+  };
+  const at = async (k: string) => Number(await replayAttr(page, k));
+  await beat(page, "Free view: enter", "Free view: Down on the paused replay enters the live 2.5D scene at the angle's time", async () => {
+    const play = await openFirstReplay(page, gameId);
+    const res = await page.request.get(`${API}/games/${gameId}/scenes/${play}`);
+    expect(res.ok(), `GET /games/${gameId}/scenes/${play}`).toBe(true);
+    lay = (await res.json()) as SceneLayout;
+    await expect(page.getByText("▼ Free view (2.5D)", { exact: false })).toBeVisible({ timeout: 15_000 });
+    await expect.poll(async () => (await media(page))?.t ?? 0, { timeout: 15_000 }).toBeGreaterThan(1.5);
+    await page.keyboard.press("Enter"); // pause the autoplaying angle
+    await expect.poll(async () => (await media(page))?.paused).toBe(true);
+    const t = (await media(page))?.t ?? 0;
+    await page.waitForTimeout(1500);
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-mode", "free");
+    const view = page.getByTestId("free-view");
+    await expect(view).toHaveAttribute("data-ready", "true", { timeout: 30_000 });
+    expect(Math.abs(Number(await view.getAttribute("data-frame")) - Math.floor(t * lay.fps))).toBeLessThanOrEqual(1);
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-preset", "real");
+    await expect(page.getByTestId("free-honesty")).toHaveText(lay.honesty_label);
+    await expect(page.getByTestId("free-limit")).toBeVisible();
+    await expect(page.getByTestId("free-gauge")).toBeVisible();
+    await expect(page.getByTestId("replay-synthetic")).toHaveCount(0); // real footage: no SYNTHETIC tag
+    await expect(view).toHaveAttribute("data-settled", "true");
+    await keyFrame(page, "free_real");
+    const e = lay.envelope;
+    return `Free view: entered ${play} at ${t.toFixed(2)} s on the real camera · envelope az ${e.azimuth_deg[0]}…${e.azimuth_deg[1]}°, el ${e.elevation_deg[0].toFixed(1)}…${e.elevation_deg[1].toFixed(1)}°`;
+  });
+
+  await beat(page, "Free view: orbit to both azimuth limits", "Free view: Left to the azimuth limit, Right to the other — edge bars + view-limit gauge", async () => {
+    const env = need().envelope;
+    for (const [key, edge, want] of [["ArrowLeft", "az-min", env.azimuth_deg[0]], ["ArrowRight", "az-max", env.azimuth_deg[1]]] as const) {
+      const n = await pushTo(page, key, edge);
+      await expect(page.getByTestId("replay")).toHaveAttribute("data-az", want.toFixed(2));
+      await expect(page.getByTestId(`edge-${edge}`)).toBeVisible();
+      await expect(page.getByTestId("free-gauge")).toBeVisible();
+      await expect(page.getByTestId("free-view")).toHaveAttribute("data-settled", "true");
+      await page.keyboard.press(key); // pushing further does nothing
+      await page.waitForTimeout(400);
+      expect(await at("az")).toBeCloseTo(want, 2);
+      await keyFrame(page, `free_${edge}`);
+      await page.waitForTimeout(1500);
+      if (n === 0) throw new Error(`already at ${edge}`);
+    }
+    return `Free view: azimuth limits ${env.azimuth_deg[0]}° and +${env.azimuth_deg[1]}° reached and held · edge bars + gauge on screen`;
+  });
+
+  await beat(page, "Free view: elevation limit", "Free view: Up to the elevation limit, Down to the lowest — edge bars", async () => {
+    const env = need().envelope;
+    for (const [key, edge, want] of [["ArrowUp", "el-max", env.elevation_deg[1]], ["ArrowDown", "el-min", env.elevation_deg[0]]] as const) {
+      await pushTo(page, key, edge);
+      await expect(page.getByTestId("replay")).toHaveAttribute("data-el", want.toFixed(2));
+      await expect(page.getByTestId(`edge-${edge}`)).toBeVisible();
+      await expect(page.getByTestId("free-view")).toHaveAttribute("data-settled", "true");
+      await keyFrame(page, `free_${edge}`);
+      await page.waitForTimeout(1500);
+    }
+    return `Free view: elevation ${env.elevation_deg[1].toFixed(1)}° (top limit) and ${env.elevation_deg[0].toFixed(1)}° (lowest) reached · edge bars on screen`;
+  });
+
+  await beat(page, "Free view: dolly in and out", "Free view: Menu switches Up/Down to dolly — in to the closest, out to the farthest", async () => {
+    const env = need().envelope;
+    await page.keyboard.press("m");
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-zoom", "true");
+    await pushTo(page, "ArrowUp", "d-min");
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-dist", env.distance_m[0].toFixed(3));
+    await expect(page.getByTestId("free-gauge")).toContainText("closest");
+    await expect(page.getByTestId("free-view")).toHaveAttribute("data-settled", "true");
+    await keyFrame(page, "free_dolly_in");
+    await page.waitForTimeout(1500);
+    await pushTo(page, "ArrowDown", "d-max");
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-dist", env.distance_m[1].toFixed(3));
+    await keyFrame(page, "free_dolly_out");
+    await page.keyboard.press("m");
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-zoom", "false");
+    return `Free view: dolly ${env.distance_m[0].toFixed(1)} m (closest) ↔ ${env.distance_m[1].toFixed(1)} m (farthest)`;
+  });
+
+  await beat(page, "Free view: cycle all presets", "Free view: Fast-forward cycles every preset, Rewind steps back", async () => {
+    const l = need();
+    // From a free camera FF goes to the first preset (real), then through every preset and wraps.
+    for (const p of [l.presets[0], ...l.presets.slice(1), l.presets[0]]) {
+      await page.keyboard.press(".");
+      await expect(page.getByTestId("replay")).toHaveAttribute("data-preset", p.id);
+      await expect(page.getByTestId("free-preset-label")).toHaveText(p.label);
+      const want = presetState(p.id, l);
+      await expect(page.getByTestId("replay")).toHaveAttribute("data-az", want.azimuth.toFixed(2));
+      await expect(page.getByTestId("replay")).toHaveAttribute("data-el", want.elevation.toFixed(2));
+      await expect(page.getByTestId("free-view")).toHaveAttribute("data-settled", "true");
+      await keyFrame(page, `free_preset_${p.id}`);
+      await page.waitForTimeout(1800);
+    }
+    await page.keyboard.press(",");
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-preset", l.presets[l.presets.length - 1].id);
+    return `Free view: presets ${l.presets.map((p) => p.label).join(" → ")} → wrap, then Rewind`;
+  });
+
+  await beat(page, "Free view: play, then Back to the angle", "Free view: Select plays the scene, Select pauses, Back → the video angle at the same time", async () => {
+    const view = page.getByTestId("free-view");
+    const f0 = Number(await view.getAttribute("data-frame"));
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-paused", "false");
+    await expect.poll(async () => Number(await view.getAttribute("data-frame")), { timeout: 10_000 }).not.toBe(f0);
+    await page.waitForTimeout(4000);
+    await keyFrame(page, "free_playing");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-paused", "true");
+    await page.waitForTimeout(400);
+    const tScene = Number(await view.getAttribute("data-time"));
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("replay")).toHaveAttribute("data-mode", "angles");
+    await expect(page.getByTestId("free-view")).toHaveCount(0);
+    await expect.poll(async () => Math.abs(((await media(page))?.t ?? -1) - tScene), { timeout: 10_000 }).toBeLessThan(0.05);
+    expect((await media(page))?.paused).toBe(true);
+    await keyFrame(page, "free_back_to_angle");
+    return `Free view: played from frame ${f0}, paused at ${tScene.toFixed(2)} s, Back → the angle at ${((await media(page))?.t ?? 0).toFixed(2)} s, paused`;
+  });
+
+  await beat(page, "Highlights", "Highlights: a chip → its reel", async () => {
+    // The real pipeline may find no shot in a 90 s cut (shot recall on Kennesaw is 3 of 6,
+    // docs/progress.md): then the screen must say so ("No clips match"), and the caption does.
+    const chip = SPORT === "basketball" ? "All shots" : "Rallies";
+    await page.goto(`/tv/${gameId}`);
+    await videoReady(page);
+    await menuTo(page, "nav-highlights");
+    await page.keyboard.press("Enter");
+    const c = page.locator(`[data-testid="query-chip"][data-chip="${chip}"]`);
+    await expect(c).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(1200);
+    for (let i = 0; i < 12 && (await c.getAttribute("data-focused")) !== "true"; i++) await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("reel-clip").first().or(page.getByTestId("no-clips"))).toBeVisible({ timeout: 15_000 });
+    const n = await page.getByTestId("reel-clip").count();
+    await page.waitForTimeout(3500);
+    await keyFrame(page, "highlights");
+    return n
+      ? `Highlights: “${chip}” → a reel of ${n} clip${n === 1 ? "" : "s"}`
+      : `Highlights: “${chip}” → “No clips match”: the real pipeline found nothing for it in this cut`;
+  });
+
+  if (SPORT === "basketball") {
+    await reviewBoxScore(page, gameId);
+  } else {
+    await beat(page, "Review: heatmap", "Review: the volleyball court heatmap (the sport's review panel)", async () => {
+      await page.goto(`/tv/${gameId}`);
+      await videoReady(page);
+      await menuTo(page, "nav-review");
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("heatmap")).toBeVisible({ timeout: 15_000 });
+      await expect.poll(() => page.getByTestId("heatmap-cell").count(), { timeout: 15_000 }).toBeGreaterThan(0);
+      await expect(page.getByTestId("shot-chart")).toHaveCount(0);
+      await page.waitForTimeout(2500);
+      await keyFrame(page, "review");
+    });
+    await ralliesCondensed(page, gameId, "Volleyball");
+  }
+}
+
+// -------------------------------------------------------------------- SYNTHETIC demo beats
+async function demoBeats(page: Page, phone: Page) {
   await beat(page, "Library → Watch", "Library → Watch the SYNTHETIC basketball demo (event markers, hype meter)", async () => {
     await openFromLibrary(page, BB);
     await expect(page.getByTestId("hype-meter")).toBeVisible({ timeout: 15_000 });
@@ -246,32 +533,7 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
     await expect.poll(async () => (await media(page))?.paused).toBe(false);
     await page.waitForTimeout(5000);
   });
-
-  await beat(page, "Select → follow → spotlight → inset", "Select a player → follow-cam → spotlight, court inset", async () => {
-    await page.keyboard.press("Enter"); // pause into select mode
-    await expect.poll(async () => (await media(page))?.paused).toBe(true);
-    await expect(page.locator('[data-testid^="select-box-"]').first()).toBeVisible({ timeout: 10_000 });
-    await page.waitForTimeout(1200);
-    for (let i = 0; i < 2; i++) {
-      await page.keyboard.press("ArrowRight");
-      await page.waitForTimeout(700);
-    }
-    await expect(page.locator('[data-testid^="select-box-"][data-focused="true"]')).toHaveCount(1);
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("followcam-active")).toBeVisible();
-    await page.keyboard.press("Enter"); // play the follow-cam
-    await page.waitForTimeout(3000);
-    await menuTo(page, "action-spotlight");
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
-    await expect(page.getByTestId("spotlight-overlay")).toBeVisible();
-    await expect(page.getByTestId("court-inset")).toBeVisible();
-    expect(await page.locator('[data-testid^="court-dot-"]').count()).toBeGreaterThan(1);
-    await page.waitForTimeout(4000);
-    await page.keyboard.press("Escape"); // back to the wide shot
-    await expect(page.getByTestId("followcam-active")).toHaveCount(0);
-  });
+  await selectFollow(page);
 
   await beat(page, "Broadcast + commentary", "Broadcast rendition + grounded commentary captions", async () => {
     await menuTo(page, "action-broadcast");
@@ -422,21 +684,7 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
     await page.waitForTimeout(3000);
   });
 
-  await beat(page, "Review + box score", "Review: shot chart, auto-detected box score, answer the queue with the remote", async () => {
-    await page.goto(`/tv/${BB}`);
-    await videoReady(page);
-    await menuTo(page, "nav-review");
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("auto-detected-label")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("shot-chart")).toBeVisible();
-    await expect.poll(() => page.getByTestId("box-score-row").count(), { timeout: 15_000 }).toBeGreaterThan(0);
-    await page.waitForTimeout(2500);
-    const item = page.getByTestId("review-item");
-    await expect(item).toBeVisible();
-    const first = await item.getAttribute("data-event-id");
-    await page.keyboard.press("Enter"); // the first option
-    await expect(item.or(page.getByTestId("review-empty"))).not.toHaveAttribute("data-event-id", first ?? "");
-  });
+  await reviewBoxScore(page, BB);
 
   await beat(page, "Player profile + card", "Phone creates a profile → TV links a player → Players ▸ card", async () => {
     const name = `Riley ${Date.now() % 1000}`;
@@ -495,8 +743,61 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
     await page.waitForTimeout(2500);
   });
 
-  await beat(page, "Pickleball rallies + condensed", "Pickleball: rally browser, then the condensed game (RALLY n / N)", async () => {
-    await openFromLibrary(page, PB);
+  await ralliesCondensed(page, PB, "Pickleball");
+}
+
+/** Watch is playing: pause into select mode, follow a player, spotlight + court inset. */
+async function selectFollow(page: Page) {
+  await beat(page, "Select → follow → spotlight → inset", "Select a player → follow-cam → spotlight, court inset", async () => {
+    await page.keyboard.press("Enter"); // pause into select mode
+    await expect.poll(async () => (await media(page))?.paused).toBe(true);
+    await expect(page.locator('[data-testid^="select-box-"]').first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(1200);
+    for (let i = 0; i < 2; i++) {
+      await page.keyboard.press("ArrowRight");
+      await page.waitForTimeout(700);
+    }
+    await expect(page.locator('[data-testid^="select-box-"][data-focused="true"]')).toHaveCount(1);
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("followcam-active")).toBeVisible();
+    await page.keyboard.press("Enter"); // play the follow-cam
+    await page.waitForTimeout(3000);
+    await menuTo(page, "action-spotlight");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("spotlight-overlay")).toBeVisible();
+    await expect(page.getByTestId("court-inset")).toBeVisible();
+    expect(await page.locator('[data-testid^="court-dot-"]').count()).toBeGreaterThan(1);
+    await page.waitForTimeout(4000);
+    await keyFrame(page, "follow_spotlight");
+    await page.keyboard.press("Escape"); // back to the wide shot
+    await expect(page.getByTestId("followcam-active")).toHaveCount(0);
+  });
+}
+
+async function reviewBoxScore(page: Page, gameId: string) {
+  await beat(page, "Review + box score", "Review: shot chart, auto-detected box score, answer the queue with the remote", async () => {
+    await page.goto(`/tv/${gameId}`);
+    await videoReady(page);
+    await menuTo(page, "nav-review");
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("auto-detected-label")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("shot-chart")).toBeVisible();
+    await expect.poll(() => page.getByTestId("box-score-row").count(), { timeout: 15_000 }).toBeGreaterThan(0);
+    await page.waitForTimeout(2500);
+    await keyFrame(page, "review");
+    const item = page.getByTestId("review-item");
+    await expect(item).toBeVisible();
+    const first = await item.getAttribute("data-event-id");
+    await page.keyboard.press("Enter"); // the first option
+    await expect(item.or(page.getByTestId("review-empty"))).not.toHaveAttribute("data-event-id", first ?? "");
+  });
+}
+
+async function ralliesCondensed(page: Page, gameId: string, sport: string) {
+  await beat(page, `${sport} rallies + condensed`, `${sport}: rally browser, then the condensed game (RALLY n / N)`, async () => {
+    await openFromLibrary(page, gameId);
     await menuTo(page, "nav-rallies");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("rally-row").first()).toBeVisible({ timeout: 15_000 });
@@ -516,12 +817,6 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("rally-counter")).toHaveText(/RALLY \d+ \/ \d+/i, { timeout: 15_000 });
     await page.waitForTimeout(5000);
+    await keyFrame(page, "condensed");
   });
-
-  // ------------------------------------------------------------------ wrap up
-  await phoneCtx.close(); // flushes the phone video
-  videos.phone = (await phone.video()?.path()) ?? "";
-  videos.tv = test.info().outputPath("video.webm"); // where `video: on` saves it after the test
-  save();
-  expect(beats.filter((b) => !b.ok).map((b) => `${b.name}: ${b.error}`)).toEqual([]);
-});
+}

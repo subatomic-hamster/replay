@@ -27,6 +27,9 @@ class Settings:
     # D-23: "auto" | "vlm" | "claude-cli" | "lines" | "fake". Left at "auto",
     # `pipeline="fake"` downgrades it to "fake" so tests never call a model.
     autocalib_backend: str = "auto"
+    # REPLAY_WORKER_STAGES="replays,scene": opt-in worker stages (default=False in the
+    # worker, D-56/D-75) run on every upload after the default ones; worker pipeline only.
+    worker_stages: tuple[str, ...] = ()
 
     @property
     def games_dir(self) -> Path:
@@ -54,5 +57,8 @@ def from_env(**overrides) -> Settings:
         fake_pipeline_delay_s=float(env("REPLAY_FAKE_PIPELINE_DELAY_S") or 0.0),
         detector=env("REPLAY_DETECTOR", "yolo"),
         autocalib_backend=env("REPLAY_AUTOCALIB_BACKEND", "auto"),
+        worker_stages=tuple(
+            s.strip() for s in env("REPLAY_WORKER_STAGES", "").split(",") if s.strip()
+        ),
     )
     return s if not overrides else Settings(**{**s.__dict__, **overrides})

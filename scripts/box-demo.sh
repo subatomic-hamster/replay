@@ -119,7 +119,7 @@ serve() {
   # session only (-e), never in the server's global environment.
   local v keep=() strip=()
   for v in PYTHONPATH REPLAY_CACHE_DIR REPLAY_DATA_DIR REPLAY_MODEL_VENVS REPLAY_MODEL_DEVICE \
-    HF_HUB_OFFLINE DEMO_TMUX DEMO_DIR DEMO_API_PORT DEMO_TV_PORT DEMO_WEB_PORT; do
+    HF_HUB_OFFLINE DEMO_TMUX DEMO_DIR DEMO_API_PORT DEMO_TV_PORT DEMO_WEB_PORT REPLAY_WORKER_STAGES; do
     strip+=(-u "$v")
     [ -n "${!v+x}" ] && keep+=(-e "$v=${!v}")
   done

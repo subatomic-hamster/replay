@@ -904,6 +904,7 @@ def _process_task(
                 fake_dir=settings.fake_pipeline_dir,
                 detector=settings.detector,
                 fake_delay_s=settings.fake_pipeline_delay_s,
+                extra_stages=settings.worker_stages,
             )
         except Exception:
             base["status"] = "failed"

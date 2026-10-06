@@ -332,17 +332,23 @@ def run(
     fake_dir: Path | None = None,
     detector: str = "yolo",
     fake_delay_s: float = 0.0,
+    extra_stages: tuple[str, ...] = (),
 ) -> dict:
-    """Process `input_path` into `out_dir`; return the game.json keys the pipeline owns."""
+    """Process `input_path` into `out_dir`; return the game.json keys the pipeline owns.
+
+    `extra_stages` (worker only): opt-in worker stages run on top of the default ones."""
     court = game.get("court") or {}
     if pipeline == "worker":
         try:
             from courtcam.pipeline import STAGES  # type: ignore
             from replay_worker import run as run_worker  # type: ignore
+            from replay_worker.stages import load_registry  # type: ignore
         except Exception as exc:  # noqa: BLE001
             log.warning("replay_worker unavailable (%s); running courtcam directly", exc)
         else:
             _prepare_for_courtcam(Path(out_dir), game)
+            defaults = [n for n, s in load_registry().items() if s.default]
+            stages = [*defaults, *extra_stages] if extra_stages else None
             run_worker(
                 Path(out_dir),
                 {
@@ -355,6 +361,7 @@ def run(
                     "game_id": game.get("id"),
                     "recorded_at": game.get("recorded_at"),
                 },
+                stages=stages,
                 # one CPU task at a time keeps the reported stage order monotonic (D-17)
                 cpu_workers=1,
                 # the worker's own `game` bookkeeping stage is not a status-page stage

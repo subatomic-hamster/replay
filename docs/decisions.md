@@ -195,3 +195,15 @@ Barlow Condensed (SIL OFL 1.1, bundled with OFL.txt in render/replay_render/asse
 
 ## D-44 (2026-10-06) — Render pipeline: `replay_render` outside courtcam, cached opt-in stages
 `render/` (`replay_render`) is a replay-side package (not MIT courtcam) so optional non-MIT deps can live there. Worker stages `director` (cuts.json) and `broadcast` (`renditions/broadcast.mp4`) are opt-in (default False); cache keys include a source hash of replay_render. Single-process OpenCV warp + Pillow overlays piped to libx264 (~100 fps at 1080p on CPU); audio mixed in numpy, muxed as AAC. Every virtual camera = raw target → dead zone → EMA-velocity lead → critically damped spring (zoom in log space). courtcam croppath gets the same dead zone + lead (follow-cam jitter 2.12 → 0.64 px/frame² on Kennesaw), output contract unchanged.
+
+## D-45 (2026-10-06) — Hype meter
+`replay.hype.v1`: noisy-or of audio (0.85), arms-up poses (0.6) and speed bursts (0.35), 1 s mean smoothing, published at 2 Hz as the max per bin. courtcam's crowd-spike hype events are the primary audio signal; raw loudness is weighted 0.4 when audio.json exists so spoken "Replay, clip that" lines don't fire. Arms-up is ignored inside shot/block/contact windows. Candidates: score ≥ 0.4, ≥ 8 s apart, ≤ 12, each mapped to the play that ended up to 8 s earlier. Weights are heuristic, not fitted; untested on real crowd noise.
+
+## D-46 (2026-10-06) — Condensed game and rally browser
+Rallies + 1.5 s pre-roll + 1 s post-roll, segments < 0.5 s apart merged; shot count from the rally's audio contacts else contact events (0 = unknown). `condensed.json` (`replay.rallies.v1`) is the rally browser with offsets into the condensed MP4; a "RALLY n / N · X SHOTS · Y S" counter uses the broadcast graphics package; the score bug shows only when the score is non-provisional.
+
+## D-47 (2026-10-06) — Vertical 9:16 export
+Windows via `camera.smooth(aspect=9/16)`, omega 3.0, following the clip's subject, else the play's key role, else the clip owner, else the players' median. Captions are deterministic from events (no LLM). A content-hash spec id (`v_<12 hex>`) makes the same request the same file; the worker fans out over spec files and API jobs run a one-stage registry.
+
+## D-48 (2026-10-06) — Post-game review data
+Distance covered drops jumps > 9 m/s and breaks runs at gaps > 0.5 s. Box-score fields are additive, labelled "auto-detected" with a mean confidence and an `available` list. Review-queue questions (shot outcome, low confidence < 0.6, identity) map to existing PATCH routes, so no new write API.

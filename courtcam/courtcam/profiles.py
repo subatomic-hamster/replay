@@ -217,6 +217,12 @@ class TriggerCfg(_Cfg):
     gesture_up_min: float = 0.2
     gesture_gap_max: float = 0.3
     gesture_elbow_min: float = 0.5
+    # a crossing with every arm keypoint at or above this score needs no elbow spread
+    # (GT poses score 0.9 visible / 0.4 occluded; flipped side labels score lower)
+    gesture_cross_kp: float = 0.35
+    # around an uncrossed hands-together hold the arms must stay overhead this long
+    # (= shot.release_max_s): shorter is a shot release with the ball overhead, not an X
+    gesture_together_min_s: float = 0.9
     wake: str = "replay"
     command: str = "clip"
     fuzzy: float = 0.7  # difflib ratio for wake word / command / roster names

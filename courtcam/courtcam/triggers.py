@@ -26,7 +26,17 @@ from typing import Any
 
 import numpy as np
 
-from .events import Signals, elbow_spread, hands_overhead, x_pose
+from .events import (
+    L_EL,
+    L_WR,
+    R_EL,
+    R_WR,
+    Signals,
+    arms_up,
+    elbow_spread,
+    hands_overhead,
+    x_pose,
+)  # fmt: skip
 from .extras import require
 from .profiles import TriggerCfg
 from .schema import Attribution, Clip, Play, Trigger
@@ -42,16 +52,24 @@ THAT = {"that", "this", "it", "dat"}
 # --- gesture ---------------------------------------------------------------------
 
 
-def gesture_samples(kp: np.ndarray, cfg: TriggerCfg) -> np.ndarray:
-    """(n,) bool: this pose sample shows the X (strict crossing, or with
-    `gesture_relaxed` the hands-together-overhead form a small player's pose gives). The
-    relaxed form also needs the elbows apart, on the crossing too: a pose model reads a
-    shot contest (arms straight up, elbows by the head) as crossed wrists now and then."""
-    hit = x_pose(kp, cfg.gesture_min_kp)
+def gesture_samples(kp: np.ndarray, cfg: TriggerCfg) -> tuple[np.ndarray, np.ndarray]:
+    """(crossed, together): (n,) bools per pose sample. `crossed` is the strict X (wrists
+    crossed overhead). `together` (only with `gesture_relaxed`) is the form a small
+    player's pose gives: hands together overhead with the elbows apart (arms straight up
+    to contest a shot keep the elbows by the head). A crossing whose arm keypoints all
+    score >= `gesture_cross_kp` stands on its own: a turned player's elbows overlap in the
+    image (0.3-0.5 torso on synthetic X holds) although the wrists are plainly crossed.
+    A low-score crossing also needs the elbows apart: a pose model flips the side labels
+    of an arms-up shot contest now and then (ViTPose on Kennesaw, arm scores 0.2-0.5)."""
+    crossed = x_pose(kp, cfg.gesture_cross_kp) | (
+        x_pose(kp, cfg.gesture_min_kp) & (elbow_spread(kp) >= cfg.gesture_elbow_min)
+    )
+    together = np.zeros_like(crossed)
     if cfg.gesture_relaxed:
-        hit |= hands_overhead(kp, cfg.gesture_min_kp, cfg.gesture_up_min, cfg.gesture_gap_max)
-        hit &= elbow_spread(kp) >= cfg.gesture_elbow_min
-    return hit
+        together = hands_overhead(
+            kp, cfg.gesture_min_kp, cfg.gesture_up_min, cfg.gesture_gap_max, cfg.gesture_elbow_min
+        )
+    return crossed, together
 
 
 def held(ts: np.ndarray, hit: np.ndarray, hold: float, vote: float, max_gap: float):
@@ -74,15 +92,46 @@ def held(ts: np.ndarray, hit: np.ndarray, hold: float, vote: float, max_gap: flo
     return [(a, b) for a, b in out]
 
 
+def _span(ts: np.ndarray, up: np.ndarray, a: float, b: float) -> float:
+    """Length of the hold [a, b] widened over the `up` samples right around it."""
+    i, j = int(np.searchsorted(ts, a)), int(np.searchsorted(ts, b))
+    while i > 0 and up[i - 1]:
+        i -= 1
+    while j < len(ts) - 1 and up[j + 1]:
+        j += 1
+    return float(ts[j] - ts[i])
+
+
 def detect_gestures(signals: Signals, cfg: TriggerCfg) -> list[Trigger]:
-    """One trigger per held X: t_start = first X sample, t = last one."""
+    """One trigger per held X: t_start = first X sample, t = last one.
+
+    A hold of uncrossed hands-together samples counts only if the arms stay overhead for
+    `gesture_together_min_s` around it: the shot detector calls arms up for up to
+    `shot.release_max_s` a release, and a jump shot with the ball overhead is exactly hands
+    together, elbows out (GT-pose synthetic shots hold it 0.5-0.8 s; the X is held ~1 s)."""
     out: list[Trigger] = []
     for pid in sorted(signals.poses):
         ts, kp = signals.kp_px(pid, -np.inf, np.inf)
         if not len(ts):
             continue
-        hit = gesture_samples(kp, cfg)
-        for a, b in held(ts, hit, cfg.gesture_hold_s, cfg.gesture_vote, cfg.gesture_max_gap_s):
+        crossed, together = gesture_samples(kp, cfg)
+        args = (cfg.gesture_hold_s, cfg.gesture_vote, cfg.gesture_max_gap_s)
+        # how long the arms stay overhead around the hold (an unscored sample is no
+        # evidence they came down); the hands may drift apart now and then meanwhile
+        up = arms_up(kp, cfg.gesture_min_kp, cfg.gesture_up_min)
+        up |= ~(kp[:, [L_EL, R_EL, L_WR, R_WR], 2] >= cfg.gesture_min_kp).all(axis=1)
+        holds = held(ts, crossed, *args) + [
+            (a, b)
+            for a, b in held(ts, crossed | together, *args)
+            if _span(ts, up, a, b) >= cfg.gesture_together_min_s - 1e-6
+        ]
+        merged: list[list[float]] = []
+        for a, b in sorted(holds):
+            if merged and a <= merged[-1][1] + cfg.gesture_max_gap_s:
+                merged[-1][1] = max(merged[-1][1], b)
+            else:
+                merged.append([a, b])
+        for a, b in merged:
             out.append(
                 Trigger(
                     id="", type="gesture", t_start=round(a, 3), t=round(b, 3), by_player_id=pid,

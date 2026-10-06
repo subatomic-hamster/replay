@@ -215,6 +215,38 @@ def test_relaxed_gesture_votes_over_the_hold():
     assert [(g.t_start, g.t, g.by_player_id) for g in found] == [(1.0, 2.1, "p2")]
 
 
+def test_shot_release_is_not_a_gesture_but_a_turned_x_is():
+    """The D-61 false gestures on GT poses: a synthetic jump shot holds the ball overhead
+    (hands together, elbows out) for 0.5-0.8 s, which the relaxed rule took for an X; and
+    an X by a player turned side-on (elbows overlapping, wrists crossed) was dropped by the
+    elbow gate. A crossing with low arm scores and the elbows together (a pose model
+    flipping an arms-up contest) still does not count."""
+    shot = _pose(False)
+    shot[9, :2], shot[10, :2] = (110, 25), (90, 25)  # hands on the ball, uncrossed
+    turned = _pose(True)
+    turned[7, :2], turned[8, :2] = (105, 60), (95, 60)  # elbows 0.1 torso apart
+    flipped = turned.copy()
+    flipped[[7, 8, 9, 10], 2] = 0.25
+    down = _pose(False)
+    down[[9, 10], 1] = 180
+    ts = np.round(np.arange(0.0, 12.0, 0.1), 3)
+
+    def at(t):
+        if 1.0 <= t <= 1.7:
+            return shot
+        if 4.0 <= t <= 5.0:
+            return turned
+        return flipped if 8.0 <= t <= 9.5 else down
+
+    sig = Signals(poses={"p4": (ts, np.stack([at(t) for t in ts]))})
+    found = detect_gestures(sig, CFG)
+    assert [(g.t_start, g.t) for g in found] == [(4.0, 5.0)]
+    held_shot = Signals(
+        poses={"p4": (ts, np.stack([shot if 1.0 <= t <= 2.0 else down for t in ts]))}
+    )
+    assert [(g.t_start, g.t) for g in detect_gestures(held_shot, CFG)] == [(1.0, 2.0)]
+
+
 def test_point_winner_is_the_side_serving_next():
     from courtcam.events import assign_winners
     from courtcam.profiles import RallyCfg

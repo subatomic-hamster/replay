@@ -197,3 +197,16 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Evidence: docs/evidence/M13/README.md (re-run section), docs/evidence/M13/tv-demo-rerun/
 - Decisions: D-69.
 - Left / known issues: everything in docs/fire-tv.md's device checklist needs a real Fire TV; the APK is debug-signed until a real key is supplied.
+
+## Tracking v2 (2026-10-06)
+
+- Works: identity cuts cross-team jersey swaps inside tracklets (gated on kit agreement ≥ 0.85) and links tracklets by one global Hungarian assignment.
+- Verified on hfbox, same detections before and after (YOLO11m + BoT-SORT; identity stage re-run):
+  - Synthetic basketball IDF1 0.310 → 0.366 (half s7), 0.245 → 0.263 (full s7), 0.311 → 0.326 (half s11); MOTA within 0.01; ID switches unchanged.
+  - Pickleball and badminton identical; volleyball 0.750 → 0.785 (s7), 0.746 → 0.737 (s11).
+  - Kennesaw 150–210 s (local, hand count ±5): ≈ 51 → ≈ 42 visible changes, referee one stable row.
+  - courtcam 187 passed on the agent's copy.
+- Root-caused: the CC 240 s pickleball 0-events run used an autocalib landmark file marked `ok: false` (score 0.74, corners ~100–400 px too high). The same detections split teams 15/1 with it and 5/8 with hand-clicked landmarks. Not fixed yet: calibration should refuse or flag `ok: false` landmarks.
+- Evidence: docs/evidence/M1/README.md "Tracking v2", metrics_tracking_v2.json, eval_tracking_v2/ (scripts behind every number); local sheets in docs/evidence/local/M1/
+- Decisions: D-70.
+- Left / known issues: same-team swaps are invisible to jersey colour (perfect split + link ceiling IDF1 0.85 vs ≈ 0.37 now); needs an appearance embedding or a better tracker.

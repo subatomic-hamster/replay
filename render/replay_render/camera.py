@@ -39,12 +39,19 @@ REPLAY_FEEL = Feel(omega=2.4, zoom_omega=1.5, dead_frac=0.04, lead_s=0.25)
 
 
 def fit_window(
-    cx: float, cy: float, w: float, frame_w: int, frame_h: int, min_w: float
+    cx: float,
+    cy: float,
+    w: float,
+    frame_w: int,
+    frame_h: int,
+    min_w: float,
+    aspect: float = ASPECT,
 ) -> tuple[float, float, float]:
-    """Clamp a window to [min_w, the largest 16:9 window the frame holds] and inside it."""
-    w_max = min(float(frame_w), frame_h * ASPECT)
+    """Clamp a window to [min_w, the largest `aspect` (w/h, default 16:9) window the frame
+    holds] and inside it."""
+    w_max = min(float(frame_w), frame_h * aspect)
     w = float(np.clip(w, min(min_w, w_max), w_max))
-    h = w / ASPECT
+    h = w / aspect
     cx = float(np.clip(cx, w / 2, frame_w - w / 2))
     cy = float(np.clip(cy, h / 2, frame_h - h / 2))
     return cx, cy, w
@@ -84,9 +91,16 @@ def spring(goal: np.ndarray, omega: float, fps: float, start: np.ndarray | None 
 
 
 def smooth(
-    raw: np.ndarray, feel: Feel, fps: float, frame_w: int, frame_h: int, min_w: float
+    raw: np.ndarray,
+    feel: Feel,
+    fps: float,
+    frame_w: int,
+    frame_h: int,
+    min_w: float,
+    aspect: float = ASPECT,
 ) -> np.ndarray:
-    """Raw (N, 3) [cx, cy, w] targets -> an operator-smooth, frame-clamped path."""
+    """Raw (N, 3) [cx, cy, w] targets -> an operator-smooth, frame-clamped path (windows
+    of `aspect` = w/h; 9/16 for the vertical share export)."""
     if len(raw) == 0:
         return raw.copy()
     raw = raw.astype(np.float64)
@@ -98,7 +112,7 @@ def smooth(
     xy = spring(xy + lead, feel.omega, fps)
     out = np.column_stack([xy, w])
     for i in range(len(out)):
-        out[i] = fit_window(*out[i], frame_w, frame_h, min_w)
+        out[i] = fit_window(*out[i], frame_w, frame_h, min_w, aspect)
     return out
 
 

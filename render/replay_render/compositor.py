@@ -197,7 +197,7 @@ class Cameras:
 
 def crop(frame: np.ndarray, win: np.ndarray, out_w: int, out_h: int) -> np.ndarray:
     cx, cy, w = (float(v) for v in win)
-    h = w / cam.ASPECT
+    h = w * out_h / out_w  # the window has the output's aspect (16:9, or 9:16 vertical)
     s = out_w / w
     if s < 0.8:  # big downscale: area filter, integer crop
         x0, y0 = round(cx - w / 2), round(cy - h / 2)
@@ -418,4 +418,76 @@ def render(
         "render_fps": round(n_out / max(wall, 1e-6), 2),
         "size": [out_w, out_h],
         "replays": len([r for r in replays if r[1] > t0 and r[0] < t1]),
+    }
+
+
+def render_segments(
+    source: Path,
+    segments: list[tuple[float, float]],
+    out_path: Path,
+    *,
+    size: tuple[int, int],
+    fps: float,
+    window: Callable[[int, float], np.ndarray],
+    draw: Callable[[np.ndarray, int, float], None] | None = None,
+    crf: int = 23,
+    audio_bitrate: str = "128k",
+    progress: Callable[[float], None] | None = None,
+) -> dict:
+    """Source segments [(a, b), ...] (seconds) back to back into one H.264 + AAC MP4 at
+    the source frame rate: each output frame is `window(i, t)` ([cx, cy, w] in source px,
+    the output's aspect) cut from the source at time t of segment i, then `draw(frame, i,
+    t)` overlays graphics. The audio is the same segments, with 15 ms fades at the joins.
+    Used by the condensed game and the vertical share export."""
+    out_path = Path(out_path)
+    src = FrameSource(source)
+    counts = [max(1, round((b - a) * fps)) for a, b in segments]
+    tmp_video = out_path.with_suffix(".video.mp4")
+    proc = _encoder(tmp_video, size, fps, crf)
+    assert proc.stdin is not None
+    total, done = sum(counts), 0
+    started = time.time()
+    try:
+        for i, ((a, _), n) in enumerate(zip(segments, counts, strict=True)):
+            for k in range(n):
+                t = a + k / fps
+                frame = crop(src.get(round(t * fps)), window(i, t), *size)
+                if draw:
+                    draw(frame, i, t)
+                proc.stdin.write(np.ascontiguousarray(frame).tobytes())
+                done += 1
+                if progress and done % 60 == 0:
+                    progress(0.9 * done / total)
+    finally:
+        src.close()
+        proc.stdin.close()
+        if proc.wait() != 0:
+            raise RuntimeError("ffmpeg failed encoding segments")
+    wall = time.time() - started
+    fade = int(0.015 * audio_mod.SR)
+    ramp = np.linspace(0.0, 1.0, fade, dtype=np.float32)[:, None]
+    parts = []
+    for (a, _), n in zip(segments, counts, strict=True):
+        part = audio_mod.read_audio(Path(source), a, n / fps)
+        if len(part) > 2 * fade:
+            part[:fade] *= ramp
+            part[-fade:] *= ramp[::-1]
+        parts.append(part)
+    wav = audio_mod.write_wav(out_path.with_suffix(".mix.wav"), np.concatenate(parts))
+    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+    subprocess.run(
+        [ffmpeg, "-y", "-v", "error", "-i", str(tmp_video), "-i", str(wav), "-c:v", "copy",
+         "-c:a", "aac", "-b:a", audio_bitrate, "-shortest", "-movflags", "+faststart", str(out_path)],
+        check=True,
+    )  # fmt: skip
+    tmp_video.unlink(missing_ok=True)
+    wav.unlink(missing_ok=True)
+    if progress:
+        progress(1.0)
+    return {
+        "frames": total,
+        "seconds": round(total / fps, 3),
+        "render_wall_s": round(wall, 2),
+        "render_fps": round(total / max(wall, 1e-6), 2),
+        "size": list(size),
     }

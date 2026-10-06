@@ -11,6 +11,7 @@ resolution-markers = [
 members = [
     "courtcam",
     "replay-api",
+    "replay-render",
     "replay-worker",
     "replay-workspace",
 ]
@@ -860,6 +861,40 @@ dev = [
 ]
 
 [[package]]
+name = "replay-render"
+version = "0.1.0"
+source = { editable = "render" }
+dependencies = [
+    { name = "courtcam" },
+    { name = "numpy" },
+    { name = "opencv-python-headless" },
+    { name = "pillow" },
+]
+
+[package.optional-dependencies]
+plots = [
+    { name = "matplotlib" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "courtcam", editable = "courtcam" },
+    { name = "matplotlib", marker = "extra == 'plots'" },
+    { name = "numpy" },
+    { name = "opencv-python-headless" },
+    { name = "pillow" },
+]
+provides-extras = ["plots"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8" }]
+
+[[package]]
 name = "replay-worker"
 version = "0.1.0"
 source = { editable = "services/worker" }
@@ -885,6 +920,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "courtcam" },
     { name = "replay-api" },
+    { name = "replay-render" },
     { name = "replay-worker" },
 ]
 
@@ -899,6 +935,7 @@ dev = [
 requires-dist = [
     { name = "courtcam", editable = "courtcam" },
     { name = "replay-api", editable = "services/api" },
+    { name = "replay-render", editable = "render" },
     { name = "replay-worker", editable = "services/worker" },
 ]
 

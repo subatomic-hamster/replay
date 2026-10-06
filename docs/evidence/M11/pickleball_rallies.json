@@ -1,0 +1,178 @@
+{
+ "schema": "replay.rallies.v1",
+ "n": 7,
+ "game_s": 90.0,
+ "rally_s": 48.16,
+ "dead_time_s": 41.84,
+ "mean_rally_s": 6.88,
+ "longest": [
+  "r6",
+  "r5",
+  "r1",
+  "r3",
+  "r2"
+ ],
+ "most_shots": [
+  "r1",
+  "r5",
+  "r6",
+  "r2",
+  "r3"
+ ],
+ "rallies": [
+  {
+   "id": "r1",
+   "n": 1,
+   "event_id": "e_0000",
+   "play_id": "pl_0001",
+   "t_start": 2.396,
+   "t_end": 10.446,
+   "duration_s": 8.05,
+   "shots": 8,
+   "shots_source": "audio_contacts",
+   "server_id": "p1",
+   "last_hit_player_id": "p1",
+   "last_hit_team": 0,
+   "confidence": 0.634,
+   "confirmed": false,
+   "condensed_t": 0.0
+  },
+  {
+   "id": "r2",
+   "n": 2,
+   "event_id": "e_0012",
+   "play_id": "pl_0002",
+   "t_start": 15.646,
+   "t_end": 21.726,
+   "duration_s": 6.08,
+   "shots": 6,
+   "shots_source": "audio_contacts",
+   "server_id": "p3",
+   "last_hit_player_id": "p2",
+   "last_hit_team": 1,
+   "confidence": 0.532,
+   "confirmed": false,
+   "condensed_t": 10.55
+  },
+  {
+   "id": "r3",
+   "n": 3,
+   "event_id": "e_0022",
+   "play_id": "pl_0003",
+   "t_start": 26.146,
+   "t_end": 33.246,
+   "duration_s": 7.1,
+   "shots": 6,
+   "shots_source": "audio_contacts",
+   "server_id": "p4",
+   "last_hit_player_id": "p1",
+   "last_hit_team": 0,
+   "confidence": 0.537,
+   "confirmed": false,
+   "condensed_t": 19.13
+  },
+  {
+   "id": "r4",
+   "n": 4,
+   "event_id": "e_0033",
+   "play_id": "pl_0004",
+   "t_start": 47.206,
+   "t_end": 51.616,
+   "duration_s": 4.41,
+   "shots": 4,
+   "shots_source": "audio_contacts",
+   "server_id": "p1",
+   "last_hit_player_id": "p4",
+   "last_hit_team": 1,
+   "confidence": 0.573,
+   "confirmed": false,
+   "condensed_t": 28.73
+  },
+  {
+   "id": "r5",
+   "n": 5,
+   "event_id": "e_0041",
+   "play_id": "pl_0005",
+   "t_start": 55.696,
+   "t_end": 64.626,
+   "duration_s": 8.93,
+   "shots": 8,
+   "shots_source": "audio_contacts",
+   "server_id": "p3",
+   "last_hit_player_id": "p3",
+   "last_hit_team": 0,
+   "confidence": 0.515,
+   "confirmed": false,
+   "condensed_t": 35.64
+  },
+  {
+   "id": "r6",
+   "n": 6,
+   "event_id": "e_0053",
+   "play_id": "pl_0006",
+   "t_start": 69.106,
+   "t_end": 78.196,
+   "duration_s": 9.09,
+   "shots": 8,
+   "shots_source": "audio_contacts",
+   "server_id": "p2",
+   "last_hit_player_id": "p4",
+   "last_hit_team": 1,
+   "confidence": 0.56,
+   "confirmed": false,
+   "condensed_t": 47.07
+  },
+  {
+   "id": "r7",
+   "n": 7,
+   "event_id": "e_0065",
+   "play_id": "pl_0007",
+   "t_start": 82.756,
+   "t_end": 87.256,
+   "duration_s": 4.5,
+   "shots": 4,
+   "shots_source": "audio_contacts",
+   "server_id": "p2",
+   "last_hit_player_id": "p2",
+   "last_hit_team": 1,
+   "confidence": 0.543,
+   "confirmed": false,
+   "condensed_t": 58.66
+  }
+ ],
+ "game_id": "g_1e171b",
+ "video": "ev_synth/pickleball_condensed.mp4",
+ "pre_roll_s": 1.5,
+ "post_roll_s": 1.0,
+ "segments": [
+  [
+   0.896,
+   11.446
+  ],
+  [
+   14.146,
+   22.726
+  ],
+  [
+   24.646,
+   34.246
+  ],
+  [
+   45.706,
+   52.616
+  ],
+  [
+   54.196,
+   65.626
+  ],
+  [
+   67.606,
+   79.196
+  ],
+  [
+   81.256,
+   88.256
+  ]
+ ],
+ "condensed_s": 65.633
+}

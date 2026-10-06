@@ -1,0 +1,145 @@
+{
+ "basketball": {
+  "game": "g_basketball_full",
+  "sport": "basketball",
+  "duration_s": 180.0,
+  "stats_s": 0.07,
+  "hype_s": 0.55,
+  "hype_vs_truth": {
+   "candidates": 7,
+   "moments": 6,
+   "precision": 0.857,
+   "recall": 1.0
+  },
+  "vertical": {
+   "t_start": 17.4,
+   "t_end": 31.333,
+   "player_id": "p1",
+   "caption": "#p1  \u00b7  3-PT MAKE",
+   "ref": {
+    "play_id": "pl_0002"
+   },
+   "render": {
+    "frames": 418,
+    "seconds": 13.933,
+    "render_wall_s": 1.4,
+    "render_fps": 298.23,
+    "size": [
+     540,
+     960
+    ],
+    "jitter": {
+     "rms_px": 0.0876,
+     "p95_px": 0.1856,
+     "zoom_rms": 0.0
+    }
+   }
+  }
+ },
+ "badminton": {
+  "game": "g_badminton_doubles",
+  "sport": "badminton",
+  "duration_s": 90.0,
+  "stats_s": 0.01,
+  "hype_s": 0.12,
+  "hype_vs_truth": {
+   "candidates": 8,
+   "moments": 9,
+   "precision": 1.0,
+   "recall": 0.889
+  },
+  "condensed": {
+   "n": 7,
+   "game_s": 90.0,
+   "rally_s": 42.26,
+   "condensed_s": 59.767,
+   "render": {
+    "frames": 1793,
+    "seconds": 59.767,
+    "render_wall_s": 3.38,
+    "render_fps": 530.17,
+    "size": [
+     854,
+     480
+    ]
+   }
+  },
+  "vertical": {
+   "t_start": 14.316,
+   "t_end": 22.296,
+   "player_id": "p3",
+   "caption": "RALLY  \u00b7  6 SHOTS  \u00b7  6.0 S",
+   "ref": {
+    "play_id": "pl_0002"
+   },
+   "render": {
+    "frames": 239,
+    "seconds": 7.967,
+    "render_wall_s": 0.78,
+    "render_fps": 305.4,
+    "size": [
+     540,
+     960
+    ],
+    "jitter": {
+     "rms_px": 0.2426,
+     "p95_px": 0.4239,
+     "zoom_rms": 6.6e-05
+    }
+   }
+  }
+ },
+ "pickleball": {
+  "game": "g_pickleball_doubles",
+  "sport": "pickleball",
+  "duration_s": 90.0,
+  "stats_s": 0.01,
+  "hype_s": 0.12,
+  "hype_vs_truth": {
+   "candidates": 8,
+   "moments": 8,
+   "precision": 1.0,
+   "recall": 1.0
+  },
+  "condensed": {
+   "n": 7,
+   "game_s": 90.0,
+   "rally_s": 48.16,
+   "condensed_s": 65.633,
+   "render": {
+    "frames": 1969,
+    "seconds": 65.633,
+    "render_wall_s": 3.7,
+    "render_fps": 532.83,
+    "size": [
+     854,
+     480
+    ]
+   }
+  },
+  "vertical": {
+   "t_start": 46.206,
+   "t_end": 52.616,
+   "player_id": "p1",
+   "caption": "RALLY  \u00b7  4 SHOTS  \u00b7  4.4 S",
+   "ref": {
+    "play_id": "pl_0004"
+   },
+   "render": {
+    "frames": 192,
+    "seconds": 6.4,
+    "render_wall_s": 0.63,
+    "render_fps": 304.36,
+    "size": [
+     540,
+     960
+    ],
+    "jitter": {
+     "rms_px": 0.1819,
+     "p95_px": 0.3667,
+     "zoom_rms": 5.7e-05
+    }
+   }
+  }
+ }
+}

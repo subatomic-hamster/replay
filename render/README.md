@@ -81,6 +81,37 @@ procedural two-chord sting (no samples, no noise whoosh) at each replay edge; op
 narration WAV (source clock) with sidechain ducking (−12 dB) of the game under it — the
 hook for the commentary track (M7).
 
+## Discovery (M11): hype meter, condensed game, vertical export, shot chart
+
+```bash
+python -m replay_render hype data/games/g_x                      # -> hype.json
+python -m replay_render condensed data/games/g_x [--size 1280x720 --label SYNTHETIC]
+                                       # -> renditions/condensed.mp4 + condensed.json
+python -m replay_render vertical data/games/g_x --out v.mp4 (--clip c_1 | --play pl_1 |
+                                       --event e_1 | --t0 10 --t1 18 [--player p3])
+```
+
+* **hype.py** (`replay.hype.v1`): 0-1 at 2 Hz = noisy-or of audio loudness over its 20 s
+  rolling median (courtcam `audio.json`, else measured from the video; courtcam `hype`
+  events lift it), players with both wrists above their shoulders (`poses/`), and speed
+  bursts over a 30 s baseline (weights 0.85 / 0.6 / 0.35). Candidates: peaks >= 0.4, >= 8 s
+  apart, each mapped to the play that ended up to 8 s before the peak.
+* **condensed.py**: rallies only (+1.5 s pre-roll, +1 s after the point, windows < 0.5 s
+  apart merged), wide camera, rally counter (RALLY n / N, shots, length) in the package's
+  look, score bug when score.json has points; `condensed.json` is the rally browser
+  (`replay.rallies.v1`: rallies with length, shots — audio contact count, else contact
+  events — server, last hitter, `condensed_t`; longest / most-shots lists).
+* **vertical.py**: 9:16 window following the clip's key player (subject, else the play's
+  shooter / attacker / ... / server, else the gesture owner) through `camera.smooth`
+  with `aspect=9/16`; captions burned in from the events (no LLM); H.264 + AAC.
+  `spec_id` (content hash) names `exports/vertical/<id>.mp4`.
+* **review.py**: shot-chart PNG from the API's stats response.
+* `compositor.render_segments` is the shared cut-and-concat renderer (video + audio with
+  15 ms join fades) both renders use.
+
+Worker stages `hype`, `condensed`, `vertical` (services/worker `stages/discovery.py`, all
+opt-in); API routes in services/api `discovery_routes.py`.
+
 ## Limits
 
 Single CPU render, ~100 fps at 1080p from a 2560×960 source on the box. Frame

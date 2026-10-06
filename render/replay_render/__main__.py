@@ -96,6 +96,47 @@ def cmd_jitter(a) -> int:
     return 0
 
 
+def _progress(f: float) -> None:
+    print(f"\rrender {f:5.1%}", end="", file=sys.stderr, flush=True)
+
+
+def cmd_hype(a) -> int:
+    from .gamedata import load_game
+    from .hype import REL, hype_series
+
+    doc = hype_series(load_game(Path(a.game_dir)))
+    out = Path(a.out) if a.out else Path(a.game_dir) / REL
+    out.write_text(json.dumps(doc), encoding="utf-8")
+    top = [(c["t"], c["score"], c["reasons"]) for c in doc["candidates"][:5]]
+    print(f"{out}: {len(doc['values'])} values, sources {doc['sources']}, top {top}")
+    return 0
+
+
+def cmd_condensed(a) -> int:
+    from .condensed import render_condensed
+
+    doc = render_condensed(Path(a.game_dir), Path(a.out) if a.out else None,
+                           size=_size(a.size), crf=a.crf, label=a.label, progress=_progress)  # fmt: skip
+    print(file=sys.stderr)
+    keep = ("n", "game_s", "rally_s", "condensed_s", "longest", "render")
+    print(json.dumps({k: doc[k] for k in keep}))
+    return 0
+
+
+def cmd_vertical(a) -> int:
+    from .gamedata import load_game
+    from .vertical import export, resolve
+
+    game = load_game(Path(a.game_dir))
+    spec = resolve(game, clip_id=a.clip, play_id=a.play, event_id=a.event, t_start=a.t0,
+                   t_end=a.t1, player_id=a.player)  # fmt: skip
+    info = export(Path(a.game_dir), spec, Path(a.out), size=_size(a.size), crf=a.crf,
+                  label=a.label, progress=_progress, game=game)  # fmt: skip
+    print(file=sys.stderr)
+    print(json.dumps(info))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m replay_render")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -127,9 +168,31 @@ def main(argv: list[str] | None = None) -> int:
     j.add_argument("--out", required=True)
     j.add_argument("--t0", type=float, default=0.0)
     j.add_argument("--t1", type=float)
+    h = sub.add_parser("hype", help="hype meter series + highlight candidates -> hype.json")
+    h.add_argument("game_dir")
+    h.add_argument("--out")
+    c = sub.add_parser("condensed", help="net sports: rallies only -> condensed MP4 + json")
+    c.add_argument("game_dir")
+    c.add_argument("--out", help="default <game>/renditions/condensed.mp4")
+    c.add_argument("--size", default="1280x720")
+    c.add_argument("--crf", type=int, default=26)
+    c.add_argument("--label")
+    v = sub.add_parser("vertical", help="9:16 share export of a clip / play / event / window")
+    v.add_argument("game_dir")
+    v.add_argument("--out", required=True)
+    v.add_argument("--clip")
+    v.add_argument("--play")
+    v.add_argument("--event")
+    v.add_argument("--t0", type=float)
+    v.add_argument("--t1", type=float)
+    v.add_argument("--player")
+    v.add_argument("--size", default="720x1280")
+    v.add_argument("--crf", type=int, default=23)
+    v.add_argument("--label")
     a = p.parse_args(argv)
     return {"direct": cmd_direct, "render": cmd_render, "stills": cmd_stills,
-            "jitter": cmd_jitter, "truth-game": cmd_truth}[a.cmd](a)  # fmt: skip
+            "jitter": cmd_jitter, "truth-game": cmd_truth, "hype": cmd_hype,
+            "condensed": cmd_condensed, "vertical": cmd_vertical}[a.cmd](a)  # fmt: skip
 
 
 if __name__ == "__main__":

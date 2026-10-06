@@ -21,7 +21,7 @@ jobs:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: uv sync --locked
-      - run: uv run ruff check courtcam services
+      - run: uv run ruff check courtcam services render
       - name: courtcam tests
         working-directory: courtcam
         run: uv run pytest -q
@@ -30,6 +30,9 @@ jobs:
         run: uv run pytest -q
       - name: worker tests
         working-directory: services/worker
+        run: uv run pytest -q
+      - name: render tests
+        working-directory: render
         run: uv run pytest -q
       - name: infra/dag.json matches the worker DAG
         run: uv run python -m replay_worker dag | diff - infra/dag.json

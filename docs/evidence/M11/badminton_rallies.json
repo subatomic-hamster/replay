@@ -1,0 +1,178 @@
+{
+ "schema": "replay.rallies.v1",
+ "n": 7,
+ "game_s": 90.0,
+ "rally_s": 42.26,
+ "dead_time_s": 47.74,
+ "mean_rally_s": 6.04,
+ "longest": [
+  "r1",
+  "r7",
+  "r5",
+  "r2",
+  "r4"
+ ],
+ "most_shots": [
+  "r1",
+  "r5",
+  "r7",
+  "r2",
+  "r3"
+ ],
+ "rallies": [
+  {
+   "id": "r1",
+   "n": 1,
+   "event_id": "e_0000",
+   "play_id": "pl_0001",
+   "t_start": 2.396,
+   "t_end": 9.956,
+   "duration_s": 7.56,
+   "shots": 8,
+   "shots_source": "audio_contacts",
+   "server_id": "p1",
+   "last_hit_player_id": "p4",
+   "last_hit_team": 1,
+   "confidence": 0.574,
+   "confirmed": false,
+   "condensed_t": 0.0
+  },
+  {
+   "id": "r2",
+   "n": 2,
+   "event_id": "e_0012",
+   "play_id": "pl_0002",
+   "t_start": 15.316,
+   "t_end": 21.296,
+   "duration_s": 5.98,
+   "shots": 6,
+   "shots_source": "audio_contacts",
+   "server_id": "p3",
+   "last_hit_player_id": "p1",
+   "last_hit_team": 0,
+   "confidence": 0.587,
+   "confirmed": false,
+   "condensed_t": 10.06
+  },
+  {
+   "id": "r3",
+   "n": 3,
+   "event_id": "e_0022",
+   "play_id": "pl_0003",
+   "t_start": 25.676,
+   "t_end": 30.636,
+   "duration_s": 4.96,
+   "shots": 5,
+   "shots_source": "audio_contacts",
+   "server_id": "p1",
+   "last_hit_player_id": "p3",
+   "last_hit_team": 0,
+   "confidence": 0.581,
+   "confirmed": false,
+   "condensed_t": 18.54
+  },
+  {
+   "id": "r4",
+   "n": 4,
+   "event_id": "e_0031",
+   "play_id": "pl_0004",
+   "t_start": 34.996,
+   "t_end": 40.286,
+   "duration_s": 5.29,
+   "shots": 5,
+   "shots_source": "audio_contacts",
+   "server_id": "p3",
+   "last_hit_player_id": "p1",
+   "last_hit_team": 0,
+   "confidence": 0.551,
+   "confirmed": false,
+   "condensed_t": 26.0
+  },
+  {
+   "id": "r5",
+   "n": 5,
+   "event_id": "e_0040",
+   "play_id": "pl_0005",
+   "t_start": 44.946,
+   "t_end": 51.836,
+   "duration_s": 6.89,
+   "shots": 7,
+   "shots_source": "audio_contacts",
+   "server_id": "p1",
+   "last_hit_player_id": "p3",
+   "last_hit_team": 0,
+   "confidence": 0.604,
+   "confirmed": false,
+   "condensed_t": 33.79
+  },
+  {
+   "id": "r6",
+   "n": 6,
+   "event_id": "e_0052",
+   "play_id": "pl_0006",
+   "t_start": 64.586,
+   "t_end": 68.856,
+   "duration_s": 4.27,
+   "shots": 4,
+   "shots_source": "audio_contacts",
+   "server_id": "p2",
+   "last_hit_player_id": "p4",
+   "last_hit_team": 1,
+   "confidence": 0.596,
+   "confirmed": false,
+   "condensed_t": 43.18
+  },
+  {
+   "id": "r7",
+   "n": 7,
+   "event_id": "e_0061",
+   "play_id": "pl_0007",
+   "t_start": 81.656,
+   "t_end": 88.966,
+   "duration_s": 7.31,
+   "shots": 7,
+   "shots_source": "audio_contacts",
+   "server_id": "p3",
+   "last_hit_player_id": "p1",
+   "last_hit_team": 0,
+   "confidence": 0.62,
+   "confirmed": false,
+   "condensed_t": 49.95
+  }
+ ],
+ "game_id": "g_f38b8a",
+ "video": "ev_synth/badminton_condensed.mp4",
+ "pre_roll_s": 1.5,
+ "post_roll_s": 1.0,
+ "segments": [
+  [
+   0.896,
+   10.956
+  ],
+  [
+   13.816,
+   22.296
+  ],
+  [
+   24.176,
+   31.636
+  ],
+  [
+   33.496,
+   41.286
+  ],
+  [
+   43.446,
+   52.836
+  ],
+  [
+   63.086,
+   69.856
+  ],
+  [
+   80.156,
+   89.966
+  ]
+ ],
+ "condensed_s": 59.767
+}

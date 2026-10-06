@@ -1,0 +1,70 @@
+[
+ {
+  "id": "q_who_p1",
+  "kind": "identity",
+  "player_id": "p1",
+  "t": 47.5,
+  "samples": 900,
+  "prompt": "Who is #p1?",
+  "options": [
+   {
+    "label": "Type a name",
+    "method": "PATCH",
+    "path": "/games/g_1e171b/players/p1",
+    "body": {},
+    "text_field": "name"
+   }
+  ]
+ },
+ {
+  "id": "q_who_p2",
+  "kind": "identity",
+  "player_id": "p2",
+  "t": 7.8,
+  "samples": 900,
+  "prompt": "Who is #p2?",
+  "options": [
+   {
+    "label": "Type a name",
+    "method": "PATCH",
+    "path": "/games/g_1e171b/players/p2",
+    "body": {},
+    "text_field": "name"
+   }
+  ]
+ },
+ {
+  "id": "q_who_p3",
+  "kind": "identity",
+  "player_id": "p3",
+  "t": 53.6,
+  "samples": 900,
+  "prompt": "Who is #p3?",
+  "options": [
+   {
+    "label": "Type a name",
+    "method": "PATCH",
+    "path": "/games/g_1e171b/players/p3",
+    "body": {},
+    "text_field": "name"
+   }
+  ]
+ },
+ {
+  "id": "q_who_p4",
+  "kind": "identity",
+  "player_id": "p4",
+  "t": 76.4,
+  "samples": 900,
+  "prompt": "Who is #p4?",
+  "options": [
+   {
+    "label": "Type a name",
+    "method": "PATCH",
+    "path": "/games/g_1e171b/players/p4",
+    "body": {},
+    "text_field": "name"
+   }
+  ]
+ }
+]

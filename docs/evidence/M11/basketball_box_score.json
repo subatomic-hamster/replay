@@ -1,0 +1,405 @@
+{
+ "schema": "replay.stats.v1",
+ "game_id": "g_1ebb1d",
+ "auto_detected": true,
+ "label": "auto-detected",
+ "confidence": 0.75,
+ "available": [
+  "shots",
+  "rebounds",
+  "steals"
+ ],
+ "box_score": [
+  {
+   "player_id": "p1",
+   "name": null,
+   "team": 0,
+   "attempts": 1,
+   "makes": 1,
+   "misses": 0,
+   "unknown": 0,
+   "points": 3,
+   "threes": 1,
+   "rebounds": 0,
+   "steals": 0,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.95,
+   "distance_m": 339.5,
+   "distance_dropped": 5,
+   "samples": 1800
+  },
+  {
+   "player_id": "p2",
+   "name": null,
+   "team": 1,
+   "attempts": 2,
+   "makes": 0,
+   "misses": 1,
+   "unknown": 1,
+   "points": 0,
+   "threes": 0,
+   "rebounds": 1,
+   "steals": 1,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.95,
+   "distance_m": 315.3,
+   "distance_dropped": 2,
+   "samples": 1800
+  },
+  {
+   "player_id": "p3",
+   "name": null,
+   "team": 0,
+   "attempts": 0,
+   "makes": 0,
+   "misses": 0,
+   "unknown": 0,
+   "points": 0,
+   "threes": 0,
+   "rebounds": 1,
+   "steals": 0,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.0,
+   "distance_m": 306.5,
+   "distance_dropped": 3,
+   "samples": 1800
+  },
+  {
+   "player_id": "p4",
+   "name": null,
+   "team": 1,
+   "attempts": 2,
+   "makes": 0,
+   "misses": 1,
+   "unknown": 1,
+   "points": 0,
+   "threes": 0,
+   "rebounds": 1,
+   "steals": 0,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.95,
+   "distance_m": 274.2,
+   "distance_dropped": 2,
+   "samples": 1800
+  },
+  {
+   "player_id": "p5",
+   "name": null,
+   "team": 0,
+   "attempts": 3,
+   "makes": 0,
+   "misses": 2,
+   "unknown": 1,
+   "points": 0,
+   "threes": 0,
+   "rebounds": 1,
+   "steals": 0,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.95,
+   "distance_m": 322.8,
+   "distance_dropped": 1,
+   "samples": 1800
+  },
+  {
+   "player_id": "p6",
+   "name": null,
+   "team": 1,
+   "attempts": 1,
+   "makes": 0,
+   "misses": 1,
+   "unknown": 0,
+   "points": 0,
+   "threes": 0,
+   "rebounds": 0,
+   "steals": 0,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.95,
+   "distance_m": 381.6,
+   "distance_dropped": 11,
+   "samples": 1800
+  },
+  {
+   "player_id": "p7",
+   "name": null,
+   "team": 0,
+   "attempts": 1,
+   "makes": 1,
+   "misses": 0,
+   "unknown": 0,
+   "points": 2,
+   "threes": 0,
+   "rebounds": 2,
+   "steals": 2,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.95,
+   "distance_m": 346.2,
+   "distance_dropped": 1,
+   "samples": 1800
+  },
+  {
+   "player_id": "p8",
+   "name": null,
+   "team": 0,
+   "attempts": 1,
+   "makes": 0,
+   "misses": 0,
+   "unknown": 1,
+   "points": 0,
+   "threes": 0,
+   "rebounds": 0,
+   "steals": 0,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.95,
+   "distance_m": 382.0,
+   "distance_dropped": 2,
+   "samples": 1800
+  },
+  {
+   "player_id": "p9",
+   "name": null,
+   "team": 1,
+   "attempts": 0,
+   "makes": 0,
+   "misses": 0,
+   "unknown": 0,
+   "points": 0,
+   "threes": 0,
+   "rebounds": 0,
+   "steals": 0,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.0,
+   "distance_m": 399.1,
+   "distance_dropped": 6,
+   "samples": 1800
+  },
+  {
+   "player_id": "p10",
+   "name": null,
+   "team": 1,
+   "attempts": 2,
+   "makes": 0,
+   "misses": 1,
+   "unknown": 1,
+   "points": 0,
+   "threes": 0,
+   "rebounds": 0,
+   "steals": 1,
+   "blocks": 0,
+   "confirmed": 0,
+   "confidence": 0.95,
+   "distance_m": 372.6,
+   "distance_dropped": 0,
+   "samples": 1800
+  }
+ ],
+ "shots": [
+  {
+   "event_id": "e_0001",
+   "player_id": "p4",
+   "team": 1,
+   "t": 9.867,
+   "court": [
+    0.93,
+    7.191
+   ],
+   "made": false,
+   "outcome": "unknown",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0004",
+   "player_id": "p1",
+   "team": 0,
+   "t": 28.333,
+   "court": [
+    6.988,
+    23.924
+   ],
+   "made": true,
+   "outcome": "make",
+   "points": 3,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0007",
+   "player_id": "p2",
+   "team": 1,
+   "t": 44.267,
+   "court": [
+    -4.369,
+    2.023
+   ],
+   "made": false,
+   "outcome": "miss",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0009",
+   "player_id": "p7",
+   "team": 0,
+   "t": 53.067,
+   "court": [
+    -5.779,
+    24.545
+   ],
+   "made": true,
+   "outcome": "make",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0014",
+   "player_id": "p5",
+   "team": 0,
+   "t": 70.0,
+   "court": [
+    -5.997,
+    24.327
+   ],
+   "made": false,
+   "outcome": "miss",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0016",
+   "player_id": "p10",
+   "team": 1,
+   "t": 80.0,
+   "court": [
+    -5.727,
+    3.111
+   ],
+   "made": false,
+   "outcome": "miss",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0018",
+   "player_id": "p8",
+   "team": 0,
+   "t": 88.267,
+   "court": [
+    -5.279,
+    25.181
+   ],
+   "made": false,
+   "outcome": "unknown",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0021",
+   "player_id": "p4",
+   "team": 1,
+   "t": 107.667,
+   "court": [
+    2.411,
+    6.654
+   ],
+   "made": false,
+   "outcome": "miss",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0025",
+   "player_id": "p2",
+   "team": 1,
+   "t": 115.0,
+   "court": [
+    0.022,
+    5.661
+   ],
+   "made": false,
+   "outcome": "unknown",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0028",
+   "player_id": "p5",
+   "team": 0,
+   "t": 133.333,
+   "court": [
+    2.368,
+    24.064
+   ],
+   "made": false,
+   "outcome": "miss",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0030",
+   "player_id": "p6",
+   "team": 1,
+   "t": 143.533,
+   "court": [
+    0.211,
+    5.355
+   ],
+   "made": false,
+   "outcome": "miss",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0032",
+   "player_id": "p5",
+   "team": 0,
+   "t": 151.933,
+   "court": [
+    -3.973,
+    22.18
+   ],
+   "made": false,
+   "outcome": "unknown",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  },
+  {
+   "event_id": "e_0039",
+   "player_id": "p10",
+   "team": 1,
+   "t": 173.533,
+   "court": [
+    -2.436,
+    5.907
+   ],
+   "made": false,
+   "outcome": "unknown",
+   "points": 2,
+   "confirmed": false,
+   "confidence": 0.95
+  }
+ ],
+ "totals": {
+  "attempts": 13,
+  "makes": 2
+ }
+}

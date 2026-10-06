@@ -5,7 +5,7 @@
 set -uo pipefail
 d=${1:?copy dir}
 source /workspace/wt/replay-env/env.sh
-export PYTHONPATH=$d/courtcam:$d/services/api:$d/services/worker
+export PYTHONPATH=$d/courtcam:$d/services/api:$d/services/worker:$d/render
 export REPLAY_API_CMD="python -m uvicorn" # the box has no real `uv` for playwright's API
 CPU="flock /workspace/wt/replay-env/.cpu.lock"
 PW="flock /workspace/wt/replay-env/.pw.lock" # fixed ports 5177/5178/8000: one run box-wide
@@ -20,10 +20,11 @@ step() {
   bash -c "$*" || failed+=("$name")
 }
 
-step ruff "ruff check courtcam services"
+step ruff "ruff check courtcam services render"
 step courtcam "cd courtcam && $CPU python -m pytest -q"
 step api "cd services/api && $CPU python -m pytest -q"
 step worker "cd services/worker && $CPU python -m pytest -q"
+step render "cd render && $CPU python -m pytest -q"
 step dag-drift "python -m replay_worker dag | diff - infra/dag.json"
 step infra "cd infra && npm ci --no-audit --no-fund >/dev/null && npx tsc --noEmit && npx cdk synth --quiet"
 step web-install "cd apps/web && pnpm install --frozen-lockfile >/dev/null"

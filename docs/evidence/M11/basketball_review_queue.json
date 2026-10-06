@@ -1,0 +1,753 @@
+[
+ {
+  "event_id": "e_0000",
+  "t": 0.0,
+  "player_id": "p10",
+  "confidence": 0.5,
+  "id": "q_conf_e_0000",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0000",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0000",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0001",
+  "t": 9.867,
+  "player_id": "p4",
+  "confidence": 0.95,
+  "id": "q_outcome_e_0001",
+  "kind": "shot_outcome",
+  "prompt": "Make or miss?",
+  "options": [
+   {
+    "label": "Made",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0001",
+    "body": {
+     "made": true,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Missed",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0001",
+    "body": {
+     "made": false,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Not a shot",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0001",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0003",
+  "t": 18.4,
+  "player_id": "p8",
+  "confidence": 0.5,
+  "id": "q_conf_e_0003",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0003",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0003",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0006",
+  "t": 32.4,
+  "player_id": "p9",
+  "confidence": 0.5,
+  "id": "q_conf_e_0006",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0006",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0006",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0008",
+  "t": 44.8,
+  "player_id": "p7",
+  "confidence": 0.5,
+  "id": "q_conf_e_0008",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0008",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0008",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0011",
+  "t": 58.8,
+  "player_id": "p6",
+  "confidence": 0.5,
+  "id": "q_conf_e_0011",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0011",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0011",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0012",
+  "t": 65.0,
+  "player_id": "p7",
+  "confidence": 0.5,
+  "id": "q_conf_e_0012",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0012",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0012",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0015",
+  "t": 70.4,
+  "player_id": "p2",
+  "confidence": 0.5,
+  "id": "q_conf_e_0015",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0015",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0015",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0017",
+  "t": 80.6,
+  "player_id": "p5",
+  "confidence": 0.5,
+  "id": "q_conf_e_0017",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0017",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0017",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0018",
+  "t": 88.267,
+  "player_id": "p8",
+  "confidence": 0.95,
+  "id": "q_outcome_e_0018",
+  "kind": "shot_outcome",
+  "prompt": "Make or miss?",
+  "options": [
+   {
+    "label": "Made",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0018",
+    "body": {
+     "made": true,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Missed",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0018",
+    "body": {
+     "made": false,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Not a shot",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0018",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0020",
+  "t": 97.2,
+  "player_id": "p10",
+  "confidence": 0.5,
+  "id": "q_conf_e_0020",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0020",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0020",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0022",
+  "t": 110.8,
+  "player_id": "p7",
+  "confidence": 0.5,
+  "id": "q_conf_e_0022",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0022",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0022",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0023",
+  "t": 113.6,
+  "player_id": "p2",
+  "confidence": 0.5,
+  "id": "q_conf_e_0023",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0023",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0023",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0025",
+  "t": 115.0,
+  "player_id": "p2",
+  "confidence": 0.95,
+  "id": "q_outcome_e_0025",
+  "kind": "shot_outcome",
+  "prompt": "Make or miss?",
+  "options": [
+   {
+    "label": "Made",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0025",
+    "body": {
+     "made": true,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Missed",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0025",
+    "body": {
+     "made": false,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Not a shot",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0025",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0027",
+  "t": 122.0,
+  "player_id": "p7",
+  "confidence": 0.5,
+  "id": "q_conf_e_0027",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0027",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0027",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0029",
+  "t": 134.2,
+  "player_id": "p4",
+  "confidence": 0.5,
+  "id": "q_conf_e_0029",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0029",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0029",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0031",
+  "t": 144.4,
+  "player_id": "p3",
+  "confidence": 0.5,
+  "id": "q_conf_e_0031",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0031",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0031",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0032",
+  "t": 151.933,
+  "player_id": "p5",
+  "confidence": 0.95,
+  "id": "q_outcome_e_0032",
+  "kind": "shot_outcome",
+  "prompt": "Make or miss?",
+  "options": [
+   {
+    "label": "Made",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0032",
+    "body": {
+     "made": true,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Missed",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0032",
+    "body": {
+     "made": false,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Not a shot",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0032",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0034",
+  "t": 159.6,
+  "player_id": "p9",
+  "confidence": 0.5,
+  "id": "q_conf_e_0034",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0034",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0034",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0035",
+  "t": 166.6,
+  "player_id": "p7",
+  "confidence": 0.5,
+  "id": "q_conf_e_0035",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0035",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0035",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0037",
+  "t": 170.4,
+  "player_id": "p10",
+  "confidence": 0.5,
+  "id": "q_conf_e_0037",
+  "kind": "low_confidence",
+  "prompt": "Was this a change of possession?",
+  "options": [
+   {
+    "label": "Yes",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0037",
+    "body": {
+     "confirmed": true
+    }
+   },
+   {
+    "label": "No",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0037",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "event_id": "e_0039",
+  "t": 173.533,
+  "player_id": "p10",
+  "confidence": 0.95,
+  "id": "q_outcome_e_0039",
+  "kind": "shot_outcome",
+  "prompt": "Make or miss?",
+  "options": [
+   {
+    "label": "Made",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0039",
+    "body": {
+     "made": true,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Missed",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0039",
+    "body": {
+     "made": false,
+     "confirmed": true
+    }
+   },
+   {
+    "label": "Not a shot",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/events/e_0039",
+    "body": {
+     "dismissed": true,
+     "confirmed": true
+    }
+   }
+  ]
+ },
+ {
+  "id": "q_who_p1",
+  "kind": "identity",
+  "player_id": "p1",
+  "t": 27.4,
+  "samples": 1800,
+  "prompt": "Who is #p1?",
+  "options": [
+   {
+    "label": "Type a name",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/players/p1",
+    "body": {},
+    "text_field": "name"
+   }
+  ]
+ },
+ {
+  "id": "q_who_p2",
+  "kind": "identity",
+  "player_id": "p2",
+  "t": 100.4,
+  "samples": 1800,
+  "prompt": "Who is #p2?",
+  "options": [
+   {
+    "label": "Type a name",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/players/p2",
+    "body": {},
+    "text_field": "name"
+   }
+  ]
+ },
+ {
+  "id": "q_who_p3",
+  "kind": "identity",
+  "player_id": "p3",
+  "t": 66.9,
+  "samples": 1800,
+  "prompt": "Who is #p3?",
+  "options": [
+   {
+    "label": "Type a name",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/players/p3",
+    "body": {},
+    "text_field": "name"
+   }
+  ]
+ },
+ {
+  "id": "q_who_p4",
+  "kind": "identity",
+  "player_id": "p4",
+  "t": 163.3,
+  "samples": 1800,
+  "prompt": "Who is #p4?",
+  "options": [
+   {
+    "label": "Type a name",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/players/p4",
+    "body": {},
+    "text_field": "name"
+   }
+  ]
+ },
+ {
+  "id": "q_who_p5",
+  "kind": "identity",
+  "player_id": "p5",
+  "t": 56.7,
+  "samples": 1800,
+  "prompt": "Who is #p5?",
+  "options": [
+   {
+    "label": "Type a name",
+    "method": "PATCH",
+    "path": "/games/g_1ebb1d/players/p5",
+    "body": {},
+    "text_field": "name"
+   }
+  ]
+ }
+]

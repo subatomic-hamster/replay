@@ -157,3 +157,9 @@ Template:
 - Evidence: docs/evidence/M13/ (demo broadcast-replay GIF, replay angles sheet, TV demo screenshots; synthetic) · docs/perf.md
 - Decisions: D-66.
 - Left / known issues: services/api and services/worker rely on the root package for `courtcam[yolo]`; ViTPose could now become the default via the locked `vitpose` extra (D-61); device playback not measured; the 240 s CC pickleball landmarks run produced 0 events (teams split 15 vs 1, not root-caused; the 90 s cut works); courtcam source edits invalidate courtcam stage caches once.
+
+## Small fixes after M10 (2026-10-06)
+
+- Works: play grammars skip user-dismissed events; the TV Watch `?t=` restore and the profile reel stop polling once a video has failed (web build now shows the "Video unavailable" overlay too); declining a profile link suggestion is persisted by the API and stays gone after reopening, in both TV clients.
+- Verified on hfbox: each fix had a failing test first (courtcam test_plays 1, api test_profiles 2, tv Playwright 3), then passed. Staged snapshot, `scripts/box-test.sh` ALL GREEN: courtcam 184, api 220 + 1 skipped, worker 24, render 49, web Playwright 100 passed; apps/tv tsc/eslint clean, Playwright tv 48 passed + 1 skipped.
+- Decisions: D-67.

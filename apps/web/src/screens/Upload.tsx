@@ -263,6 +263,11 @@ export function Calibrate({ gameId }: { gameId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   // Points taken off by "Not visible" on a selection: the walk must not ask for them again.
   const [skipped, setSkipped] = useState<string[]>([]);
+  // An ok=false proposal is dots to drag, not dots to accept: its points go through
+  // unmoved only once the user ticks this (the API records the override).
+  const [confirmLow, setConfirmLow] = useState(false);
+  const confirmLowRef = useRef(confirmLow);
+  confirmLowRef.current = confirmLow;
   const marksRef = useRef(marks);
   marksRef.current = marks;
 
@@ -298,6 +303,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
           sport: profile.id,
           court_variant: variantRef.current,
           landmarks_px: pts,
+          accept_low_confidence: confirmLowRef.current,
         })
         .then((r) =>
           setResult(
@@ -496,9 +502,34 @@ export function Calibrate({ gameId }: { gameId: string }) {
                     (proposal.ok ? "" : " · needs a check")
                   : "Could not find the court — place the points yourself."}
         </p>
+        {proposal && !proposal.ok && taken !== "manual" && dots.length > 0 ? (
+          <label className="radio" data-testid="autocalib-weak">
+            <input
+              type="checkbox"
+              checked={confirmLow}
+              data-testid="autocalib-confirm"
+              onChange={(e) => {
+                const on = e.target.checked;
+                setConfirmLow(on);
+                confirmLowRef.current = on;
+                if (taken === "applied") submit(marksRef.current);
+              }}
+            />
+            {`Not a confident fit${
+              proposal.score != null && proposal.min_score != null
+                ? ` (score ${proposal.score.toFixed(2)} < ${proposal.min_score.toFixed(2)})`
+                : ""
+            }: drag the points onto the lines, or tick to use them as they are.`}
+          </label>
+        ) : null}
         {offering ? (
           <>
-            <button type="button" data-testid="autocalib-accept" onClick={() => applyProposal(false)}>
+            <button
+              type="button"
+              data-testid="autocalib-accept"
+              disabled={!proposal.ok && !confirmLow}
+              onClick={() => applyProposal(false)}
+            >
               Looks right — continue
             </button>
             <button
@@ -518,6 +549,8 @@ export function Calibrate({ gameId }: { gameId: string }) {
             data-testid="autocalib-manual"
             onClick={() => {
               setTaken("manual");
+              setConfirmLow(false);
+              confirmLowRef.current = false;
               setAdjust(false);
               setStep(0);
               setMarks({});

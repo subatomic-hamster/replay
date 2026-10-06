@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import uuid
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -116,15 +117,48 @@ def record_rendition(out_dir: Path, player_id: str, url: str) -> Path:
 # --- calibration input ------------------------------------------------------
 
 
+class LowConfidenceLandmarks(ValueError):
+    """Landmarks from an auto-calibration proposal that was not `ok` (D-23, D-24)."""
+
+
+def low_confidence(raw: Any) -> dict[str, Any] | None:
+    """The `autocalib` block of a `courtcam autocalib --out` file whose fit was not ok."""
+    block = raw.get("autocalib") if isinstance(raw, dict) else None
+    return block if isinstance(block, dict) and block.get("ok") is not True else None
+
+
 def load_landmarks(
     source: Path | dict[str, Any],
+    *,
+    accept_low_confidence: bool = False,
 ) -> tuple[dict[str, tuple[float, float]], str | None]:
-    """Accept a landmarks JSON, a full `calib.json`, or a bare `{name: [x, y]}` dict."""
+    """Accept a landmarks JSON, a full `calib.json`, or a bare `{name: [x, y]}` dict.
+
+    An auto-calibration proposal with `ok: false` is dots to drag, not dots to accept
+    (D-23): it is refused unless the caller explicitly accepts it. A 0.74 pickleball fit
+    used silently put the court 100-400 px too high and the run found 0 events.
+    """
     raw = (
         json.loads(Path(source).read_text(encoding="utf-8"))
         if isinstance(source, (str, Path))
         else source
     )
+    block = low_confidence(raw)
+    if block is not None and not accept_low_confidence:
+        from .autocalib import MIN_TEMPLATE_SCORE
+
+        threshold = block.get("min_score") or MIN_TEMPLATE_SCORE
+        score = block.get("score")
+        if score is None:  # files written before `score` was in the block
+            found = re.search(r"score ([\d.]+) <", block.get("notes") or "")
+            score = float(found.group(1)) if found else None
+        where = f"{source}: " if isinstance(source, (str, Path)) else ""
+        raise LowConfidenceLandmarks(
+            f"{where}these landmarks are an auto-calibration proposal with ok=false "
+            f"(score {'?' if score is None else f'{score:.2f}'}, threshold "
+            f"{threshold:.2f}): dots to drag, not dots to accept. Correct them by "
+            "hand and delete the `autocalib` block, or pass --accept-low-confidence."
+        )
     variant = raw.get("variant") if isinstance(raw, dict) else None
     points = raw.get("landmarks_px", raw) if isinstance(raw, dict) else raw
     return {k: (float(v[0]), float(v[1])) for k, v in points.items()}, variant
@@ -198,7 +232,10 @@ def stage_calibrate(
     image_size: tuple[int, int],
     force: bool,
     progress: Progress,
+    low_confidence_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """`low_confidence_override`: the `autocalib` block of an ok=false proposal the user
+    explicitly accepted; it is kept in calib.json so the choice stays visible."""
     path = out_dir / "calib.json"
     progress("calibrate", 0.0)
     if path.exists() and not force:
@@ -207,6 +244,8 @@ def stage_calibrate(
         if not landmarks_px:
             raise ValueError("calibration needs --landmarks (or an existing out/calib.json)")
         calib = calibrate_lens(landmarks_px, profile, variant, image_size)
+        if low_confidence_override is not None:
+            calib["low_confidence_override"] = low_confidence_override
         calib_mod.write_calib(path, calib)
     progress("calibrate", 1.0)
     return calib
@@ -580,6 +619,7 @@ def run(
     pose_model: str | None = None,
     asr_model: str | None = None,
     roster: dict[str, str] | None = None,
+    accept_low_confidence: bool = False,
 ) -> Path:
     """Run the pipeline and return the path to `out_dir/game.json`.
 
@@ -598,8 +638,13 @@ def run(
     force = stages is not None
     stride = stride or profile.detection.stride
 
+    override = None
     if calib is not None and landmarks_px is None:
-        landmarks_px, calib_variant = load_landmarks(calib)
+        raw = json.loads(Path(calib).read_text(encoding="utf-8"))
+        landmarks_px, calib_variant = load_landmarks(
+            raw, accept_low_confidence=accept_low_confidence
+        )
+        override = low_confidence(raw)
         variant = variant or calib_variant
     variant = variant or profile.default_variant()
 
@@ -634,6 +679,7 @@ def run(
         image_size=(info.width, info.height),
         force=force and "calibrate" in requested,
         progress=report,
+        low_confidence_override=override,
     )
     game.court = CourtInfo(
         variant=calib_data.get("variant", variant),

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 from fastapi.testclient import TestClient
@@ -74,6 +75,37 @@ def test_a_proposal_is_not_a_calibration(client: TestClient):
     )
     assert committed.status_code == 200
     assert client.get(f"/games/{gid}").json()["status"] == "calibrated"
+
+
+def test_a_not_ok_proposal_needs_a_drag_or_an_explicit_confirm(client: TestClient):
+    """D-23: ok=false is dots to drag. Posting them back untouched is refused (the CC
+    pickleball run used a 0.74 fit silently: court 100-400 px off, 0 events)."""
+    gid = uploaded_game(client)
+    client.post(f"/games/{gid}/calibration/auto", json=AUTO)
+    poll_proposal(client, gid)
+    path = client.app_settings.games_dir / gid / "autocalib.json"  # type: ignore[attr-defined]
+    weak = {**json.loads(path.read_text()), "ok": False, "score": 0.74, "min_score": 0.9}
+    path.write_text(json.dumps(weak))
+    marks = weak["landmarks_px"]
+
+    refused = client.post(f"/games/{gid}/calibration", json={**AUTO, "landmarks_px": marks})
+    assert refused.status_code == 400
+    assert "score 0.74, threshold 0.90" in refused.json()["detail"]
+    assert not client.get(f"/games/{gid}").json().get("court")
+
+    # A dragged point is the user's own calibration: no confirm needed, nothing recorded.
+    moved = {**marks, "corner_nl": [marks["corner_nl"][0] + 3, marks["corner_nl"][1]]}
+    r = client.post(f"/games/{gid}/calibration", json={**AUTO, "landmarks_px": moved})
+    assert r.status_code == 200 and "low_confidence_override" not in r.json()["court"]
+
+    # The explicit override works, and is kept on the game's court.
+    r = client.post(
+        f"/games/{gid}/calibration",
+        json={**AUTO, "landmarks_px": marks, "accept_low_confidence": True},
+    )
+    assert r.status_code == 200
+    kept = client.get(f"/games/{gid}").json()["court"]["low_confidence_override"]
+    assert kept["score"] == 0.74 and kept["min_score"] == 0.9
 
 
 def test_asking_twice_while_it_runs_reuses_the_job(client: TestClient):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import math
 import secrets
 from typing import Any
 
@@ -86,6 +87,23 @@ class Calibration(BaseModel):
     sport: str
     variant: str
     landmarks_px: dict[str, tuple[float, float]]
+    # D-23: commit an ok=false auto-calibration proposal without moving a dot. Recorded
+    # on the game's court as `low_confidence_override`.
+    accept_low_confidence: bool = False
+
+
+#: A posted point within this of the proposal's dot is the dot unmoved.
+MOVED_PX = 1.0
+
+
+def _unmoved_low_confidence(proposal: dict | None, marks: dict) -> dict | None:
+    """The stored proposal, when it was not ok and `marks` are its dots, none moved."""
+    if not proposal or proposal.get("ok"):
+        return None
+    dots = proposal.get("landmarks_px") or {}
+    if all(n in dots and math.dist(p, dots[n]) <= MOVED_PX for n, p in marks.items()):
+        return proposal
+    return None
 
 
 class AutoCalibration(BaseModel):
@@ -412,6 +430,22 @@ def _register_routes(app: FastAPI) -> None:
         if len(usable) < 4:
             raise HTTPException(400, f"at least 4 known landmarks are required, got {usable}")
 
+        # D-23: an ok=false proposal is dots to drag, not dots to accept. Posting it back
+        # untouched needs an explicit confirm, and the confirm is kept on the game.
+        auto_path = _ctx(request).storage.path(game_id, AUTOCALIB_REL)
+        weak = _unmoved_low_confidence(
+            json.loads(auto_path.read_text()) if auto_path.is_file() else None, marks
+        )
+        if weak is not None and not body.accept_low_confidence:
+            score, floor = weak.get("score"), weak.get("min_score")
+            raise HTTPException(
+                400,
+                "these are the auto-calibration points unchanged and the fit was not ok "
+                f"(score {'?' if score is None else f'{score:.2f}'}, threshold "
+                f"{'?' if floor is None else f'{floor:.2f}'}): drag any point that looks "
+                "wrong, or confirm with accept_low_confidence",
+            )
+
         try:
             fit = adapter.calibration_error(
                 body.sport,
@@ -429,6 +463,10 @@ def _register_routes(app: FastAPI) -> None:
             "standard": court.get("standard", "fiba"),
             "landmarks_px": {k: list(v) for k, v in marks.items()},
         }
+        if weak is not None:
+            game["court"]["low_confidence_override"] = {
+                k: weak.get(k) for k in ("source", "score", "min_score", "notes")
+            }
         game["status"] = (
             "calibrated" if game["status"] in ("created", "uploaded") else game["status"]
         )

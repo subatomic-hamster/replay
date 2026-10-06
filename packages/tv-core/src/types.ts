@@ -222,8 +222,12 @@ export interface LandmarkProposal {
   snapped?: Record<string, boolean>;
   source: string;
   notes?: string;
+  /** false = dots to drag, not dots to accept: committing them unmoved needs a confirm. */
   ok: boolean;
   reprojection_error_px?: number | null;
+  /** The template fit's line score and the bar `ok` needs (template backend only). */
+  score?: number | null;
+  min_score?: number;
 }
 
 export type AutoCalibrationState = "idle" | "queued" | "running" | "done" | "failed";

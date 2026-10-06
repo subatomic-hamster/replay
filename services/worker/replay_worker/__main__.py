@@ -54,11 +54,17 @@ def build_cfg(args: argparse.Namespace) -> tuple[Path, dict]:
     # the same sibling-file conventions as `courtcam run`
     landmarks = Path(args.landmarks) if args.landmarks else source.parent / "landmarks.json"
     if args.landmarks or (not cfg["landmarks_px"] and landmarks.is_file()):
-        from courtcam.pipeline import load_landmarks
+        from courtcam.pipeline import load_landmarks, low_confidence
 
-        marks, variant = load_landmarks(landmarks)
+        # D-23: an ok=false autocalib proposal raises LowConfidenceLandmarks unless the
+        # user passed --accept-low-confidence; then calib.json records it.
+        raw = json.loads(landmarks.read_text(encoding="utf-8"))
+        accept = getattr(args, "accept_low_confidence", False)
+        marks, variant = load_landmarks(raw, accept_low_confidence=accept)
         cfg["landmarks_px"] = {k: [v[0], v[1]] for k, v in marks.items()}
         cfg["variant"] = cfg["variant"] or variant
+        if block := low_confidence(raw):
+            cfg["low_confidence_override"] = block
     for kv in getattr(args, "set", None) or []:
         key, _, value = kv.partition("=")
         cfg.setdefault(key.strip(), value)
@@ -69,7 +75,13 @@ def build_cfg(args: argparse.Namespace) -> tuple[Path, dict]:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    game_dir, cfg = build_cfg(args)
+    from courtcam.pipeline import LowConfidenceLandmarks
+
+    try:
+        game_dir, cfg = build_cfg(args)
+    except LowConfidenceLandmarks as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
     cache = Cache(Path(args.cache)) if args.cache else Cache()
     print(f"game_dir={game_dir} cache={cache.root}", flush=True)
     try:
@@ -151,6 +163,11 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--sport")
     r.add_argument("--variant")
     r.add_argument("--landmarks", help="landmarks.json / calib.json (default: sibling file)")
+    r.add_argument(
+        "--accept-low-confidence",
+        action="store_true",
+        help="use an ok=false autocalib proposal anyway (recorded in calib.json)",
+    )
     r.add_argument("--detector", default="yolo", help="yolo | synthetic")
     r.add_argument("--ground-truth")
     r.add_argument("--backend", default="pt")

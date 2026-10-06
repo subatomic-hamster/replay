@@ -75,6 +75,15 @@ const PROPOSAL = {
   reprojection_error_px: 3.4,
 };
 
+/** A game titled "...low confidence..." gets the same dots as an ok=false fit (D-23). */
+const lowConfidence = (g: { title: string }) => /low confidence/i.test(g.title);
+const WEAK_FIT = {
+  ok: false,
+  score: 0.74,
+  min_score: 0.9,
+  notes: "score 0.74 < 0.9: the court template does not sit on the paint",
+};
+
 const BASKETBALL: SportProfile = {
   id: "basketball",
   display_name: "Basketball",
@@ -396,17 +405,22 @@ export const mockApi: ReplayApi = {
   },
 
   getAutoCalibration(gameId) {
-    needGame(gameId);
+    const g = needGame(gameId);
     const started = autoStartedAt[gameId];
     if (!started) return delay<AutoCalibration>({ status: "idle", ok: false });
     if (Date.now() - started < AUTOCALIB_MS) {
       return delay<AutoCalibration>({ status: "running", ok: false });
     }
+    const ok = !lowConfidence(g);
     return delay<AutoCalibration>({
       status: "done",
-      ok: true,
+      ok,
       reprojection_error_px: PROPOSAL.reprojection_error_px,
-      proposal: { ...PROPOSAL, landmarks_px: { ...PROPOSAL.landmarks_px } },
+      proposal: {
+        ...PROPOSAL,
+        landmarks_px: { ...PROPOSAL.landmarks_px },
+        ...(ok ? {} : WEAK_FIT),
+      },
     });
   },
 
@@ -416,6 +430,17 @@ export const mockApi: ReplayApi = {
     const pts = Object.values(payload.landmarks_px);
     if (pts.length < 4) {
       return delay<CalibrationResult>({ ok: false, error: `need ${4 - pts.length} more points` });
+    }
+    // The API's D-23 gate: an ok=false proposal posted back unmoved needs the confirm.
+    const unmoved = Object.entries(payload.landmarks_px).every(([n, [x, y]]) => {
+      const dot = PROPOSAL.landmarks_px[n];
+      return !!dot && Math.hypot(x - dot[0], y - dot[1]) <= 1;
+    });
+    if (lowConfidence(g) && unmoved && !payload.accept_low_confidence) {
+      return delay<CalibrationResult>({
+        ok: false,
+        error: "these are the auto-calibration points unchanged and the fit was not ok",
+      });
     }
     // Degenerate check (E-06): largest triangle area among the first 4 points.
     let area = 0;

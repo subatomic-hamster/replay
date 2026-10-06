@@ -114,6 +114,8 @@ class Proposal:
     #: They are absent from `landmarks_px`, which the uploader already reads as "Not
     #: visible"; this names them so the notes and the UI do not have to work it out.
     not_visible: list[str] = field(default_factory=list)
+    #: The template fit's line score, the number `ok` is gated on (MIN_TEMPLATE_SCORE).
+    score: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -126,6 +128,8 @@ class Proposal:
             "reprojection_error_px": self.reprojection_error_px,
             "k1": self.k1,
             "not_visible": list(self.not_visible),
+            "score": self.score,
+            "min_score": MIN_TEMPLATE_SCORE,
         }
 
 
@@ -680,6 +684,7 @@ def propose_template(
         h_inv=best.h_inv,
         k1=k1,
         not_visible=hidden,
+        score=round(float(best.score), 3),
     )
     try:
         calib = calibrate_lens(landmarks, profile, variant, size)

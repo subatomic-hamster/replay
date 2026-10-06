@@ -18,14 +18,31 @@ from .schema import CropPath, read_json
 app = typer.Typer(add_completion=False, help="Court-aware video pipeline for Replay.")
 
 
-def _landmarks(value: str | None) -> dict[str, tuple[float, float]] | None:
+#: D-23: an ok=false `courtcam autocalib` proposal is refused unless this is passed.
+ACCEPT_LOW = typer.Option(
+    "--accept-low-confidence",
+    help="Use an auto-calibration proposal with ok=false anyway (recorded in calib.json)",
+)
+
+
+def _refuse(exc: Exception) -> typer.Exit:
+    typer.secho(f"refused: {exc}", fg=typer.colors.RED, err=True)
+    return typer.Exit(2)
+
+
+def _landmarks(
+    value: str | None, accept_low: bool = False
+) -> dict[str, tuple[float, float]] | None:
     """`--landmarks` takes a path to a JSON file or an inline JSON object."""
     if not value:
         return None
     source: Any = Path(value)
     if not source.exists():
         source = json.loads(value)
-    return pipeline.load_landmarks(source)[0]
+    try:
+        return pipeline.load_landmarks(source, accept_low_confidence=accept_low)[0]
+    except pipeline.LowConfidenceLandmarks as exc:
+        raise _refuse(exc) from exc
 
 
 def _frame_size(path: Path) -> tuple[int, int]:
@@ -41,7 +58,8 @@ def _frame_size(path: Path) -> tuple[int, int]:
 def _variant_of(value: str | None) -> str | None:
     if not value or not Path(value).exists():
         return None
-    return pipeline.load_landmarks(Path(value))[1]
+    # Only the variant is read here; the ok=false gate runs where the points are used.
+    return pipeline.load_landmarks(Path(value), accept_low_confidence=True)[1]
 
 
 _DONE: set[str] = set()
@@ -81,31 +99,39 @@ def run(
         str | None, typer.Option(help="Comma-separated subset, e.g. detect,track")
     ] = None,
     title: str | None = None,
+    accept_low_confidence: Annotated[bool, ACCEPT_LOW] = False,
 ) -> None:
     """Run the pipeline end to end (or just `--stages`) and write `out/game.json`."""
     if detector == "synthetic" and ground_truth is None:
         guess = input.parent / "ground_truth.json"
         ground_truth = guess if guess.exists() else None
+    if landmarks and Path(landmarks).exists():
+        # A file goes the `--calib` way, so an accepted ok=false proposal is recorded.
+        calib, landmarks = Path(landmarks), None
     if calib is None and landmarks is None:
         guess = input.parent / "landmarks.json"
         calib = guess if guess.exists() else None
-    game = pipeline.run(
-        input,
-        out,
-        sport=sport,
-        variant=variant or _variant_of(str(calib) if calib else None),
-        landmarks_px=_landmarks(landmarks),
-        calib=calib,
-        detector=detector,
-        ground_truth=ground_truth,
-        backend=backend,
-        model=model,
-        stages=[s.strip() for s in stages.split(",") if s.strip()] if stages else None,
-        stride=stride,
-        max_frames=max_frames,
-        title=title,
-        progress=_echo_progress,
-    )
+    try:
+        game = pipeline.run(
+            input,
+            out,
+            sport=sport,
+            variant=variant or _variant_of(str(calib) if calib else None),
+            landmarks_px=_landmarks(landmarks),
+            calib=calib,
+            detector=detector,
+            ground_truth=ground_truth,
+            backend=backend,
+            model=model,
+            stages=[s.strip() for s in stages.split(",") if s.strip()] if stages else None,
+            stride=stride,
+            max_frames=max_frames,
+            title=title,
+            progress=_echo_progress,
+            accept_low_confidence=accept_low_confidence,
+        )
+    except pipeline.LowConfidenceLandmarks as exc:
+        raise _refuse(exc) from exc
     typer.echo(str(game))
 
 
@@ -115,12 +141,17 @@ def calibrate(
     out: Annotated[Path, typer.Option("--out", "-o", help="Where to write calib.json")],
     sport: str = "basketball",
     variant: str | None = None,
+    accept_low_confidence: Annotated[bool, ACCEPT_LOW] = False,
 ) -> None:
     """Landmark clicks → homography. Fails if reprojection error exceeds 5 px."""
-    points = _landmarks(landmarks)
+    points = _landmarks(landmarks, accept_low_confidence)
     assert points is not None
     profile = load_profile(sport)
     data = calib_mod.calibrate(points, profile, variant or _variant_of(landmarks))
+    path = Path(landmarks)
+    raw = json.loads(path.read_text(encoding="utf-8") if path.exists() else landmarks)
+    if block := pipeline.low_confidence(raw):  # reached only with --accept-low-confidence
+        data["low_confidence_override"] = block
     calib_mod.write_calib(out, data)
     typer.echo(f"{out}  reprojection error {data['reproj_error_px']:.3f} px")
 
@@ -154,7 +185,8 @@ def autocalib(
         variant,
         backend=backend,
         optional=ask_optional,
-        prior=_landmarks(str(prior)) if prior else None,
+        # A prior only leashes the fit — dots to drag are exactly what it is for.
+        prior=_landmarks(str(prior), accept_low=True) if prior else None,
     )
     if overlay:
         auto_mod.draw_overlay(img, proposal, overlay, template=profile.template(variant))

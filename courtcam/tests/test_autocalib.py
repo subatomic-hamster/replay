@@ -42,9 +42,7 @@ def is_straight(img: np.ndarray) -> bool:
 def mirrored_answer(points: dict[str, tuple[float, float]]) -> dict[str, list[float]]:
     """What the model would say about the left-right flipped frame: the same physical
     points, mirrored, and with near/far swapped because the other basket is now left."""
-    return {
-        autocalib._swap(name, "n", "f"): [WIDTH - 1 - x, y] for name, (x, y) in points.items()
-    }
+    return {autocalib._swap(name, "n", "f"): [WIDTH - 1 - x, y] for name, (x, y) in points.items()}
 
 
 def stub(straight: dict, flipped: dict):
@@ -83,9 +81,7 @@ def test_prompt_carries_the_profile_glossary(profile):
 
 
 def test_half_court_prompt_omits_landmarks_the_template_lacks(profile):
-    assert "key_fl" not in autocalib.build_prompt(
-        profile, "half", (WIDTH, HEIGHT), optional=True
-    )
+    assert "key_fl" not in autocalib.build_prompt(profile, "half", (WIDTH, HEIGHT), optional=True)
     assert "key_fl" in autocalib.build_prompt(profile, "full", (WIDTH, HEIGHT), optional=True)
 
 
@@ -228,9 +224,11 @@ def test_a_mirrored_labelling_is_corrected_from_the_winding(profile, monkeypatch
 
 def test_too_few_confident_landmarks_is_not_ok_but_still_returns_them(profile, monkeypatch):
     few = {"corner_nl": list(TRUTH["corner_nl"]), "rim": list(TRUTH["rim"])}
-    monkeypatch.setattr(autocalib, "ask_sdk", stub(few, mirrored_answer(
-        {k: TRUTH[k] for k in ("corner_nl", "rim")}
-    )))
+    monkeypatch.setattr(
+        autocalib,
+        "ask_sdk",
+        stub(few, mirrored_answer({k: TRUTH[k] for k in ("corner_nl", "rim")})),
+    )
     out = autocalib.autocalibrate(blank(), profile, "half", backend="vlm")
     assert out.ok is False
     assert set(out.landmarks_px) == {"corner_nl", "rim"}
@@ -425,6 +423,36 @@ def test_physical_keeps_a_real_camera_and_flags_a_sheared_one():
     moved = templatefit.project(court, rebuilt[0]) - templatefit.project(court, cam)
     assert np.abs(moved).max() < 2.0 and skew[0] < 0.01
     assert skew[1] > 0.1
+
+
+def test_a_not_ok_proposal_is_refused_unless_explicitly_accepted(tmp_path: Path):
+    """D-23: `courtcam autocalib --out` with ok=false is dots to drag. A 0.74 pickleball
+    fit used silently put the court 100-400 px too high and the run found 0 events."""
+    from typer.testing import CliRunner
+
+    from courtcam.cli import app
+
+    marks = tmp_path / "landmarks.json"
+    weak = {"ok": False, "score": 0.74, "min_score": 0.9, "source": "template"}
+    marks.write_text(
+        json.dumps({"variant": "half", "landmarks_px": TRUTH, "autocalib": weak}),
+        encoding="utf-8",
+    )
+    calib = tmp_path / "calib.json"
+    args = ["calibrate", "--landmarks", str(marks), "--out", str(calib)]
+
+    refused = CliRunner().invoke(app, args)
+    assert refused.exit_code == 2 and not calib.exists()
+    assert "ok=false (score 0.74, threshold 0.90)" in refused.output
+
+    accepted = CliRunner().invoke(app, [*args, "--accept-low-confidence"])
+    assert accepted.exit_code == 0, accepted.output
+    assert json.loads(calib.read_text())["low_confidence_override"] == weak
+
+    # An ok proposal (or hand clicks with no `autocalib` block) needs no flag.
+    marks.write_text(json.dumps({"landmarks_px": TRUTH, "autocalib": {"ok": True}}))
+    assert CliRunner().invoke(app, args).exit_code == 0
+    assert "low_confidence_override" not in json.loads(calib.read_text())
 
 
 def test_content_box_skips_letterbox_bars():

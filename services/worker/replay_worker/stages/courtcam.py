@@ -91,6 +91,7 @@ def run_calibrate(ctx: Ctx, item: str | None) -> None:
         image_size=(info.width, info.height),
         force=True,
         progress=ctx.progress,
+        low_confidence_override=ctx.cfg.get("low_confidence_override"),
     )
 
 
@@ -242,7 +243,7 @@ STAGES = [
         run_calibrate,
         inputs=(WIDE,),
         outputs=("calib.json",),
-        params=("sport", "variant", "landmarks_px"),
+        params=("sport", "variant", "landmarks_px", "low_confidence_override"),
         after=("ingest",),
     ),
     Stage(

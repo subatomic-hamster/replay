@@ -55,6 +55,8 @@ export interface CalibrationPayload {
   sport: string;
   court_variant: string;
   landmarks_px: Record<string, [number, number]>;
+  /** D-23: commit an ok=false proposal's dots unmoved; the API records the override. */
+  accept_low_confidence?: boolean;
 }
 
 export interface ReplayApi {
@@ -261,6 +263,7 @@ export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
           sport: payload.sport,
           variant: payload.court_variant,
           landmarks_px: payload.landmarks_px,
+          accept_low_confidence: payload.accept_low_confidence ?? false,
         },
       }).then(
         (r): CalibrationResult => ({

@@ -4,9 +4,9 @@ import { mockCalls } from "./helpers";
 // S-04b (D-23): the calibration page proposes the landmarks instead of making the user
 // click them. Accept, adjust, or fall back to the manual walk that S-04 covers.
 
-async function createUploadAndCalibrate(page: Page) {
+async function createUploadAndCalibrate(page: Page, title = "Auto calib") {
   await page.goto("/upload");
-  await page.getByTestId("game-title-input").fill("Auto calib");
+  await page.getByTestId("game-title-input").fill(title);
   await page.getByTestId("sport-option-basketball").check();
   await page.getByTestId("create-game").click();
   await expect.poll(() => new URL(page.url()).pathname).toMatch(/^\/upload\/g_/);
@@ -102,6 +102,58 @@ test("S-04b adjust makes every point draggable and re-validates on release", asy
   const last = (calib.at(-1)!.body as { landmarks_px: Record<string, [number, number]> })
     .landmarks_px;
   expect(last.corner_nl[0]).toBeGreaterThan(first.corner_nl[0]);
+});
+
+// D-23: ok=false is dots to drag, not dots to accept. The CC pickleball run used a 0.74
+// fit unchecked: court 100-400 px too high, 0 events.
+test("S-04b-10 a not-ok proposal needs a drag or an explicit confirm", async ({ page }) => {
+  // The mock answers a game titled "low confidence" with the same dots at ok=false.
+  await createUploadAndCalibrate(page, "Auto calib low confidence");
+  await waitForProposal(page);
+  await expect(page.getByTestId("autocalib-status")).toContainText("needs a check");
+  await expect(page.getByTestId("autocalib-weak")).toContainText("score 0.74 < 0.90");
+  // The dots are still there to drag; Accept is not, until the user confirms.
+  await expect(page.locator('[data-testid^="landmark-"]')).toHaveCount(5);
+  await expect(page.getByTestId("autocalib-accept")).toBeDisabled();
+
+  const posts = async () =>
+    (await mockCalls(page)).filter((c) => c.path.endsWith("/calibration")) as {
+      body: { landmarks_px: Record<string, [number, number]>; accept_low_confidence?: boolean };
+    }[];
+
+  // Adjust without moving anything: the unmoved dots are refused, the gate stays shut.
+  await page.getByTestId("autocalib-adjust").click();
+  await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "false");
+  await expect(page.getByTestId("calib-error")).toContainText("not ok");
+  await expect(page.getByTestId("start-processing")).toBeDisabled();
+
+  // A drag is a manual adjustment: accepted without the confirm.
+  const handle = page.getByTestId("landmark-handle-corner_nl");
+  const box = (await handle.boundingBox())!;
+  const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 15, from.y - 15, { steps: 5 });
+  await page.mouse.up();
+  await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("start-processing")).toBeEnabled();
+  expect((await posts()).at(-1)!.body.accept_low_confidence).toBe(false);
+});
+
+test("S-04b-11 a not-ok proposal can be accepted as-is only with the confirm ticked", async ({
+  page,
+}) => {
+  await createUploadAndCalibrate(page, "Auto calib low confidence");
+  await waitForProposal(page);
+  await expect(page.getByTestId("autocalib-accept")).toBeDisabled();
+  await page.getByTestId("autocalib-confirm").check();
+  await page.getByTestId("autocalib-accept").click();
+
+  const calib = (await mockCalls(page)).filter((c) => c.path.endsWith("/calibration"));
+  expect(calib).toHaveLength(1);
+  expect((calib[0].body as { accept_low_confidence: boolean }).accept_low_confidence).toBe(true);
+  await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("start-processing")).toBeEnabled();
 });
 
 test("S-04b the manual walk is still there for anyone who wants it", async ({ page }) => {

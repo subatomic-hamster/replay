@@ -70,3 +70,11 @@ Template:
 - Evidence: docs/evidence/M11/ (synthetic) · docs/evidence/local/M11/ (Kennesaw, badminton)
 - Decisions: D-45..D-48.
 - Left / known issues: backend only — hype scrubber, rally browser, review screen and export button await the TV/web integration wave; hype untested on real crowd noise.
+
+## M7 — Grounded commentary, advice, query, search (2026-10-06)
+
+- Works: `commentary` worker stage writes a grounded script, per-play WAVs and a game-clock `narration.wav` that the broadcast mixer ducks under; per-player advice; free-text query (rules, then a validated LLM filter); `embeddings` (fan-out per play) + `search_index` stages; API routes for commentary, advice and search. Local tts/llm/embeddings/speaker/query providers run behind a subprocess model runner; AWS stubs unchanged.
+- Verified on hfbox (staged snapshot): ruff clean, courtcam 171, api 193 + 1 skipped, worker 18, render 20 passed; model-runner box test 7 passed against the real venvs. Grounding over 28 synthetic plays: template 28/28, LLM paraphrase accepted 26/28 (both rejections fell back to the template), LLM median 0.27 s/play. Kokoro median 0.19 s/line on GPU (RTF 0.085), 0.35 s on CPU. Advice templates grounded 18/18. Query LLM median 0.58 s; "the crowd going wild" correctly yields no filter. Search: "a steal" and "rebound" rank their two matching plays first.
+- Evidence: docs/evidence/M7/ (synthetic, incl. synthetic_bb90_narrated.mp4) · docs/evidence/local/M7/ (Kennesaw: template 32/32, LLM 30/32)
+- Decisions: D-52.
+- Left / known issues: runner reloads the model per call (index build 107 s for 10 plays); TTS on CPU while llama-server is up; no TV/web UI yet for commentary, advice or search (integration wave); SigLIP retrieval weak on synthetic frames.

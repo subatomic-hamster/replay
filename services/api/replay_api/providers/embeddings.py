@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from . import NotConfiguredError, _runner
+from . import _runner
 
 MODEL, PRETRAINED = "ViT-B-16-SigLIP", "webli"
 
@@ -34,11 +34,7 @@ class LocalEmbeddings:
 
     def embed(self, images: list[Path], texts: list[str]) -> tuple[list, list]:
         """Images and texts in one model load."""
-        if _runner.python_for("embed") is None:
-            raise NotConfiguredError(
-                "embeddings: set REPLAY_MODEL_VENVS to the dir holding the open_clip `emb` "
-                "venv (docs/models.md)"
-            )
+        _runner.require("embed", "embeddings")  # NotConfiguredError naming the variable
         req = {"model": MODEL, "pretrained": PRETRAINED,
                "images": [str(p) for p in images], "texts": list(texts)}  # fmt: skip
         self.last = _runner.call("embed", req)

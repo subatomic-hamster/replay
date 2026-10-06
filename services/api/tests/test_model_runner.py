@@ -63,6 +63,19 @@ def test_tts_runs_in_its_venv_under_the_gpu_lock(venvs):
     assert c["env"]["HF_HUB_OFFLINE"] == "1"
 
 
+def test_no_venvs_is_not_configured_naming_the_variable(tmp_path, monkeypatch):
+    from replay_api.providers import NotConfiguredError
+
+    monkeypatch.delenv("REPLAY_MODEL_VENVS", raising=False)
+    with pytest.raises(NotConfiguredError, match="embeddings: REPLAY_MODEL_VENVS is not set"):
+        LocalEmbeddings().embed_texts(["a steal"])
+    monkeypatch.setenv("REPLAY_MODEL_VENVS", str(tmp_path))
+    with pytest.raises(NotConfiguredError, match="has no `tts` venv"):
+        LocalTTS().synthesize("x", tmp_path / "x.wav")
+    with pytest.raises(NotConfiguredError, match="REPLAY_MODEL_VENVS"):
+        _runner.call("embed", {})
+
+
 def test_cpu_device_takes_no_gpu_lock(venvs, monkeypatch):
     monkeypatch.setenv("REPLAY_MODEL_DEVICE", "cpu")
     LocalEmbeddings().embed_texts(["a steal"])

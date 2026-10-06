@@ -3,8 +3,8 @@
 The pipeline writes plays.json / triggers.json / clips.json / score.json (courtcam
 `stage_plays`); these routes read them and add the user's side: a tap from the phone
 companion (`POST /triggers`), a trimmed clip (`PATCH /clips/{id}`) and a score
-correction (`POST /score`). Everything the user adds is `source: "user"` and survives
-in the same files.
+correction (`POST /score`). Everything the user adds is `source: "user"`, recorded in
+edits.json and applied to the same files, so it survives worker re-runs (D-61).
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import secrets
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from . import edits
 from . import pipeline_adapter as adapter
 
 PLAYS_REL, TRIGGERS_REL, CLIPS_REL, SCORE_REL = (
@@ -54,9 +55,13 @@ def _load(storage, game_id: str, rel: str) -> list[dict]:
     return json.loads(p.read_text()).get(SCHEMAS[rel][1], [])
 
 
-def _save(storage, game_id: str, rel: str, items: list[dict]) -> None:
-    schema, key = SCHEMAS[rel]
-    storage.write_json(game_id, rel, {"schema": schema, key: items})
+def _user_scores(storage, game_id: str) -> list[dict]:
+    """The user's score entries: edits.json, else (a game corrected before D-61) the
+    `source: user` entries still in score.json."""
+    ov = edits.load(storage.game_dir(game_id))
+    if "score" in ov:
+        return ov["score"]
+    return [s for s in _load(storage, game_id, SCORE_REL) if s.get("source") == "user"]
 
 
 def _roster(game: dict) -> dict[str, str]:
@@ -115,17 +120,14 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
             "clip_id": None,
         }
         play_id, clip = adapter.resolve_trigger(game["sport"], trigger, plays, duration)
+        gd = storage.game_dir(game_id)
         if play_id is not None:
             trigger["play_id"], trigger["clip_id"] = play_id, clip["id"]
-            for p in plays:
-                if p["id"] == play_id:
-                    p["trigger"] = {
-                        k: v for k, v in trigger.items() if k not in ("play_id", "clip_id")
-                    }
-            _save(storage, game_id, PLAYS_REL, plays)
-            _save(storage, game_id, CLIPS_REL, [*_load(storage, game_id, CLIPS_REL), clip])
-        triggers = _load(storage, game_id, TRIGGERS_REL)
-        _save(storage, game_id, TRIGGERS_REL, sorted([*triggers, trigger], key=lambda x: x["t"]))
+            bare = {k: v for k, v in trigger.items() if k not in ("play_id", "clip_id")}
+            edits.patch(gd, PLAYS_REL, play_id, {"trigger": bare})
+            edits.add(gd, CLIPS_REL, clip)
+        edits.add(gd, TRIGGERS_REL, trigger)  # D-61: survives worker re-runs
+        edits.apply(gd, (TRIGGERS_REL, PLAYS_REL, CLIPS_REL))
         return {"trigger": trigger, "clip": clip}
 
     @app.get("/games/{game_id}/clips")
@@ -138,6 +140,7 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
         trig = {t["id"]: t for t in _load(storage, game_id, TRIGGERS_REL)}
         clips = _load(storage, game_id, CLIPS_REL)
         for c in clips:
+            c.setdefault("edited", False)  # additive: true once a user trims it
             t = trig.get(c.get("trigger_id") or "")
             if t and t.get("type") == "voice" and roster:
                 subject = adapter.trigger_subject(game["sport"], t.get("transcript"), roster)
@@ -164,8 +167,14 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
         clip = next((c for c in clips if c["id"] == clip_id), None)
         if clip is None:
             raise HTTPException(404, f"clip {clip_id} not found")
-        clip.update(t_start=round(body.t_start, 3), t_end=round(body.t_end, 3), source="user")
-        _save(storage, game_id, CLIPS_REL, clips)
+        # `edited` says a person trimmed it whoever made it; `source: user` stays for
+        # clients that read it as "edited" (D-61)
+        fields = {"t_start": round(body.t_start, 3), "t_end": round(body.t_end, 3),
+                  "source": "user", "edited": True}  # fmt: skip
+        gd = storage.game_dir(game_id)
+        edits.patch(gd, CLIPS_REL, clip_id, fields)
+        edits.apply(gd, (CLIPS_REL,))
+        clip.update(fields)
         return clip
 
     @app.get("/games/{game_id}/score")
@@ -174,7 +183,7 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
         the user's own score entries."""
         storage = ctx(request).storage
         game_or_404(request, game_id)
-        user = [s for s in _load(storage, game_id, SCORE_REL) if s.get("source") == "user"]
+        user = _user_scores(storage, game_id)
         score = adapter.score_timeline(live_events(events_of(storage, game_id)), user)
         return {
             "schema": "replay.score.v1",
@@ -191,9 +200,9 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
             raise HTTPException(400, "scores cannot be negative")
         entry = {"t": round(body.t, 3), "scores": list(body.scores), "event_id": body.event_id,
                  "source": "user"}  # fmt: skip
-        user = [s for s in _load(storage, game_id, SCORE_REL) if s.get("source") == "user"]
-        user = sorted([*user, entry], key=lambda s: s["t"])
+        user = sorted([*_user_scores(storage, game_id), entry], key=lambda s: s["t"])
+        gd = storage.game_dir(game_id)
+        edits.record(gd, lambda ov: ov.update(score=user))  # D-61: survives re-runs
         # the file stays the whole timeline (the broadcast renderer reads it as is)
-        score = adapter.score_timeline(live_events(events_of(storage, game_id)), user)
-        _save(storage, game_id, SCORE_REL, score)
+        edits.apply(gd, (SCORE_REL,))
         return entry

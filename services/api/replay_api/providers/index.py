@@ -72,5 +72,6 @@ class LocalIndex:
                 games.append(self.storage.read_json(d.parent.name, GAME_JSON))
             except (OSError, ValueError):
                 continue
-        games.sort(key=lambda g: g.get("recorded_at", ""), reverse=True)
+        # worker-made games carry `recorded_at: null`: undated sorts last
+        games.sort(key=lambda g: g.get("recorded_at") or "", reverse=True)
         return games

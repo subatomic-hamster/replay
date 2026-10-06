@@ -66,21 +66,33 @@ def _unit(v: np.ndarray) -> np.ndarray:
     return v / max(float(np.linalg.norm(v)), 1e-12)
 
 
-def embed_play(emb: Any, video: Path, play: dict, text: str, out_npy: Path) -> dict:
-    tmp = out_npy.parent / f"_kf_{out_npy.stem}"
+def embed_plays(emb: Any, video: Path, items: list[tuple[dict, str, Path]]) -> dict:
+    """Embed many (play, text, out_npy) in ONE provider call: every play's keyframes and
+    texts go to the model runner together, so the model loads once per batch."""
+    tmp = items[0][2].parent / "_kf_batch"
     try:
-        frames = extract_keyframes(video, keyframe_times(play), tmp)
+        frames = [extract_keyframes(video, keyframe_times(p), tmp / str(i))
+                  for i, (p, _, _) in enumerate(items)]  # fmt: skip
+        flat, texts = [f for fs in frames for f in fs], [t for _, t, _ in items]
         if hasattr(emb, "embed"):  # one model load for both
-            imgs, txts = emb.embed(frames, [text])
+            imgs, txts = emb.embed(flat, texts)
         else:
-            imgs, txts = emb.embed_images(frames), emb.embed_texts([text])
+            imgs, txts = emb.embed_images(flat), emb.embed_texts(texts)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    vec = np.stack([_unit(np.mean(np.asarray(imgs, np.float32), axis=0)),
-                    _unit(np.asarray(txts[0], np.float32))])  # fmt: skip
-    out_npy.parent.mkdir(parents=True, exist_ok=True)
-    np.save(out_npy, vec.astype(np.float32))
-    return {"frames": len(frames), "dim": int(vec.shape[1])}
+    i0, dim = 0, 0
+    for (_, _, out_npy), fs, txt in zip(items, frames, txts, strict=True):
+        img = np.asarray(imgs[i0 : i0 + len(fs)], np.float32)
+        i0 += len(fs)
+        vec = np.stack([_unit(img.mean(axis=0)), _unit(np.asarray(txt, np.float32))])
+        out_npy.parent.mkdir(parents=True, exist_ok=True)
+        np.save(out_npy, vec.astype(np.float32))
+        dim = int(vec.shape[1])
+    return {"plays": len(items), "frames": len(flat), "dim": dim}
+
+
+def embed_play(emb: Any, video: Path, play: dict, text: str, out_npy: Path) -> dict:
+    return embed_plays(emb, video, [(play, text, out_npy)])
 
 
 def write_index(game_dir: Path, plays: list[dict], texts: dict[str, str], model: str) -> dict:

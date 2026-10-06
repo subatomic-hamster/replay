@@ -49,6 +49,26 @@ def python_for(kind: str) -> Path | None:
     return py if py.exists() else None
 
 
+def require(kind: str, provider: str) -> Path:
+    """The `kind` venv's python, or NotConfiguredError saying exactly what to set. Nothing
+    defaults to a box path: without REPLAY_MODEL_VENVS the model providers are off."""
+    from . import NotConfiguredError  # caller side only: the child runs this file bare
+
+    root = venvs_root()
+    if root is None:
+        raise NotConfiguredError(
+            f"{provider}: REPLAY_MODEL_VENVS is not set; point it at the dir holding the "
+            f"model venvs (box: /workspace/wt/replay-env/venvs; docs/models.md)"
+        )
+    py = python_for(kind)
+    if py is None:
+        raise NotConfiguredError(
+            f"{provider}: REPLAY_MODEL_VENVS={root} has no `{VENV_OF[kind]}` venv "
+            f"({root / VENV_OF[kind] / 'bin' / 'python'} is missing; docs/models.md)"
+        )
+    return py
+
+
 def device() -> str:
     return os.environ.get("REPLAY_MODEL_DEVICE", "cuda")
 
@@ -63,9 +83,7 @@ def gpu_lock() -> str | None:
 
 def call(kind: str, request: dict, *, timeout_s: int = 900) -> dict:
     """Run one batch in the `kind` venv and return its JSON response."""
-    py = python_for(kind)
-    if py is None:
-        raise FileNotFoundError(f"no python for {kind!r} under REPLAY_MODEL_VENVS")
+    py = require(kind, kind)
     req = {"device": device(), **request}
     cmd = [str(py), "-I", str(Path(__file__).resolve()), kind]
     lock = gpu_lock() if req["device"] != "cpu" else None

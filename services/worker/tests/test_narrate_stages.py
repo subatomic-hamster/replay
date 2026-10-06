@@ -102,20 +102,30 @@ def test_commentary_stage_writes_script_and_narration(env):
     assert _go(env, "commentary", {"commentary_voice": "bf_emma"}) == [("commentary", "", "miss")]
 
 
-def test_embeddings_fan_out_per_play_and_index(env):
+def test_embeddings_one_model_load_for_every_play_and_index(env):
     gd = env[0]
     FakeEmb.calls = 0
     recs = _go(env, "search_index")
-    assert recs == [("embeddings", "pl_1", "miss"), ("embeddings", "pl_2", "miss"),
-                    ("search_index", "", "off")]  # fmt: skip
-    assert FakeEmb.calls == 2  # one model load per play
+    assert recs == [("embeddings", "", "miss"), ("search_index", "", "off")]
+    assert FakeEmb.calls == 1  # every play in one runner call (was one per play)
     vec = np.load(gd / "embeddings" / "pl_1.npy")
     assert vec.shape == (2, 3) and np.allclose(vec[0], [1, 0, 0])
     idx = json.loads((gd / "embeddings" / "index.json").read_text())
     assert [p["id"] for p in idx["plays"]] == ["pl_1", "pl_2"]
     assert idx["plays"][1]["text"] == "basketball play. Avery shoots, no good."
-    assert ("embeddings", "pl_1", "hit") in _go(env, "search_index")
+    assert ("embeddings", "", "hit") in _go(env, "search_index")
+    assert (gd / "embeddings" / "index.json").is_file()  # rebuilt after the restore
     assert not list((gd / "embeddings").glob("_kf_*"))  # keyframes cleaned up
+
+
+def test_commentary_without_a_tts_model_is_captions_only(env, monkeypatch):
+    from replay_api.providers.tts import LocalTTS
+
+    monkeypatch.delenv("REPLAY_MODEL_VENVS", raising=False)
+    monkeypatch.setattr(providers, "create", lambda name, **kw: LocalTTS())
+    assert _go(env, "commentary") == [("commentary", "", "miss")]
+    script = json.loads((env[0] / "commentary" / "script.json").read_text())
+    assert "REPLAY_MODEL_VENVS" in script["tts"]["skipped"] and script["plays"]
 
 
 def test_registered_off_the_default_dag():

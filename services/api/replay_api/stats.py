@@ -83,6 +83,11 @@ def distance_covered(path: list[tuple[float, float, float]]) -> tuple[float, int
     return total, dropped
 
 
+def _confidence(e: dict) -> float:
+    """A user-verified event (`confirmed`, e.g. a review "Yes") counts as certain."""
+    return 1.0 if e.get("confirmed") else float(e.get("confidence") or 0.0)
+
+
 def _outcome(e: dict) -> str:
     made = e.get("made")
     return "make" if made is True else "miss" if made is False else "unknown"
@@ -135,7 +140,7 @@ def compute(game: dict, events: list[dict], frames: Iterable[dict], profile: dic
         pid = p["id"]
         mine = [e for e in shots if e.get("player_id") == pid]
         makes = [e for e in mine if e.get("made") is True]
-        confidences = [float(e.get("confidence") or 0.0) for e in mine]
+        confidences = [_confidence(e) for e in mine]
         dist, dropped = distance_covered(paths[pid])
         rows.append(
             {
@@ -180,11 +185,9 @@ def compute(game: dict, events: list[dict], frames: Iterable[dict], profile: dic
         # R3: stats are always presented as auto-detected; user confirmations count too.
         "auto_detected": True,
         "label": "auto-detected",
-        "confidence": (
-            round(sum(float(e.get("confidence") or 0.0) for e in used) / len(used), 2)
-            if used
-            else None
-        ),
+        "confidence": (round(sum(_confidence(e) for e in used) / len(used), 2) if used else None),
+        # additive: how many of the counted events a person verified (review answers)
+        "confirmed": sum(1 for e in used if e.get("confirmed")),
         "available": available,
         "box_score": rows,
         "shots": [

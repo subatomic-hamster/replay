@@ -44,11 +44,12 @@ class LocalSpeaker:
         self.threshold = threshold or float(os.environ.get("REPLAY_SPEAKER_THRESHOLD", "0.5"))
 
     def _ready(self) -> Path:
-        if self.dir is None or _runner.python_for("speaker") is None:
+        if self.dir is None:
             raise NotConfiguredError(
                 "speaker: opt-in only; set REPLAY_SPEAKER_DIR (enrollment store) and "
                 "REPLAY_MODEL_VENVS (ECAPA `speaker` venv, docs/models.md)"
             )
+        _runner.require("speaker", "speaker")
         return self.dir
 
     def _path(self, profile_id: str) -> Path:

@@ -108,6 +108,16 @@ def _job(request: Request, game_id: str, kind: str) -> dict | None:
     return max(jobs, key=lambda j: j.get("created_at") or 0) if jobs else None
 
 
+def _render_status(request: Request, game_id: str, kind: str) -> dict:
+    """For an output that is not on disk: its newest job's state. A `done` job whose file
+    has since been deleted is `missing`, which the POST treats like `none` (re-renders)."""
+    job = _job(request, game_id, kind)
+    status = job["status"] if job else "none"
+    return {"status": "missing" if status == "done" else status, "url": None,
+            "job_id": job["id"] if job else None,
+            "error": job.get("error") if job else None}  # fmt: skip
+
+
 # --------------------------------------------------------------------------- hype
 
 
@@ -142,10 +152,7 @@ def _read_doc(path: Path) -> dict:
 def _condensed_status(request: Request, game_id: str, gd: Path) -> dict:
     if (gd / CONDENSED_REL).is_file():
         return {"status": "done", "url": _url(request, game_id, CONDENSED_REL)}
-    job = _job(request, game_id, "condensed")
-    return {"status": job["status"] if job else "none", "url": None,
-            "job_id": job["id"] if job else None,
-            "error": job.get("error") if job else None}  # fmt: skip
+    return _render_status(request, game_id, "condensed")
 
 
 @router.get("/games/{game_id}/rallies")
@@ -187,10 +194,7 @@ def _export(request: Request, game_id: str, gd: Path, vid: str) -> dict:
     rel = f"{VERTICAL_DIR}/{vid}.mp4"
     if (gd / rel).is_file():
         return {**spec, "status": "done", "url": _url(request, game_id, rel)}
-    job = _job(request, game_id, f"vertical:{vid}")
-    return {**spec, "status": job["status"] if job else "none", "url": None,
-            "job_id": job["id"] if job else None,
-            "error": job.get("error") if job else None}  # fmt: skip
+    return {**spec, **_render_status(request, game_id, f"vertical:{vid}")}
 
 
 @router.post("/games/{game_id}/exports/vertical", status_code=202)

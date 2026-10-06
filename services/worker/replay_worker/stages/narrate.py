@@ -11,8 +11,10 @@ Broadcast hand-off: run the broadcast stage with `narration=<game>/commentary/na
 in the config; replay_render's mixer ducks the game audio under it.
 
 Cache keys: commentary hashes events, game.json (names), plays/score when the plays stage
-registers them, plus voice / LLM switch; embeddings fan out one task per play over the
-plays file and the wide video. A replaced plays.json recomputes every play (coarse).
+registers them, plus voice / LLM switch and whether a TTS model is configured (without
+one the script is written text-only, `tts.skipped` saying why); embeddings is one task
+over the plays file and the wide video that embeds every play in one model load. A
+replaced plays.json recomputes every play (coarse).
 """
 
 from __future__ import annotations
@@ -66,30 +68,39 @@ def run_commentary(ctx: Ctx, item: str | None) -> None:
     if ctx.cfg.get("commentary_tts", True):
         tts = providers.create("tts")
         dur = float((game.get("video") or {}).get("duration_s") or 0.0)
-        script["tts"] = C.narrate(script, tts, out, duration_s=dur,
-                                  voice=ctx.cfg.get("commentary_voice"))  # fmt: skip
-        script["tts"]["runner"] = getattr(tts, "last", {})
+        try:
+            script["tts"] = C.narrate(script, tts, out, duration_s=dur,
+                                      voice=ctx.cfg.get("commentary_voice"))  # fmt: skip
+            script["tts"]["runner"] = getattr(tts, "last", {})
+        except providers.NotConfiguredError as exc:
+            # no TTS model here (REPLAY_MODEL_VENVS unset): captions only, said so
+            script["tts"] = {"skipped": str(exc)}
     (out / "script.json").write_text(json.dumps(script, indent=1), encoding="utf-8")
 
 
-def _play_ids(ctx: Ctx) -> list[str]:
-    from replay_api.narrate import commentary as C
-    from replay_api.narrate import search as S
+def _tts_ready(cfg: dict) -> bool:
+    """Part of the commentary key: a text-only script must not stay cached once a TTS
+    model is configured."""
+    from replay_api.providers import _runner
 
-    _, events, plays, _ = _docs(ctx)
-    return [S.safe_id(p["id"]) for p in C.game_plays(plays, events)]
+    return _runner.python_for("tts") is not None
 
 
 def run_embeddings(ctx: Ctx, item: str | None) -> None:
+    """Every play in one model-runner process (one model load per stage run, not per
+    play: the per-play fan-out reloaded SigLIP ~10 s each and keyed every play on the
+    same files anyway)."""
     from replay_api import providers
     from replay_api.narrate import commentary as C
     from replay_api.narrate import search as S
 
     game, events, plays, score = _docs(ctx)
-    play = next(p for p in C.game_plays(plays, events) if S.safe_id(p["id"]) == item)
-    text = S.play_text(game, play, events, score)
-    out = ctx.game_dir / "embeddings" / f"{item}.npy"
-    S.embed_play(providers.create("embeddings"), ctx.game_dir / P.WIDE_REL, play, text, out)
+    out = ctx.game_dir / "embeddings"
+    out.mkdir(parents=True, exist_ok=True)
+    items = [(p, S.play_text(game, p, events, score), out / f"{S.safe_id(p['id'])}.npy")
+             for p in C.game_plays(plays, events)]  # fmt: skip
+    if items:
+        S.embed_plays(providers.create("embeddings"), ctx.game_dir / P.WIDE_REL, items)
 
 
 def run_index(ctx: Ctx, item: str | None) -> None:
@@ -113,6 +124,7 @@ STAGES = [
         outputs=(OUT,),
         params=("commentary_voice", "commentary_llm", "commentary_tts"),
         after=("game",),
+        key_extra=_tts_ready,
         default=False,
     ),
     Stage(
@@ -120,9 +132,9 @@ STAGES = [
         VERSION,
         run_embeddings,
         inputs=("events.json", "game.json", P.WIDE_REL, *OPTIONAL),
-        outputs=("embeddings/{item}.npy",),
+        # the whole dir: search_index (uncached, after this) rewrites its index.json
+        outputs=("embeddings",),
         after=("game",),
-        fanout=_play_ids,
         default=False,
     ),
     Stage(

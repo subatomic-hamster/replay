@@ -36,7 +36,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .. import providers
+from .. import edits, providers
 from ..providers import NotConfiguredError
 from ..providers.profiles import LinkConflict, blank
 from . import card as K
@@ -112,11 +112,13 @@ def _set_roster(request: Request, game_id: str, player_id: str, name: str | None
     player = next((p for p in (game or {}).get("players") or [] if p["id"] == player_id), None)
     if player is None:
         return
-    if profile_id is None:
-        player.pop("profile_id", None)
-    else:
-        player.update(name=name, tagged=True, profile_id=profile_id)
-    index.save(game)
+    fields = (
+        {"profile_id": None}  # unlink keeps the name
+        if profile_id is None
+        else {"name": name, "tagged": True, "profile_id": profile_id}
+    )
+    gd = request.app.state.storage.game_dir(game_id)
+    index.save(edits.apply_game(game, edits.patch(gd, "game.json", player_id, fields)))  # D-61
 
 
 @router.get("/profiles")

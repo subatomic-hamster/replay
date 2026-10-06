@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from . import discovery_routes, plays_routes, providers
+from . import discovery_routes, edits, plays_routes, providers
 from . import pipeline_adapter as adapter
 from . import stats as stats_mod
 from .config import Settings, from_env
@@ -132,10 +132,6 @@ def _events(storage: LocalStorage, game_id: str) -> list[dict]:
     if not p.is_file():
         return []
     return json.loads(p.read_text()).get("events", [])
-
-
-def _save_events(storage: LocalStorage, game_id: str, events: list[dict]) -> None:
-    storage.write_json(game_id, EVENTS_REL, {"schema": "replay.events.v1", "events": events})
 
 
 def _track_frames(storage: LocalStorage, game_id: str):
@@ -538,19 +534,22 @@ def _register_routes(app: FastAPI) -> None:
         if body.name is None and body.merge_into is None:
             raise HTTPException(400, "provide `name` and/or `merge_into`")
 
-        if body.name is not None:
-            player["name"] = body.name
-            player["tagged"] = True
-
         if body.merge_into is not None:
             target = next((p for p in players if p["id"] == body.merge_into), None)
             if target is None:
                 raise HTTPException(404, f"player {body.merge_into} not found")
             if target["id"] == player_id:
                 raise HTTPException(400, "cannot merge a player into itself")
-            _merge_player(ctx.storage, game, player_id, target["id"])
-            game["players"] = [p for p in players if p["id"] != player_id]
 
+        # D-61: recorded in edits.json, then applied to game.json, tracks, crops and
+        # events (a merge rewrites ids there: no alias map for every client to learn)
+        gd = ctx.storage.game_dir(game_id)
+        if body.name is not None:
+            edits.patch(gd, "game.json", player_id, {"name": body.name, "tagged": True})
+        if body.merge_into is not None:
+            edits.merge(gd, player_id, body.merge_into)
+            edits.apply(gd, ("tracks", "crops", EVENTS_REL))
+        game = edits.apply_game(game, edits.load(gd))
         ctx.index.save(game)
         return _resolve_urls(game, ctx.storage, _base(request))
 
@@ -587,11 +586,16 @@ def _register_routes(app: FastAPI) -> None:
             raise HTTPException(404, f"event {event_id} not found")
 
         changed = {k: v for k, v in body.items() if k != "confirmed" and event.get(k) != v}
-        event.update(body)
-        event["confirmed"] = bool(body.get("confirmed", True))
+        # Any answer confirms (a review "Yes" is `{"confirmed": true}` and keeps the
+        # detector's `source`); a changed field is sourced to the user (§4.5).
+        fields = {**body, "confirmed": bool(body.get("confirmed", True))}
         if changed:
-            event["source"] = "user"  # §4.5: user-corrected fields are sourced to the user
-        _save_events(ctx.storage, game_id, events)
+            fields["source"] = "user"
+        gd = ctx.storage.game_dir(game_id)
+        anchor = {"type": event.get("type"), "t_key": event.get("t_key")}
+        edits.patch(gd, EVENTS_REL, event_id, fields, anchor)  # D-61: survives re-runs
+        edits.apply(gd, (EVENTS_REL, "score.json"))
+        event.update(fields)
         return event
 
     @app.post("/games/{game_id}/events", status_code=201)
@@ -599,7 +603,6 @@ def _register_routes(app: FastAPI) -> None:
         ctx = _ctx(request)
         game = _game_or_404(request, game_id)
         duration = (game.get("video") or {}).get("duration_s") or 0.0
-        events = _events(ctx.storage, game_id)
         event = {
             "id": "e_" + secrets.token_hex(4),
             "type": "bookmark",
@@ -611,8 +614,9 @@ def _register_routes(app: FastAPI) -> None:
             "source": "user",
             "confirmed": True,
         }
-        events.append(event)
-        _save_events(ctx.storage, game_id, events)
+        gd = ctx.storage.game_dir(game_id)
+        edits.add(gd, EVENTS_REL, event)
+        edits.apply(gd, (EVENTS_REL,))
         return event
 
     # ---------------------------------------------------------------- query & stats
@@ -818,7 +822,11 @@ def _process_task(
             base["status"] = "failed"
             index.save(copy.deepcopy(base))
             raise
-        merged = {**base, **produced}
+        # D-61: every pipeline (fake, courtcam, worker) rewrites the files it owns; the
+        # user's corrections go back on top (the worker has already done so: idempotent)
+        gd = storage.game_dir(game_id)
+        edits.apply(gd)
+        merged = edits.apply_game({**base, **produced}, edits.load(gd))
         merged["stages"] = {k: "done" for k in base["stages"]}
         merged["status"] = "ready"
         index.save(merged)
@@ -847,38 +855,6 @@ def _render_task(
         index.save(game)
 
     return task
-
-
-def _merge_player(storage: LocalStorage, game: dict, src: str, dst: str) -> None:
-    """Rewrite `src` -> `dst` in tracks chunks + events; drop src's crops/rendition.
-
-    Rewriting is cheap (a few KB per 10 s chunk) and leaves no alias map for every
-    client to reimplement.
-    """
-    gid = game["id"]
-    for chunk in sorted(storage.path(gid, "tracks").glob("*.json")):
-        data = json.loads(chunk.read_text())
-        for frame in data.get("frames", []):
-            keep: dict[str, dict] = {}
-            for entry in frame.get("p", []):
-                if entry.get("id") == src:
-                    entry["id"] = dst
-                prev = keep.get(entry["id"])
-                # a frame can now hold two boxes for dst; keep the confident one
-                if prev is None or (entry.get("c") or 0) > (prev.get("c") or 0):
-                    keep[entry["id"]] = entry
-            frame["p"] = list(keep.values())
-        chunk.write_text(json.dumps(data))
-
-    events = _events(storage, gid)
-    for event in events:
-        if event.get("player_id") == src:
-            event["player_id"] = dst
-    if events:
-        _save_events(storage, gid, events)
-
-    storage.path(gid, f"crops/{src}.json").unlink(missing_ok=True)
-    (game.get("renditions") or {}).get("players", {}).pop(src, None)
 
 
 def __getattr__(name: str):

@@ -138,6 +138,17 @@ def _resource(stage: Stage, cfg: dict) -> str:
     return res
 
 
+def _apply_edits(game_dir: Path, outputs: list[str]) -> None:
+    """D-61: re-apply the user's corrections (the API's edits.json) to the outputs just
+    restored or computed, so they survive any re-run and downstream stages hash and read
+    the corrected files. The cache keeps the uncorrected outputs."""
+    if not (game_dir / "edits.json").is_file():
+        return
+    from replay_api import edits  # services/api on the path, as for the narrate stages
+
+    edits.apply(game_dir, outputs)
+
+
 def _execute(r: _Run, stage: Stage, item: str | None) -> dict:
     ctx = r.ctx
     started = time.time()
@@ -180,6 +191,7 @@ def _execute(r: _Run, stage: Stage, item: str | None) -> dict:
                 meta = {"stage": stage.name, "version": stage.version, "item": item}
                 r.cache.store(stage.name, key, ctx.game_dir, outputs, {**meta, "params": params})
             rec["cache"] = "miss" if stage.cache else "off"
+        _apply_edits(ctx.game_dir, outputs)
         rec["status"] = "ok"
     except BaseException as exc:
         rec.update(status="fail", error=f"{type(exc).__name__}: {exc}")

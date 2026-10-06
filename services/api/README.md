@@ -38,6 +38,14 @@ uv run --package replay-api pytest services/api/tests -q
 | `REPLAY_FAKE_PIPELINE_DIR` | `fixtures/fake_game` | the tree fake mode copies |
 | `REPLAY_FAKE_PIPELINE_DELAY_S` | `0` | fake mode only: seconds each stage stays `running` (S-08) |
 | `REPLAY_DETECTOR` | `yolo` | passed through to courtcam |
+| `REPLAY_MODEL_VENVS` | *(unset)* | dir holding the model venvs (`tts` Kokoro, `emb` SigLIP, `speaker` ECAPA; box: `/workspace/wt/replay-env/venvs`, docs/models.md). Unset ⇒ those providers raise `NotConfiguredError` naming this variable: search answers 503, the worker's `commentary` stage writes a text-only script (`tts.skipped`), `embeddings` fails with that message |
+| `REPLAY_MODEL_DEVICE` | `cuda` | `cpu` runs the model venvs without the GPU lock |
+| `REPLAY_LLM_URL` | *(unset)* | llama.cpp server for LLM paraphrases / query filters (providers/llm.py); unset ⇒ templates only |
+| `REPLAY_GPU_LOCK` | `/workspace/airtools/.gpu.lock` if it exists | lock file the model runner and worker take around GPU work |
+
+User corrections (event PATCHes, bookmarks, roster names / merges / profile links, clip
+trims, tap triggers, score entries) are recorded in `<game>/edits.json` and applied on
+top of the pipeline's files, so they survive any re-run (D-61, `replay_api/edits.py`).
 
 If `import courtcam` fails at runtime, the API logs a warning and falls back to fake mode
 and a static basketball profile, so the web app still works.

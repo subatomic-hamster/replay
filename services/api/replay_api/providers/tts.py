@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from . import NotConfiguredError, _runner
+from . import _runner
 
 DEFAULT_VOICE = "am_michael"
 
@@ -36,11 +36,7 @@ class LocalTTS:
 
     def synthesize_many(self, items: list[tuple[str, Path]], *, voice: str | None = None) -> dict:
         """One model load for a batch of (text, out_path)."""
-        if _runner.python_for("tts") is None:
-            raise NotConfiguredError(
-                "tts: set REPLAY_MODEL_VENVS to the dir holding the Kokoro `tts` venv "
-                "(docs/models.md)"
-            )
+        _runner.require("tts", "tts")  # NotConfiguredError naming REPLAY_MODEL_VENVS
         req = {
             "voice": voice or self.voice,
             "items": [{"text": t, "out": str(p)} for t, p in items],

@@ -33,6 +33,10 @@ The API uses it with `REPLAY_PIPELINE=worker` (services/api `pipeline_adapter.ru
   renamed, so an entry is whole or absent. A hit restores the outputs into the game dir
   and never calls the stage. Because keys hash input *content*, a recompute that
   produces identical bytes leaves every downstream stage a hit.
+- **User corrections** (D-61): when the game dir has the API's `edits.json`, every task
+  re-applies it to the outputs it just restored or computed (`replay_api.edits.apply`;
+  game.json, tracks/, crops/, events/triggers/plays/clips/score.json). The cache keeps the
+  uncorrected outputs; downstream stages hash the corrected files, so an edit re-keys them.
 - **Resume**: there is no resume mode — rerun the same command; finished tasks are hits.
 - **Fan-out**: `fanout=lambda ctx: [...]` turns a stage into one task per item
   (per player / play / angle); each item has its own key and runs in parallel.

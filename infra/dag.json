@@ -190,7 +190,7 @@
    "game"
   ],
   "resource": "cpu",
-  "fanout": true,
+  "fanout": false,
   "cached": true,
   "default": false
  },

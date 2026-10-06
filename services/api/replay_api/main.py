@@ -743,7 +743,56 @@ def _register_routes(app: FastAPI) -> None:
             c = m.get("commentary") or {}
             if c.get(key):
                 c[key] = storage.url(game_id, c[key], base)
+        scene = storage.resolve_inside(game_id, f"{REPLAYS_REL}/{play_id}/scene/layout.json")
+        m["scene_url"] = (
+            f"{base}/games/{game_id}/scenes/{play_id}" if scene and scene.is_file() else None
+        )
         return {**m, "game_id": game_id}
+
+    # 2.5D scene packages (replay.scene_package.v1, docs/scene-format.md): the layout with
+    # absolute file URLs; the files themselves go through /media (HTTP Range).
+
+    @app.get("/games/{game_id}/scenes")
+    def list_scenes(request: Request, game_id: str):
+        _game_or_404(request, game_id)
+        storage: LocalStorage = _ctx(request).storage
+        out = []
+        for path in sorted(storage.path(game_id, REPLAYS_REL).glob("*/scene/layout.json")):
+            try:
+                lay = json.loads(path.read_text())
+            except ValueError:
+                log.warning("skipping malformed scene layout %s", path)
+                continue
+            pid = lay.get("play_id") or path.parent.parent.name
+            out.append(
+                {
+                    "play_id": pid,
+                    "label": lay.get("label") or pid,
+                    "schema": lay.get("schema"),
+                    "t_start": lay.get("t_start"),
+                    "t_end": lay.get("t_end"),
+                    "n_frames": lay.get("n_frames"),
+                    "synthetic": bool(lay.get("synthetic")),
+                    "layout_url": f"{_base(request)}/games/{game_id}/scenes/{pid}",
+                }
+            )
+        out.sort(key=lambda r: (r["t_start"] is None, r["t_start"] or 0.0))
+        return {"game_id": game_id, "scenes": out}
+
+    @app.get("/games/{game_id}/scenes/{play_id}")
+    def get_scene(request: Request, game_id: str, play_id: str):
+        _game_or_404(request, game_id)
+        storage: LocalStorage = _ctx(request).storage
+        rel = f"{REPLAYS_REL}/{play_id}/scene"
+        path = storage.resolve_inside(game_id, f"{rel}/layout.json")
+        if path is None or not path.is_file():
+            raise HTTPException(404, f"no scene {play_id} for game {game_id}")
+        lay = json.loads(path.read_text())
+        base = _base(request)
+        for entry in [*(lay.get("plates") or []), lay.get("atlas") or {}]:
+            if entry.get("file"):
+                entry["url"] = storage.url(game_id, f"{rel}/{entry['file']}", base)
+        return {**lay, "game_id": game_id}
 
     # ---------------------------------------------------------------- sessions
 

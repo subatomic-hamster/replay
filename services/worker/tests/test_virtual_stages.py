@@ -87,3 +87,21 @@ def test_fan_out_per_play_and_angle_writes_a_manifest_then_hits(env):
     again = {(r["stage"], r["item"]): r["cache"] for r in _go(env)}
     assert all(v == "hit" for (s, _), v in again.items() if s != "replays")
     assert again[("replays", "ev_e1")] == "off"
+
+
+def test_scene_package_per_play_then_hits(env):
+    gd, cfg, cache = env
+    recs = run(gd, cfg, registry=_registry(), stages=["scene"], cache=cache)
+    assert [r["item"] for r in recs if r["stage"] == "scene"] == ["ev_e1"]
+    pkg = gd / "replays" / "ev_e1" / "scene"
+    lay = json.loads((pkg / "layout.json").read_text())
+    assert lay["schema"] == "replay.scene_package.v1" and lay["synthetic"] is True
+    assert {p.name for p in pkg.iterdir()} == {
+        "layout.json",
+        "atlas.mp4",
+        "floor.png",
+        "backdrop.png",
+    }
+    assert len(lay["frames"]) == lay["n_frames"] > 0
+    again = run(gd, cfg, registry=_registry(), stages=["scene"], cache=cache)
+    assert {r["cache"] for r in again if r["stage"] == "scene"} == {"hit"}

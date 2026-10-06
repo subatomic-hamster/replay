@@ -9,6 +9,9 @@
 * `tierb`   one task per play x 2.5D angle (broadcast_high, orbit, push_in)
 * `replays` one task per play: replays/<play>/manifest.json (uncached bookkeeping:
   it lists whichever angle videos exist)
+* `scene`   one task per play: replays/<play>/scene/ (`replay.scene_package.v1`: plate
+  textures, player atlas video, layout.json with the camera envelope) for clients that
+  render the 2.5D scene live (docs/scene-format.md)
 
 None is in the default DAG (the default run must not need render/ or a GPU model):
 `--stages replays` runs the lot. Run-config knobs: `highlights_n` (default 3),
@@ -139,6 +142,14 @@ def _width(cfg: dict) -> int:
     return int(cfg.get("replay_width") or 1280) // 2 * 2
 
 
+def run_scene(ctx: Ctx, item: str | None) -> None:
+    from replay_render.virtual import scene
+
+    scene.build_package(
+        ctx.game_dir, _video(ctx), item, progress=lambda f: ctx.progress("scene", f)
+    )
+
+
 def run_replays(ctx: Ctx, item: str | None) -> None:
     from replay_render.virtual.replays import write_manifest
 
@@ -208,6 +219,26 @@ STAGES = [
         params=("replay_width",),
         after=("segment", "plate"),
         fanout=lambda ctx: _angles(ctx, "B"),
+        default=False,
+    ),
+    Stage(
+        "scene",
+        _version("scene", "tierb", "segment", "replays", courtcam=(calib_mod, plate_mod)),
+        run_scene,
+        inputs=(
+            cc.WIDE,
+            HIGHLIGHTS,
+            "calib.json",
+            "calibration.json",
+            "plate",
+            "segments/{item}.npz",
+            "segments/{item}.json",
+            "tracks",
+            "game.json",
+        ),
+        outputs=("replays/{item}/scene",),
+        after=("segment", "plate"),
+        fanout=_plays,
         default=False,
     ),
     Stage(

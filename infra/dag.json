@@ -267,6 +267,17 @@
   "default": false
  },
  {
+  "name": "scene",
+  "after": [
+   "segment",
+   "plate"
+  ],
+  "resource": "cpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
   "name": "replays",
   "after": [
    "tiera",

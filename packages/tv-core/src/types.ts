@@ -268,3 +268,144 @@ export interface RenderJob {
   status: string;
   player_id: string;
 }
+
+// ---------------------------------------------------------------- 2.5D scene package
+// replay.scene_package.v1 (docs/scene-format.md). Scene frame: court metres, z up, floor
+// z = 0 (x already negated when the calibration was mirrored). Angles in degrees.
+
+export type Vec2 = [number, number];
+export type Vec3 = [number, number, number];
+/** World corners of a texture's edges for uv (0,0), (1,0), (1,1), (0,1); uv origin is
+ *  the image's top-left, v down. */
+export type Quad = [Vec3, Vec3, Vec3, Vec3];
+
+export interface ScenePlate {
+  id: "backdrop" | "floor";
+  /** RGBA PNG; alpha 0 where the real camera never saw the texel. */
+  file: string;
+  /** Absolute URL, added by GET /games/{id}/scenes/{play_id}. */
+  url?: string;
+  size_px: Vec2;
+  corners_m: Quad;
+}
+
+export interface SceneAtlas {
+  file: string;
+  url?: string;
+  size_px: Vec2;
+  cell_px: Vec2;
+  grid: Vec2;
+  inset_px: number;
+  /** The mask texel of a colour uv is at u + mask_offset_u. */
+  mask_offset_u: number;
+  /** alpha = clamp((mask - lo) / (hi - lo), 0, 1), mask in 0..1 after decoding. */
+  mask_ramp: [number, number];
+  codec: string;
+  gop_frames: number;
+}
+
+/** One visible player in one frame. The billboard is the vertical rectangle
+ *  foot + s * axis + z * up for s in [s0, s1], z in [z0, z1]; uv is its colour rect. */
+export interface SceneSprite {
+  pid: string;
+  cell: number;
+  foot: Vec2;
+  rect: [number, number, number, number];
+  uv: [number, number, number, number];
+  /** Distance along the real camera's optical axis to the chest point (m). */
+  depth: number;
+}
+
+export interface SceneCameraState {
+  /** Offset from envelope.azimuth0_deg. */
+  azimuth_deg: number;
+  elevation_deg: number;
+  distance_m: number;
+  roll_deg: number;
+  fov_y_deg: number;
+}
+
+export interface ScenePreset extends SceneCameraState {
+  id: string;
+  label: string;
+}
+
+export interface SceneViewMetrics {
+  seen: number;
+  az_dev: number;
+  el_dev: number;
+  mag: number;
+  players: number;
+}
+
+export interface SceneEnvelope {
+  target_m: Vec3;
+  azimuth0_deg: number;
+  fov_y_deg: number;
+  azimuth_deg: Vec2;
+  elevation_deg: Vec2;
+  distance_m: Vec2;
+  limits: {
+    az_dev_max_deg: number;
+    el_dev_max_deg: number;
+    seen_min_of_real: number;
+    mag_max_rel_real: number;
+  };
+  edge_metrics: Record<string, SceneViewMetrics>;
+}
+
+export interface SceneHoop {
+  rim_m: Vec3;
+  rim_radius_m: number;
+  backboard_m: Quad;
+}
+
+/** GET /games/{id}/scenes/{play_id} (the package's layout.json plus game_id and urls). */
+export interface SceneLayout {
+  schema: "replay.scene_package.v1";
+  game_id?: string;
+  play_id: string;
+  label: string | null;
+  sport: string | null;
+  synthetic: boolean;
+  /** Must stay visible while the scene is shown. */
+  honesty_label: string;
+  t_start: number;
+  t_end: number;
+  fps: number;
+  n_frames: number;
+  frame: { units: "m"; up: "+z"; floor: "z = 0"; mirror_x: boolean };
+  /** Real camera, OpenCV convention: x_cam = R X + t, pixels = K x_cam (x right, y down). */
+  camera: {
+    image_size: Vec2;
+    K: number[][];
+    R: number[][];
+    t: Vec3;
+    position_m: Vec3;
+  };
+  plates: ScenePlate[];
+  atlas: SceneAtlas;
+  players: Record<string, { team: number | null }>;
+  billboard: { facing: "real" | "viewer"; shadow_radius_m: number };
+  /** frames[f] = sprites of atlas frame f (media time f / fps). */
+  frames: SceneSprite[][];
+  static: {
+    hoops: SceneHoop[];
+    net: null | { top_l_m: Vec3; top_r_m: Vec3; depth_m: number };
+  };
+  ball: null | { source: "model"; note: string; radius_m: number; xyz: (Vec3 | null)[] };
+  envelope: SceneEnvelope;
+  presets: ScenePreset[];
+}
+
+/** One row of GET /games/{id}/scenes. */
+export interface SceneSummary {
+  play_id: string;
+  label: string;
+  schema: string;
+  t_start: number;
+  t_end: number;
+  n_frames: number;
+  synthetic: boolean;
+  layout_url: string;
+}

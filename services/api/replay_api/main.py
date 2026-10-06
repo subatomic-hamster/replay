@@ -44,6 +44,8 @@ SOURCE_REL = "source.mp4"
 # M6: written by the worker's director / broadcast stages (replay_render)
 CUTS_REL = "cuts.json"
 BROADCAST_REL = "renditions/broadcast.mp4"
+# M8: written by the worker's virtual-angle stages (replay_render.virtual)
+REPLAYS_REL = "replays"
 EVENT_FIELDS = {
     "type",
     "made",
@@ -650,6 +652,54 @@ def _register_routes(app: FastAPI) -> None:
                  "cuts_url": g["cuts_url"]}
             )  # fmt: skip
         return {"game_id": game_id, "renditions": out}
+
+    # ---------------------------------------------------------------- replays (M8)
+
+    @app.get("/games/{game_id}/replays")
+    def list_replays(request: Request, game_id: str):
+        """Every highlight with a rendered angle set (replays/<play>/manifest.json)."""
+        _game_or_404(request, game_id)
+        storage: LocalStorage = _ctx(request).storage
+        out = []
+        for path in sorted(storage.path(game_id, REPLAYS_REL).glob("*/manifest.json")):
+            try:
+                m = json.loads(path.read_text())
+            except ValueError:
+                log.warning("skipping malformed replay manifest %s", path)
+                continue
+            if not m.get("angles"):
+                continue
+            pid = m.get("play_id") or path.parent.name
+            out.append(
+                {
+                    "play_id": pid,
+                    "label": m.get("label") or pid,
+                    "t_start": m.get("t_start"),
+                    "t_end": m.get("t_end"),
+                    "angles": len(m["angles"]),
+                    "manifest_url": f"{_base(request)}/games/{game_id}/replays/{pid}",
+                }
+            )
+        out.sort(key=lambda r: (r["t_start"] is None, r["t_start"] or 0.0))
+        return {"game_id": game_id, "replays": out}
+
+    @app.get("/games/{game_id}/replays/{play_id}")
+    def get_replay(request: Request, game_id: str, play_id: str):
+        """One manifest (replay.replay_manifest.v1) with absolute media URLs."""
+        _game_or_404(request, game_id)
+        storage: LocalStorage = _ctx(request).storage
+        path = storage.resolve_inside(game_id, f"{REPLAYS_REL}/{play_id}/manifest.json")
+        if path is None or not path.is_file():
+            raise HTTPException(404, f"no replay {play_id} for game {game_id}")
+        m = json.loads(path.read_text())
+        base = _base(request)
+        for a in m.get("angles") or []:
+            a["url"] = storage.url(game_id, a["url"], base)
+        for key in ("text_url", "audio_url"):
+            c = m.get("commentary") or {}
+            if c.get(key):
+                c[key] = storage.url(game_id, c[key], base)
+        return {**m, "game_id": game_id}
 
     # ---------------------------------------------------------------- sessions
 

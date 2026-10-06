@@ -7,7 +7,7 @@ import { StyleSheet } from "react-native";
 import Video, { type VideoRef } from "react-native-video";
 import { clamp, type MediaHandle, type MediaProps } from "../playback/media";
 
-export function Media({ src, muted, onEnded, ref }: MediaProps) {
+export function Media({ src, muted, loop, onEnded, ref }: MediaProps) {
   const video = useRef<VideoRef>(null);
   const [paused, setPaused] = useState(true);
   const state = useRef({ t: 0, duration: 0, paused: true });
@@ -16,7 +16,8 @@ export function Media({ src, muted, onEnded, ref }: MediaProps) {
 
   if (lastSrc.current !== src) {
     lastSrc.current = src;
-    resumeAt.current = state.current.t;
+    // A second swap before the first has loaded keeps the first one's target.
+    resumeAt.current = resumeAt.current ?? state.current.t;
   }
 
   useImperativeHandle(
@@ -48,6 +49,7 @@ export function Media({ src, muted, onEnded, ref }: MediaProps) {
       source={{ uri: src }}
       paused={paused}
       muted={muted}
+      repeat={loop}
       resizeMode="stretch"
       progressUpdateInterval={100}
       style={StyleSheet.absoluteFill}

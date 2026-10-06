@@ -1,0 +1,124 @@
+/* M8 Replay view + list (tokens from app.css). 10-foot: nothing below 24px. */
+.replay-cards {
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 16px;
+  max-width: 900px;
+}
+.replay-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 28px 18px;
+  border-radius: 14px;
+  background: var(--panel);
+  transition: box-shadow 120ms ease;
+}
+.replay-card.focused {
+  box-shadow: var(--ring);
+  background: var(--raised);
+}
+.replay-card-title {
+  font-size: 34px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.replay-card-meta {
+  font-size: 24px;
+  color: var(--dim);
+}
+
+.replay-top {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 40px 28px;
+  background: linear-gradient(to bottom, rgba(var(--scrim), 0.9), rgba(var(--scrim), 0));
+}
+.replay-kicker {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+.replay-title {
+  flex: 1;
+  font-size: 28px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.replay-synthetic {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--dim);
+}
+
+/* Broadcast-style lower-left bug: tier + position on top, the angle name below; the name
+   is big for a moment after each cut. */
+.replay-bug {
+  position: absolute;
+  left: 40px;
+  bottom: 120px;
+  padding: 14px 24px 16px;
+  border-left: 8px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(var(--scrim), 0.82);
+}
+.replay-bug-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 24px;
+}
+.replay-tier {
+  margin-right: 6px;
+  padding: 2px 14px 3px;
+  border-radius: 6px;
+  font-weight: 800;
+  color: var(--on-accent);
+  background: var(--dim);
+}
+.replay-tier.tier-A {
+  background: var(--made);
+}
+.replay-tier.tier-B {
+  background: #8ab4ff;
+}
+.replay-tier.tier-C {
+  background: #c9a7ff;
+}
+.replay-arrow {
+  color: var(--dim);
+}
+.replay-pos {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.replay-angle {
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 700;
+  transition: font-size 200ms ease;
+}
+.replay-bug.prominent .replay-angle {
+  font-size: 56px;
+}
+.replay .replay-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 40px 40px 28px;
+  background: linear-gradient(to top, rgba(var(--scrim), 0.9), rgba(var(--scrim), 0));
+}

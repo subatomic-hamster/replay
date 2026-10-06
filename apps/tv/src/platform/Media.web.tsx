@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { clamp, type MediaHandle, type MediaProps } from "../playback/media";
 
-export function Media({ src, muted, onEnded, ref }: MediaProps) {
+export function Media({ src, muted, loop, onEnded, ref }: MediaProps) {
   const video = useRef<HTMLVideoElement>(null);
   const wantPlay = useRef(false);
   const tries = useRef(0);
@@ -32,10 +32,14 @@ export function Media({ src, muted, onEnded, ref }: MediaProps) {
   }, [tryPlay]);
 
   // Snapshot before React commits the new src and the element resets to 0.
+  // A swap that lands before the previous one has loaded keeps that one's target: the
+  // element has reset to 0 and paused in between (rapid replay-angle cuts). The element
+  // still holds the old src during render, so its currentTime is exact; `timeupdate` (the
+  // ref) lags it by up to 250 ms and misses a seek that has not completed yet.
   if (lastSrc.current !== src) {
     lastSrc.current = src;
-    resumeAt.current = {
-      t: timeRef.current,
+    resumeAt.current = resumeAt.current ?? {
+      t: video.current?.currentTime ?? timeRef.current,
       playing: !(video.current?.paused ?? true) || wantPlay.current,
     };
   }
@@ -58,8 +62,8 @@ export function Media({ src, muted, onEnded, ref }: MediaProps) {
     const v = video.current;
     const resume = resumeAt.current;
     if (!v || !resume) return;
-    resumeAt.current = null;
     const apply = () => {
+      resumeAt.current = null;
       v.currentTime = resume.t;
       if (resume.playing) requestPlay();
     };
@@ -92,6 +96,7 @@ export function Media({ src, muted, onEnded, ref }: MediaProps) {
       ref={video}
       src={src}
       muted={muted}
+      loop={loop}
       playsInline
       preload="auto"
       data-testid="video"

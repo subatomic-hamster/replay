@@ -29,11 +29,18 @@ const NAV: { label: string; to: (id: string) => string }[] = [
   { label: "Library", to: () => "/tv" },
   { label: "Highlights", to: (id) => `/tv/${id}/highlights` },
   { label: "Review", to: (id) => `/tv/${id}/review` },
+  // M8: only when the game has rendered replays (filtered in Watch).
+  { label: "Replays", to: (id) => `/tv/${id}/replays` },
 ];
 
 export function Watch({ gameId }: { gameId: string }) {
   const { params } = useLocation();
   const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
+  const { data: replays } = useAsync(() => api.listReplays(gameId), [gameId]);
+  const nav = useMemo(
+    () => (replays?.length ? NAV : NAV.filter((n) => n.label !== "Replays")),
+    [replays],
+  );
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [roster, setRoster] = useState<Player[]>([]);
   const [handle, setHandle] = useState<PlayerHandle | null>(null);
@@ -160,9 +167,9 @@ export function Watch({ gameId }: { gameId: string }) {
       // Top nav row: reachable with ArrowUp, so every screen is D-pad reachable (NF-03).
       if (navFocus !== null) {
         if (a === "left") setNavFocus((i) => Math.max(0, (i ?? 0) - 1));
-        else if (a === "right") setNavFocus((i) => Math.min(NAV.length - 1, (i ?? 0) + 1));
+        else if (a === "right") setNavFocus((i) => Math.min(nav.length - 1, (i ?? 0) + 1));
         else if (a === "down" || a === "back") setNavFocus(null);
-        else if (a === "select") navigate(NAV[navFocus].to(game.id));
+        else if (a === "select") navigate(nav[navFocus].to(game.id));
         return;
       }
 
@@ -250,7 +257,7 @@ export function Watch({ gameId }: { gameId: string }) {
           break;
       }
     },
-    [handle, game, mode, focusId, pid, players, jumpEvent, navFocus],
+    [handle, game, mode, focusId, pid, players, jumpEvent, navFocus, nav],
   );
   useDpad(onAction, !tagging);
 
@@ -343,7 +350,7 @@ export function Watch({ gameId }: { gameId: string }) {
 
         <div className="watch-chrome" data-hidden={chrome ? "false" : "true"}>
           <nav className="topnav">
-            {NAV.map((n, i) => (
+            {nav.map((n, i) => (
               <span
                 key={n.label}
                 className={`navitem${navFocus === i ? " focused" : ""}`}

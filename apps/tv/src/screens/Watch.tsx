@@ -31,7 +31,7 @@ type Mode = "wide" | "select" | "follow";
 const SEEK_STEP_S = 10;
 const SCRUB_STEP_S = 5;
 
-const MENU: { id: string; label: string; action: DpadAction | "library" | "highlights" | "review" }[] = [
+const MENU: { id: string; label: string; action: DpadAction | "library" | "highlights" | "review" | "replays" }[] = [
   { id: "nav-library", label: "Library", action: "library" },
   { id: "nav-highlights", label: "Highlights", action: "highlights" },
   { id: "nav-review", label: "Review", action: "review" },
@@ -41,6 +41,9 @@ const MENU: { id: string; label: string; action: DpadAction | "library" | "highl
   { id: "action-bookmark", label: "Bookmark", action: "bookmark" },
   { id: "action-spotlight", label: "Spotlight", action: "spotlight" },
   { id: "action-tag", label: "Tag player", action: "tag" },
+  // M8: only when the game has rendered replays (filtered below). Last, so the indices
+  // of the items above stay put.
+  { id: "nav-replays", label: "Replays", action: "replays" },
 ];
 
 // ponytail: a hardcoded list beats a contacts import for a demo (same as apps/web).
@@ -59,6 +62,11 @@ export function Watch({
   initialT?: number;
 }) {
   const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
+  const { data: replays } = useAsync(() => api.listReplays(gameId), [gameId]);
+  const menuItems = useMemo(
+    () => (replays?.length ? MENU : MENU.filter((m) => m.action !== "replays")),
+    [replays],
+  );
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [roster, setRoster] = useState<Player[]>([]);
   const [handle, setHandle] = useState<PlayerHandle | null>(null);
@@ -205,13 +213,14 @@ export function Watch({
       // The action row: Left/Right move, Select runs, Down/Back close it.
       if (menu !== null) {
         if (a === "left") setMenu(Math.max(0, menu - 1));
-        else if (a === "right") setMenu(Math.min(MENU.length - 1, menu + 1));
+        else if (a === "right") setMenu(Math.min(menuItems.length - 1, menu + 1));
         else if (a === "down" || a === "back") setMenu(null);
         else if (a === "select") {
-          const item = MENU[menu].action;
+          const item = menuItems[menu].action;
           if (item === "library") navigate({ name: "library" });
           else if (item === "highlights") navigate({ name: "highlights", gameId: game.id });
           else if (item === "review") navigate({ name: "review", gameId: game.id });
+          else if (item === "replays") navigate({ name: "replays", gameId: game.id });
           else {
             setMenu(null);
             run(item);
@@ -269,7 +278,7 @@ export function Watch({
           run(a);
       }
     },
-    [handle, game, mode, focusId, players, menu, run],
+    [handle, game, mode, focusId, players, menu, menuItems, run],
   );
   useDpad(onAction, !tagging);
 
@@ -345,7 +354,7 @@ export function Watch({
         >
           <View style={styles.top}>
             <View style={styles.menuRow}>
-              {MENU.map((m, i) => (
+              {menuItems.map((m, i) => (
                 <Pill key={m.id} testID={m.id} label={m.label} focused={menu === i} />
               ))}
             </View>

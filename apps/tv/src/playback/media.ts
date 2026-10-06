@@ -17,6 +17,8 @@ export interface MediaHandle {
 export interface MediaProps {
   src: string;
   muted?: boolean;
+  /** Restart at the end (the Replay view loops a highlight). */
+  loop?: boolean;
   onEnded?: () => void;
   ref?: Ref<MediaHandle>;
 }

@@ -59,6 +59,9 @@ def build_cfg(args: argparse.Namespace) -> tuple[Path, dict]:
         marks, variant = load_landmarks(landmarks)
         cfg["landmarks_px"] = {k: [v[0], v[1]] for k, v in marks.items()}
         cfg["variant"] = cfg["variant"] or variant
+    for kv in getattr(args, "set", None) or []:
+        key, _, value = kv.partition("=")
+        cfg.setdefault(key.strip(), value)
     if cfg["detector"] == "synthetic" and not cfg["ground_truth"]:
         guess = source.parent / "ground_truth.json"
         cfg["ground_truth"] = str(guess) if guess.is_file() else None
@@ -158,6 +161,13 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--game-id")
     r.add_argument("--cache", help="cache root (default $REPLAY_CACHE_DIR or the box cache)")
     r.add_argument("--cpu-workers", type=int)
+    r.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="extra run-config value for a stage's params (e.g. highlights_n=3)",
+    )
     r.set_defaults(fn=cmd_run)
 
     s = sub.add_parser("status", help="last result per stage for a game dir")

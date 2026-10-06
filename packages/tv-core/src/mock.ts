@@ -22,6 +22,7 @@ import type {
   TrackPlayer,
 } from "./types";
 import type { CalibrationPayload, ReplayApi } from "./api";
+import type { ReplayAngle, ReplayManifest } from "./replays";
 
 export interface MockCall {
   method: string;
@@ -612,5 +613,64 @@ export const mockApi: ReplayApi = {
     return delay<RenderJob>({ job_id: "j_mock", status: "queued", player_id: playerId });
   },
 
+  listReplays(gameId) {
+    log("GET", `/games/${gameId}/replays`);
+    needGame(gameId);
+    return delay(
+      (MOCK_REPLAYS[gameId] ?? []).map((m) => ({
+        play_id: m.play_id,
+        label: m.label,
+        t_start: m.t_start,
+        t_end: m.t_end,
+        angles: m.angles.length,
+        manifest_url: `/games/${gameId}/replays/${m.play_id}`,
+      })),
+    );
+  },
+
+  getReplay(gameId, playId) {
+    log("GET", `/games/${gameId}/replays/${playId}`);
+    const m = MOCK_REPLAYS[gameId]?.find((r) => r.play_id === playId);
+    if (!m) throw new Error(`unknown replay ${playId}`);
+    return delay(structuredClone(m));
+  },
+
   mediaUrl: (_game, path) => path,
+};
+
+/** M8 replay fixture (labelled mock): every angle is the same 20 s wide.mp4 under a
+ *  per-angle query string, so a cut is a real src swap + reload that has to land at the
+ *  same media time, without shipping more video. */
+function mockAngle(id: string, tier: ReplayAngle["tier"], label: string): ReplayAngle {
+  return { id, tier, label, url: `/mock/wide.mp4?angle=${id}`, duration_s: DURATION, width: 1280, height: 720 };
+}
+function mockReplay(play_id: string, label: string, angles: ReplayAngle[]): ReplayManifest {
+  return {
+    schema: "replay.replay_manifest.v1",
+    game_id: "g_mock01",
+    play_id,
+    label,
+    sport: "basketball",
+    t_start: 0,
+    t_end: DURATION,
+    source: "synthetic_gt",
+    synthetic: true,
+    angles,
+    commentary: null,
+  };
+}
+const MOCK_REPLAYS: Record<string, ReplayManifest[]> = {
+  g_mock01: [
+    mockReplay("play_0001", "Marcus — make (mock)", [
+      mockAngle("wide", "A", "Wide"),
+      mockAngle("follow:p1", "A", "Follow · Marcus"),
+      mockAngle("broadcast_high", "B", "Broadcast high"),
+      mockAngle("orbit", "B", "Orbit"),
+    ]),
+    mockReplay("play_0002", "Possession 2 (mock)", [
+      mockAngle("wide", "A", "Wide"),
+      mockAngle("push_in", "B", "Push in"),
+      mockAngle("reverse", "B", "Reverse"),
+    ]),
+  ],
 };

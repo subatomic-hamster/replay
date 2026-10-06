@@ -26,12 +26,14 @@ interface Props {
   children?: ReactNode;
   onTimeUpdate?: (t: number) => void;
   onEnded?: () => void;
+  /** Restart at the end instead of stopping (Replay view). */
+  loop?: boolean;
   ref?: Ref<PlayerHandle>;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
-export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Props) {
+export function PlayerSurface({ src, crop, muted, children, onEnded, loop, ref }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -68,10 +70,14 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
     tries.current = 0;
     tryPlay();
   }, [tryPlay]);
+  // A swap that lands before the previous one has loaded keeps that one's target: the
+  // element has reset to 0 and paused in between (rapid replay-angle cuts). The element
+  // still holds the old src during render, so its currentTime is exact; `timeupdate` (the
+  // ref) lags it by up to 250 ms and misses a seek that has not completed yet.
   if (lastSrc.current !== src) {
     lastSrc.current = src;
-    resumeAt.current = {
-      t: timeRef.current,
+    resumeAt.current = resumeAt.current ?? {
+      t: videoRef.current?.currentTime ?? timeRef.current,
       playing: !(videoRef.current?.paused ?? true) || wantPlay.current,
     };
   }
@@ -99,8 +105,8 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
     const v = videoRef.current;
     const resume = resumeAt.current;
     if (!v || !resume) return;
-    resumeAt.current = null;
     const apply = () => {
+      resumeAt.current = null;
       v.currentTime = resume.t;
       if (resume.playing) requestPlay();
     };
@@ -191,6 +197,7 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
           ref={videoRef}
           src={src}
           muted={muted}
+          loop={loop}
           playsInline
           preload="auto"
           data-testid="video"

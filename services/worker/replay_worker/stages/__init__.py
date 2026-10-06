@@ -12,6 +12,7 @@ MODULES = [
     "replay_worker.stages.courtcam",
     "replay_worker.stages.broadcast",
     "replay_worker.stages.narrate",
+    "replay_worker.stages.virtual",
     "replay_worker.stages.discovery",
 ]
 

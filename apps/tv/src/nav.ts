@@ -8,6 +8,8 @@ export type Route =
   | { name: "watch"; gameId: string; mode?: string; pid?: string; t?: number }
   | { name: "highlights"; gameId: string; q?: string }
   | { name: "review"; gameId: string }
+  | { name: "replays"; gameId: string }
+  | { name: "replay"; gameId: string; playId: string }
   | { name: "pair"; gameId?: string };
 
 let current: Route = { name: "library" };
@@ -28,7 +30,8 @@ export function useRoute(): Route {
   );
 }
 
-/** `/tv`, `/tv/pair?game=`, `/tv/:id[?mode=&pid=&t=]`, `/tv/:id/highlights[?q=]`, `/tv/:id/review`. */
+/** `/tv`, `/tv/pair?game=`, `/tv/:id[?mode=&pid=&t=]`, `/tv/:id/highlights[?q=]`, `/tv/:id/review`,
+ *  `/tv/:id/replays[/:playId]`. */
 export function routeFromPath(path: string): Route {
   const [pathname, search = ""] = path.split("?");
   const params = new URLSearchParams(search);
@@ -39,6 +42,12 @@ export function routeFromPath(path: string): Route {
   const gameId = seg[0];
   if (seg[1] === "highlights") return { name: "highlights", gameId, q: params.get("q") ?? undefined };
   if (seg[1] === "review") return { name: "review", gameId };
+  // M8: `/tv/:id/replays` (list) and `/tv/:id/replays/:playId` (angle view).
+  if (seg[1] === "replays") {
+    return seg[2]
+      ? { name: "replay", gameId, playId: decodeURIComponent(seg[2]) }
+      : { name: "replays", gameId };
+  }
   return {
     name: "watch",
     gameId,

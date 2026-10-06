@@ -18,6 +18,7 @@ import type {
   Stats,
   TracksChunk,
 } from "./types";
+import type { ReplayManifest, ReplaySummary } from "./replays";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -60,6 +61,10 @@ export interface ReplayApi {
   createSession(): Promise<Session>;
   /** Plan task 12: queue the follow-cam rendition for one player (fire-and-forget). */
   renderPlayer(gameId: string, playerId: string): Promise<RenderJob>;
+  /** M8: the game's rendered multi-angle replays ([] when none). */
+  listReplays(gameId: string): Promise<ReplaySummary[]>;
+  /** M8: one replay's manifest; angle URLs come back absolute. */
+  getReplay(gameId: string, playId: string): Promise<ReplayManifest>;
   /** Absolute URL for a media path from game.json (already-absolute passes through). */
   mediaUrl(game: Game, path: string): string;
 }
@@ -207,6 +212,13 @@ export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
     createSession: () => req<Session>("/sessions", { method: "POST" }),
     renderPlayer: (gameId, playerId) =>
       req<RenderJob>(`/games/${gameId}/players/${playerId}/render`, { method: "POST" }),
+    listReplays: (gameId) =>
+      req<{ replays: ReplaySummary[] }>(`/games/${gameId}/replays`).then((r) => r.replays),
+    getReplay: (gameId, playId) =>
+      req<ReplayManifest>(`/games/${gameId}/replays/${encodeURIComponent(playId)}`).then((m) => ({
+        ...m,
+        angles: m.angles.map((a) => ({ ...a, url: resolveMedia(gameId, a.url) })),
+      })),
     mediaUrl: (game, path) => resolveMedia(game.id, path),
   };
 }

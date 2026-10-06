@@ -26,12 +26,14 @@ interface Props {
   /** D-6 client follow-cam: per-frame crop rects. null = wide shot. */
   crop?: CropPath | null;
   muted?: boolean;
+  /** Restart at the end instead of stopping (Replay view). */
+  loop?: boolean;
   /** Overlays, laid out over the untransformed viewport. */
   children?: ReactNode;
   ref?: Ref<PlayerHandle>;
 }
 
-export function PlayerSurface({ src, crop, muted, children, ref }: Props) {
+export function PlayerSurface({ src, crop, muted, loop, children, ref }: Props) {
   const media = useRef<MediaHandle>(null);
   const [clock, setClock] = useState<Clock | null>(null);
   const size = useRef({ w: 0, h: 0 });
@@ -124,7 +126,7 @@ export function PlayerSurface({ src, crop, muted, children, ref }: Props) {
           },
         ]}
       >
-        <Media ref={media} src={src} muted={muted} />
+        <Media ref={media} src={src} muted={muted} loop={loop} />
       </Animated.View>
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {children}

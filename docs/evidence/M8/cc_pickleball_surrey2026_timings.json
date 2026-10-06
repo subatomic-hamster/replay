@@ -1,0 +1,170 @@
+[
+ {
+  "stage": "highlights",
+  "item": "",
+  "wall_s": 0.01,
+  "frames": null,
+  "ms_per_frame": null
+ },
+ {
+  "stage": "segment",
+  "item": "pl_0001",
+  "wall_s": 18.39,
+  "frames": 201,
+  "ms_per_frame": 91.5
+ },
+ {
+  "stage": "segment",
+  "item": "pl_0002",
+  "wall_s": 16.95,
+  "frames": 240,
+  "ms_per_frame": 70.6
+ },
+ {
+  "stage": "segment",
+  "item": "pl_0003",
+  "wall_s": 20.17,
+  "frames": 240,
+  "ms_per_frame": 84.1
+ },
+ {
+  "stage": "camera",
+  "item": "",
+  "wall_s": 0.7,
+  "frames": null,
+  "ms_per_frame": null
+ },
+ {
+  "stage": "plate",
+  "item": "",
+  "wall_s": 20.47,
+  "frames": null,
+  "ms_per_frame": null
+ },
+ {
+  "stage": "tiera",
+  "item": "pl_0001/follow_p1",
+  "wall_s": 1.5,
+  "frames": 201,
+  "ms_per_frame": 7.5
+ },
+ {
+  "stage": "tiera",
+  "item": "pl_0001/wide",
+  "wall_s": 1.56,
+  "frames": 201,
+  "ms_per_frame": 7.8
+ },
+ {
+  "stage": "tiera",
+  "item": "pl_0001/tight_p1",
+  "wall_s": 1.78,
+  "frames": 201,
+  "ms_per_frame": 8.9
+ },
+ {
+  "stage": "tiera",
+  "item": "pl_0002/wide",
+  "wall_s": 1.98,
+  "frames": 240,
+  "ms_per_frame": 8.2
+ },
+ {
+  "stage": "tiera",
+  "item": "pl_0002/tight_p1",
+  "wall_s": 1.84,
+  "frames": 240,
+  "ms_per_frame": 7.7
+ },
+ {
+  "stage": "tiera",
+  "item": "pl_0002/follow_p1",
+  "wall_s": 2.1,
+  "frames": 240,
+  "ms_per_frame": 8.7
+ },
+ {
+  "stage": "tiera",
+  "item": "pl_0003/wide",
+  "wall_s": 1.84,
+  "frames": 240,
+  "ms_per_frame": 7.7
+ },
+ {
+  "stage": "tiera",
+  "item": "pl_0003/follow_p5",
+  "wall_s": 1.83,
+  "frames": 240,
+  "ms_per_frame": 7.6
+ },
+ {
+  "stage": "tiera",
+  "item": "pl_0003/tight_p5",
+  "wall_s": 1.23,
+  "frames": 240,
+  "ms_per_frame": 5.1
+ },
+ {
+  "stage": "tierb",
+  "item": "pl_0001/broadcast_high",
+  "wall_s": 11.07,
+  "frames": 201,
+  "ms_per_frame": 55.1
+ },
+ {
+  "stage": "tierb",
+  "item": "pl_0001/orbit",
+  "wall_s": 11.22,
+  "frames": 201,
+  "ms_per_frame": 55.8
+ },
+ {
+  "stage": "tierb",
+  "item": "pl_0001/push_in",
+  "wall_s": 12.49,
+  "frames": 201,
+  "ms_per_frame": 62.2
+ },
+ {
+  "stage": "tierb",
+  "item": "pl_0002/broadcast_high",
+  "wall_s": 14.81,
+  "frames": 240,
+  "ms_per_frame": 61.7
+ },
+ {
+  "stage": "tierb",
+  "item": "pl_0002/orbit",
+  "wall_s": 14.5,
+  "frames": 240,
+  "ms_per_frame": 60.4
+ },
+ {
+  "stage": "tierb",
+  "item": "pl_0002/push_in",
+  "wall_s": 15.82,
+  "frames": 240,
+  "ms_per_frame": 65.9
+ },
+ {
+  "stage": "tierb",
+  "item": "pl_0003/broadcast_high",
+  "wall_s": 13.1,
+  "frames": 240,
+  "ms_per_frame": 54.6
+ },
+ {
+  "stage": "tierb",
+  "item": "pl_0003/orbit",
+  "wall_s": 12.52,
+  "frames": 240,
+  "ms_per_frame": 52.2
+ },
+ {
+  "stage": "tierb",
+  "item": "pl_0003/push_in",
+  "wall_s": 13.8,
+  "frames": 240,
+  "ms_per_frame": 57.5
+ }
+]

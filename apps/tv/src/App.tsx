@@ -8,6 +8,7 @@ import { usePlatformKeys } from "./platform/keys";
 import { Highlights } from "./screens/Highlights";
 import { Library } from "./screens/Library";
 import { Pair } from "./screens/Pair";
+import { Replay, ReplayList } from "./screens/Replay";
 import { Review } from "./screens/Review";
 import { Watch } from "./screens/Watch";
 import { color } from "./theme";
@@ -36,6 +37,10 @@ function screen(r: Route) {
       return <Highlights key={r.gameId} gameId={r.gameId} q={r.q} />;
     case "review":
       return <Review key={r.gameId} gameId={r.gameId} />;
+    case "replays":
+      return <ReplayList key={r.gameId} gameId={r.gameId} />;
+    case "replay":
+      return <Replay key={`${r.gameId}/${r.playId}`} gameId={r.gameId} playId={r.playId} />;
     case "pair":
       return <Pair gameId={r.gameId} />;
   }

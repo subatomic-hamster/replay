@@ -1650,7 +1650,9 @@ def calibration_doc(scene: Scene) -> dict[str, Any]:
     cam, tpl = scene.cam, scene.template
     world = {k: [float(v[0]), float(v[1]), 0.0] for k, v in tpl.landmarks.items()}
     if tpl.rim is not None:
-        world["rim"] = [float(tpl.rim[0]), float(tpl.rim[1]), RIM_H_M]
+        # `rim` is the template's FLOOR point under the hoop; the hoop itself is `rim_top`
+        # (calibrate.height_landmarks), so the pipeline's landmarks.json gets the floor point.
+        world["rim_top"] = [float(tpl.rim[0]), float(tpl.rim[1]), RIM_H_M]
     if tpl.net_y is not None:
         w = tpl.size[0]
         for s, x in (("l", -w / 2), ("r", w / 2)):

@@ -5,6 +5,7 @@ import { Watch } from "./screens/Watch";
 import { Highlights } from "./screens/Highlights";
 import { Review } from "./screens/Review";
 import { Pair } from "./screens/Pair";
+import { Replay, ReplayList } from "./screens/Replay";
 import { Companion } from "./screens/Companion";
 import { Calibrate, UploadCreate, UploadFile, UploadStatus } from "./screens/Upload";
 
@@ -37,6 +38,14 @@ function route(seg: string[], tv: boolean) {
     const id = seg[1];
     if (seg[2] === "highlights") return <Highlights key={id} gameId={id} />;
     if (seg[2] === "review") return <Review key={id} gameId={id} />;
+    // M8: /tv/:id/replays (list) and /tv/:id/replays/:playId (angle view).
+    if (seg[2] === "replays") {
+      return seg[3] ? (
+        <Replay key={`${id}/${seg[3]}`} gameId={id} playId={decodeURIComponent(seg[3])} />
+      ) : (
+        <ReplayList key={id} gameId={id} />
+      );
+    }
     return <Watch key={id} gameId={id} />;
   }
   // H4: the phone companion, paired by the 4-digit code the TV shows.

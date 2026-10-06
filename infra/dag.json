@@ -205,6 +205,79 @@
   "default": false
  },
  {
+  "name": "camera",
+  "after": [
+   "calibrate"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "plate",
+  "after": [
+   "camera",
+   "tracks"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "highlights",
+  "after": [
+   "game"
+  ],
+  "resource": "io",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "segment",
+  "after": [
+   "highlights"
+  ],
+  "resource": "gpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "tiera",
+  "after": [
+   "highlights"
+  ],
+  "resource": "cpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "tierb",
+  "after": [
+   "segment",
+   "plate"
+  ],
+  "resource": "cpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "replays",
+  "after": [
+   "tiera",
+   "tierb"
+  ],
+  "resource": "io",
+  "fanout": true,
+  "cached": false,
+  "default": false
+ },
+ {
   "name": "hype",
   "after": [
    "game"

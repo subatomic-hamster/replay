@@ -19,6 +19,22 @@ import type {
   TracksChunk,
 } from "./types";
 import type { ReplayManifest, ReplaySummary } from "./replays";
+import type {
+  Advice,
+  Commentary,
+  Hype,
+  JobStatus,
+  PlayClip,
+  RallyDoc,
+  Rendition,
+  ReviewOption,
+  ReviewQuestion,
+  SearchResult,
+  TapResult,
+  Trigger,
+  VerticalExport,
+  VerticalRequest,
+} from "./discovery";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -67,6 +83,53 @@ export interface ReplayApi {
   getReplay(gameId: string, playId: string): Promise<ReplayManifest>;
   /** Absolute URL for a media path from game.json (already-absolute passes through). */
   mediaUrl(game: Game, path: string): string;
+
+  // ---- M13 integration wave (routes from M5/M6/M7/M11) ----
+  /** M6: wide, follow-cams and (when rendered) the directed broadcast. */
+  listRenditions(gameId: string): Promise<Rendition[]>;
+  /** M7: the grounded commentary script (stored, else generated from templates). */
+  getCommentary(gameId: string): Promise<Commentary>;
+  /** M5: "Replay, clip that" clips and the triggers that cut them. */
+  listClips(gameId: string): Promise<PlayClip[]>;
+  listTriggers(gameId: string): Promise<Trigger[]>;
+  trimClip(gameId: string, clipId: string, t_start: number, t_end: number): Promise<PlayClip>;
+  /** Phone tap at media time `t`: resolves to the play that just ended. */
+  tap(gameId: string, t: number): Promise<TapResult>;
+  /** M11 (D-45..D-48). */
+  getHype(gameId: string): Promise<Hype>;
+  getRallies(gameId: string): Promise<RallyDoc>;
+  renderCondensed(gameId: string): Promise<JobStatus>;
+  exportVertical(gameId: string, body: VerticalRequest): Promise<VerticalExport>;
+  getVertical(gameId: string, vid: string): Promise<VerticalExport>;
+  getReviewQueue(gameId: string): Promise<ReviewQuestion[]>;
+  /** Send one review answer: the option already names its route (D-48). */
+  answerReview(option: ReviewOption, text?: string): Promise<void>;
+  /** M7: semantic search; falls back to the keyword query route when the game has no
+   *  embeddings index yet (409) or no embeddings model (503). */
+  search(gameId: string, text: string): Promise<SearchResult>;
+  getAdvice(gameId: string, playerId: string): Promise<Advice>;
+}
+
+/** The review body with the keyboard text filled into `text_field`. */
+export function reviewBody(option: ReviewOption, text?: string): Record<string, unknown> {
+  return option.text_field ? { ...option.body, [option.text_field]: text ?? "" } : option.body;
+}
+
+/** POST /query clips as search hits — the keyword fallback for `search`. */
+export function queryAsSearch(text: string, r: QueryResult): SearchResult {
+  return {
+    query: text,
+    interpretation: r.interpretation,
+    filter_source: "rules",
+    fallback: true,
+    results: r.clips.map((c, i) => ({
+      play_id: c.event_id ?? `q_${i}`,
+      t_start: c.t_start,
+      t_end: c.t_end,
+      text: c.label ?? "clip",
+      filter_match: true,
+    })),
+  };
 }
 
 /** H4: the phone companion connects with the 4-digit code, the TV with the session id —
@@ -220,5 +283,49 @@ export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
         angles: m.angles.map((a) => ({ ...a, url: resolveMedia(gameId, a.url) })),
       })),
     mediaUrl: (game, path) => resolveMedia(game.id, path),
+
+    listRenditions: (gameId) =>
+      req<{ renditions: Rendition[] }>(`/games/${gameId}/renditions`).then((r) =>
+        r.renditions.map((x) => ({ ...x, url: resolveMedia(gameId, x.url) })),
+      ),
+    getCommentary: (gameId) => req<Commentary>(`/games/${gameId}/commentary`),
+    listClips: (gameId) => req<{ clips: PlayClip[] }>(`/games/${gameId}/clips`).then((r) => r.clips),
+    listTriggers: (gameId) =>
+      req<{ triggers: Trigger[] }>(`/games/${gameId}/triggers`).then((r) => r.triggers),
+    trimClip: (gameId, clipId, t_start, t_end) =>
+      req<PlayClip>(`/games/${gameId}/clips/${encodeURIComponent(clipId)}`, {
+        method: "PATCH",
+        json: { t_start, t_end },
+      }),
+    tap: (gameId, t) =>
+      req<TapResult>(`/games/${gameId}/triggers`, { method: "POST", json: { t } }),
+    getHype: (gameId) => req<Hype>(`/games/${gameId}/hype`),
+    getRallies: (gameId) =>
+      req<RallyDoc>(`/games/${gameId}/rallies`).then((d) => ({
+        ...d,
+        condensed: { ...d.condensed, url: d.condensed.url && resolveMedia(gameId, d.condensed.url) },
+      })),
+    renderCondensed: (gameId) => req<JobStatus>(`/games/${gameId}/condensed`, { method: "POST" }),
+    exportVertical: (gameId, body) =>
+      req<VerticalExport>(`/games/${gameId}/exports/vertical`, { method: "POST", json: body }),
+    getVertical: (gameId, vid) => req<VerticalExport>(`/games/${gameId}/exports/vertical/${vid}`),
+    getReviewQueue: (gameId) =>
+      req<{ questions: ReviewQuestion[] }>(`/games/${gameId}/review/queue`).then((r) => r.questions),
+    answerReview: (option, text) =>
+      req<unknown>(option.path, { method: option.method, json: reviewBody(option, text) }).then(
+        () => undefined,
+      ),
+    search: (gameId, text) =>
+      req<SearchResult>(`/games/${gameId}/search`, { method: "POST", json: { text, k: 8 } }).catch(
+        (e: unknown) => {
+          if (e instanceof ApiError && (e.status === 409 || e.status === 503)) {
+            return req<QueryResult>(`/games/${gameId}/query`, { method: "POST", json: { text } }).then(
+              (r) => queryAsSearch(text, r),
+            );
+          }
+          throw e;
+        },
+      ),
+    getAdvice: (gameId, pid) => req<Advice>(`/games/${gameId}/players/${pid}/advice`),
   };
 }

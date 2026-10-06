@@ -55,6 +55,26 @@ export async function focusedBoxId(page: Page): Promise<string | null> {
   });
 }
 
+/** Open the Watch action row (Up) and walk Right until `id` has focus. */
+export async function menuTo(page: Page, id: string) {
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByTestId("nav-library")).toHaveAttribute("data-focused", "true");
+  for (let i = 0; i < 24 && (await focusedMenuItem(page)) !== id; i++) {
+    await page.keyboard.press("ArrowRight");
+  }
+  await expect(page.getByTestId(id)).toHaveAttribute("data-focused", "true");
+}
+
+/** No rendered text below 24 px at 1080p (NF-01). */
+export async function smallText(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll("div, span")]
+      .filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent?.trim()))
+      .map((el) => ({ text: el.textContent, size: parseFloat(getComputedStyle(el).fontSize) }))
+      .filter((x) => x.size < 24),
+  );
+}
+
 export async function focusedMenuItem(page: Page): Promise<string | null> {
   return page.evaluate(() => {
     const el = document.querySelector(

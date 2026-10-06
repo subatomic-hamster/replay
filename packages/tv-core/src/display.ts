@@ -1,6 +1,6 @@
 // Small pure helpers both TV clients render with. Profile-driven, never sport-driven
 // (§4.8: read sport_ui, do not branch on the sport name).
-import type { CourtTemplate, Game, GameEvent, GameSummary } from "./types";
+import type { BoxScoreRow, CourtTemplate, Game, GameEvent, GameSummary, Stats } from "./types";
 
 export function fmtDuration(s?: number | null) {
   if (!s && s !== 0) return "—";
@@ -56,18 +56,38 @@ export function eventJump(sorted: GameEvent[], now: number, dir: 1 | -1): number
   return next ? next.t_key : null;
 }
 
-/** R5: events below this confidence and unconfirmed land in the review queue. */
+/** R5: events below this confidence and unconfirmed land in the review queue (the queue
+ *  itself now comes from GET /review/queue — D-48; the mock applies the same rule). */
 export const REVIEW_CONFIDENCE_THRESHOLD = 0.6;
 
-// `source: "user"` is set by the API on any field the user changed (§4.5) — the client
-// does not get to claim provenance.
-export const REVIEW_ACTIONS: { label: string; patch: Partial<GameEvent> }[] = [
-  { label: "Made", patch: { made: true, confirmed: true } },
-  { label: "Missed", patch: { made: false, confirmed: true } },
-  // D-11 "not a shot": v1 has no delete, so the event is flagged dismissed and drops
-  // out of query and stats while staying in events.json.
-  { label: "Not a shot", patch: { dismissed: true, confirmed: true } },
-];
+/** R3 box score columns: attempts and makes always, the rest only when the game's
+ *  events support them (`Stats.available`) or the API sent them. */
+export function boxColumns(stats: Stats | null | undefined): { label: string; value: (r: BoxScoreRow) => string }[] {
+  const rows = stats?.box_score ?? [];
+  const has = new Set(stats?.available ?? []);
+  const n = (v?: number) => (v === undefined ? "—" : String(v));
+  return [
+    { label: "Att", value: (r) => n(r.attempts) },
+    { label: "Made", value: (r) => n(r.makes) },
+    ...(rows.some((r) => r.points !== undefined) ? [{ label: "Pts", value: (r: BoxScoreRow) => n(r.points) }] : []),
+    ...(has.has("rebounds") ? [{ label: "Reb", value: (r: BoxScoreRow) => n(r.rebounds) }] : []),
+    ...(has.has("steals") ? [{ label: "Stl", value: (r: BoxScoreRow) => n(r.steals) }] : []),
+    ...(has.has("blocks") ? [{ label: "Blk", value: (r: BoxScoreRow) => n(r.blocks) }] : []),
+    ...(rows.some((r) => r.distance_m !== undefined)
+      ? [{ label: "Dist m", value: (r: BoxScoreRow) => (r.distance_m === undefined ? "—" : r.distance_m.toFixed(0)) }]
+      : []),
+    { label: "Conf", value: (r) => (r.confidence === undefined ? "—" : r.confidence.toFixed(2)) },
+  ];
+}
+
+/** R3: every number on the review screen is labelled auto-detected (D-48), with the
+ *  mean confidence of the events behind it when the API sends one. */
+export function autoDetectedLabel(stats: Stats | null | undefined): string {
+  const c = stats?.confidence;
+  return typeof c === "number"
+    ? `Auto-detected · mean confidence ${c.toFixed(2)}`
+    : "All numbers below are auto-detected.";
+}
 
 const ALL_PANELS = ["shot_chart", "heatmap", "box_score"];
 

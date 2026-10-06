@@ -21,8 +21,22 @@ import type {
   TracksChunk,
   TrackPlayer,
 } from "./types";
-import type { CalibrationPayload, ReplayApi } from "./api";
+import { queryAsSearch, reviewBody, type CalibrationPayload, type ReplayApi } from "./api";
 import type { ReplayAngle, ReplayManifest } from "./replays";
+import { REVIEW_CONFIDENCE_THRESHOLD } from "./display";
+import type {
+  Advice,
+  Commentary,
+  Hype,
+  JobStatus,
+  PlayClip,
+  RallyDoc,
+  Rendition,
+  ReviewOption,
+  ReviewQuestion,
+  Trigger,
+  VerticalExport,
+} from "./discovery";
 
 export interface MockCall {
   method: string;
@@ -258,6 +272,20 @@ function heatmapFor(playerId: string): number[] {
     if (ix >= 0 && ix < HEAT_COLS && iy >= 0 && iy < HEAT_ROWS) values[iy * HEAT_COLS + ix] += 1;
   }
   return values;
+}
+
+/** Distance covered along the same 10 Hz court positions (the API's D-48 rule without
+ *  the jump filter — the mock motion has no jumps). */
+function distanceFor(playerId: string): number {
+  if (!MOTION[playerId]) return 0;
+  let d = 0;
+  let prev = trackAt(playerId, 0).ct;
+  for (let i = 1; i < DURATION * 10; i++) {
+    const ct = trackAt(playerId, i / 10).ct;
+    if (ct && prev) d += Math.hypot(ct[0] - prev[0], ct[1] - prev[1]);
+    prev = ct;
+  }
+  return Number(d.toFixed(1));
 }
 
 const games = new Map<string, Game>();
@@ -531,13 +559,21 @@ export const mockApi: ReplayApi = {
     const g = needGame(gameId);
     const list = (events.get(gameId) ?? []).filter((e) => e.type === "shot" && !e.dismissed);
     const stats: Stats = {
+      label: "auto-detected",
+      confidence: list.length
+        ? Number((list.reduce((s, e) => s + e.confidence, 0) / list.length).toFixed(2))
+        : null,
+      available: list.length ? ["shots"] : [],
       box_score: g.players.map((p) => {
         const mine = list.filter((e) => e.player_id === p.id);
         return {
           player_id: p.id,
           name: p.name,
+          team: p.team,
           attempts: mine.length,
           makes: mine.filter((e) => e.made).length,
+          points: 2 * mine.filter((e) => e.made).length,
+          distance_m: distanceFor(p.id),
           confidence: mine.length
             ? Number((mine.reduce((s, e) => s + e.confidence, 0) / mine.length).toFixed(2))
             : 0,
@@ -550,6 +586,7 @@ export const mockApi: ReplayApi = {
           player_id: e.player_id,
           court: e.court as [number, number],
           made: !!e.made,
+          outcome: e.made === true ? "make" : e.made === false ? "miss" : "unknown",
           confirmed: e.confirmed,
         })),
       heatmap: g.players.map((p) => ({
@@ -636,7 +673,374 @@ export const mockApi: ReplayApi = {
   },
 
   mediaUrl: (_game, path) => path,
+
+  // ---- M13 integration wave: synthetic fixtures below (MOCK_*), all labelled mock ----
+
+  listRenditions(gameId) {
+    log("GET", `/games/${gameId}/renditions`);
+    const g = needGame(gameId);
+    const out: Rendition[] = [{ id: "wide", kind: "wide", url: g.renditions.wide }];
+    if (MOCK_BROADCAST.has(gameId)) {
+      out.push({ id: "broadcast", kind: "broadcast", url: "/mock/wide.mp4?rendition=broadcast", cuts_url: null });
+    }
+    return delay(out);
+  },
+
+  getCommentary(gameId) {
+    log("GET", `/games/${gameId}/commentary`);
+    needGame(gameId);
+    return delay<Commentary>(structuredClone(MOCK_COMMENTARY[gameId] ?? { plays: [], narration_url: null }));
+  },
+
+  listClips(gameId) {
+    log("GET", `/games/${gameId}/clips`);
+    return delay(structuredClone(clipsOf(gameId)));
+  },
+
+  listTriggers(gameId) {
+    log("GET", `/games/${gameId}/triggers`);
+    return delay(structuredClone(triggersOf(gameId)));
+  },
+
+  trimClip(gameId, clipId, t_start, t_end) {
+    log("PATCH", `/games/${gameId}/clips/${clipId}`, { t_start, t_end });
+    const c = clipsOf(gameId).find((x) => x.id === clipId);
+    if (!c) throw new Error(`clip ${clipId} not found`);
+    if (t_end <= t_start || t_end > DURATION + 1e-6) throw new Error("need 0 <= t_start < t_end <= duration");
+    Object.assign(c, { t_start, t_end, source: "user" });
+    return delay(structuredClone(c));
+  },
+
+  tap(gameId, t) {
+    log("POST", `/games/${gameId}/triggers`, { t });
+    needGame(gameId);
+    // D-50: the play with the latest t_end in [t - 8, t + 0.5]; clip = play ± 1 s.
+    const play = (MOCK_PLAYS[gameId] ?? [])
+      .filter((p) => p.t_end >= t - 8 && p.t_end <= t + 0.5)
+      .sort((a, b) => b.t_end - a.t_end)[0];
+    const n = triggersOf(gameId).length + 1;
+    const trigger: Trigger = {
+      id: `tr_u${n}`,
+      type: "tap",
+      t: Number(t.toFixed(3)),
+      confidence: 1,
+      source: "user",
+      play_id: play?.id ?? null,
+      clip_id: play ? `c_u${n}` : null,
+    };
+    triggersOf(gameId).push(trigger);
+    const clip: PlayClip | null = play
+      ? {
+          id: `c_u${n}`,
+          play_id: play.id,
+          trigger_id: trigger.id,
+          t_start: Math.max(0, play.t_start - 1),
+          t_end: Math.min(DURATION, play.t_end + 1),
+          attribution: { owner_player_id: null, by_player_id: null, subject_player_id: null },
+          participants: play.participants,
+          source: "user",
+        }
+      : null;
+    if (clip) clipsOf(gameId).push(clip);
+    return delay({ trigger: structuredClone(trigger), clip: structuredClone(clip) });
+  },
+
+  getHype(gameId) {
+    log("GET", `/games/${gameId}/hype`);
+    needGame(gameId);
+    return delay<Hype>(mockHype(MOCK_HYPE_PEAKS[gameId] ?? []));
+  },
+
+  getRallies(gameId) {
+    log("GET", `/games/${gameId}/rallies`);
+    needGame(gameId);
+    const rallies = MOCK_RALLIES[gameId] ?? [];
+    const condensed = jobState(`condensed:${gameId}`, "/mock/wide.mp4?rendition=condensed");
+    const done = condensed.status === "done";
+    return delay<RallyDoc>({
+      n: rallies.length,
+      game_s: DURATION,
+      rally_s: rallies.reduce((s, r) => s + r.duration_s, 0),
+      longest: [...rallies].sort((a, b) => b.duration_s - a.duration_s).map((r) => r.id),
+      rallies: rallies.map((r) => ({ ...r, condensed_t: done ? r.condensed_t : null })),
+      condensed,
+    });
+  },
+
+  renderCondensed(gameId) {
+    log("POST", `/games/${gameId}/condensed`);
+    if (!(MOCK_RALLIES[gameId] ?? []).length) {
+      throw new Error("no rallies in this game: the condensed game is for net sports");
+    }
+    startJob(`condensed:${gameId}`);
+    return delay<JobStatus>(jobState(`condensed:${gameId}`, "/mock/wide.mp4?rendition=condensed"));
+  },
+
+  exportVertical(gameId, body) {
+    log("POST", `/games/${gameId}/exports/vertical`, body);
+    const clip = body.clip_id ? clipsOf(gameId).find((c) => c.id === body.clip_id) : undefined;
+    const t0 = clip?.t_start ?? body.t_start;
+    const t1 = clip?.t_end ?? body.t_end;
+    if (t0 === undefined || t1 === undefined || t1 <= t0) throw new Error("need a clip or a window");
+    // D-47: a content-hash id — the same request is the same file.
+    const vid = `v_${hex12(`${t0}|${t1}|${body.player_id ?? ""}`)}`;
+    const name = (pid?: string | null) => needGame(gameId).players.find((p) => p.id === pid)?.name ?? pid;
+    const pid = clip?.attribution.subject_player_id ?? clip?.attribution.by_player_id ?? body.player_id ?? null;
+    verticals.set(`${gameId}/${vid}`, {
+      id: vid,
+      t_start: t0,
+      t_end: t1,
+      player_id: pid,
+      caption: `${name(pid) ?? "Play"} · ${(t1 - t0).toFixed(1)} s (mock)`,
+      size: [540, 960],
+    });
+    startJob(`vertical:${gameId}/${vid}`);
+    return mockApi.getVertical(gameId, vid);
+  },
+
+  getVertical(gameId, vid) {
+    const spec = verticals.get(`${gameId}/${vid}`);
+    if (!spec) throw new Error(`export ${vid} not found`);
+    return delay<VerticalExport>({ ...spec, ...jobState(`vertical:${gameId}/${vid}`, `/mock/wide.mp4?export=${vid}`) });
+  },
+
+  getReviewQueue(gameId) {
+    log("GET", `/games/${gameId}/review/queue`);
+    return delay(reviewQueue(needGame(gameId), events.get(gameId) ?? []));
+  },
+
+  async answerReview(option: ReviewOption, text?: string) {
+    // patchEvent / patchPlayer log the call
+    const [, , gid, kind, id] = option.path.split("/");
+    if (kind === "events") await mockApi.patchEvent(gid, id, reviewBody(option, text));
+    else if (kind === "players") await mockApi.patchPlayer(gid, id, reviewBody(option, text));
+    else throw new Error(`unknown review route ${option.path}`);
+  },
+
+  search(gameId, text) {
+    log("POST", `/games/${gameId}/search`, { text, k: 8 });
+    const g = needGame(gameId);
+    const plays = MOCK_PLAYS[gameId] ?? [];
+    if (!plays.length) {
+      // like a game without an embeddings index: the client's keyword fallback
+      return mockApi.query(gameId, text).then((r) => queryAsSearch(text, r));
+    }
+    const words = new Set(text.toLowerCase().match(/[a-z]+/g) ?? []);
+    const filtered = new Set(matchEvents(events.get(gameId) ?? [], text, g.players).map((e) => e.id));
+    const hits = plays
+      .map((p) => {
+        const overlap = (p.text.toLowerCase().match(/[a-z]+/g) ?? []).filter((w) => words.has(w)).length;
+        const filter_match = p.event_ids.some((id) => filtered.has(id));
+        return { play_id: p.id, t_start: p.t_start, t_end: p.t_end, text: p.text, filter_match, score: overlap };
+      })
+      .sort((a, b) => Number(b.filter_match) - Number(a.filter_match) || b.score - a.score || a.t_start - b.t_start);
+    return delay({
+      query: text,
+      interpretation: filtered.size ? `Showing: ${text}` : "No filter — ranked by similarity",
+      filter_source: "rules",
+      results: hits,
+    });
+  },
+
+  getAdvice(gameId, playerId) {
+    log("GET", `/games/${gameId}/players/${playerId}/advice`);
+    const g = needGame(gameId);
+    const p = g.players.find((x) => x.id === playerId);
+    if (!p) throw new Error(`player ${playerId} not found`);
+    const name = p.name ?? `Player ${playerId.slice(1)}`;
+    const mine = (events.get(gameId) ?? []).filter((e) => e.type === "shot" && !e.dismissed && e.player_id === playerId);
+    const makes = mine.filter((e) => e.made).length;
+    const lines = mine.length
+      ? [`${name} made ${makes} of ${mine.length} shots (mock).`, makes < mine.length ? "Work on the misses from the right side (mock)." : "Keep taking those shots (mock)."]
+      : [`${name} took no shots this game (mock).`];
+    return delay<Advice>({ player_id: playerId, name, lines, source: "template", auto_detected: true });
+  },
 };
+
+// ---------------------------------------------------------------- M13 synthetic fixtures
+// Everything below is MOCK data for the TV clients' tests and screenshots, not pipeline
+// output. Video for every rendition / condensed game / export is the same 20 s
+// wide.mp4 under a query string, like the replay angles.
+
+const MOCK_BROADCAST = new Set(["g_mock01"]);
+
+/** Mock plays (what plays.json would hold) — tap resolution and search use them. */
+interface MockPlay {
+  id: string;
+  t_start: number;
+  t_end: number;
+  event_ids: string[];
+  participants: string[];
+  text: string;
+}
+const MOCK_PLAYS: Record<string, MockPlay[]> = {
+  g_mock01: [
+    { id: "pl_m1", t_start: 0.5, t_end: 4.5, event_ids: ["e_0001"], participants: ["p1"], text: "Marcus drives and scores two (mock)." },
+    { id: "pl_m2", t_start: 5.5, t_end: 9.5, event_ids: ["e_0002"], participants: ["p2"], text: "Player 2 shoots from the wing, no good (mock)." },
+    { id: "pl_m3", t_start: 11, t_end: 15.5, event_ids: ["e_0003"], participants: ["p1", "p3"], text: "Steal, then Marcus scores on the break (mock)." },
+    { id: "pl_m4", t_start: 15.5, t_end: 18.5, event_ids: ["e_0004"], participants: ["p3"], text: "Player 3 hits a long jumper (mock)." },
+  ],
+};
+
+function clip(id: string, play: string, trig: string, t0: number, t1: number, by: string | null, subject: string | null, participants: string[], source: PlayClip["source"] = "auto"): PlayClip {
+  return {
+    id,
+    play_id: play,
+    trigger_id: trig,
+    t_start: t0,
+    t_end: t1,
+    attribution: { owner_player_id: by ?? subject, by_player_id: by, subject_player_id: subject },
+    participants,
+    source,
+  };
+}
+const clips = new Map<string, PlayClip[]>([
+  [
+    "g_mock01",
+    [
+      clip("c_g1", "pl_m1", "tr_g1", 0, 5.5, "p1", null, ["p1"]),
+      clip("c_t1", "pl_m2", "tr_t1", 4.5, 10.5, null, null, ["p2"], "user"),
+      clip("c_v1", "pl_m3", "tr_v1", 10, 16.5, null, "p1", ["p1", "p3"]),
+    ],
+  ],
+]);
+const triggers = new Map<string, Trigger[]>([
+  [
+    "g_mock01",
+    [
+      { id: "tr_g1", type: "gesture", t: 5.2, by_player_id: "p1", confidence: 0.86, source: "auto", play_id: "pl_m1", clip_id: "c_g1" },
+      { id: "tr_t1", type: "tap", t: 10, confidence: 1, source: "user", play_id: "pl_m2", clip_id: "c_t1" },
+      { id: "tr_v1", type: "voice", t: 16, subject_player_id: "p1", transcript: "Replay, clip Marcus", confidence: 0.9, source: "auto", play_id: "pl_m3", clip_id: "c_v1" },
+    ],
+  ],
+]);
+function listOf<T>(m: Map<string, T[]>, gameId: string): T[] {
+  needGame(gameId);
+  const list = m.get(gameId) ?? [];
+  m.set(gameId, list);
+  return list;
+}
+const clipsOf = (gameId: string) => listOf(clips, gameId);
+const triggersOf = (gameId: string) => listOf(triggers, gameId);
+
+const MOCK_COMMENTARY: Record<string, Commentary> = {
+  g_mock01: {
+    schema: "replay.commentary.v1",
+    stored: false,
+    narration_url: null,
+    plays: [
+      { play_id: "pl_m1", source: "template", lines: [
+        { t: 1, text: "Marcus brings it up the floor.", audio_t: 1, audio_s: 1.8 },
+        { t: 3, text: "Marcus scores two.", audio_t: 3, audio_s: 1.5 },
+      ] },
+      { play_id: "pl_m2", source: "template", lines: [{ t: 8, text: "Player 2 shoots, no good.", audio_t: 8, audio_s: 1.8 }] },
+      { play_id: "pl_m3", source: "template", lines: [{ t: 14, text: "Marcus scores again!", audio_t: 14, audio_s: 1.6 }] },
+      { play_id: "pl_m4", source: "template", lines: [{ t: 17, text: "Player 3 scores two.", audio_t: 17, audio_s: 1.6 }] },
+    ],
+  },
+};
+
+/** [peak t, height, is a candidate] — bumps on a 2 Hz series like hype.json. */
+const MOCK_HYPE_PEAKS: Record<string, [number, number, boolean][]> = {
+  g_mock01: [
+    [3.5, 0.8, true],
+    [14.5, 0.95, true],
+    [17.5, 0.45, false],
+  ],
+  g_pickle4: [[10, 0.7, true]],
+};
+function mockHype(peaks: [number, number, boolean][]): Hype {
+  const rate = 2;
+  const values = Array.from({ length: DURATION * rate }, (_, i) => {
+    const t = i / rate;
+    const v = Math.max(0.05, ...peaks.map(([p, h]) => h * Math.exp(-((t - p) ** 2) / 2)));
+    return Number(v.toFixed(3));
+  });
+  return {
+    schema: "replay.hype.v1",
+    rate_hz: rate,
+    duration_s: DURATION,
+    values,
+    candidates: peaks
+      .filter(([, , c]) => c)
+      .map(([t, score]) => ({ t, score, t_start: Math.max(0, t - 3), t_end: t + 1, reasons: ["audio"] }))
+      .sort((a, b) => b.score - a.score),
+  };
+}
+
+const MOCK_RALLIES: Record<string, RallyDoc["rallies"]> = {
+  g_pickle4: [
+    { id: "r1", n: 1, event_id: "e_r1", t_start: 1, t_end: 6, duration_s: 5, shots: 6, confidence: 0.8, condensed_t: 0 },
+    { id: "r2", n: 2, event_id: "e_r2", t_start: 8, t_end: 16.5, duration_s: 8.5, shots: 11, confidence: 0.74, condensed_t: 6.5 },
+    { id: "r3", n: 3, event_id: "e_r3", t_start: 17, t_end: 19.5, duration_s: 2.5, shots: 0, confidence: 0.52, condensed_t: 17.5 },
+  ],
+};
+
+/** A render job: queued on start, done JOB_MS later (like AUTOCALIB_MS). */
+const JOB_MS = 600;
+const jobs = new Map<string, number>();
+function startJob(key: string) {
+  if (!jobs.has(key)) jobs.set(key, Date.now());
+}
+function jobState(key: string, url: string): JobStatus {
+  const started = jobs.get(key);
+  if (started === undefined) return { status: "none", url: null, job_id: null };
+  if (Date.now() - started < JOB_MS) return { status: "queued", url: null, job_id: `j_${key}` };
+  return { status: "done", url, job_id: `j_${key}` };
+}
+const verticals = new Map<string, Omit<VerticalExport, keyof JobStatus>>();
+function hex12(s: string): string {
+  let h = 2166136261;
+  for (const ch of s) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return (h.toString(16).padStart(8, "0") + "0000").slice(0, 12);
+}
+
+/** services/api stats.review_queue, same rules: unknown shot outcomes, low-confidence
+ *  events, then up to 5 untagged players (name them or merge into a teammate). */
+function reviewQueue(g: Game, list: GameEvent[]): ReviewQuestion[] {
+  const out: ReviewQuestion[] = [];
+  const opt = (label: string, path: string, body: Record<string, unknown>, text_field?: string): ReviewOption => ({
+    label,
+    method: "PATCH",
+    path,
+    body,
+    ...(text_field ? { text_field } : {}),
+  });
+  for (const e of [...list].sort((a, b) => a.t_key - b.t_key)) {
+    if (e.confirmed || e.dismissed || e.type !== "shot") continue;
+    const path = `/games/${g.id}/events/${e.id}`;
+    const base = { event_id: e.id, t: e.t_key, player_id: e.player_id, confidence: e.confidence };
+    const no = opt("Not a shot", path, { dismissed: true, confirmed: true });
+    if (e.made === undefined || e.made === null) {
+      out.push({ ...base, id: `q_outcome_${e.id}`, kind: "shot_outcome", prompt: "Make or miss?", options: [
+        opt("Made", path, { made: true, confirmed: true }),
+        opt("Missed", path, { made: false, confirmed: true }),
+        no,
+      ] });
+    } else if (e.confidence < REVIEW_CONFIDENCE_THRESHOLD) {
+      out.push({ ...base, id: `q_conf_${e.id}`, kind: "low_confidence", prompt: "Was this a shot?", options: [
+        opt("Yes", path, { confirmed: true }),
+        { ...no, label: "No" },
+      ] });
+    }
+  }
+  const tagged = g.players.filter((p) => p.name);
+  for (const p of g.players.filter((x) => !x.name).slice(0, 5)) {
+    const path = `/games/${g.id}/players/${p.id}`;
+    const mates = tagged.filter((q) => q.team === p.team);
+    out.push({
+      id: `q_who_${p.id}`,
+      kind: "identity",
+      player_id: p.id,
+      prompt: `Who is #${p.id}?`,
+      options: [
+        opt("Type a name", path, {}, "name"),
+        ...(mates.length ? mates : tagged).map((q) => opt(`Same as ${q.name}`, path, { merge_into: q.id })),
+      ],
+    });
+  }
+  return out;
+}
 
 /** M8 replay fixture (labelled mock): every angle is the same 20 s wide.mp4 under a
  *  per-angle query string, so a cut is a real src swap + reload that has to land at the

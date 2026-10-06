@@ -1287,6 +1287,242 @@ body,
   font-weight: 600;
 }
 
+/* ---- M13: broadcast, captions, hype, clips, rallies, search, advice ---- */
+.navitem.on {
+  color: var(--fg);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.navitem.on.focused {
+  box-shadow: var(--ring-tight);
+}
+.hype-meter {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 36px;
+  margin-bottom: 10px;
+}
+.hype-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+}
+/* Commentary captions: above the transport while it is up, low when it has faded. */
+.caption {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  max-width: 72%;
+  padding: 10px 24px 12px;
+  border-radius: 8px;
+  background: rgba(var(--scrim), 0.85);
+  font-size: 36px;
+  font-weight: 600;
+  text-align: center;
+  transition: bottom 320ms ease;
+}
+.caption.raised {
+  bottom: 250px;
+}
+.toast {
+  position: absolute;
+  right: 40px;
+  top: 120px;
+  padding: 12px 26px 14px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.clips-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 640px;
+  gap: 36px;
+  align-items: start;
+}
+.clips-layout .surface {
+  border-radius: 8px;
+}
+.clip-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.clip-card {
+  padding: 12px 20px 14px;
+  border-radius: 10px;
+  background: var(--panel);
+  transition: box-shadow 120ms ease;
+}
+.clip-card.current,
+.reel-clip.current {
+  background: var(--raised);
+}
+.clip-card.focused {
+  box-shadow: var(--ring-tight);
+}
+.clip-card-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.clip-badge,
+.match-badge {
+  padding: 2px 12px 4px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+  font-size: 24px;
+}
+.match-badge {
+  background: var(--made);
+}
+.clip-who {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hit-text {
+  margin-top: 4px;
+}
+.trim {
+  margin-top: 24px;
+}
+.trim-bar {
+  position: relative;
+  height: 36px;
+  border-radius: 6px;
+  background: var(--raised);
+}
+.trim-sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 176, 32, 0.35);
+}
+.trim-playhead {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 4px;
+  margin-left: -2px;
+  background: var(--fg);
+}
+.trim-handle {
+  position: absolute;
+  top: -8px;
+  bottom: -8px;
+  width: 18px;
+  margin-left: -9px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+.trim-handle.focused {
+  box-shadow: var(--ring-tight);
+}
+.trim-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 18px;
+}
+.trim-length {
+  font-variant-numeric: tabular-nums;
+}
+.export-scrim {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(var(--scrim), 0.82);
+}
+.export-panel {
+  width: 1100px;
+  padding: 40px;
+  border-radius: 16px;
+  background: var(--panel);
+}
+.export-panel h2 {
+  margin-top: 0;
+}
+.export-body {
+  display: flex;
+  gap: 32px;
+}
+.vertical-preview {
+  width: 320px;
+  flex: none;
+}
+.export-url {
+  font-size: 24px;
+  word-break: break-all;
+}
+.rally-summary {
+  align-self: center;
+}
+.rally-counter {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  padding: 6px 18px 8px;
+  border-left: 8px solid var(--accent);
+  background: rgba(var(--scrim), 0.85);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.advice-panel {
+  margin-top: 24px;
+  padding: 32px;
+  border-radius: 16px;
+  background: var(--panel);
+  max-width: 1400px;
+}
+.advice-panel h2 {
+  margin-top: 0;
+}
+.advice-panel li {
+  margin-bottom: 12px;
+}
+.shot.unknown {
+  fill: none;
+  stroke: var(--dim);
+  stroke-width: 0.24;
+  stroke-dasharray: 0.4 0.3;
+}
+.companion .clip-that {
+  width: 100%;
+  font-size: 22px;
+}
+.phone-hits {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.phone-hits li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--panel);
+}
+.phone-hits li span {
+  flex: 1;
+}
+.phone .phone-hits button {
+  margin-top: 0;
+  flex: none;
+}
+
 /* Focus rings are never hover-only (NF-02 / NF-04), and every interactive element on the
    phone gets the same ring the TV uses. */
 :focus-visible {

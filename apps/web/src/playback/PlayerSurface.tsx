@@ -28,12 +28,14 @@ interface Props {
   onEnded?: () => void;
   /** Restart at the end instead of stopping (Replay view). */
   loop?: boolean;
+  /** Width / height of the viewport (default 16:9; the 9:16 share preview passes 9/16). */
+  aspect?: number;
   ref?: Ref<PlayerHandle>;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
-export function PlayerSurface({ src, crop, muted, children, onEnded, loop, ref }: Props) {
+export function PlayerSurface({ src, crop, muted, children, onEnded, loop, aspect, ref }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -186,7 +188,12 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, loop, ref }
   }, [crop]);
 
   return (
-    <div className="surface" data-testid="player-surface" ref={viewportRef}>
+    <div
+      className="surface"
+      data-testid="player-surface"
+      ref={viewportRef}
+      style={aspect ? { aspectRatio: String(aspect) } : undefined}
+    >
       <div
         className="surface-transform"
         data-testid="player-transform"

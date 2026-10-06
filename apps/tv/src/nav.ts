@@ -10,7 +10,11 @@ export type Route =
   | { name: "review"; gameId: string }
   | { name: "replays"; gameId: string }
   | { name: "replay"; gameId: string; playId: string }
+  | { name: "clips" | "rallies" | "search" | "advice"; gameId: string }
   | { name: "pair"; gameId?: string };
+
+/** M13 screens that take only a game id: `/tv/:id/<name>`. */
+const GAME_SCREENS = ["clips", "rallies", "search", "advice"] as const;
 
 let current: Route = { name: "library" };
 const subs = new Set<() => void>();
@@ -31,7 +35,7 @@ export function useRoute(): Route {
 }
 
 /** `/tv`, `/tv/pair?game=`, `/tv/:id[?mode=&pid=&t=]`, `/tv/:id/highlights[?q=]`, `/tv/:id/review`,
- *  `/tv/:id/replays[/:playId]`. */
+ *  `/tv/:id/replays[/:playId]`, `/tv/:id/{clips,rallies,search,advice}`. */
 export function routeFromPath(path: string): Route {
   const [pathname, search = ""] = path.split("?");
   const params = new URLSearchParams(search);
@@ -42,6 +46,8 @@ export function routeFromPath(path: string): Route {
   const gameId = seg[0];
   if (seg[1] === "highlights") return { name: "highlights", gameId, q: params.get("q") ?? undefined };
   if (seg[1] === "review") return { name: "review", gameId };
+  const screen = GAME_SCREENS.find((s) => s === seg[1]);
+  if (screen) return { name: screen, gameId };
   // M8: `/tv/:id/replays` (list) and `/tv/:id/replays/:playId` (angle view).
   if (seg[1] === "replays") {
     return seg[2]

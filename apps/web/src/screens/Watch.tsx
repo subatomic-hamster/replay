@@ -19,28 +19,62 @@ import { SelectOverlay } from "../components/SelectOverlay";
 import { TagDialog } from "../components/TagDialog";
 import { navigate, setQuery, useLocation } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
+import { storedSession, useSessionMessages, type SessionMessage } from "../session";
 import type { CropPath, GameEvent, Player } from "../api/types";
 import { eventJump } from "../../../../packages/tv-core/src/display";
+import {
+  broadcastOf,
+  captionAt,
+  commentaryLines,
+  hypeBars,
+  nextPeak,
+} from "../../../../packages/tv-core/src/discovery";
 
 type Mode = "wide" | "select" | "follow";
 const SCRUB_STEP_S = 5;
+const HYPE_BARS = 96;
+const TOAST_MS = 3000;
 
-const NAV: { label: string; to: (id: string) => string }[] = [
-  { label: "Library", to: () => "/tv" },
-  { label: "Highlights", to: (id) => `/tv/${id}/highlights` },
-  { label: "Review", to: (id) => `/tv/${id}/review` },
+type Toggle = "broadcast" | "captions" | "hype-peak";
+const NAV: { id: string; label: string; to?: (id: string) => string; toggle?: Toggle }[] = [
+  { id: "nav-library", label: "Library", to: () => "/tv" },
+  { id: "nav-highlights", label: "Highlights", to: (id) => `/tv/${id}/highlights` },
+  { id: "nav-review", label: "Review", to: (id) => `/tv/${id}/review` },
   // M8: only when the game has rendered replays (filtered in Watch).
-  { label: "Replays", to: (id) => `/tv/${id}/replays` },
+  { id: "nav-replays", label: "Replays", to: (id) => `/tv/${id}/replays` },
+  // M13 — each data-driven item shows only when the game has that data (no sport branch).
+  { id: "action-broadcast", label: "Broadcast", toggle: "broadcast" },
+  { id: "action-captions", label: "Commentary", toggle: "captions" },
+  { id: "action-hype-peak", label: "Hype peak", toggle: "hype-peak" },
+  { id: "nav-clips", label: "Clips", to: (id) => `/tv/${id}/clips` },
+  { id: "nav-rallies", label: "Rallies", to: (id) => `/tv/${id}/rallies` },
+  { id: "nav-search", label: "Search", to: (id) => `/tv/${id}/search` },
+  { id: "nav-advice", label: "Advice", to: (id) => `/tv/${id}/advice` },
 ];
 
 export function Watch({ gameId }: { gameId: string }) {
   const { params } = useLocation();
   const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
   const { data: replays } = useAsync(() => api.listReplays(gameId), [gameId]);
-  const nav = useMemo(
-    () => (replays?.length ? NAV : NAV.filter((n) => n.label !== "Replays")),
-    [replays],
-  );
+  const { data: renditions } = useAsync(() => api.listRenditions(gameId), [gameId]);
+  const { data: commentary } = useAsync(() => api.getCommentary(gameId), [gameId]);
+  const { data: hype } = useAsync(() => api.getHype(gameId), [gameId]);
+  const { data: rallies } = useAsync(() => api.getRallies(gameId), [gameId]);
+  const broadcast = broadcastOf(renditions);
+  const lines = useMemo(() => commentaryLines(commentary), [commentary]);
+  const hypeMeter = useMemo(() => (hype ? hypeBars(hype.values, HYPE_BARS) : null), [hype]);
+  const nav = useMemo(() => {
+    const hidden = new Set<string>();
+    if (!replays?.length) hidden.add("nav-replays");
+    if (!broadcast) hidden.add("action-broadcast");
+    if (!lines.length) hidden.add("action-captions");
+    if (!hype?.candidates.length) hidden.add("action-hype-peak");
+    if (!rallies?.n) hidden.add("nav-rallies");
+    return NAV.filter((n) => !hidden.has(n.id));
+  }, [replays, broadcast, lines, hype, rallies]);
+  const [broadcastOn, setBroadcastOn] = useState(false);
+  const [captionsOn, setCaptionsOn] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [roster, setRoster] = useState<Player[]>([]);
   const [handle, setHandle] = useState<PlayerHandle | null>(null);
@@ -169,15 +203,29 @@ export function Watch({ gameId }: { gameId: string }) {
         if (a === "left") setNavFocus((i) => Math.max(0, (i ?? 0) - 1));
         else if (a === "right") setNavFocus((i) => Math.min(nav.length - 1, (i ?? 0) + 1));
         else if (a === "down" || a === "back") setNavFocus(null);
-        else if (a === "select") navigate(nav[navFocus].to(game.id));
+        else if (a === "select") {
+          const item = nav[navFocus];
+          if (item.to) navigate(item.to(game.id));
+          else if (item.toggle === "broadcast") {
+            // D-42: rendition time = source time, so the swap keeps the playback position;
+            // track boxes describe the wide frame, so select/follow sit broadcast out.
+            setBroadcastOn((on) => !on);
+            setMode("wide");
+            setQuery({ mode: null });
+          } else if (item.toggle === "captions") setCaptionsOn((on) => !on);
+          else if (item.toggle === "hype-peak") {
+            const to = nextPeak(hype?.candidates ?? [], handle.currentTime());
+            if (to !== null) handle.seek(to);
+          }
+        } else if (a === "playpause") handle.toggle();
         return;
       }
 
       switch (a) {
         case "playpause": {
           handle.toggle();
-          // W3: pausing the wide shot is what opens select mode.
-          if (mode !== "follow") setMode(handle.paused() ? "select" : "wide");
+          // W3: pausing the wide shot is what opens select mode (not over the broadcast).
+          if (mode !== "follow" && !broadcastOn) setMode(handle.paused() ? "select" : "wide");
           break;
         }
         case "seek-back":
@@ -257,9 +305,39 @@ export function Watch({ gameId }: { gameId: string }) {
           break;
       }
     },
-    [handle, game, mode, focusId, pid, players, jumpEvent, navFocus, nav],
+    [handle, game, mode, focusId, pid, players, jumpEvent, navFocus, nav, hype, broadcastOn],
   );
   useDpad(onAction, !tagging);
+
+  // Paired phone: tell it what is on screen once a second (its "Clip that" posts a tap at
+  // this media time), play the search hits it sends, and confirm the clips its taps cut.
+  const send = useSessionMessages(
+    storedSession()?.id,
+    useCallback(
+      (msg: SessionMessage) => {
+        if (msg.type === "seek" && typeof msg.t === "number" && handle) {
+          handle.seek(msg.t);
+          handle.play();
+          setMode("wide");
+          setQuery({ mode: null });
+        } else if (msg.type === "clip") setToast(msg.label ?? "Clip saved");
+      },
+      [handle],
+    ),
+  );
+  useEffect(() => {
+    if (!handle || !game) return;
+    const timer = setInterval(
+      () => send({ type: "now", game_id: game.id, title: game.title, t: handle.currentTime() }),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [handle, game, send]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // The transport fades out a few seconds into playback and comes back on the next key, so
   // a lean-back watch is just the game. Paused (and so all of select mode) keeps it up.
@@ -298,17 +376,26 @@ export function Watch({ gameId }: { gameId: string }) {
     .map((p) => ({ ...p, bb: mapBB(p.bb, cropRect) }));
   // Track boxes describe the wide frame; a pre-rendered per-player rendition is a
   // different picture entirely, so the frame sits that one case out.
-  const showFollowFrame = !!pid && mode !== "select" && source.src === wideUrl;
+  const onBroadcast = broadcastOn && !!broadcast;
+  const src = onBroadcast && broadcast ? broadcast.url : source.src;
+  const showFollowFrame = !!pid && mode !== "select" && src === wideUrl;
+  const caption = captionsOn ? captionAt(lines, t) : null;
 
   return (
-    <div className="screen watch" data-mode={mode}>
+    <div
+      className="screen watch"
+      data-testid="watch"
+      data-mode={mode}
+      data-broadcast={onBroadcast ? "true" : "false"}
+    >
       <div className="watch-stage">
-        {/* Muted: Phase 1 has no audio design and an unmuted autoplay is blocked. */}
+        {/* The broadcast rendition carries its own audio mix (game audio, stings, ducked
+            narration — D-43), so it plays with sound; the raw wide shot stays muted. */}
         <PlayerSurface
           ref={setHandle}
-          src={source.src}
-          crop={source.useCrop ? crop : null}
-          muted
+          src={src}
+          crop={!onBroadcast && source.useCrop ? crop : null}
+          muted={!onBroadcast}
         >
           {mode === "select" ? (
             <SelectOverlay
@@ -346,34 +433,59 @@ export function Watch({ gameId }: { gameId: string }) {
               crop={source.useCrop ? crop : null}
             />
           ) : null}
+          {caption ? (
+            // M7 grounded commentary as captions, timed by the clock (audio_t / audio_s).
+            <div
+              className={`caption${chrome || navFocus !== null ? " raised" : ""}`}
+              data-testid="caption"
+              data-t={caption.audio_t ?? caption.t}
+            >
+              {caption.text}
+            </div>
+          ) : null}
+          {toast ? (
+            <div className="toast" data-testid="toast">
+              {toast}
+            </div>
+          ) : null}
         </PlayerSurface>
 
         <div className="watch-chrome" data-hidden={chrome ? "false" : "true"}>
           <nav className="topnav">
-            {nav.map((n, i) => (
-              <span
-                key={n.label}
-                className={`navitem${navFocus === i ? " focused" : ""}`}
-                data-testid={`nav-${n.label.toLowerCase()}`}
-                data-focused={navFocus === i ? "true" : "false"}
-              >
-                {n.label}
-              </span>
-            ))}
+            {nav.map((n, i) => {
+              const on =
+                n.toggle === "broadcast" ? onBroadcast : n.toggle === "captions" ? captionsOn : null;
+              return (
+                <span
+                  key={n.id}
+                  className={`navitem${navFocus === i ? " focused" : ""}${on ? " on" : ""}`}
+                  data-testid={n.id}
+                  data-focused={navFocus === i ? "true" : "false"}
+                  data-on={on === null ? undefined : on ? "true" : "false"}
+                >
+                  {n.label}
+                </span>
+              );
+            })}
             <span className="title">{game.title}</span>
           </nav>
 
           {mode !== "follow" ? (
-            <div className={`mode-pill ${mode}`}>{mode === "select" ? "SELECT" : "WIDE"}</div>
+            <div className={`mode-pill ${mode}`} data-testid="mode-pill">
+              {mode === "select" ? "SELECT" : onBroadcast ? "BROADCAST" : "WIDE"}
+            </div>
           ) : null}
 
-          <CourtInset
-            court={game.sport_ui?.court}
-            variant={game.court.variant}
-            players={players}
-            roster={roster}
-            selectedId={mode === "follow" ? pid : focusId}
-          />
+          {/* The broadcast draws its own graphics; the inset would sit on top of them. */}
+          {onBroadcast ? null : (
+            <CourtInset
+              court={game.sport_ui?.court}
+              variant={game.court.variant}
+              players={players}
+              roster={roster}
+              selectedId={mode === "follow" ? pid : focusId}
+            />
+          )}
 
           <div className="watch-transport">
             <SeekBarEvents
@@ -381,6 +493,7 @@ export function Watch({ gameId }: { gameId: string }) {
               current={t}
               events={sorted}
               focused={mode === "wide"}
+              hype={hypeMeter}
             />
             <p className="hint">
               {mode === "select" ? (

@@ -205,18 +205,23 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   await expect.poll(async () => (await video(page))?.paused).toBe(false);
   expect(Math.abs(((await video(page))?.currentTime ?? 0) - tStart)).toBeLessThan(1.5);
 
-  // --- review: confirm one low-confidence event --------------------------
+  // --- review: answer the first GET /review/queue question (D-48) ----------
+  const queue = await (await page.request.get(`${API}/games/${gameId}/review/queue`)).json();
+  const first = queue.questions[0];
+  expect(first?.event_id, "the fake game queues an event question first").toBeTruthy();
   await page.goto(`/tv/${gameId}/review`);
   const item = page.getByTestId("review-item");
-  await expect(item).toBeVisible();
-  const eventId = await item.getAttribute("data-event-id");
-  await page.keyboard.press("Enter"); // "Made" is the focused action
-  await expect(page.getByTestId("review-empty")).toBeVisible();
+  await expect(item).toHaveAttribute("data-event-id", first.event_id);
+  await page.keyboard.press("Enter"); // the first option ("Made" / "Yes")
+  await expect(item.or(page.getByTestId("review-empty"))).not.toHaveAttribute(
+    "data-event-id",
+    first.event_id,
+  );
 
   // PATCH actually persisted: re-read events.json off the API
   const events = await (await page.request.get(`${API}/media/games/${gameId}/events.json`)).json();
-  const patched = events.events.find((e: { id: string }) => e.id === eventId);
-  expect(patched).toMatchObject({ made: true, confirmed: true, source: "user" });
+  const patched = events.events.find((e: { id: string }) => e.id === first.event_id);
+  expect(patched).toMatchObject(first.options[0].body);
 
   // --- bookmark ----------------------------------------------------------
   await page.goto(`/tv/${gameId}`);
@@ -296,6 +301,48 @@ test("S-31 a phone query moves the TV to the matching highlights", async ({ page
   await expect(page.getByTestId("query-interpretation")).toContainText("missed shots", {
     timeout: 5000,
   });
+  await phone.close();
+});
+
+// M13 — "Replay, clip that" from the phone and "Play on TV", through the real relay and
+// the real POST /games/{id}/triggers. The fake game has no plays.json, so the tap is
+// stored but cuts no clip (D-50), and its search has no index, so it is the keyword
+// fallback — both are the honest answers for this fixture.
+test("S-48 live: the phone clips at the TV's media time and sends a search hit to the TV", async ({
+  page,
+  context,
+}) => {
+  expect(gameId, "S-01 must have run first").not.toBe("");
+  await page.goto(`/tv/pair?game=${gameId}`);
+  await expect(page.getByTestId("pair-code")).toHaveText(/^\d{4}$/);
+  const code = (await page.getByTestId("pair-code").textContent())?.trim() ?? "";
+  await page.goto(`/tv/${gameId}?t=4`); // same tab: the session survives in sessionStorage
+  await waitForVideo(page);
+
+  const phone = await context.newPage();
+  await phone.goto(`/companion/${code}`);
+  await expect(phone.getByTestId("companion-status")).toHaveAttribute("data-state", "open");
+  await expect(phone.getByTestId("companion-now")).toHaveAttribute("data-game-id", gameId, {
+    timeout: 5000,
+  });
+  await phone.getByTestId("companion-clip").click();
+  await expect(phone.getByTestId("companion-clip-result")).toHaveText(/^(Clip|Tap) saved/);
+  const label = (await phone.getByTestId("companion-clip-result").textContent()) ?? "";
+  await expect(page.getByTestId("toast")).toHaveText(label);
+  const triggers = await (await page.request.get(`${API}/games/${gameId}/triggers`)).json();
+  const tap = triggers.triggers.find((t: { type: string }) => t.type === "tap");
+  expect(tap).toMatchObject({ type: "tap", source: "user" });
+  expect(tap.t).toBeGreaterThanOrEqual(3);
+
+  await phone.getByTestId("companion-search").fill("all shots");
+  await phone.getByTestId("companion-search-go").click();
+  const hit = phone.getByTestId("companion-hit").first();
+  await expect(hit).toBeVisible();
+  const t0 = Number(await hit.getAttribute("data-t-start"));
+  await hit.getByTestId("companion-play").click();
+  await expect
+    .poll(async () => Math.abs(((await video(page))?.currentTime ?? -9) - t0))
+    .toBeLessThan(1.5);
   await phone.close();
 });
 

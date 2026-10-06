@@ -148,16 +148,19 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
   ).toBeVisible();
   await shot(page, "06-review-real");
 
-  if (await page.getByTestId("review-item").isVisible()) {
-    const eventId = await page.getByTestId("review-item").getAttribute("data-event-id");
-    await page.keyboard.press("Enter"); // "Made"
-    const events = await (
-      await page.request.get(`${API}/media/games/${gameId}/events.json`)
-    ).json();
-    expect(events.events.find((e: { id: string }) => e.id === eventId)).toMatchObject({
-      confirmed: true,
-      source: "user",
-    });
+  // GET /review/queue (D-48): event questions first; an identity question opens a keyboard.
+  const item = page.getByTestId("review-item");
+  if ((await item.isVisible()) && (await item.getAttribute("data-kind")) !== "identity") {
+    const eventId = await item.getAttribute("data-event-id");
+    await page.keyboard.press("Enter"); // the first option: "Made" / "Yes"
+    await expect
+      .poll(async () => {
+        const events = await (
+          await page.request.get(`${API}/media/games/${gameId}/events.json`)
+        ).json();
+        return events.events.find((e: { id: string }) => e.id === eventId);
+      })
+      .toMatchObject({ confirmed: true, source: "user" });
   }
 });
 

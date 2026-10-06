@@ -5,7 +5,11 @@ import { useState } from "react";
 import { StatusBar, StyleSheet, View } from "react-native";
 import { navigate, useRoute, type Route } from "./nav";
 import { usePlatformKeys } from "./platform/keys";
+import { Advice } from "./screens/Advice";
+import { Clips } from "./screens/Clips";
 import { Highlights } from "./screens/Highlights";
+import { Rallies } from "./screens/Rallies";
+import { Search } from "./screens/Search";
 import { Library } from "./screens/Library";
 import { Pair } from "./screens/Pair";
 import { Replay, ReplayList } from "./screens/Replay";
@@ -41,6 +45,14 @@ function screen(r: Route) {
       return <ReplayList key={r.gameId} gameId={r.gameId} />;
     case "replay":
       return <Replay key={`${r.gameId}/${r.playId}`} gameId={r.gameId} playId={r.playId} />;
+    case "clips":
+      return <Clips key={r.gameId} gameId={r.gameId} />;
+    case "rallies":
+      return <Rallies key={r.gameId} gameId={r.gameId} />;
+    case "search":
+      return <Search key={r.gameId} gameId={r.gameId} />;
+    case "advice":
+      return <Advice key={r.gameId} gameId={r.gameId} />;
     case "pair":
       return <Pair gameId={r.gameId} />;
   }

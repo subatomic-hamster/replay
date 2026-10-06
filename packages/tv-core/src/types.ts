@@ -165,6 +165,8 @@ export interface ShotPoint {
   court: [number, number];
   made: boolean;
   confirmed?: boolean;
+  /** M11: "unknown" when the detector could not tell (drawn as a ring). */
+  outcome?: "make" | "miss" | "unknown";
 }
 
 export interface BoxScoreRow {
@@ -173,9 +175,21 @@ export interface BoxScoreRow {
   attempts: number;
   makes: number;
   confidence?: number;
+  /** M11 (D-48), additive: shown only for the stats in `Stats.available`. */
+  team?: number;
+  points?: number;
+  rebounds?: number;
+  steals?: number;
+  blocks?: number;
+  distance_m?: number;
 }
 
 export interface Stats {
+  /** D-48: always "auto-detected", with the mean event confidence. */
+  label?: string;
+  confidence?: number | null;
+  /** Which event-backed stats this game can support ("shots", "rebounds", …). */
+  available?: string[];
   box_score: BoxScoreRow[];
   shots: ShotPoint[];
   /** Optional per-player occupancy grid (R2, P2 — rendered only if present).

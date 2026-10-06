@@ -7,6 +7,10 @@ import { Review } from "./screens/Review";
 import { Pair } from "./screens/Pair";
 import { Replay, ReplayList } from "./screens/Replay";
 import { Companion } from "./screens/Companion";
+import { Clips } from "./screens/Clips";
+import { Rallies } from "./screens/Rallies";
+import { Search } from "./screens/Search";
+import { Advice } from "./screens/Advice";
 import { Calibrate, UploadCreate, UploadFile, UploadStatus } from "./screens/Upload";
 
 export function App() {
@@ -38,6 +42,11 @@ function route(seg: string[], tv: boolean) {
     const id = seg[1];
     if (seg[2] === "highlights") return <Highlights key={id} gameId={id} />;
     if (seg[2] === "review") return <Review key={id} gameId={id} />;
+    // M13: clips + trim + 9:16 share, rallies + condensed game, search, advice.
+    if (seg[2] === "clips") return <Clips key={id} gameId={id} />;
+    if (seg[2] === "rallies") return <Rallies key={id} gameId={id} />;
+    if (seg[2] === "search") return <Search key={id} gameId={id} />;
+    if (seg[2] === "advice") return <Advice key={id} gameId={id} />;
     // M8: /tv/:id/replays (list) and /tv/:id/replays/:playId (angle view).
     if (seg[2] === "replays") {
       return seg[3] ? (

@@ -28,12 +28,14 @@ interface Props {
   muted?: boolean;
   /** Restart at the end instead of stopping (Replay view). */
   loop?: boolean;
+  /** Viewport width / height; 16:9 except the 9:16 share-export preview. */
+  aspect?: number;
   /** Overlays, laid out over the untransformed viewport. */
   children?: ReactNode;
   ref?: Ref<PlayerHandle>;
 }
 
-export function PlayerSurface({ src, crop, muted, loop, children, ref }: Props) {
+export function PlayerSurface({ src, crop, muted, loop, aspect, children, ref }: Props) {
   const media = useRef<MediaHandle>(null);
   const [clock, setClock] = useState<Clock | null>(null);
   const size = useRef({ w: 0, h: 0 });
@@ -107,7 +109,7 @@ export function PlayerSurface({ src, crop, muted, loop, children, ref }: Props) 
   return (
     <View
       testID="player-surface"
-      style={styles.surface}
+      style={[styles.surface, aspect ? { aspectRatio: aspect } : null]}
       onLayout={(e) => {
         size.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
       }}

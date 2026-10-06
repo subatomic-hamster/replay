@@ -8,6 +8,13 @@
 // client (b, s, t, p, [ ], , .) also lives in that row, so D-pad + Back reach everything.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
+import {
+  broadcastOf,
+  captionAt,
+  commentaryLines,
+  hypeBars,
+  nextPeak,
+} from "../../../../packages/tv-core/src/discovery";
 import { eventJump } from "../../../../packages/tv-core/src/display";
 import { cropRectAt, mapBB } from "../../../../packages/tv-core/src/follow";
 import { followSource } from "../../../../packages/tv-core/src/followSource";
@@ -24,14 +31,21 @@ import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
 import { FOLLOWCAM_MODE } from "../platform/config";
 import { PlayerSurface, useClockTime, type PlayerHandle } from "../playback/PlayerSurface";
+import { storedSession, useSessionMessages, type SessionMessage } from "../session";
 import { color, font, px } from "../theme";
 import { ApiErrorBanner, Hint, Loading, Pill, T, useAsync } from "../ui";
 
 type Mode = "wide" | "select" | "follow";
 const SEEK_STEP_S = 10;
 const SCRUB_STEP_S = 5;
+const HYPE_BARS = 96;
+const TOAST_MS = 3000;
 
-const MENU: { id: string; label: string; action: DpadAction | "library" | "highlights" | "review" | "replays" }[] = [
+type Nav = "library" | "highlights" | "review" | "replays" | "clips" | "rallies" | "search" | "advice";
+type Toggle = "broadcast" | "captions" | "hype-peak";
+const NAV_ROUTES: Nav[] = ["highlights", "review", "replays", "clips", "rallies", "search", "advice"];
+
+const MENU: { id: string; label: string; action: DpadAction | Nav | Toggle }[] = [
   { id: "nav-library", label: "Library", action: "library" },
   { id: "nav-highlights", label: "Highlights", action: "highlights" },
   { id: "nav-review", label: "Review", action: "review" },
@@ -44,6 +58,14 @@ const MENU: { id: string; label: string; action: DpadAction | "library" | "highl
   // M8: only when the game has rendered replays (filtered below). Last, so the indices
   // of the items above stay put.
   { id: "nav-replays", label: "Replays", action: "replays" },
+  // M13 — each data-driven item shows only when the game has that data (no sport branch).
+  { id: "action-broadcast", label: "Broadcast", action: "broadcast" },
+  { id: "action-captions", label: "Commentary", action: "captions" },
+  { id: "action-hype-peak", label: "Hype peak", action: "hype-peak" },
+  { id: "nav-clips", label: "Clips", action: "clips" },
+  { id: "nav-rallies", label: "Rallies", action: "rallies" },
+  { id: "nav-search", label: "Search", action: "search" },
+  { id: "nav-advice", label: "Advice", action: "advice" },
 ];
 
 // ponytail: a hardcoded list beats a contacts import for a demo (same as apps/web).
@@ -63,10 +85,25 @@ export function Watch({
 }) {
   const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
   const { data: replays } = useAsync(() => api.listReplays(gameId), [gameId]);
-  const menuItems = useMemo(
-    () => (replays?.length ? MENU : MENU.filter((m) => m.action !== "replays")),
-    [replays],
-  );
+  const { data: renditions } = useAsync(() => api.listRenditions(gameId), [gameId]);
+  const { data: commentary } = useAsync(() => api.getCommentary(gameId), [gameId]);
+  const { data: hype } = useAsync(() => api.getHype(gameId), [gameId]);
+  const { data: rallies } = useAsync(() => api.getRallies(gameId), [gameId]);
+  const broadcast = broadcastOf(renditions);
+  const lines = useMemo(() => commentaryLines(commentary), [commentary]);
+  const hypeBarsMemo = useMemo(() => (hype ? hypeBars(hype.values, HYPE_BARS) : null), [hype]);
+  const menuItems = useMemo(() => {
+    const hidden = new Set<string>();
+    if (!replays?.length) hidden.add("replays");
+    if (!broadcast) hidden.add("broadcast");
+    if (!lines.length) hidden.add("captions");
+    if (!hype?.candidates.length) hidden.add("hype-peak");
+    if (!rallies?.n) hidden.add("rallies");
+    return MENU.filter((m) => !hidden.has(m.action));
+  }, [replays, broadcast, lines, hype, rallies]);
+  const [broadcastOn, setBroadcastOn] = useState(false);
+  const [captionsOn, setCaptionsOn] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [roster, setRoster] = useState<Player[]>([]);
   const [handle, setHandle] = useState<PlayerHandle | null>(null);
@@ -168,8 +205,8 @@ export function Watch({
       switch (a) {
         case "playpause":
           handle.toggle();
-          // W3: pausing the wide shot is what opens select mode.
-          if (mode !== "follow") setMode(handle.paused() ? "select" : "wide");
+          // W3: pausing the wide shot is what opens select mode (not over the broadcast).
+          if (mode !== "follow" && !broadcastOn) setMode(handle.paused() ? "select" : "wide");
           break;
         case "seek-back":
           handle.seek(handle.currentTime() - SEEK_STEP_S);
@@ -202,7 +239,7 @@ export function Watch({
           break;
       }
     },
-    [handle, game, mode, sorted, tagTarget],
+    [handle, game, mode, sorted, tagTarget, broadcastOn],
   );
 
   const onAction = useCallback(
@@ -218,12 +255,20 @@ export function Watch({
         else if (a === "select") {
           const item = menuItems[menu].action;
           if (item === "library") navigate({ name: "library" });
-          else if (item === "highlights") navigate({ name: "highlights", gameId: game.id });
-          else if (item === "review") navigate({ name: "review", gameId: game.id });
-          else if (item === "replays") navigate({ name: "replays", gameId: game.id });
-          else {
+          else if ((NAV_ROUTES as string[]).includes(item)) {
+            navigate({ name: item as Exclude<Nav, "library">, gameId: game.id });
+          } else if (item === "broadcast") {
+            // D-42: rendition time = source time, so the swap keeps the playback position;
+            // track boxes describe the wide frame, so select/follow sit broadcast out.
+            setBroadcastOn((on) => !on);
+            setMode("wide");
+          } else if (item === "captions") setCaptionsOn((on) => !on);
+          else if (item === "hype-peak") {
+            const to = nextPeak(hype?.candidates ?? [], handle.currentTime());
+            if (to !== null) handle.seek(to);
+          } else {
             setMenu(null);
-            run(item);
+            run(item as DpadAction);
           }
         } else run(a);
         return;
@@ -278,9 +323,38 @@ export function Watch({
           run(a);
       }
     },
-    [handle, game, mode, focusId, players, menu, menuItems, run],
+    [handle, game, mode, focusId, players, menu, menuItems, run, hype],
   );
   useDpad(onAction, !tagging);
+
+  // Paired phone: tell it what is on screen once a second (its "Clip that" posts a tap at
+  // this media time), play the search hits it sends, and confirm the clips its taps cut.
+  const send = useSessionMessages(
+    storedSession()?.id,
+    useCallback(
+      (msg: SessionMessage) => {
+        if (msg.type === "seek" && typeof msg.t === "number" && handle) {
+          handle.seek(msg.t);
+          handle.play();
+          if (!broadcastOn) setMode("wide");
+        } else if (msg.type === "clip") setToast(msg.label ?? "Clip saved");
+      },
+      [handle, broadcastOn],
+    ),
+  );
+  useEffect(() => {
+    if (!handle || !game) return;
+    const timer = setInterval(
+      () => send({ type: "now", game_id: game.id, title: game.title, t: handle.currentTime() }),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [handle, game, send]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // Transport fades a few seconds into playback; any key brings it back.
   useEffect(() => {
@@ -306,13 +380,24 @@ export function Watch({
   // spotlight cutout goes through the same crop rect.
   const cropRect = crop ? cropRectAt(crop, t) : null;
   const spotPlayers = players.filter((p) => p.id === pid).map((p) => ({ ...p, bb: mapBB(p.bb, cropRect) }));
-  const showFollowFrame = !!pid && mode !== "select" && source.src === wideUrl;
+  const onBroadcast = broadcastOn && !!broadcast;
+  const src = onBroadcast && broadcast ? broadcast.url : source.src;
+  const showFollowFrame = !!pid && mode !== "select" && src === wideUrl;
   const stageW = Math.min(winW, (winH * 16) / 9);
+  const caption = captionsOn ? captionAt(lines, t) : null;
+  const shown = chrome || menu !== null;
 
   return (
-    <View style={styles.screen} testID="watch" dataSet={{ mode }}>
+    <View style={styles.screen} testID="watch" dataSet={{ mode, broadcast: onBroadcast ? "true" : "false" }}>
       <View style={{ width: stageW }}>
-        <PlayerSurface ref={setHandle} src={source.src} crop={source.useCrop ? crop : null} muted>
+        {/* The broadcast rendition carries its own audio mix (game audio, stings, ducked
+            narration — D-43), so it plays with sound; the raw wide shot stays muted. */}
+        <PlayerSurface
+          ref={setHandle}
+          src={src}
+          crop={!onBroadcast && source.useCrop ? crop : null}
+          muted={!onBroadcast}
+        >
           {mode === "select" ? (
             <SelectOverlay players={players} roster={roster} focusId={focusId} spotlight={spotlight} />
           ) : null}
@@ -344,18 +429,42 @@ export function Watch({
               crop={source.useCrop ? crop : null}
             />
           ) : null}
+          {caption ? (
+            // M7 grounded commentary as captions, timed by the clock (audio_t / audio_s).
+            <View style={[styles.caption, { bottom: shown ? px(250) : px(64) }]}>
+              <T style={styles.captionText} testID="caption" dataSet={{ t: caption.audio_t ?? caption.t }}>
+                {caption.text}
+              </T>
+            </View>
+          ) : null}
+          {toast ? (
+            <View style={styles.toast} testID="toast">
+              <T style={styles.badgeText}>{toast}</T>
+            </View>
+          ) : null}
         </PlayerSurface>
 
         <View
-          style={[StyleSheet.absoluteFill, { opacity: chrome || menu !== null ? 1 : 0 }]}
+          style={[StyleSheet.absoluteFill, { opacity: shown ? 1 : 0 }]}
           pointerEvents="none"
           testID="watch-chrome"
-          dataSet={{ hidden: chrome || menu !== null ? "false" : "true" }}
+          dataSet={{ hidden: shown ? "false" : "true" }}
         >
           <View style={styles.top}>
             <View style={styles.menuRow}>
               {menuItems.map((m, i) => (
-                <Pill key={m.id} testID={m.id} label={m.label} focused={menu === i} />
+                <Pill
+                  key={m.id}
+                  testID={m.id}
+                  label={m.label}
+                  focused={menu === i}
+                  active={(m.action === "broadcast" && onBroadcast) || (m.action === "captions" && captionsOn)}
+                  dataSet={
+                    m.action === "broadcast" || m.action === "captions"
+                      ? { on: (m.action === "broadcast" ? onBroadcast : captionsOn) ? "true" : "false" }
+                      : undefined
+                  }
+                />
               ))}
             </View>
             <T style={styles.title} numberOfLines={1}>
@@ -369,23 +478,32 @@ export function Watch({
                 style={[styles.badgeText, { color: mode === "select" ? color.onAccent : color.fg }]}
                 testID="mode-pill"
               >
-                {mode === "select" ? "SELECT" : "WIDE"}
+                {mode === "select" ? "SELECT" : onBroadcast ? "BROADCAST" : "WIDE"}
               </T>
             </View>
           ) : null}
 
-          <View style={styles.inset}>
-            <CourtInset
-              court={game.sport_ui?.court}
-              variant={game.court.variant}
-              players={players}
-              roster={roster}
-              selectedId={mode === "follow" ? pid : focusId}
-            />
-          </View>
+          {/* The broadcast draws its own graphics; the inset would sit on top of them. */}
+          {onBroadcast ? null : (
+            <View style={styles.inset}>
+              <CourtInset
+                court={game.sport_ui?.court}
+                variant={game.court.variant}
+                players={players}
+                roster={roster}
+                selectedId={mode === "follow" ? pid : focusId}
+              />
+            </View>
+          )}
 
           <View style={styles.transport}>
-            <SeekBar duration={duration} current={t} events={sorted} focused={mode !== "select" && menu === null} />
+            <SeekBar
+              duration={duration}
+              current={t}
+              events={sorted}
+              focused={mode !== "select" && menu === null}
+              hype={hypeBarsMemo}
+            />
             <Hint>
               {menu !== null
                 ? "Left/Right pick an action · Select runs it · Down or Back closes"
@@ -441,7 +559,7 @@ const styles = StyleSheet.create({
   modePill: {
     position: "absolute",
     right: px(48),
-    top: px(170),
+    top: px(250), // below the two-row action bar
     backgroundColor: color.scrim,
     paddingHorizontal: px(18),
     paddingVertical: px(4),
@@ -468,11 +586,35 @@ const styles = StyleSheet.create({
   followBadge: {
     position: "absolute",
     left: px(48),
-    top: px(170),
+    top: px(250), // below the two-row action bar
     backgroundColor: color.accent,
     paddingHorizontal: px(18),
     paddingVertical: px(4),
     borderRadius: px(8),
   },
   badgeText: { color: color.onAccent, fontSize: font.body, fontWeight: "800" },
+  caption: {
+    position: "absolute",
+    left: px(240),
+    right: px(240),
+    alignItems: "center",
+  },
+  captionText: {
+    fontSize: px(36),
+    fontWeight: "600",
+    textAlign: "center",
+    paddingHorizontal: px(24),
+    paddingVertical: px(10),
+    borderRadius: px(8),
+    backgroundColor: "rgba(5, 7, 10, 0.85)",
+  },
+  toast: {
+    position: "absolute",
+    alignSelf: "center",
+    top: px(250), // below the two-row action bar
+    backgroundColor: color.accent,
+    paddingHorizontal: px(24),
+    paddingVertical: px(8),
+    borderRadius: px(8),
+  },
 });

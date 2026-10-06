@@ -40,5 +40,6 @@ test("S-34 the D-pad player row switches the heatmap without a reload", async ({
 
   // Back up to the review answers: the queue is still driveable (NF-03).
   await page.keyboard.press("ArrowUp");
-  await expect(page.getByTestId("review-action-made")).toHaveAttribute("data-focused", "true");
+  // (the 0.55 shot is a GET /review/queue low-confidence question: Yes / No)
+  await expect(page.getByTestId("review-action-yes")).toHaveAttribute("data-focused", "true");
 });

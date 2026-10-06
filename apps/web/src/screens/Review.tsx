@@ -1,13 +1,27 @@
-// R5 review queue, R1 shot chart, R2 heatmap, R3 box score lite — all "auto-detected".
+// R5 review queue, R1 shot chart, R2 heatmap, R3 box score — all "auto-detected".
+// The queue is GET /review/queue (D-48): shot outcomes the detector could not tell,
+// low-confidence events and untagged players, each option naming the PATCH it sends, so
+// answering needs no client-side rules.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { courtViewBox } from "../components/CourtInset";
-import { REVIEW_CONFIDENCE_THRESHOLD } from "../config";
+import { TextEntryDialog } from "../components/TextEntryDialog";
 import { useDpad, type DpadAction } from "../platform/keys";
 import { navigate } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
-import { REVIEW_ACTIONS, reviewPanels } from "../../../../packages/tv-core/src/display";
-import type { GameEvent, Stats } from "../api/types";
+import {
+  autoDetectedLabel,
+  boxColumns,
+  reviewPanels,
+} from "../../../../packages/tv-core/src/display";
+import {
+  optionTestId,
+  type ReviewOption,
+  type ReviewQuestion,
+} from "../../../../packages/tv-core/src/discovery";
+import type { Stats } from "../api/types";
+
+const titleCase = (v: string) => v.replace(/(^|\s)\S/g, (m) => m.toUpperCase());
 
 type HeatGrid = NonNullable<Stats["heatmap"]>[number];
 
@@ -60,16 +74,15 @@ function Heatmap({ grid, viewBox, size, polygons }: {
   );
 }
 
-const ACTIONS = REVIEW_ACTIONS;
-
 const COURT_FALLBACK: [number, number] = [15, 14];
 
 export function Review({ gameId }: { gameId: string }) {
   const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
-  const [queue, setQueue] = useState<GameEvent[]>([]);
+  const [queue, setQueue] = useState<ReviewQuestion[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [focus, setFocus] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [typing, setTyping] = useState<ReviewOption | null>(null);
   // Two focusable rows: the review answers, then the heatmap's player picker.
   const [row, setRow] = useState(0);
   const [heatFocus, setHeatFocus] = useState(0);
@@ -79,68 +92,67 @@ export function Review({ gameId }: { gameId: string }) {
   // Empty when the sport has no heatmap panel, so the D-pad's second row disappears too.
   const heatmap = panels.has("heatmap") ? (stats?.heatmap ?? []) : [];
 
-  useEffect(() => {
-    if (!game) return;
-    api.getEvents(game).then(
-      (evs) =>
-        setQueue(
-          evs.filter((e) => !e.confirmed && e.confidence < REVIEW_CONFIDENCE_THRESHOLD),
-        ),
-      () => setQueue([]),
-    );
-  }, [game]);
+  const current = queue[0];
 
-  const loadStats = useCallback(() => {
+  const load = useCallback(() => {
+    api.getReviewQueue(gameId).then(setQueue, () => setQueue([]));
     api.getStats(gameId).then(setStats, () => setStats(null));
   }, [gameId]);
-  useEffect(loadStats, [loadStats]);
+  useEffect(load, [load]);
 
   const answer = useCallback(
-    (i: number) => {
-      const current = queue[0];
-      if (!current || busy) return;
+    (option: ReviewOption, text?: string) => {
+      if (busy) return;
       setBusy(true);
       api
-        .patchEvent(gameId, current.id, ACTIONS[i].patch)
+        .answerReview(option, text)
         .then(() => {
-          setQueue((q) => q.slice(1));
-          loadStats();
+          setFocus(0);
+          load();
         })
         .catch(() => {})
         .finally(() => setBusy(false));
     },
-    [queue, gameId, busy, loadStats],
+    [busy, load],
   );
 
   const onAction = useCallback(
     (a: DpadAction) => {
+      const options = current?.options ?? [];
       if (a === "up") setRow(0);
       else if (a === "down") setRow(heatmap.length ? 1 : 0);
       else if (a === "left" && row === 0) setFocus((f) => Math.max(0, f - 1));
       else if (a === "left") setHeatFocus((i) => Math.max(0, i - 1));
-      else if (a === "right" && row === 0)
-        setFocus((f) => Math.min(ACTIONS.length - 1, f + 1));
+      else if (a === "right" && row === 0) setFocus((f) => Math.min(options.length - 1, f + 1));
       else if (a === "right") setHeatFocus((i) => Math.min(heatmap.length - 1, i + 1));
-      else if (a === "select" && row === 0) answer(focus);
-      else if (a === "back") navigate(`/tv/${gameId}`);
+      else if (a === "select" && row === 0 && options[focus]) {
+        if (options[focus].text_field) setTyping(options[focus]);
+        else answer(options[focus]);
+      } else if (a === "back") navigate(`/tv/${gameId}`);
     },
-    [focus, answer, gameId, row, heatmap.length],
+    [current, focus, answer, gameId, row, heatmap.length],
   );
-  useDpad(onAction);
+  useDpad(onAction, !typing);
 
   if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
   if (!game) return <div className="screen">Loading…</div>;
 
-  const current = queue[0];
   const [cw, ch] = game.sport_ui?.court?.size_m ?? COURT_FALLBACK;
   const polygons = game.sport_ui?.court?.polygons;
   const viewBox = courtViewBox(game.sport_ui?.court, cw, ch);
+  const name = (pid?: string | null) =>
+    pid ? (game.players.find((p) => p.id === pid)?.name ?? `#${pid}`) : "";
+  const columns = boxColumns(stats);
 
   return (
     <div className="screen review">
       <h1>Review — {game.title}</h1>
-      <p className="auto-label" data-testid="auto-detected-label">
-        All numbers below are auto-detected.
+      <p
+        className="auto-label"
+        data-testid="auto-detected-label"
+        data-confidence={stats?.confidence ?? ""}
+      >
+        {autoDetectedLabel(stats)}
       </p>
 
       <section className="review-queue">
@@ -149,23 +161,26 @@ export function Review({ gameId }: { gameId: string }) {
           <div
             className="review-item"
             data-testid="review-item"
-            data-event-id={current.id}
-            data-confidence={current.confidence}
+            data-event-id={current.event_id ?? ""}
+            data-kind={current.kind}
+            data-player-id={current.player_id ?? ""}
+            data-confidence={current.confidence ?? ""}
           >
             <p>
-              {current.type} at {current.t_key.toFixed(1)}s ·{" "}
-              {game.players.find((p) => p.id === current.player_id)?.name ?? current.player_id} ·
-              confidence {current.confidence.toFixed(2)}
+              {current.prompt}
+              {current.t != null ? ` · ${current.t.toFixed(1)} s` : ""}
+              {current.player_id && current.kind !== "identity" ? ` · ${name(current.player_id)}` : ""}
+              {current.confidence != null ? ` · confidence ${current.confidence.toFixed(2)}` : ""}
             </p>
             <div className="review-actions">
-              {ACTIONS.map((act, i) => (
+              {current.options.map((opt, i) => (
                 <span
-                  key={act.label}
-                  className={`btn${i === focus ? " focused" : ""}`}
-                  data-testid={`review-action-${act.label.toLowerCase().replace(/\s+/g, "-")}`}
-                  data-focused={i === focus ? "true" : "false"}
+                  key={opt.label}
+                  className={`btn${row === 0 && i === focus ? " focused" : ""}`}
+                  data-testid={optionTestId(opt.label)}
+                  data-focused={row === 0 && i === focus ? "true" : "false"}
                 >
-                  {act.label}
+                  {opt.label}
                 </span>
               ))}
             </div>
@@ -191,9 +206,11 @@ export function Review({ gameId }: { gameId: string }) {
           {(stats?.shots ?? []).map((s) => (
             <circle
               key={s.event_id}
-              className={`shot ${s.made ? "made" : "missed"}`}
+              // filled = make, ring = miss, dashed grey ring = outcome unknown
+              className={`shot ${s.outcome === "unknown" ? "unknown" : s.made ? "made" : "missed"}`}
               data-testid="shot-marker"
               data-made={s.made ? "true" : "false"}
+              data-outcome={s.outcome ?? ""}
               cx={s.court[0]}
               cy={s.court[1]}
               r={cw / 30}
@@ -233,23 +250,25 @@ export function Review({ gameId }: { gameId: string }) {
 
         {panels.has("box_score") ? (
         <div className="stats-panel">
-        <h2>Box score lite</h2>
+        <h2>Box score</h2>
         <table className="box-score">
           <thead>
             <tr>
               <th>Player</th>
-              <th>Att</th>
-              <th>Made</th>
-              <th>Conf</th>
+              {columns.map((c) => (
+                <th key={c.label}>{c.label}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {(stats?.box_score ?? []).map((r) => (
               <tr key={r.player_id} data-testid="box-score-row" data-player-id={r.player_id}>
-                <td>{r.name ?? r.player_id}</td>
-                <td>{r.attempts}</td>
-                <td>{r.makes}</td>
-                <td>{r.confidence ?? "—"}</td>
+                <td>{r.name ?? `#${r.player_id}`}</td>
+                {columns.map((c) => (
+                  <td key={c.label} data-testid={`box-${c.label.split(" ")[0].toLowerCase()}`}>
+                    {c.value(r)}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -262,6 +281,20 @@ export function Review({ gameId }: { gameId: string }) {
         <b>Arrows</b> pick an answer · <b>↓</b> switches the heatmap player · <b>Enter</b> confirms
         · <b>Escape</b> goes back
       </p>
+
+      {typing ? (
+        <TextEntryDialog
+          idPrefix="review-name"
+          title={current?.prompt ?? "Name"}
+          format={titleCase}
+          onCancel={() => setTyping(null)}
+          onSubmit={(text) => {
+            const opt = typing;
+            setTyping(null);
+            answer(opt, text);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

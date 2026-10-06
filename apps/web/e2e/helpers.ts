@@ -48,6 +48,28 @@ export async function openWatch(page: Page, id = GAME_ID) {
     .toBeGreaterThanOrEqual(2);
 }
 
+/** Watch's top row: ArrowUp opens it at Library, then Right until `id` has focus. */
+export async function menuTo(page: Page, id: string) {
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByTestId("nav-library")).toHaveAttribute("data-focused", "true");
+  await expect(page.getByTestId(id)).toBeAttached();
+  for (let i = 0; i < 16; i++) {
+    if ((await page.getByTestId(id).getAttribute("data-focused")) === "true") break;
+    await page.keyboard.press("ArrowRight");
+  }
+  await expect(page.getByTestId(id)).toHaveAttribute("data-focused", "true");
+}
+
+/** No rendered text below 24 px at 1080p (NF-01). */
+export async function smallText(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll("div, span, p, li, td, th, h1, h2")]
+      .filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent?.trim()))
+      .map((el) => ({ text: el.textContent, size: parseFloat(getComputedStyle(el).fontSize) }))
+      .filter((x) => x.size < 24),
+  );
+}
+
 /** Play briefly, then pause — which is what opens select mode (W3). */
 export async function enterSelectMode(page: Page) {
   await page.keyboard.press("Space");

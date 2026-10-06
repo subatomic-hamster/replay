@@ -4,6 +4,8 @@ samples/real/*
 !samples/real/.gitkeep
 !samples/real/RESULTS.md
 !samples/real/*.landmarks.json
+# Creative-Commons test clips (docs/test-data.md): on the box, symlinked in, never committed.
+samples/cc/
 .venv/
 __pycache__/
 *.pyc

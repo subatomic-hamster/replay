@@ -90,8 +90,8 @@ flowchart LR
   shared in `packages/tv-core`; platform code only behind `PlayerSurface` / `platform/`;
   overlays sync to one media clock; every screen reachable with D-pad + Back; never
   branches on the sport (reads the profile's `sport_ui`).
-- **API** (`services/api`): FastAPI; ten providers (storage, index, jobs, labeler,
-  query, tts, llm, embeddings, face, speaker), each a working local implementation plus an
+- **API** (`services/api`): FastAPI; eleven providers (storage, index, jobs, labeler,
+  query, tts, llm, embeddings, face, speaker, profiles), each a working local implementation plus an
   AWS stub (D-35). AWS map: [docs/aws-integrations.md](docs/aws-integrations.md).
 - **Worker** (`services/worker`, D-34): named, versioned stages with declared inputs and
   outputs, cached by content hash, GPU tasks under a box-wide lock; the local stand-in
@@ -109,13 +109,13 @@ Decisions: [docs/decisions.md](docs/decisions.md).
 | Detection + tracking + identity | works, weak on small players | YOLO11m + BoT-SORT; synthetic basketball IDF1 0.25–0.31 |
 | Watch: wide, select, follow, spotlight, court inset, tagging | works (web build) | M3; APK not run on a device |
 | Events, play grammars, score | works on synthetic, partial on real | shots 21/27 at P 1.00 synthetic; real shot recall 3/6 |
-| "Replay, clip that": tap / gesture / voice | tap works; gesture + voice on synthetic only | gesture recall 0.41 (ViTPose), voice 37/37 synthetic |
+| "Replay, clip that": tap / gesture / voice | tap works; gesture + voice on synthetic only | gesture recall 0.41 (synthetic far players, `--pose vit`), voice 37/37 synthetic |
 | Broadcast mode (director, graphics, replays, audio) | works | D-42, D-43 |
 | Grounded commentary, advice, query | works | template 28/28 grounded; LLM paraphrase optional |
 | Tier A / B / C replay angles + TV angle switching | works, approximations labelled | D-54..D-59 |
 | Hype meter, condensed game, rally browser, 9:16 export, review queue, box score | works | M11 + TV integration |
 | Semantic search | works with SigLIP; keyword fallback | weak on synthetic frames |
-| Profiles, cards, cross-game links, opt-in faces | backend works; TV/phone screens in progress | D-58 |
+| Profiles, cards, cross-game links, opt-in faces | works (backend, TV Players/Profile screens, phone create/edit/photo/consent); web build only, synthetic | D-58, D-65 |
 | AWS (S3, DynamoDB, Step Functions, Bedrock, Polly, Rekognition) | stubs + CDK skeleton only | nothing calls AWS |
 | Tier D (Gaussian splats, generative views) | experiments only | experiments/, docs/tier-d.md |
 
@@ -124,8 +124,10 @@ Decisions: [docs/decisions.md](docs/decisions.md).
 - **The demo and all committed media are synthetic.** Real-footage runs happened only
   on YouTube-licensed local clips (never committed, D-7) and a few Creative-Commons
   clips (docs/test-data.md). Accuracy on real rec-league video is below the synthetic
-  numbers: tracking fragments small far players, real shot recall is low, gesture
-  recall is 0.41 and voice triggers are untested on real game audio.
+  numbers: tracking fragments small far players, real shot recall is low, and voice
+  triggers are untested on real game audio. The X-gesture is measured on synthetic far
+  players only (recall 0.41 with `--pose vit`/ViTPose, 0/22 with the default YOLO pose);
+  there is no real-footage gesture recall.
 - **No device testing.** The Fire TV APK builds but has never run on a Fire TV or an
   emulator; playback, key codes and performance on Fire OS are unverified.
 - **Tier B/C are honest approximations**, labelled on every frame: flat cutouts,
@@ -133,6 +135,21 @@ Decisions: [docs/decisions.md](docs/decisions.md).
 - **Shot outcome** in replays and stats is "unknown" until a user answers the review
   question; net-sport auto score needs a detected point winner.
 - **Local only.** No AWS deployment; providers fall back to local models on one box.
+
+## Privacy notes
+
+- **Phone voice queries use the browser's speech service.** The companion's Speak button
+  (`apps/web/src/screens/Companion.tsx`) calls the browser's `webkitSpeechRecognition`
+  (Chrome/Edge only; the button is hidden elsewhere). In Chrome and on Android that is the
+  browser vendor's speech service, so the audio leaves the device; Replay does not control
+  or see where it goes. It starts only when the user taps Speak (one utterance, `en-US`);
+  nothing listens in the background.
+- **There is no local-ASR route for the phone mic.** The API has no transcription
+  endpoint. Whisper (whisper-small, `courtcam[asr]`) runs only inside the worker's
+  `triggers` stage on a game's own audio track, on the box. The private way to search from
+  the phone today is to type the query (the text box next to Speak).
+- Face and speaker enrollment are opt-in and consent-gated, store one mean embedding per
+  profile and no photos or audio (D-58, `docs/licenses.md`).
 
 ## Licences
 

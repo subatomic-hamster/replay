@@ -69,6 +69,33 @@ jobs:
           name: playwright-report
           path: apps/web/test-results
 
+  # apps/tv has its own pnpm workspace, lockfile and react-native-video patch (D-64);
+  # the tv project runs the react-native-web build against the shared mock API (no uv/API).
+  tv:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/tv
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm exec eslint .
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: playwright (tv project)
+        run: pnpm exec playwright test --project=tv
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-tv
+          path: apps/tv/test-results
+
   infra:
     runs-on: ubuntu-24.04
     defaults:

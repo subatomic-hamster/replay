@@ -35,7 +35,7 @@ make demo-tunnel   # in a second terminal; keep it open
 | 2:15–2:50 | **Replay angles A/B/C** | Game ▸ Replays → Enter on a highlight; Left/Right | Same moment from wide, follow, tight (Tier A), broadcast-high / orbit / push-in 2.5D cutouts (Tier B, labelled "flat player cutouts"), and stylized 3D mannequins from baseline / overhead / reverse / shooter's POV (Tier C, labelled "3D reconstruction - stylized"). The playhead stays on the same instant across cuts. |
 | 2:50–3:10 | **Highlights + search** | Game ▸ Highlights; Game ▸ Search, type "a steal" with the on-screen keyboard (or send it from the phone search box → Play on TV) | Ranked plays; with the SigLIP index built, results come from `/search`, else the labelled keyword fallback. |
 | 3:10–3:30 | **Review + box score** | Game ▸ Review | Shot chart, "auto-detected" box score with confidence, the review queue answered with the remote (Made / Missed / Not a shot). |
-| 3:30–3:45 | **Player card** | Players ▸ Profiles → a profile → card tab | Collectible card PNG with a grounded title. Only if the profiles screens are in the build and a profile has been created/linked for the demo game (see caveats). |
+| 3:30–3:45 | **Player card** | Library → Up to the Players pill → Enter on a profile → Card tab (Stats / Card / Reel / Links) | Collectible card PNG with a grounded title. The Players and Profile screens ship in the build (M10 UI, commit 9a7ef5b); the demo build creates no profile, so one must be created/linked for the demo game first (see caveats). |
 | 3:45–4:00 | **9:16 share + net sport** | Game ▸ Clips → Share 9:16 on a clip; then Library → pickleball → Game ▸ Rallies → condensed game | Portrait export with burned-in caption (the top highlight's export is pre-rendered by `make demo`); pickleball rally browser and the condensed game with the RALLY n / N counter. Close on the architecture slide (README diagram). |
 
 Total ≈ 4:00; drop the gesture/voice cut-away and the player card to land at 3:15.
@@ -45,7 +45,9 @@ Total ≈ 4:00; drop the gesture/voice cut-away and the player card to land at 3
 - **Synthetic data.** Players are generated mannequins on a rendered court; detection,
   poses and events here run with the synthetic detector and ground-truth poses, so the
   demo shows the product loop, not real-footage accuracy. Real-footage numbers (tracking
-  IDF1, shot recall, gesture recall 0.41) are in docs/progress.md.
+  IDF1, shot recall) are in docs/progress.md. The gesture recall of 0.41 is also synthetic:
+  far synthetic players with `--pose vit` (ViTPose), 9 of 22 gestures; no real-footage
+  gesture recall exists.
 - **Device not tested.** The Fire TV APK builds (arm64/armv7) but has never run on a Fire
   TV or emulator; the recording is the react-native-web build of the same screens.
 - **Generative parts are deterministic.** Commentary text is the grounded template (no

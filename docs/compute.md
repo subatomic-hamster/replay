@@ -13,7 +13,7 @@ measured on 2026-10-06 unless marked otherwise.
 | ROCm / torch | HIP 7.2.53211, torch 2.14.0+rocm7.2 (read-only system install in `/opt/venv`) | `torch.version.hip`, `torch.__version__` |
 | CPU | AMD Ryzen 7 7800X3D, 8 cores / 16 threads | `lscpu` |
 | RAM | 30 GiB, 21–24 GiB available while other users ran; 7 GiB swap | `free -g` |
-| Disk | `/workspace` 147 GB, **23–32 GB free** (78–85 % used; moved during the day) | `df -h /workspace` |
+| Disk | `/workspace` 147 GB, **9.7 GB free** (94 % used, 130 GB of 147 GB, `df -h /workspace` on 2026-10-06 at the end of the overnight build; it was 23–32 GB free earlier that day and moves with other users' work) | `df -h /workspace` |
 | OS | Ubuntu 24.04.5 container on a Fedora 7.1 kernel; you are `root` | `/etc/os-release`, `uname -a` |
 | Python stack | Python 3.12.3, ultralytics 8.4.170, OpenCV 5.0.0, FastAPI 0.142.2 | shared venv |
 | Other tools | node 22.23.3, pnpm 12.8.1, ffmpeg 7.0.2 static (libx264), tmux 3.4, flock/lslocks (util-linux 2.39.3), nvtop 3.0.2, uv 0.12.18 at `/workspace/bin/uv` | `--version` |

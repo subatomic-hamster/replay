@@ -54,7 +54,9 @@ models, Qwen-research) = no, not even as a default; at most an opt-in extra that
 | piper1-gpl (OHF-Voice, maintained successor) | **GPL-3.0** | per-voice | optional alt TTS as a separate process | No | Optional, separate process |
 | ollama | MIT | n/a | optional LLM server | Yes | Optional |
 | llama.cpp | MIT | n/a | local LLM server (HIP build) | Yes | Yes |
-| Qwen2.5-7B-Instruct | Apache-2.0 | Apache-2.0 | local LLM for structured filters / commentary | Yes | Yes |
+| Qwen3-4B-Instruct-2507 (`Qwen/Qwen3-4B-Instruct-2507`), GGUF Q4_K_M | llama.cpp (MIT, above) runs it | Apache-2.0 (Hugging Face model card of the original `Qwen/Qwen3-4B-Instruct-2507` repo, "License: apache-2.0", checked 2026-10-06; the Q4_K_M GGUF is a quantisation of it, and its own repo's licence field was not checked) | the local LLM actually used: commentary paraphrase, advice, card titles, query filter, through the `llm` provider (`REPLAY_LLM_URL`; D-39, D-52) | Not needed (replay-side API provider) | Yes (off unless a llama-server is started) |
+| Qwen2.5-7B-Instruct | Apache-2.0 | Apache-2.0 | not used (superseded by Qwen3-4B-Instruct-2507; its GGUF was deleted from the box) | Yes | n/a |
+| ViTPose-B (`usyd-community/vitpose-base-simple`, transformers `VitPoseForPoseEstimation`) | Apache-2.0 per the same model card (transformers itself is Apache-2.0) | Apache-2.0 (Hugging Face model card, "License: apache-2.0", checked 2026-10-06; training-data terms not checked) | opt-in pose backend `--pose vit`, better than YOLO-pose on small far players (D-61) | Not a courtcam core dependency | **Yes**: `courtcam[vitpose]` (transformers + torch) |
 | Qwen2.5-3B-Instruct | n/a | **"Qwen Research" licence (not Apache)** | not used | No | No |
 | open_clip | MIT | model-dependent: LAION OpenCLIP checkpoints MIT; OpenAI CLIP MIT-style | semantic search embeddings | Yes | Yes |
 | SigLIP / SigLIP2 (`google/siglip*`) | Apache-2.0 | Apache-2.0 | semantic search embeddings (transformers) | Yes | Yes |

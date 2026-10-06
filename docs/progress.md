@@ -18,11 +18,21 @@ Template:
 
 ## M0 — Recon and scaffold (2026-10-06)
 
-- Works: hfbox measured and documented (RX 9070 XT 16 GB, ROCm 7.2, torch 2.14; rsync laptop↔box 1.4–1.9 MB/s; YOLO11n 8.1 ms/frame, YOLO11m 10.7 ms/frame) in docs/compute.md. `services/worker` stage DAG over a content-hash cache wraps courtcam's nine stages with byte-identical output. Ten providers selectable local/aws with AWS stubs. CDK skeleton synthesizes without credentials; CI workflow; `make sync|test|demo`.
+- Works: hfbox measured and documented (RX 9070 XT 16 GB, ROCm 7.2, torch 2.14; rsync laptop↔box 1.4–1.9 MB/s; YOLO11n 8.1 ms/frame, YOLO11m 10.7 ms/frame) in docs/compute.md. `services/worker` stage DAG over a content-hash cache wraps courtcam's nine stages with byte-identical output. Ten providers at the time (eleven since `profiles` was added in M10) selectable local/aws with AWS stubs. CDK skeleton synthesizes without credentials; CI workflow; `make sync|test|demo`.
 - Verified on hfbox: `scripts/box-test.sh` on HEAD + platform changes → ruff clean, courtcam 99, api 108, worker 10 passed, `cdk synth` ok, web tsc/eslint clean, Playwright chromium+live 62 passed. `make demo` → 9 misses then 9 hits. Kennesaw 240 s through the worker: 76.4 s cold (3.1× realtime), 1.4 s warm.
 - Evidence: docs/evidence/M2/worker-cache-synthetic.txt · docs/perf.md
 - Decisions: D-34 worker + cache, D-35 provider layout, D-36 courtcam subtree split.
 - Left / known issues: no real fan-out stage yet (first ones arrive with per-play / per-angle work); Step Functions machine is a placeholder chain; local tts/llm/embeddings/face/speaker raise NotConfiguredError until models land.
+
+## M2 — API + local worker + uploader (2026-10-06)
+
+The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, providers, CDK skeleton, CI, `make sync|test|demo`); this entry only indexes it.
+
+- Works: `services/worker` (the local stage DAG over a content-hash cache, D-34) is what the API runs with `REPLAY_PIPELINE=worker`; the API's provider layout (D-35) selects local or AWS stub per provider with `REPLAY_PROVIDER_<NAME>`. The uploader is the Phase 1 `/upload` route of the one Vite app (D-2, D-14).
+- Verified on hfbox: see the M0 entry (`scripts/box-test.sh`: ruff clean, courtcam 99, api 108, worker 10 passed, `cdk synth` ok, web tsc/eslint clean, Playwright 62 passed; `make demo` → 9 misses then 9 hits; Kennesaw 240 s cold 76.4 s, warm 1.4 s). Cache behaviour on the synthetic sample: docs/evidence/M2/worker-cache-synthetic.txt (run 1: 9 miss, 0 hit; run 2: 0 miss, 9 hit); early timings (synthetic 20 s clip cold 1.3 s / warm 0.0 s) in docs/perf.md section 4.
+- Evidence: docs/evidence/M2/worker-cache-synthetic.txt
+- Decisions: D-34, D-35 (D-36 is the courtcam subtree split, also in M0).
+- Left / known issues: as in M0 (no fan-out stage yet at that time, placeholder Step Functions machine). No separate M2 test run was logged beyond M0's, so no further numbers are claimed here.
 
 ## M1 — Synthetic generator v2 + tracking metrics (2026-10-06)
 
@@ -30,7 +40,7 @@ Template:
 - Verified on hfbox: courtcam pytest 157 passed (goldens match), api 110, worker 11, ruff clean (staged snapshot). YOLO pipeline on synthetic, players MOTA / IDF1 — re-measured on current code (2026-10-06, docs/evidence/M1/metrics.json; the originally logged values were higher for basketball): basketball half 0.64 / 0.31 (122 ID switches), full 0.43 / 0.25 (157), pickleball 0.98 / 0.99, badminton 0.99 / 1.00, volleyball 0.91 / 0.75; GT detector 1.0 on 5/5 scenes. Whisper-small: 37/37 synthetic voice lines heard, in 9/9 clips (the originally logged "8/9 crowd-noise mixes" test could not be found and is superseded).
 - Evidence: docs/evidence/M1/README.md + metrics.json, synthetic_basketball_half_yolo_overlay.{mp4,png} (older render) · docs/evidence/local/M1/pickleball_legacypark_240s_overlay_M1.mp4
 - Decisions: D-38, D-39, D-40, D-41.
-- Left / known issues: basketball YOLO tracking weak on small bunched players (IDF1 0.40–0.49); foot-point bias ~0.2 m; no CC volleyball footage; ASR untested on real game audio; ultralytics (AGPL) must become an optional extra before the courtcam split.
+- Left / known issues: basketball YOLO tracking weak on small bunched players (re-measured IDF1 0.31 half / 0.25 full); foot-point bias ~0.2 m; no CC volleyball footage; ASR untested on real game audio; ultralytics (AGPL) must become an optional extra before the courtcam split.
 
 ## M3 — Fire TV client (2026-10-06)
 
@@ -53,7 +63,7 @@ Template:
 - Works: gesture (X overhead held ≥ 0.8 s), voice ("Replay, clip that / clip <name>", whisper-small) and tap (`POST /games/{id}/triggers`) triggers resolve to the play that just ended and produce attributed clips; `GET /games/{id}/clips`, `PATCH /games/{id}/clips/{id}` trims (source user).
 - Verified on hfbox, re-measured on current code (2026-10-06, docs/evidence/M5/metrics.json), synthetic with GT poses: gesture 16 TP / 26 FP / 6 FN (P 0.38, R 0.73; who 16/16, clip right 11/22), voice 37/37 (named subject 18/18, clip right 30/37), tap clip right 10/14; resolution rule exact on GT plays 73/73. The gesture regression is real: at M5 it was logged as 22/22 with no false triggers, and the accuracy pass's relaxed "hands together overhead" rule (D-61), tuned for far YOLO/ViTPose players, fires on GT poses 26 times. Real footage (local only, not re-measured): 0 false triggers in 480 s.
 - Evidence: docs/evidence/M5/README.md + metrics.json, trigger_{gesture,voice,tap}_synthetic_basketball_half_s7.mp4 (older renders), timeline_synthetic_badminton_doubles_s7.png
-- Left / known issues: no staged real gesture/voice footage (synthetic only); gesture via YOLO-pose 0/14 on far synthetic players; TV trim UI pending the integration wave.
+- Left / known issues: no staged real gesture/voice footage (synthetic only); gesture via YOLO-pose 0/22 on far synthetic players (re-measured; docs/evidence/M5/README.md); TV trim UI pending the integration wave.
 
 ## M6 — Broadcast mode (2026-10-06)
 

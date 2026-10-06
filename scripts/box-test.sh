@@ -31,6 +31,11 @@ step web-install "cd apps/web && pnpm install --frozen-lockfile >/dev/null"
 step tsc "cd apps/web && pnpm exec tsc --noEmit"
 step eslint "cd apps/web && pnpm exec eslint ."
 step playwright "cd apps/web && $PW pnpm exec playwright test --project=chromium --project=live --workers=4"
+# apps/tv has its own pnpm workspace, lockfile and react-native-video patch
+step tv-install "cd apps/tv && pnpm install --frozen-lockfile --offline >/dev/null"
+step tv-tsc "cd apps/tv && pnpm exec tsc --noEmit"
+step tv-eslint "cd apps/tv && pnpm exec eslint ."
+step tv-playwright "cd apps/tv && $PW pnpm exec playwright test --project=tv"
 
 echo
 if [ ${#failed[@]} -eq 0 ]; then

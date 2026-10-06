@@ -1,0 +1,213 @@
+{
+ "note": "synthetic plays (labelled synthetic; names are a test roster)",
+ "summary": {
+  "plays": 28,
+  "lines": 79,
+  "template_grounded": 28,
+  "llm_attempted": 0,
+  "llm_accepted": 0,
+  "template_pass_rate": 1.0,
+  "llm_acceptance_rate": null,
+  "llm_rejection_kinds": {},
+  "llm_latency": {}
+ },
+ "sets": [
+  {
+   "set": "samples/synthetic/badminton/doubles",
+   "plays": 4,
+   "lines": 12,
+   "template_grounded": 4,
+   "llm_attempted": 0,
+   "llm_accepted": 0
+  },
+  {
+   "set": "samples/synthetic/basketball/full",
+   "plays": 3,
+   "lines": 10,
+   "template_grounded": 3,
+   "llm_attempted": 0,
+   "llm_accepted": 0
+  },
+  {
+   "set": "samples/synthetic/basketball/half",
+   "plays": 4,
+   "lines": 13,
+   "template_grounded": 4,
+   "llm_attempted": 0,
+   "llm_accepted": 0
+  },
+  {
+   "set": "samples/synthetic/pickleball/doubles",
+   "plays": 3,
+   "lines": 9,
+   "template_grounded": 3,
+   "llm_attempted": 0,
+   "llm_accepted": 0
+  },
+  {
+   "set": "samples/synthetic/volleyball/indoor",
+   "plays": 4,
+   "lines": 12,
+   "template_grounded": 4,
+   "llm_attempted": 0,
+   "llm_accepted": 0
+  },
+  {
+   "set": "g_bb90",
+   "plays": 10,
+   "lines": 23,
+   "template_grounded": 10,
+   "llm_attempted": 0,
+   "llm_accepted": 0
+  }
+ ],
+ "examples": [
+  {
+   "set": "samples/synthetic/badminton/doubles",
+   "play_id": "pl1",
+   "source": "template",
+   "template": [
+    "Alex serves.",
+    "That rally ran 8 touches.",
+    "Riley hits the net. Point to Team A."
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "samples/synthetic/badminton/doubles",
+   "play_id": "pl2",
+   "source": "template",
+   "template": [
+    "Jordan serves.",
+    "That rally ran 5 touches.",
+    "Jordan with the winner! Point to Team A."
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "samples/synthetic/basketball/full",
+   "play_id": "pl1",
+   "source": "template",
+   "template": [
+    "Jordan brings it in.",
+    "Jordan finds Casey.",
+    "Casey scores!"
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "samples/synthetic/basketball/full",
+   "play_id": "pl2",
+   "source": "template",
+   "template": [
+    "Morgan brings it in.",
+    "Morgan finds Quinn.",
+    "Quinn finds Riley.",
+    "Riley finds Sam.",
+    "Sam scores!"
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "samples/synthetic/basketball/half",
+   "play_id": "pl1",
+   "source": "template",
+   "template": [
+    "Jordan brings it in.",
+    "Jordan finds Casey.",
+    "Casey scores!"
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "samples/synthetic/basketball/half",
+   "play_id": "pl2",
+   "source": "template",
+   "template": [
+    "Morgan brings it in.",
+    "Morgan finds Riley.",
+    "Riley finds Morgan.",
+    "Morgan scores!"
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "samples/synthetic/pickleball/doubles",
+   "play_id": "pl1",
+   "source": "template",
+   "template": [
+    "Alex serves.",
+    "That rally ran 7 touches.",
+    "Jordan with the winner! Point to Team A."
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "samples/synthetic/pickleball/doubles",
+   "play_id": "pl2",
+   "source": "template",
+   "template": [
+    "Jordan serves.",
+    "That rally ran 4 touches.",
+    "Riley with the winner! Point to Team B."
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "samples/synthetic/volleyball/indoor",
+   "play_id": "pl1",
+   "source": "template",
+   "template": [
+    "Alex serves.",
+    "That rally ran 5 touches.",
+    "Alex with the winner! Point to Team A."
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "samples/synthetic/volleyball/indoor",
+   "play_id": "pl2",
+   "source": "template",
+   "template": [
+    "Jordan serves.",
+    "That rally ran 2 touches.",
+    "Quinn with the winner! Point to Team B."
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "g_bb90",
+   "play_id": "pl_0001",
+   "source": "template",
+   "template": [
+    "Player 7 brings it in.",
+    "Player 8 scores two.",
+    "That puts it at 2 to 0."
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  },
+  {
+   "set": "g_bb90",
+   "play_id": "pl_0002",
+   "source": "template",
+   "template": [
+    "Player 9 brings it in.",
+    "Player 4 scores two.",
+    "That puts it at 2 to 2."
+   ],
+   "llm_raw": null,
+   "llm_violations": null
+  }
+ ]
+}

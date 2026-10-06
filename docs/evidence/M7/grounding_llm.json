@@ -1,0 +1,278 @@
+{
+ "note": "synthetic plays (labelled synthetic; names are a test roster)",
+ "summary": {
+  "plays": 28,
+  "lines": 79,
+  "template_grounded": 28,
+  "llm_attempted": 28,
+  "llm_accepted": 26,
+  "template_pass_rate": 1.0,
+  "llm_acceptance_rate": 0.9286,
+  "llm_rejection_kinds": {
+   "absent_action": 2
+  },
+  "llm_latency": {
+   "calls": 28,
+   "median_s": 0.267,
+   "max_s": 0.321,
+   "mean_tokens": 26.0,
+   "gen_tok_per_s_median": 130.88515762312554
+  }
+ },
+ "sets": [
+  {
+   "set": "samples/synthetic/badminton/doubles",
+   "plays": 4,
+   "lines": 12,
+   "template_grounded": 4,
+   "llm_attempted": 4,
+   "llm_accepted": 4
+  },
+  {
+   "set": "samples/synthetic/basketball/full",
+   "plays": 3,
+   "lines": 10,
+   "template_grounded": 3,
+   "llm_attempted": 3,
+   "llm_accepted": 3
+  },
+  {
+   "set": "samples/synthetic/basketball/half",
+   "plays": 4,
+   "lines": 13,
+   "template_grounded": 4,
+   "llm_attempted": 4,
+   "llm_accepted": 4
+  },
+  {
+   "set": "samples/synthetic/pickleball/doubles",
+   "plays": 3,
+   "lines": 9,
+   "template_grounded": 3,
+   "llm_attempted": 3,
+   "llm_accepted": 2
+  },
+  {
+   "set": "samples/synthetic/volleyball/indoor",
+   "plays": 4,
+   "lines": 12,
+   "template_grounded": 4,
+   "llm_attempted": 4,
+   "llm_accepted": 3
+  },
+  {
+   "set": "g_bb90",
+   "plays": 10,
+   "lines": 23,
+   "template_grounded": 10,
+   "llm_attempted": 10,
+   "llm_accepted": 10
+  }
+ ],
+ "examples": [
+  {
+   "set": "samples/synthetic/badminton/doubles",
+   "play_id": "pl1",
+   "source": "llm",
+   "template": [
+    "Alex serves.",
+    "That rally ran 8 touches.",
+    "Riley hits the net. Point to Team A."
+   ],
+   "llm_raw": [
+    "Alex serves.",
+    "Rally touches eight times. Team A wins.",
+    "Sam contacts net. Point to Team A."
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "samples/synthetic/badminton/doubles",
+   "play_id": "pl2",
+   "source": "llm",
+   "template": [
+    "Jordan serves.",
+    "That rally ran 5 touches.",
+    "Jordan with the winner! Point to Team A."
+   ],
+   "llm_raw": [
+    "Jordan serves.",
+    "Rally touched five times.",
+    "Jordan wins. Point to Team A."
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "samples/synthetic/basketball/full",
+   "play_id": "pl1",
+   "source": "llm",
+   "template": [
+    "Jordan brings it in.",
+    "Jordan finds Casey.",
+    "Casey scores!"
+   ],
+   "llm_raw": [
+    "Jordan inbounds.",
+    "Jordan passes to Casey.",
+    "Casey scores."
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "samples/synthetic/basketball/full",
+   "play_id": "pl2",
+   "source": "llm",
+   "template": [
+    "Morgan brings it in.",
+    "Morgan finds Quinn.",
+    "Quinn finds Riley.",
+    "Riley finds Sam.",
+    "Sam scores!"
+   ],
+   "llm_raw": [
+    "Morgan inbounds.",
+    "Morgan passes to Quinn.",
+    "Quinn passes to Riley.",
+    "Riley passes to Sam.",
+    "Sam scores!"
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "samples/synthetic/basketball/half",
+   "play_id": "pl1",
+   "source": "llm",
+   "template": [
+    "Jordan brings it in.",
+    "Jordan finds Casey.",
+    "Casey scores!"
+   ],
+   "llm_raw": [
+    "Jordan brings it in.",
+    "Jordan finds Casey.",
+    "Casey scores!"
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "samples/synthetic/basketball/half",
+   "play_id": "pl2",
+   "source": "llm",
+   "template": [
+    "Morgan brings it in.",
+    "Morgan finds Riley.",
+    "Riley finds Morgan.",
+    "Morgan scores!"
+   ],
+   "llm_raw": [
+    "Morgan inbounds.",
+    "Morgan passes to Riley.",
+    "Riley passes back to Morgan.",
+    "Morgan scores!"
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "samples/synthetic/pickleball/doubles",
+   "play_id": "pl1",
+   "source": "llm",
+   "template": [
+    "Alex serves.",
+    "That rally ran 7 touches.",
+    "Jordan with the winner! Point to Team A."
+   ],
+   "llm_raw": [
+    "Alex serves.",
+    "Rally hits seven contacts.",
+    "Jordan wins. Point to Team A."
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "samples/synthetic/pickleball/doubles",
+   "play_id": "pl2",
+   "source": "template",
+   "template": [
+    "Jordan serves.",
+    "That rally ran 4 touches.",
+    "Riley with the winner! Point to Team B."
+   ],
+   "llm_raw": [
+    "Jordan serves.",
+    "Four contacts, Team B wins the rally.",
+    "Riley wins the point. Team B scores."
+   ],
+   "llm_violations": [
+    {
+     "kind": "absent_action",
+     "detail": "score",
+     "sentence": "Team B scores."
+    }
+   ]
+  },
+  {
+   "set": "samples/synthetic/volleyball/indoor",
+   "play_id": "pl1",
+   "source": "llm",
+   "template": [
+    "Alex serves.",
+    "That rally ran 5 touches.",
+    "Alex with the winner! Point to Team A."
+   ],
+   "llm_raw": [
+    "Alex serves.",
+    "Rally touched five times.",
+    "Alex wins. Point to Team A."
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "samples/synthetic/volleyball/indoor",
+   "play_id": "pl2",
+   "source": "llm",
+   "template": [
+    "Jordan serves.",
+    "That rally ran 2 touches.",
+    "Quinn with the winner! Point to Team B."
+   ],
+   "llm_raw": [
+    "Jordan serves.",
+    "Rally hits two contacts.",
+    "Quinn wins. Point to Team B."
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "g_bb90",
+   "play_id": "pl_0001",
+   "source": "llm",
+   "template": [
+    "Player 7 brings it in.",
+    "Player 8 scores two.",
+    "That puts it at 2 to 0."
+   ],
+   "llm_raw": [
+    "Player 7 inbounds the ball.",
+    "Player 8 makes two points.",
+    "Score is now 2 to 0."
+   ],
+   "llm_violations": []
+  },
+  {
+   "set": "g_bb90",
+   "play_id": "pl_0002",
+   "source": "llm",
+   "template": [
+    "Player 9 brings it in.",
+    "Player 4 scores two.",
+    "That puts it at 2 to 2."
+   ],
+   "llm_raw": [
+    "Player 9 inbounds the ball.",
+    "Player 4 makes two points.",
+    "Score now 2 to 2."
+   ],
+   "llm_violations": []
+  }
+ ]
+}

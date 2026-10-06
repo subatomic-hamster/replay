@@ -1,0 +1,325 @@
+{
+ "summary": {
+  "players": 10,
+  "template_grounded": 10,
+  "llm_accepted": 7,
+  "llm": {
+   "calls": 10,
+   "median_s": 0.294,
+   "max_s": 0.577,
+   "mean_tokens": 35.2,
+   "gen_tok_per_s_median": 132.3981840543808
+  }
+ },
+ "advice": [
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p1",
+   "name": "Player 1",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Keep moving \u2014 you went farther than the team average."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Keep moving \u2014 you went farther than the team average."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 1 covered 81 metres; the team average was 75 metres."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p2",
+   "name": "Player 2",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Keep trying\u2014every shot counts.",
+    "Work on inside shots with focus.",
+    "Cover more ground to stay active."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Keep trying\u2014every shot counts.",
+     "Work on inside shots with focus.",
+     "Cover more ground to stay active."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 2 shot 0 for 1 (0%).",
+    "Inside the arc: 0 for 1.",
+    "Player 2 covered 60 metres; the team average was 85 metres."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p3",
+   "name": "Player 3",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Stay sharp\u20141 steal shows you\u2019re watching the game closely.",
+    "Keep moving\u201469 metres shows you\u2019re covering ground well."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Stay sharp\u20141 steal shows you\u2019re watching the game closely.",
+     "Keep moving\u201469 metres shows you\u2019re covering ground well."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 3 had 1 steals.",
+    "Player 3 covered 69 metres; the team average was 75 metres."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p4",
+   "name": "Player 4",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Stay sharp\u2014every shot counts, and you\u2019re hitting them all.",
+    "Inside the arc? You\u2019re consistent\u2014keep that rhythm.",
+    "You moved far\u2014great effort, keep pushing forward."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Stay sharp\u2014every shot counts, and you\u2019re hitting them all.",
+     "Inside the arc? You\u2019re consistent\u2014keep that rhythm.",
+     "You moved far\u2014great effort, keep pushing forward."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 4 shot 2 for 2 (100%).",
+    "Inside the arc: 2 for 2.",
+    "Player 4 covered 68 metres; the team average was 75 metres."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p5",
+   "name": "Player 5",
+   "auto_detected": true,
+   "source": "template",
+   "lines": [
+    "Player 5 shot 1 for 2 (50%).",
+    "Inside the arc: 1 for 2.",
+    "Player 5 had 1 steals.",
+    "Player 5 pulled in 1 rebounds.",
+    "Player 5 covered 64 metres; the team average was 75 metres."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": false,
+    "error": null,
+    "raw": [
+     "Stay sharp\u2014your shot selection is on point.",
+     "Keep moving\u2014inside the arc, you're consistent.",
+     "Defend hard\u2014your steals show you're ready.",
+     "Grab every chance\u2014rebounding is your strength.",
+     "Cover ground\u201464 metres proves your effort."
+    ],
+    "violations": [
+     {
+      "kind": "unknown_name",
+      "detail": "Grab",
+      "sentence": "Grab every chance, rebounding is your strength."
+     }
+    ]
+   }
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p6",
+   "name": "Player 6",
+   "auto_detected": true,
+   "source": "template",
+   "lines": [
+    "Player 6 shot 1 for 1 (100%).",
+    "Inside the arc: 1 for 1.",
+    "Player 6 covered 94 metres; the team average was 85 metres."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": false,
+    "error": null,
+    "raw": [
+     "Perfect shot. Confidence in every attempt.",
+     "Inside the arc: every chance counted.",
+     "Covered more ground. Team effort matched."
+    ],
+    "violations": [
+     {
+      "kind": "unknown_name",
+      "detail": "Perfect",
+      "sentence": "Perfect shot."
+     },
+     {
+      "kind": "unknown_name",
+      "detail": "Confidence",
+      "sentence": "Confidence in every attempt."
+     }
+    ]
+   }
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p7",
+   "name": "Player 7",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Keep moving \u2014 you went farther than the team average."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Keep moving \u2014 you went farther than the team average."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 7 covered 103 metres; the team average was 85 metres."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p8",
+   "name": "Player 8",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Stay sharp\u2014perfect shot, full confidence.",
+    "Inside the arc? Yes, every time.",
+    "Covered 80 metres\u2014great effort, keep going."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Stay sharp\u2014perfect shot, full confidence.",
+     "Inside the arc? Yes, every time.",
+     "Covered 80 metres\u2014great effort, keep going."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 8 shot 1 for 1 (100%).",
+    "Inside the arc: 1 for 1.",
+    "Player 8 covered 80 metres; the team average was 85 metres."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p9",
+   "name": "Player 9",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Keep moving \u2014 you went farther than the team average."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Keep moving \u2014 you went farther than the team average."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 9 covered 95 metres; the team average was 75 metres."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_ee056c",
+   "player_id": "p10",
+   "name": "Player 10",
+   "auto_detected": true,
+   "source": "template",
+   "lines": [
+    "Player 10 pulled in 1 rebounds.",
+    "Player 10 covered 89 metres; the team average was 85 metres."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": false,
+    "error": null,
+    "raw": [
+     "Stay strong on the boards, Player 10.",
+     "Keep moving, Player 10 \u2014 you're ahead of the team average."
+    ],
+    "violations": [
+     {
+      "kind": "absent_score_state",
+      "detail": "lead",
+      "sentence": "Keep moving, Player 10 ,  you're ahead of the team average."
+     }
+    ]
+   }
+  }
+ ]
+}

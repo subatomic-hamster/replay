@@ -1,0 +1,433 @@
+{
+ "note": "synthetic game (pipeline output on courtcam.synth footage)",
+ "model": "ViT-B-16-SigLIP/webli",
+ "timing": {
+  "index_build_s": 106.71,
+  "plays": 10,
+  "embed_s_per_play_median": 17.645,
+  "query_embed_s": 6.43,
+  "queries": 6,
+  "runner_child_s": 5.824,
+  "runner_load_s": 1.71
+ },
+ "records": [
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0002",
+   "resource": "cpu",
+   "started": 1791269167.684,
+   "lock_wait_s": 0.0,
+   "key": "e3bc064383f831ee55014c2e11bcff1e2253e635ea09368f357c3b9d5a531715",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269192.048,
+   "wall_s": 24.364
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0001",
+   "resource": "cpu",
+   "started": 1791269167.684,
+   "lock_wait_s": 0.0,
+   "key": "bca027df9bd674a93c6a402227929211772f1228fc25f4698d652eaf1554f2c7",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269198.63,
+   "wall_s": 30.946
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0003",
+   "resource": "cpu",
+   "started": 1791269192.049,
+   "lock_wait_s": 0.0,
+   "key": "a9364b12509edc75757c2396b3f6b38ade0df89947647ebe57958a4ef54b2e73",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269223.816,
+   "wall_s": 31.767
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0004",
+   "resource": "cpu",
+   "started": 1791269198.631,
+   "lock_wait_s": 0.0,
+   "key": "292e629dc682f43d789b25a117bac72445390ad684275b4950c57e8972bd2cf0",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269230.389,
+   "wall_s": 31.758
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0005",
+   "resource": "cpu",
+   "started": 1791269223.816,
+   "lock_wait_s": 0.0,
+   "key": "ac70222c44f8e56835f8f13bdc98e4d8722e1f7efba5786914a0a5cc13ae1369",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269236.929,
+   "wall_s": 13.113
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0006",
+   "resource": "cpu",
+   "started": 1791269230.389,
+   "lock_wait_s": 0.0,
+   "key": "9e8793ad1213c4bf92a423d55a9c7ed6852a02e046145aee37b18315cf396d22",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269243.519,
+   "wall_s": 13.13
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0007",
+   "resource": "cpu",
+   "started": 1791269236.929,
+   "lock_wait_s": 0.0,
+   "key": "e93177a6c3a0a147bf6fdcc70ff696e30d7271e0c01000c0f64b31636008b3ca",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269250.078,
+   "wall_s": 13.149
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0008",
+   "resource": "cpu",
+   "started": 1791269243.52,
+   "lock_wait_s": 0.0,
+   "key": "f9598b77e8c27f5bec5f361b1acc65d69c44a534b1b40e957b1b85ce44dfdf5f",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269261.128,
+   "wall_s": 17.608
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0009",
+   "resource": "cpu",
+   "started": 1791269250.079,
+   "lock_wait_s": 0.0,
+   "key": "19cccf7aa008120892b3df64eb1973c4b951673dce9bc6ca56e4b781e6cf6ed9",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269267.724,
+   "wall_s": 17.645
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "embeddings",
+   "version": "1+0605cc7d08d6",
+   "item": "pl_0010",
+   "resource": "cpu",
+   "started": 1791269261.128,
+   "lock_wait_s": 0.0,
+   "key": "638ed0d0e0a390964c030f33fd3c04cb68d79d4f07b6eed8a4a31989e615346a",
+   "cache": "miss",
+   "status": "ok",
+   "ended": 1791269274.276,
+   "wall_s": 13.148
+  },
+  {
+   "run": "20261006T064607-1323",
+   "host": "hfbox",
+   "game": "g_bb90",
+   "stage": "search_index",
+   "version": "1+0605cc7d08d6",
+   "item": null,
+   "resource": "cpu",
+   "started": 1791269274.277,
+   "lock_wait_s": 0.0,
+   "key": "3f46f6516480099758f7576a3f386952abfbf4bb4b203b216563f34394ab5a25",
+   "cache": "off",
+   "status": "ok",
+   "ended": 1791269274.279,
+   "wall_s": 0.002
+  }
+ ],
+ "results": [
+  {
+   "query": "a steal",
+   "interpretation": "No match",
+   "filter_source": "rules",
+   "top": [
+    {
+     "play_id": "pl_0004",
+     "t_start": 29.2,
+     "t_end": 39.267,
+     "text": "basketball possession. Player 5 with the steal! Player 5 shoots, no good.",
+     "filter_match": false,
+     "words": 1,
+     "score": 0.03175,
+     "cos_image": 0.0246,
+     "cos_text": 0.6381
+    },
+    {
+     "play_id": "pl_0008",
+     "t_start": 62.2,
+     "t_end": 72.2,
+     "text": "basketball possession. Player 3 with the steal! Player 4 scores two. That puts it at 4 to 6.",
+     "filter_match": false,
+     "words": 1,
+     "score": 0.02991,
+     "cos_image": 0.0206,
+     "cos_text": 0.6325
+    },
+    {
+     "play_id": "pl_0003",
+     "t_start": 22.4,
+     "t_end": 29.2,
+     "text": "basketball possession. Player 10 brings it in.",
+     "filter_match": false,
+     "words": 0,
+     "score": 0.03202,
+     "cos_image": 0.0234,
+     "cos_text": 0.6539
+    }
+   ]
+  },
+  {
+   "query": "missed shot",
+   "interpretation": "missed shots",
+   "filter_source": "rules",
+   "top": [
+    {
+     "play_id": "pl_0010",
+     "t_start": 79.8,
+     "t_end": 88.4,
+     "text": "basketball possession. Player 5 pulls down the rebound. Player 4 puts up a shot.",
+     "filter_match": true,
+     "words": 1,
+     "score": 0.02921,
+     "cos_image": 0.0824,
+     "cos_text": 0.5354
+    },
+    {
+     "play_id": "pl_0009",
+     "t_start": 73.2,
+     "t_end": 81.667,
+     "text": "basketball possession. Player 10 brings it in. Player 2 shoots, no good.",
+     "filter_match": true,
+     "words": 0,
+     "score": 0.0315,
+     "cos_image": 0.0844,
+     "cos_text": 0.6956
+    },
+    {
+     "play_id": "pl_0004",
+     "t_start": 29.2,
+     "t_end": 39.267,
+     "text": "basketball possession. Player 5 with the steal! Player 5 shoots, no good.",
+     "filter_match": true,
+     "words": 0,
+     "score": 0.0308,
+     "cos_image": 0.0844,
+     "cos_text": 0.6422
+    }
+   ]
+  },
+  {
+   "query": "a pass to a teammate",
+   "interpretation": "No match",
+   "filter_source": "rules",
+   "top": [
+    {
+     "play_id": "pl_0009",
+     "t_start": 73.2,
+     "t_end": 81.667,
+     "text": "basketball possession. Player 10 brings it in. Player 2 shoots, no good.",
+     "filter_match": false,
+     "words": 0,
+     "score": 0.0311,
+     "cos_image": 0.105,
+     "cos_text": 0.6703
+    },
+    {
+     "play_id": "pl_0007",
+     "t_start": 56.8,
+     "t_end": 62.2,
+     "text": "basketball possession. Player 8 brings it in.",
+     "filter_match": false,
+     "words": 0,
+     "score": 0.03105,
+     "cos_image": 0.1012,
+     "cos_text": 0.7212
+    },
+    {
+     "play_id": "pl_0008",
+     "t_start": 62.2,
+     "t_end": 72.2,
+     "text": "basketball possession. Player 3 with the steal! Player 4 scores two. That puts it at 4 to 6.",
+     "filter_match": false,
+     "words": 0,
+     "score": 0.03105,
+     "cos_image": 0.1049,
+     "cos_text": 0.676
+    }
+   ]
+  },
+  {
+   "query": "three pointer",
+   "interpretation": "No match",
+   "filter_source": "rules",
+   "top": [
+    {
+     "play_id": "pl_0003",
+     "t_start": 22.4,
+     "t_end": 29.2,
+     "text": "basketball possession. Player 10 brings it in.",
+     "filter_match": false,
+     "words": 0,
+     "score": 0.03252,
+     "cos_image": 0.1097,
+     "cos_text": 0.6907
+    },
+    {
+     "play_id": "pl_0009",
+     "t_start": 73.2,
+     "t_end": 81.667,
+     "text": "basketball possession. Player 10 brings it in. Player 2 shoots, no good.",
+     "filter_match": false,
+     "words": 0,
+     "score": 0.03202,
+     "cos_image": 0.1131,
+     "cos_text": 0.6473
+    },
+    {
+     "play_id": "pl_0002",
+     "t_start": 13.8,
+     "t_end": 23.4,
+     "text": "basketball possession. Player 9 brings it in. Player 4 scores two. That puts it at 2 to 2.",
+     "filter_match": false,
+     "words": 0,
+     "score": 0.03175,
+     "cos_image": 0.1094,
+     "cos_text": 0.6535
+    }
+   ]
+  },
+  {
+   "query": "Player 4 scores",
+   "interpretation": "No match",
+   "filter_source": "rules",
+   "top": [
+    {
+     "play_id": "pl_0002",
+     "t_start": 13.8,
+     "t_end": 23.4,
+     "text": "basketball possession. Player 9 brings it in. Player 4 scores two. That puts it at 2 to 2.",
+     "filter_match": false,
+     "words": 2,
+     "score": 0.03132,
+     "cos_image": 0.0626,
+     "cos_text": 0.7424
+    },
+    {
+     "play_id": "pl_0006",
+     "t_start": 46.6,
+     "t_end": 55.533,
+     "text": "basketball possession. Player 9 brings it in. Player 5 scores two. That puts it at 4 to 4.",
+     "filter_match": false,
+     "words": 2,
+     "score": 0.03101,
+     "cos_image": 0.0631,
+     "cos_text": 0.734
+    },
+    {
+     "play_id": "pl_0005",
+     "t_start": 37.6,
+     "t_end": 46.333,
+     "text": "basketball possession. Player 10 pulls down the rebound. Player 6 scores two. That puts it at 4 to 2.",
+     "filter_match": false,
+     "words": 2,
+     "score": 0.03083,
+     "cos_image": 0.0639,
+     "cos_text": 0.7082
+    }
+   ]
+  },
+  {
+   "query": "rebound",
+   "interpretation": "No match",
+   "filter_source": "rules",
+   "top": [
+    {
+     "play_id": "pl_0005",
+     "t_start": 37.6,
+     "t_end": 46.333,
+     "text": "basketball possession. Player 10 pulls down the rebound. Player 6 scores two. That puts it at 4 to 2.",
+     "filter_match": false,
+     "words": 1,
+     "score": 0.03101,
+     "cos_image": 0.0923,
+     "cos_text": 0.6902
+    },
+    {
+     "play_id": "pl_0010",
+     "t_start": 79.8,
+     "t_end": 88.4,
+     "text": "basketball possession. Player 5 pulls down the rebound. Player 4 puts up a shot.",
+     "filter_match": false,
+     "words": 1,
+     "score": 0.03016,
+     "cos_image": 0.0936,
+     "cos_text": 0.5806
+    },
+    {
+     "play_id": "pl_0009",
+     "t_start": 73.2,
+     "t_end": 81.667,
+     "text": "basketball possession. Player 10 brings it in. Player 2 shoots, no good.",
+     "filter_match": false,
+     "words": 0,
+     "score": 0.03227,
+     "cos_image": 0.0942,
+     "cos_text": 0.6904
+    }
+   ]
+  }
+ ]
+}

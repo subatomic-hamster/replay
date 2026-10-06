@@ -1,0 +1,14 @@
+{
+ "timing": {
+  "device": "cuda",
+  "lines": 23,
+  "wall_s": 266.74,
+  "child_s": 10.16,
+  "load_s": 1.185,
+  "synth_s_per_line_median": 0.185,
+  "synth_s_per_line_max": 0.963,
+  "audio_s": 61.25,
+  "rtf": 0.085,
+  "per_play_s": 0.52
+ }
+}

@@ -1,12 +1,15 @@
 """Query engine provider — deterministic rule parser (plan §4.7, decision 5).
 
 Grammar: [player] + [event vocab from the sport profile] + [time filter].
-Unknown text returns no match; the optional LLM layer (Phase 2) plugs in there.
+Unknown text returns no match. `REPLAY_QUERY=llm` adds the LLM layer behind the rules:
+only text the rules cannot parse reaches the LLM, which may only fill a structured filter
+(`LLMQueryEngine`, `validate_filter`).
 """
 
 from __future__ import annotations
 
 import difflib
+import json
 import re
 from typing import Any, Protocol
 
@@ -118,10 +121,28 @@ class RuleQueryEngine:
             return {"interpretation": "No match", "clips": []}
         if filt is None:  # "Marcus" alone -> that player's shots (H1)
             filt, phrase = {"type": "shot", "label": "all shots"}, "all shots"
+        return self.execute(filt, phrase, player, window, time_label, game, events)
 
+    def execute(
+        self,
+        filt: dict,
+        phrase: str,
+        player: dict | None,
+        window: tuple[float, float] | None,
+        time_label: str,
+        game: dict,
+        events: list[dict],
+    ) -> dict:
+        """A structured filter -> clips (shared by the rule and the LLM path)."""
+        duration = float((game.get("video") or {}).get("duration_s") or 0.0)
+        players = game.get("players") or []
         picked = [e for e in events if e.get("type") == filt["type"]]
         if "made" in filt:
             picked = [e for e in picked if bool(e.get("made")) is filt["made"]]
+        if "points" in filt:  # LLM path only
+            picked = [e for e in picked if e.get("points") == filt["points"]]
+        if "cause" in filt:  # LLM path only: steal / rebound
+            picked = [e for e in picked if filt["cause"] in (e.get("cause") or "")]
         if player is not None:
             picked = [e for e in picked if e.get("player_id") == player["id"]]
         if window:
@@ -156,7 +177,12 @@ class RuleQueryEngine:
             )
             if p
         ]
-        return {"interpretation": " — ".join(parts) or "No match", "clips": clips}
+        return {
+            "interpretation": " — ".join(parts) or "No match",
+            "clips": clips,
+            # additive: every selected event (merged clips keep only their first id)
+            "event_ids": [e["id"] for e in picked],
+        }
 
 
 def _merge_overlaps(clips: list[dict]) -> list[dict]:
@@ -178,7 +204,181 @@ def merged_vocab(profile_vocab: dict[str, dict] | None) -> dict[str, dict]:
     return out
 
 
-def get_query_engine(name: str, vocab: dict[str, dict] | None = None) -> QueryEngine:
-    if name != "rules":
-        raise ValueError(f"query engine {name!r} is not available in Phase 1")
-    return RuleQueryEngine(vocab)
+# --- LLM path (vision 22): free text -> structured filter only, then a deterministic
+# validator. The schema has no time fields, so the model can never emit timestamps.
+
+# a filter field survives only if the query text itself says so (D-39: schema-valid output
+# can still be semantically wrong, e.g. `made: true` on a badminton query)
+# event type -> (words the query must contain, what it is, for the prompt)
+TYPES: dict[str, tuple[str, str]] = {
+    "shot": (r"shot|shoot|basket|bucket|make|made|miss|three|jumper|scor|pointer",
+             "a shot at the basket: baskets, buckets, threes, makes and misses"),
+    "pass": (r"pass|assist|dish|feed", "a pass to a teammate"),
+    "steal": (r"steal|stole|pickpocket|strip", "a steal (possession won from the other team)"),
+    "rebound": (r"rebound|board", "a rebound"),
+    "possession_change": (r"inbound|possession", "an inbound or any change of possession"),
+    "turnover": (r"turnover|turn(?:ed|s)? (?:it )?over|giveaway|lost the ball|lose the ball",
+                 "a turnover: the ball lost"),
+    "rally": (r"rall(?:y|ies)|exchange", "a rally (net sports)"),
+    "serve": (r"serv", "a serve (net sports)"),
+    "point": (r"point", "a point won (net sports)"),
+    "block": (r"block|reject|swat", "a block"),
+    "contact": (r"contact|touch", "a racket or hand contact (net sports)"),
+    "bookmark": (r"bookmark|saved|marked", "a moment the viewer bookmarked"),
+    "hype": (r"hype|crowd|loud|cheer", "a loud crowd moment"),
+}  # fmt: skip
+# sub-types the LLM may pick: a possession change with that cause
+SUBTYPES = {"steal": "steal", "rebound": "rebound"}
+MADE_WORDS = re.compile(r"\b(?:makes?|made|scor\w*|buckets?|baskets?|hits?|sinks?|sank|drain\w*)\b")
+MISS_WORDS = re.compile(r"\b(?:miss\w*|brick\w*|airball\w*)\b")
+VALUE_WORDS = {3: re.compile(r"\b(?:three|3|threes|triples?|deep|downtown)\b"),
+               2: re.compile(r"\b(?:two|2)[- ]?pointers?\b|\btwos\b")}  # fmt: skip
+LLM_SYSTEM = (
+    "Convert a viewer's request about one recorded game into a JSON filter. Fill a field "
+    "only when the request clearly asks for it; otherwise use none / any / false. "
+    "Never output times or numbers."
+)
+
+
+def filter_schema(types: list[str], names: list[str]) -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "event_type": {"type": "string", "enum": [*types, "none"]},
+            "result": {"type": "string", "enum": ["made", "missed", "any"]},
+            "shot_value": {"type": "string", "enum": ["three", "two", "any"]},
+            "player": {"type": "string", "enum": [*names, "none"]},
+            "half": {"type": "string", "enum": ["first", "second", "any"]},
+            "longest": {"type": "boolean"},
+        },
+        "required": ["event_type", "result", "shot_value", "player", "half", "longest"],
+    }
+
+
+def _grounded_player(name: str, norm: str, players: list[dict]) -> dict | None:
+    """The roster entry for `name` if some query token resembles one of its parts."""
+    p = next((p for p in players if p.get("name") == name), None)
+    if p is None:
+        return None
+    parts = [x for x in name.lower().split() if len(x) >= 3]
+    toks = [t for t in norm.split() if len(t) >= 3]
+    ok = any(difflib.SequenceMatcher(None, t, x).ratio() >= 0.6 for t in toks for x in parts)
+    return p if ok else None
+
+
+def validate_filter(raw: dict, text: str, game: dict, types: list[str]) -> dict | None:
+    """Keep only the fields of an LLM filter that the query text grounds. Returns
+    `{filt, label, player, window, time_label, dropped}` or None when nothing survives."""
+    norm = _normalize(text)
+    players = game.get("players") or []
+    duration = float((game.get("video") or {}).get("duration_s") or 0.0)
+    dropped: list[str] = []
+    et = raw.get("event_type")
+    if et not in types or not re.search(TYPES.get(et, (r"(?!)",))[0], norm):
+        if et not in (None, "none"):
+            dropped.append(f"event_type={et}")
+        et = None
+    player = None
+    if raw.get("player") not in (None, "none"):
+        player = _grounded_player(raw["player"], norm, players)
+        if player is None:
+            dropped.append(f"player={raw['player']}")
+    if et is None and player is None:
+        return None
+    et = et or "shot"  # a player alone means their shots, as in the rule path (H1)
+    filt: dict[str, Any] = {"type": et}
+    if et in SUBTYPES:
+        filt = {"type": "possession_change", "cause": SUBTYPES[et]}
+    value = {"three": 3, "two": 2}.get(raw.get("shot_value"))
+    if value:
+        if et == "shot" and VALUE_WORDS[value].search(norm):
+            filt["points"] = value
+        else:
+            dropped.append(f"shot_value={raw['shot_value']}")
+    result = raw.get("result")
+    if result in ("made", "missed"):
+        words = MADE_WORDS if result == "made" else MISS_WORDS
+        if et == "shot" and words.search(norm):
+            filt["made"] = result == "made"
+        else:
+            dropped.append(f"result={result}")
+    if raw.get("longest"):
+        if " long" in norm:
+            filt.update(sort="duration_desc", limit=10)
+        else:
+            dropped.append("longest")
+    window, time_label = None, ""
+    half = raw.get("half")
+    if half in ("first", "second"):
+        said = {"first": (" first half ", " 1st half "), "second": (" second half ", " 2nd half ")}
+        if any(s in norm for s in said[half]) and duration:
+            mid = duration / 2
+            window = (0.0, mid) if half == "first" else (mid, duration)
+            time_label = "1st half" if half == "first" else "2nd half"
+        else:
+            dropped.append(f"half={half}")
+    what = {True: "made ", False: "missed "}.get(filt.get("made"), "")
+    what += {3: "three-point ", 2: "two-point "}.get(filt.get("points"), "")
+    noun = et.replace("_", " ")
+    label = (
+        ("longest " if "sort" in filt else "") + what + noun + ("es" if noun.endswith("s") else "s")
+    )
+    return {"filt": filt, "label": label, "player": player, "window": window,
+            "time_label": time_label, "dropped": dropped}  # fmt: skip
+
+
+class LLMQueryEngine(RuleQueryEngine):
+    """Rules first: a query whose event words the rule vocabulary knows is answered by the
+    rules alone. The rest (no match, or only a player name next to words the rules do not
+    know, like "every time Quinn stole the ball") goes to the LLM, whose filter is then
+    validated against the query text, the roster and the sport's event types; if nothing
+    survives validation the rule answer stands."""
+
+    name = "llm"
+
+    def __init__(self, vocab: dict[str, dict] | None = None, llm: Any = None):
+        super().__init__(vocab)
+        self.llm = llm
+
+    def query(self, text: str, game: dict, events: list[dict]) -> dict:
+        out = super().query(text, game, events)
+        if self.llm is None or _match_vocab(_normalize(text), self.vocab)[0] is not None:
+            return out
+        from . import NotConfiguredError
+
+        types = {e.get("type") for e in events if e.get("type")}
+        types |= {f["type"] for f in self.vocab.values()}
+        if "possession_change" in types:
+            types |= set(SUBTYPES)
+        types = sorted(t for t in types if t in TYPES)
+        names = sorted({p["name"] for p in game.get("players") or [] if p.get("name")})
+        prompt = json.dumps({"request": text, "sport": game.get("sport"), "players": names,
+                             "event_types": {t: TYPES[t][1] for t in types}})  # fmt: skip
+        try:
+            raw = json.loads(self.llm.complete(prompt, system=LLM_SYSTEM,
+                                               json_schema=filter_schema(types, names),
+                                               max_tokens=120))  # fmt: skip
+        except NotConfiguredError:
+            return out
+        except (OSError, ValueError) as exc:  # server down / bad JSON: the rule answer stands
+            return {**out, "llm_error": f"{type(exc).__name__}: {exc}"}
+        v = validate_filter(raw, text, game, types)
+        if v is None:  # nothing the text grounds: the rule answer stands
+            return {**out, "llm_filter": raw, "dropped": ["everything"]}
+        res = self.execute(v["filt"], v["label"], v["player"], v["window"], v["time_label"],
+                           game, events)  # fmt: skip
+        return {**res, "source": "llm", "llm_filter": raw, "dropped": v["dropped"]}
+
+
+def get_query_engine(
+    name: str, vocab: dict[str, dict] | None = None, llm: Any = None
+) -> QueryEngine:
+    if name == "rules":
+        return RuleQueryEngine(vocab)
+    if name == "llm":
+        if llm is None:
+            from . import create
+
+            llm = create("llm")
+        return LLMQueryEngine(vocab, llm)
+    raise ValueError(f"query engine {name!r} is not available (rules | llm)")

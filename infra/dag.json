@@ -175,6 +175,36 @@
   "default": false
  },
  {
+  "name": "commentary",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "embeddings",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "search_index",
+  "after": [
+   "embeddings"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": false,
+  "default": false
+ },
+ {
   "name": "hype",
   "after": [
    "game"

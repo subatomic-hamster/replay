@@ -26,6 +26,7 @@ from . import discovery_routes, plays_routes, providers
 from . import pipeline_adapter as adapter
 from . import stats as stats_mod
 from .config import Settings, from_env
+from .narrate import routes as narrate_routes
 from .providers.index import LocalIndex
 from .providers.jobs import LocalJobs
 from .providers.labeler import get_labeler
@@ -303,6 +304,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     _register_routes(app)
     plays_routes.register(app, _game_or_404, _events, live_events)  # M4/M5
+    app.include_router(narrate_routes.router)  # M7: commentary, advice, search
     app.include_router(discovery_routes.router)  # M11: hype, rallies, exports, review
     return app
 

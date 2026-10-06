@@ -1,0 +1,1325 @@
+{
+ "schema": "replay.commentary.v1",
+ "game_id": "g_ee056c",
+ "sport": "basketball",
+ "plays": [
+  {
+   "play_id": "pl_0001",
+   "t_start": 0.0,
+   "t_end": 12.2,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 0.0,
+     "event_ids": [
+      "e_0000"
+     ],
+     "text": "Player 7 inbounds the ball.",
+     "audio_t": 0.0,
+     "audio_s": 2.875
+    },
+    {
+     "t": 10.2,
+     "event_ids": [
+      "e_0001"
+     ],
+     "text": "Player 8 makes two points.",
+     "audio_t": 10.2,
+     "audio_s": 2.425
+    },
+    {
+     "t": 12.2,
+     "event_ids": [
+      "e_0001"
+     ],
+     "text": "Score is now 2 to 0.",
+     "audio_t": 12.825,
+     "audio_s": 2.475
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p7": "Player 7",
+     "p8": "Player 8"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "inbound",
+      "team": 0,
+      "player": "Player 7"
+     },
+     {
+      "type": "shot",
+      "made": true,
+      "points": 2,
+      "team": 0,
+      "player": "Player 8"
+     }
+    ],
+    "score": [
+     2,
+     0
+    ],
+    "leader": "Team A",
+    "tied": false,
+    "numbers": [
+     0,
+     2
+    ],
+    "actions": {
+     "inbound": [
+      "p7"
+     ],
+     "score": [
+      "p8"
+     ],
+     "shot": [
+      "p8"
+     ]
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [
+     {
+      "points": 2,
+      "made": true,
+      "player": "p8"
+     }
+    ],
+    "point_winners": [],
+    "player_teams": {
+     "p7": "Team A",
+     "p8": "Team A"
+    },
+    "rebound_causes": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 7 inbounds the ball.",
+     "Player 8 makes two points.",
+     "Score is now 2 to 0."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 7 brings it in.",
+    "Player 8 scores two.",
+    "That puts it at 2 to 0."
+   ],
+   "audio": "pl_0001.wav"
+  },
+  {
+   "play_id": "pl_0002",
+   "t_start": 13.8,
+   "t_end": 23.4,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 13.8,
+     "event_ids": [
+      "e_0003"
+     ],
+     "text": "Player 9 inbounds the ball.",
+     "audio_t": 15.5,
+     "audio_s": 2.675
+    },
+    {
+     "t": 21.4,
+     "event_ids": [
+      "e_0004"
+     ],
+     "text": "Player 4 makes two points.",
+     "audio_t": 21.4,
+     "audio_s": 2.55
+    },
+    {
+     "t": 23.4,
+     "event_ids": [
+      "e_0004"
+     ],
+     "text": "Score is now 2 to 2.",
+     "audio_t": 27.075,
+     "audio_s": 2.375
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p4": "Player 4",
+     "p9": "Player 9"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "inbound",
+      "team": 1,
+      "player": "Player 9"
+     },
+     {
+      "type": "shot",
+      "made": true,
+      "points": 2,
+      "team": 1,
+      "player": "Player 4"
+     }
+    ],
+    "score": [
+     2,
+     2
+    ],
+    "leader": null,
+    "tied": true,
+    "numbers": [
+     2
+    ],
+    "actions": {
+     "inbound": [
+      "p9"
+     ],
+     "score": [
+      "p4"
+     ],
+     "shot": [
+      "p4"
+     ]
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [
+     {
+      "points": 2,
+      "made": true,
+      "player": "p4"
+     }
+    ],
+    "point_winners": [],
+    "player_teams": {
+     "p4": "Team B",
+     "p9": "Team B"
+    },
+    "rebound_causes": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 9 inbounds the ball.",
+     "Player 4 makes two points.",
+     "Score is now 2 to 2."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 9 brings it in.",
+    "Player 4 scores two.",
+    "That puts it at 2 to 2."
+   ],
+   "audio": "pl_0002.wav"
+  },
+  {
+   "play_id": "pl_0003",
+   "t_start": 22.4,
+   "t_end": 29.2,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 22.4,
+     "event_ids": [
+      "e_0006"
+     ],
+     "text": "Player 10 inbounds the ball.",
+     "audio_t": 24.15,
+     "audio_s": 2.725
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p10": "Player 10"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "inbound",
+      "team": 0,
+      "player": "Player 10"
+     },
+     {
+      "type": "turnover",
+      "cause": "steal",
+      "team": 0
+     }
+    ],
+    "score": null,
+    "leader": null,
+    "tied": false,
+    "numbers": [],
+    "actions": {
+     "inbound": [
+      "p10"
+     ],
+     "steal": [],
+     "turnover": []
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [],
+    "point_winners": [],
+    "player_teams": {
+     "p10": "Team A"
+    },
+    "rebound_causes": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 10 inbounds the ball."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 10 brings it in."
+   ],
+   "audio": "pl_0003.wav"
+  },
+  {
+   "play_id": "pl_0004",
+   "t_start": 29.2,
+   "t_end": 39.267,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 29.2,
+     "event_ids": [
+      "e_0007"
+     ],
+     "text": "Player 5 steals the ball!",
+     "audio_t": 29.65,
+     "audio_s": 2.55
+    },
+    {
+     "t": 37.267,
+     "event_ids": [
+      "e_0009"
+     ],
+     "text": "Player 5 shoots, misses.",
+     "audio_t": 37.267,
+     "audio_s": 2.475
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p5": "Player 5"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "steal",
+      "team": 1,
+      "player": "Player 5"
+     },
+     {
+      "type": "shot",
+      "made": false,
+      "points": 2,
+      "team": 1,
+      "player": "Player 5"
+     }
+    ],
+    "score": null,
+    "leader": null,
+    "tied": false,
+    "numbers": [
+     2
+    ],
+    "actions": {
+     "miss": [
+      "p5"
+     ],
+     "shot": [
+      "p5"
+     ],
+     "steal": [
+      "p5"
+     ]
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [
+     {
+      "points": 2,
+      "made": false,
+      "player": "p5"
+     }
+    ],
+    "point_winners": [],
+    "player_teams": {
+     "p5": "Team B"
+    },
+    "rebound_causes": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 5 steals the ball!",
+     "Player 5 shoots, misses."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 5 with the steal!",
+    "Player 5 shoots, no good."
+   ],
+   "audio": "pl_0004.wav"
+  },
+  {
+   "play_id": "pl_0005",
+   "t_start": 37.6,
+   "t_end": 46.333,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 37.6,
+     "event_ids": [
+      "e_0010"
+     ],
+     "text": "Player 10 secures defensive rebound.",
+     "audio_t": 39.942,
+     "audio_s": 3.375
+    },
+    {
+     "t": 44.333,
+     "event_ids": [
+      "e_0011"
+     ],
+     "text": "Player 6 scores two points.",
+     "audio_t": 44.333,
+     "audio_s": 2.675
+    },
+    {
+     "t": 46.333,
+     "event_ids": [
+      "e_0011"
+     ],
+     "text": "Score is now 4 to 2.",
+     "audio_t": 47.208,
+     "audio_s": 2.45
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p10": "Player 10",
+     "p6": "Player 6"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "defensive_rebound",
+      "team": 0,
+      "player": "Player 10"
+     },
+     {
+      "type": "shot",
+      "made": true,
+      "points": 2,
+      "team": 0,
+      "player": "Player 6"
+     }
+    ],
+    "score": [
+     4,
+     2
+    ],
+    "leader": "Team A",
+    "tied": false,
+    "numbers": [
+     2,
+     4
+    ],
+    "actions": {
+     "rebound": [
+      "p10"
+     ],
+     "score": [
+      "p6"
+     ],
+     "shot": [
+      "p6"
+     ]
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [
+     {
+      "points": 2,
+      "made": true,
+      "player": "p6"
+     }
+    ],
+    "point_winners": [],
+    "player_teams": {
+     "p10": "Team A",
+     "p6": "Team A"
+    },
+    "rebound_causes": [
+     "defensive_rebound"
+    ]
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 10 secures defensive rebound.",
+     "Player 6 scores two points.",
+     "Score is now 4 to 2."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 10 pulls down the rebound.",
+    "Player 6 scores two.",
+    "That puts it at 4 to 2."
+   ],
+   "audio": "pl_0005.wav"
+  },
+  {
+   "play_id": "pl_0006",
+   "t_start": 46.6,
+   "t_end": 55.533,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 46.6,
+     "event_ids": [
+      "e_0013"
+     ],
+     "text": "Player 9 inbounds the ball.",
+     "audio_t": 49.858,
+     "audio_s": 2.675
+    },
+    {
+     "t": 53.533,
+     "event_ids": [
+      "e_0015"
+     ],
+     "text": "Player 5 makes two points.",
+     "audio_t": 53.533,
+     "audio_s": 2.65
+    },
+    {
+     "t": 55.533,
+     "event_ids": [
+      "e_0015"
+     ],
+     "text": "Score is now 4 to 4.",
+     "audio_t": 56.383,
+     "audio_s": 2.45
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p5": "Player 5",
+     "p9": "Player 9"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "inbound",
+      "team": 1,
+      "player": "Player 9"
+     },
+     {
+      "type": "shot",
+      "made": true,
+      "points": 2,
+      "team": 1,
+      "player": "Player 5"
+     }
+    ],
+    "score": [
+     4,
+     4
+    ],
+    "leader": null,
+    "tied": true,
+    "numbers": [
+     2,
+     4
+    ],
+    "actions": {
+     "inbound": [
+      "p9"
+     ],
+     "score": [
+      "p5"
+     ],
+     "shot": [
+      "p5"
+     ]
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [
+     {
+      "points": 2,
+      "made": true,
+      "player": "p5"
+     }
+    ],
+    "point_winners": [],
+    "player_teams": {
+     "p5": "Team B",
+     "p9": "Team B"
+    },
+    "rebound_causes": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 9 inbounds the ball.",
+     "Player 5 makes two points.",
+     "Score is now 4 to 4."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 9 brings it in.",
+    "Player 5 scores two.",
+    "That puts it at 4 to 4."
+   ],
+   "audio": "pl_0006.wav"
+  },
+  {
+   "play_id": "pl_0007",
+   "t_start": 56.8,
+   "t_end": 62.2,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 56.8,
+     "event_ids": [
+      "e_0017"
+     ],
+     "text": "Player 8 inbounds the ball.",
+     "audio_t": 59.033,
+     "audio_s": 2.55
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p8": "Player 8"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "inbound",
+      "team": 0,
+      "player": "Player 8"
+     },
+     {
+      "type": "turnover",
+      "cause": "steal",
+      "team": 0
+     }
+    ],
+    "score": null,
+    "leader": null,
+    "tied": false,
+    "numbers": [],
+    "actions": {
+     "inbound": [
+      "p8"
+     ],
+     "steal": [],
+     "turnover": []
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [],
+    "point_winners": [],
+    "player_teams": {
+     "p8": "Team A"
+    },
+    "rebound_causes": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 8 inbounds the ball."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 8 brings it in."
+   ],
+   "audio": "pl_0007.wav"
+  },
+  {
+   "play_id": "pl_0008",
+   "t_start": 62.2,
+   "t_end": 72.2,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 62.2,
+     "event_ids": [
+      "e_0018"
+     ],
+     "text": "Player 3 steals the ball!",
+     "audio_t": 62.2,
+     "audio_s": 2.475
+    },
+    {
+     "t": 70.2,
+     "event_ids": [
+      "e_0021"
+     ],
+     "text": "Player 4 scores two points.",
+     "audio_t": 70.2,
+     "audio_s": 2.65
+    },
+    {
+     "t": 72.2,
+     "event_ids": [
+      "e_0021"
+     ],
+     "text": "Score is now 4 to 6.",
+     "audio_t": 73.05,
+     "audio_s": 2.425
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p3": "Player 3",
+     "p4": "Player 4"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "steal",
+      "team": 1,
+      "player": "Player 3"
+     },
+     {
+      "type": "shot",
+      "made": true,
+      "points": 2,
+      "team": 1,
+      "player": "Player 4"
+     }
+    ],
+    "score": [
+     4,
+     6
+    ],
+    "leader": "Team B",
+    "tied": false,
+    "numbers": [
+     2,
+     4,
+     6
+    ],
+    "actions": {
+     "score": [
+      "p4"
+     ],
+     "shot": [
+      "p4"
+     ],
+     "steal": [
+      "p3"
+     ]
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [
+     {
+      "points": 2,
+      "made": true,
+      "player": "p4"
+     }
+    ],
+    "point_winners": [],
+    "player_teams": {
+     "p3": "Team B",
+     "p4": "Team B"
+    },
+    "rebound_causes": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 3 steals the ball!",
+     "Player 4 scores two points.",
+     "Score is now 4 to 6."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 3 with the steal!",
+    "Player 4 scores two.",
+    "That puts it at 4 to 6."
+   ],
+   "audio": "pl_0008.wav"
+  },
+  {
+   "play_id": "pl_0009",
+   "t_start": 73.2,
+   "t_end": 81.667,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 73.2,
+     "event_ids": [
+      "e_0023"
+     ],
+     "text": "Team A inbound, Player 10 takes it.",
+     "audio_t": 75.675,
+     "audio_s": 3.275
+    },
+    {
+     "t": 79.667,
+     "event_ids": [
+      "e_0024"
+     ],
+     "text": "Player 2 shoots, miss.",
+     "audio_t": 79.667,
+     "audio_s": 2.225
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p10": "Player 10",
+     "p2": "Player 2"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "inbound",
+      "team": 0,
+      "player": "Player 10"
+     },
+     {
+      "type": "shot",
+      "made": false,
+      "points": 2,
+      "team": 0,
+      "player": "Player 2"
+     }
+    ],
+    "score": null,
+    "leader": null,
+    "tied": false,
+    "numbers": [
+     2
+    ],
+    "actions": {
+     "inbound": [
+      "p10"
+     ],
+     "miss": [
+      "p2"
+     ],
+     "shot": [
+      "p2"
+     ]
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [
+     {
+      "points": 2,
+      "made": false,
+      "player": "p2"
+     }
+    ],
+    "point_winners": [],
+    "player_teams": {
+     "p10": "Team A",
+     "p2": "Team A"
+    },
+    "rebound_causes": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Team A inbound, Player 10 takes it.",
+     "Player 2 shoots, miss."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 10 brings it in.",
+    "Player 2 shoots, no good."
+   ],
+   "audio": "pl_0009.wav"
+  },
+  {
+   "play_id": "pl_0010",
+   "t_start": 79.8,
+   "t_end": 88.4,
+   "source": "llm",
+   "lines": [
+    {
+     "t": 79.8,
+     "event_ids": [
+      "e_0025"
+     ],
+     "text": "Player 5 secures defensive rebound.",
+     "audio_t": 82.092,
+     "audio_s": 3.375
+    },
+    {
+     "t": 86.4,
+     "event_ids": [
+      "e_0026"
+     ],
+     "text": "Player 4 shoots from three points.",
+     "audio_t": 86.4,
+     "audio_s": 2.875
+    }
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "facts": {
+    "sport": "basketball",
+    "roster": {
+     "p1": "Player 1",
+     "p2": "Player 2",
+     "p3": "Player 3",
+     "p4": "Player 4",
+     "p5": "Player 5",
+     "p6": "Player 6",
+     "p7": "Player 7",
+     "p8": "Player 8",
+     "p9": "Player 9",
+     "p10": "Player 10"
+    },
+    "players": {
+     "p4": "Player 4",
+     "p5": "Player 5"
+    },
+    "teams": {
+     "0": "Team A",
+     "1": "Team B"
+    },
+    "events": [
+     {
+      "type": "possession_change",
+      "cause": "defensive_rebound",
+      "team": 1,
+      "player": "Player 5"
+     },
+     {
+      "type": "shot",
+      "points": 3,
+      "team": 1,
+      "player": "Player 4"
+     }
+    ],
+    "score": null,
+    "leader": null,
+    "tied": false,
+    "numbers": [
+     3
+    ],
+    "actions": {
+     "rebound": [
+      "p5"
+     ],
+     "shot": [
+      "p4"
+     ]
+    },
+    "pairs": {
+     "pass": [],
+     "steal": []
+    },
+    "shot_values": [
+     {
+      "points": 3,
+      "made": null,
+      "player": "p4"
+     }
+    ],
+    "point_winners": [],
+    "player_teams": {
+     "p4": "Team B",
+     "p5": "Team B"
+    },
+    "rebound_causes": [
+     "defensive_rebound"
+    ]
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 5 secures defensive rebound.",
+     "Player 4 shoots from three points."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Player 5 pulls down the rebound.",
+    "Player 4 puts up a shot."
+   ],
+   "audio": "pl_0010.wav"
+  }
+ ],
+ "summary": {
+  "plays": 10,
+  "lines": 23,
+  "template_grounded": 10,
+  "llm_attempted": 10,
+  "llm_accepted": 10
+ },
+ "narration": {
+  "file": "narration.wav",
+  "sr": 24000,
+  "duration_s": 90.0
+ },
+ "tts": {
+  "lines": 23,
+  "speech_s": 61.25,
+  "runner": {
+   "items": [
+    {
+     "out": "g_bb90/commentary/lines/pl_0001_00.wav",
+     "seconds": 2.875,
+     "synth_s": 0.457
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0001_01.wav",
+     "seconds": 2.425,
+     "synth_s": 0.331
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0001_02.wav",
+     "seconds": 2.475,
+     "synth_s": 0.35
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0002_00.wav",
+     "seconds": 2.675,
+     "synth_s": 0.41
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0002_01.wav",
+     "seconds": 2.55,
+     "synth_s": 0.34
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0002_02.wav",
+     "seconds": 2.375,
+     "synth_s": 0.324
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0003_00.wav",
+     "seconds": 2.725,
+     "synth_s": 0.35
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0004_00.wav",
+     "seconds": 2.55,
+     "synth_s": 0.376
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0004_01.wav",
+     "seconds": 2.475,
+     "synth_s": 0.35
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0005_00.wav",
+     "seconds": 3.375,
+     "synth_s": 0.437
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0005_01.wav",
+     "seconds": 2.675,
+     "synth_s": 0.351
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0005_02.wav",
+     "seconds": 2.45,
+     "synth_s": 0.328
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0006_00.wav",
+     "seconds": 2.675,
+     "synth_s": 0.311
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0006_01.wav",
+     "seconds": 2.65,
+     "synth_s": 0.346
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0006_02.wav",
+     "seconds": 2.45,
+     "synth_s": 0.298
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0007_00.wav",
+     "seconds": 2.55,
+     "synth_s": 0.292
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0008_00.wav",
+     "seconds": 2.475,
+     "synth_s": 0.32
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0008_01.wav",
+     "seconds": 2.65,
+     "synth_s": 0.298
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0008_02.wav",
+     "seconds": 2.425,
+     "synth_s": 0.288
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0009_00.wav",
+     "seconds": 3.275,
+     "synth_s": 0.41
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0009_01.wav",
+     "seconds": 2.225,
+     "synth_s": 0.349
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0010_00.wav",
+     "seconds": 3.375,
+     "synth_s": 0.426
+    },
+    {
+     "out": "g_bb90/commentary/lines/pl_0010_01.wav",
+     "seconds": 2.875,
+     "synth_s": 0.336
+    }
+   ],
+   "load_s": 1.081,
+   "voice": "am_michael",
+   "sr": 24000,
+   "child_s": 12.97
+  }
+ }
+}

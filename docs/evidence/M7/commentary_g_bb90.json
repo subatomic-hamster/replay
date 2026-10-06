@@ -1,0 +1,492 @@
+{
+ "game_dir": "g_bb90",
+ "summary": {
+  "plays": 10,
+  "lines": 23,
+  "template_grounded": 10,
+  "llm_attempted": 10,
+  "llm_accepted": 10
+ },
+ "timing": {
+  "stage_wall_s": 16.19,
+  "records": [
+   {
+    "run": "20261006T061821-38b2",
+    "host": "hfbox",
+    "game": "g_bb90",
+    "stage": "commentary",
+    "version": "1+b205a8330329",
+    "item": null,
+    "resource": "cpu",
+    "started": 1791267501.794,
+    "lock_wait_s": 0.0,
+    "key": "69e937a1ae1e6b48b88a5f4ef43751486a6794ba33a8a23c261596555c3bdbd0",
+    "cache": "miss",
+    "status": "ok",
+    "ended": 1791267517.88,
+    "wall_s": 16.086
+   }
+  ],
+  "llm": {
+   "calls": 10,
+   "median_s": 0.277,
+   "max_s": 0.307,
+   "mean_tokens": 25.8,
+   "gen_tok_per_s_median": 131.23187359745936
+  },
+  "tts": {
+   "device": "cpu",
+   "lines": 23,
+   "load_s": 1.081,
+   "child_s": 12.97,
+   "synth_s_per_line_median": 0.346,
+   "audio_s_total": 61.25,
+   "synth_s_total": 8.08
+  }
+ },
+ "plays": [
+  {
+   "play_id": "pl_0001",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 0.0,
+     "event_ids": [
+      "e_0000"
+     ],
+     "text": "Player 7 inbounds the ball.",
+     "audio_t": 0.0,
+     "audio_s": 2.875
+    },
+    {
+     "t": 10.2,
+     "event_ids": [
+      "e_0001"
+     ],
+     "text": "Player 8 makes two points.",
+     "audio_t": 10.2,
+     "audio_s": 2.425
+    },
+    {
+     "t": 12.2,
+     "event_ids": [
+      "e_0001"
+     ],
+     "text": "Score is now 2 to 0.",
+     "audio_t": 12.825,
+     "audio_s": 2.475
+    }
+   ],
+   "template_lines": [
+    "Player 7 brings it in.",
+    "Player 8 scores two.",
+    "That puts it at 2 to 0."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 7 inbounds the ball.",
+     "Player 8 makes two points.",
+     "Score is now 2 to 0."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  },
+  {
+   "play_id": "pl_0002",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 13.8,
+     "event_ids": [
+      "e_0003"
+     ],
+     "text": "Player 9 inbounds the ball.",
+     "audio_t": 15.5,
+     "audio_s": 2.675
+    },
+    {
+     "t": 21.4,
+     "event_ids": [
+      "e_0004"
+     ],
+     "text": "Player 4 makes two points.",
+     "audio_t": 21.4,
+     "audio_s": 2.55
+    },
+    {
+     "t": 23.4,
+     "event_ids": [
+      "e_0004"
+     ],
+     "text": "Score is now 2 to 2.",
+     "audio_t": 27.075,
+     "audio_s": 2.375
+    }
+   ],
+   "template_lines": [
+    "Player 9 brings it in.",
+    "Player 4 scores two.",
+    "That puts it at 2 to 2."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 9 inbounds the ball.",
+     "Player 4 makes two points.",
+     "Score is now 2 to 2."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  },
+  {
+   "play_id": "pl_0003",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 22.4,
+     "event_ids": [
+      "e_0006"
+     ],
+     "text": "Player 10 inbounds the ball.",
+     "audio_t": 24.15,
+     "audio_s": 2.725
+    }
+   ],
+   "template_lines": [
+    "Player 10 brings it in."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 10 inbounds the ball."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  },
+  {
+   "play_id": "pl_0004",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 29.2,
+     "event_ids": [
+      "e_0007"
+     ],
+     "text": "Player 5 steals the ball!",
+     "audio_t": 29.65,
+     "audio_s": 2.55
+    },
+    {
+     "t": 37.267,
+     "event_ids": [
+      "e_0009"
+     ],
+     "text": "Player 5 shoots, misses.",
+     "audio_t": 37.267,
+     "audio_s": 2.475
+    }
+   ],
+   "template_lines": [
+    "Player 5 with the steal!",
+    "Player 5 shoots, no good."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 5 steals the ball!",
+     "Player 5 shoots, misses."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  },
+  {
+   "play_id": "pl_0005",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 37.6,
+     "event_ids": [
+      "e_0010"
+     ],
+     "text": "Player 10 secures defensive rebound.",
+     "audio_t": 39.942,
+     "audio_s": 3.375
+    },
+    {
+     "t": 44.333,
+     "event_ids": [
+      "e_0011"
+     ],
+     "text": "Player 6 scores two points.",
+     "audio_t": 44.333,
+     "audio_s": 2.675
+    },
+    {
+     "t": 46.333,
+     "event_ids": [
+      "e_0011"
+     ],
+     "text": "Score is now 4 to 2.",
+     "audio_t": 47.208,
+     "audio_s": 2.45
+    }
+   ],
+   "template_lines": [
+    "Player 10 pulls down the rebound.",
+    "Player 6 scores two.",
+    "That puts it at 4 to 2."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 10 secures defensive rebound.",
+     "Player 6 scores two points.",
+     "Score is now 4 to 2."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  },
+  {
+   "play_id": "pl_0006",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 46.6,
+     "event_ids": [
+      "e_0013"
+     ],
+     "text": "Player 9 inbounds the ball.",
+     "audio_t": 49.858,
+     "audio_s": 2.675
+    },
+    {
+     "t": 53.533,
+     "event_ids": [
+      "e_0015"
+     ],
+     "text": "Player 5 makes two points.",
+     "audio_t": 53.533,
+     "audio_s": 2.65
+    },
+    {
+     "t": 55.533,
+     "event_ids": [
+      "e_0015"
+     ],
+     "text": "Score is now 4 to 4.",
+     "audio_t": 56.383,
+     "audio_s": 2.45
+    }
+   ],
+   "template_lines": [
+    "Player 9 brings it in.",
+    "Player 5 scores two.",
+    "That puts it at 4 to 4."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 9 inbounds the ball.",
+     "Player 5 makes two points.",
+     "Score is now 4 to 4."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  },
+  {
+   "play_id": "pl_0007",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 56.8,
+     "event_ids": [
+      "e_0017"
+     ],
+     "text": "Player 8 inbounds the ball.",
+     "audio_t": 59.033,
+     "audio_s": 2.55
+    }
+   ],
+   "template_lines": [
+    "Player 8 brings it in."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 8 inbounds the ball."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  },
+  {
+   "play_id": "pl_0008",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 62.2,
+     "event_ids": [
+      "e_0018"
+     ],
+     "text": "Player 3 steals the ball!",
+     "audio_t": 62.2,
+     "audio_s": 2.475
+    },
+    {
+     "t": 70.2,
+     "event_ids": [
+      "e_0021"
+     ],
+     "text": "Player 4 scores two points.",
+     "audio_t": 70.2,
+     "audio_s": 2.65
+    },
+    {
+     "t": 72.2,
+     "event_ids": [
+      "e_0021"
+     ],
+     "text": "Score is now 4 to 6.",
+     "audio_t": 73.05,
+     "audio_s": 2.425
+    }
+   ],
+   "template_lines": [
+    "Player 3 with the steal!",
+    "Player 4 scores two.",
+    "That puts it at 4 to 6."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 3 steals the ball!",
+     "Player 4 scores two points.",
+     "Score is now 4 to 6."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  },
+  {
+   "play_id": "pl_0009",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 73.2,
+     "event_ids": [
+      "e_0023"
+     ],
+     "text": "Team A inbound, Player 10 takes it.",
+     "audio_t": 75.675,
+     "audio_s": 3.275
+    },
+    {
+     "t": 79.667,
+     "event_ids": [
+      "e_0024"
+     ],
+     "text": "Player 2 shoots, miss.",
+     "audio_t": 79.667,
+     "audio_s": 2.225
+    }
+   ],
+   "template_lines": [
+    "Player 10 brings it in.",
+    "Player 2 shoots, no good."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Team A inbound, Player 10 takes it.",
+     "Player 2 shoots, miss."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  },
+  {
+   "play_id": "pl_0010",
+   "source": "llm",
+   "lines": [
+    {
+     "t": 79.8,
+     "event_ids": [
+      "e_0025"
+     ],
+     "text": "Player 5 secures defensive rebound.",
+     "audio_t": 82.092,
+     "audio_s": 3.375
+    },
+    {
+     "t": 86.4,
+     "event_ids": [
+      "e_0026"
+     ],
+     "text": "Player 4 shoots from three points.",
+     "audio_t": 86.4,
+     "audio_s": 2.875
+    }
+   ],
+   "template_lines": [
+    "Player 5 pulls down the rebound.",
+    "Player 4 puts up a shot."
+   ],
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Player 5 secures defensive rebound.",
+     "Player 4 shoots from three points."
+    ],
+    "violations": []
+   },
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   }
+  }
+ ]
+}

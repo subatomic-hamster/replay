@@ -1,0 +1,163 @@
+{
+ "results": [
+  {
+   "text": "Casey makes",
+   "wall_s": 0.0,
+   "interpretation": "Casey \u2014 made shots",
+   "source": "rules",
+   "llm_filter": null,
+   "dropped": null,
+   "clips": 1
+  },
+  {
+   "text": "show me every time Quinn stole the ball",
+   "wall_s": 0.669,
+   "interpretation": "Quinn \u2014 steals",
+   "source": "llm",
+   "llm_filter": {
+    "event_type": "steal",
+    "result": "any",
+    "shot_value": "any",
+    "player": "Quinn",
+    "half": "any",
+    "longest": false
+   },
+   "dropped": [],
+   "clips": 1
+  },
+  {
+   "text": "what did Casie do",
+   "wall_s": 0.514,
+   "interpretation": "Casey \u2014 all shots",
+   "source": "rules",
+   "llm_filter": {
+    "event_type": "none",
+    "result": "any",
+    "shot_value": "any",
+    "player": "none",
+    "half": "any",
+    "longest": false
+   },
+   "dropped": [
+    "everything"
+   ],
+   "clips": 1
+  },
+  {
+   "text": "passes from Jordan",
+   "wall_s": 0.61,
+   "interpretation": "Jordan \u2014 passes",
+   "source": "llm",
+   "llm_filter": {
+    "event_type": "pass",
+    "result": "any",
+    "shot_value": "any",
+    "player": "Jordan",
+    "half": "any",
+    "longest": false
+   },
+   "dropped": [],
+   "clips": 2
+  },
+  {
+   "text": "turnovers",
+   "wall_s": 0.558,
+   "interpretation": "turnovers",
+   "source": "llm",
+   "llm_filter": {
+    "event_type": "turnover",
+    "result": "any",
+    "shot_value": "any",
+    "player": "none",
+    "half": "any",
+    "longest": false
+   },
+   "dropped": [],
+   "clips": 1
+  },
+  {
+   "text": "baskets in the second half",
+   "wall_s": 0.509,
+   "interpretation": "shots \u2014 2nd half",
+   "source": "llm",
+   "llm_filter": {
+    "event_type": "shot",
+    "result": "any",
+    "shot_value": "any",
+    "player": "none",
+    "half": "second",
+    "longest": false
+   },
+   "dropped": [],
+   "clips": 2
+  },
+  {
+   "text": "Morgan three pointers",
+   "wall_s": 0.537,
+   "interpretation": "Morgan \u2014 three-point shots",
+   "source": "llm",
+   "llm_filter": {
+    "event_type": "shot",
+    "result": "any",
+    "shot_value": "three",
+    "player": "Morgan",
+    "half": "any",
+    "longest": false
+   },
+   "dropped": [],
+   "clips": 0
+  },
+  {
+   "text": "the crowd going wild",
+   "wall_s": 0.604,
+   "interpretation": "No match",
+   "source": "rules",
+   "llm_filter": {
+    "event_type": "rally",
+    "result": "any",
+    "shot_value": "any",
+    "player": "none",
+    "half": "any",
+    "longest": false
+   },
+   "dropped": [
+    "everything"
+   ],
+   "clips": 0
+  },
+  {
+   "text": "longest badminton rallies",
+   "wall_s": 0.0,
+   "interpretation": "rallies",
+   "source": "rules",
+   "llm_filter": null,
+   "dropped": null,
+   "clips": 0
+  },
+  {
+   "text": "defensive rebounds",
+   "wall_s": 0.581,
+   "interpretation": "rebounds",
+   "source": "llm",
+   "llm_filter": {
+    "event_type": "rebound",
+    "result": "any",
+    "shot_value": "any",
+    "player": "none",
+    "half": "any",
+    "longest": false
+   },
+   "dropped": [],
+   "clips": 1
+  }
+ ],
+ "timing": {
+  "llm": {
+   "calls": 8,
+   "median_s": 0.581,
+   "max_s": 0.669,
+   "mean_tokens": 46.2,
+   "gen_tok_per_s_median": 84.60901569497241
+  }
+ }
+}

@@ -1,0 +1,230 @@
+{
+ "summary": {
+  "players": 8,
+  "template_grounded": 8,
+  "llm_accepted": 8,
+  "llm": {
+   "calls": 8,
+   "median_s": 0.187,
+   "max_s": 0.201,
+   "mean_tokens": 17.8,
+   "gen_tok_per_s_median": 126.3565782638606
+  }
+ },
+ "advice": [
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_half_gt",
+   "player_id": "p1",
+   "name": "Alex",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Stay sharp and keep the ball moving."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Stay sharp and keep the ball moving."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Alex had 1 turnovers."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_half_gt",
+   "player_id": "p3",
+   "name": "Jordan",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Keep going, Jordan. Two passes done \u2014 you're on track!"
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Keep going, Jordan. Two passes done \u2014 you're on track!"
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Jordan completed 2 passes."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_half_gt",
+   "player_id": "p4",
+   "name": "Riley",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Keep passing with confidence and precision."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Keep passing with confidence and precision."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Riley completed 1 passes."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_half_gt",
+   "player_id": "p5",
+   "name": "Casey",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Stay sharp\u2014every shot counts, and you\u2019re hitting them all."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Stay sharp\u2014every shot counts, and you\u2019re hitting them all."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Casey shot 1 for 1 (100%)."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_half_gt",
+   "player_id": "p6",
+   "name": "Morgan",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Stay sharp\u2014every shot counts.",
+    "Keep passing\u2014trust your team."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Stay sharp\u2014every shot counts.",
+     "Keep passing\u2014trust your team."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Morgan shot 1 for 1 (100%).",
+    "Morgan completed 1 passes."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_half_gt",
+   "player_id": "p7",
+   "name": "Taylor",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Keep working on that first rebound grab."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Keep working on that first rebound grab."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Taylor pulled in 1 rebounds."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_half_gt",
+   "player_id": "p8",
+   "name": "Jamie",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Keep trying. Every shot counts, even when it doesn\u2019t go in."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Keep trying. Every shot counts, even when it doesn\u2019t go in."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Jamie shot 0 for 1 (0%)."
+   ]
+  },
+  {
+   "schema": "replay.advice.v1",
+   "game_id": "g_half_gt",
+   "player_id": "p10",
+   "name": "Quinn",
+   "auto_detected": true,
+   "source": "llm",
+   "lines": [
+    "Keep passing with confidence.",
+    "Stay sharp and watch the defense."
+   ],
+   "grounding": {
+    "template_ok": true,
+    "violations": []
+   },
+   "llm": {
+    "accepted": true,
+    "error": null,
+    "raw": [
+     "Keep passing with confidence.",
+     "Stay sharp and watch the defense."
+    ],
+    "violations": []
+   },
+   "template_lines": [
+    "Quinn completed 1 passes.",
+    "Quinn had 1 steals."
+   ]
+  }
+ ]
+}

@@ -337,3 +337,10 @@ Ceilings:
 - Nothing has run on a Fire TV. The main risk is the SurfaceView over the paused TextureView angle player.
 - Two decoders are alive while Free view is open.
 - Holding a direction on Fire TV moves about 21°/s, because of its 120 ms JS key repeat.
+
+## D-78 (2026-10-06) — box-test refuses Playwright when a dev-server port is taken; the scene checks run in the suite
+Playwright's `reuseExistingServer` silently tested a stale vite left on 5181 by another copy for about 3 h. `port_guard` in scripts/box-test.sh:
+- runs inside the pw lock, right before each Playwright step;
+- reads the non-opt-in ports from the Playwright configs, then /proc/net/tcp{,6} (the box has no ss or lsof);
+- fails the step naming the port and the owning PID, and never kills anything.
+A `scene-check` step (6 shaders through glslangValidator, plus SceneMath on the JVM) runs when glslangValidator is present, and is skipped with a message otherwise. CI runs a shaders-only step in the tv job; the runner lacks a warm Gradle cache for Kotlin.

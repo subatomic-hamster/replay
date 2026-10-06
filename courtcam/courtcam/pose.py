@@ -23,6 +23,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .extras import require
 from .profiles import PoseCfg
 from .schema import PoseFrame, PosePoint, PosesChunk, TracksChunk
 
@@ -68,6 +69,7 @@ def pick(track_box: Box, boxes: np.ndarray, kps: np.ndarray, conf, min_iou: floa
 
 def yolo_poser(cfg: PoseCfg, model: str | None = None) -> Poser:
     """YOLO-pose on one batch of crops per frame (GPU when torch sees one)."""
+    require("yolo", "--pose yolo", "ultralytics", "torch")
     from ultralytics import YOLO
 
     from .detect import gpu_available
@@ -140,6 +142,7 @@ def vitpose_poser(cfg: PoseCfg, model: str | None = None) -> Poser:
     """ViTPose (top-down, Apache-2.0 weights, `transformers`) on every track box: the box
     is the person, so there is no detection step to miss a small or odd-looking player.
     `model` is a local directory or an HF repo id (`pose.vit_model`)."""
+    require("vitpose", "--pose vit", "torch", "transformers")
     import torch
     from transformers import VitPoseForPoseEstimation
 

@@ -6,23 +6,29 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12,<3.13"
 authors = [{ name = "Replay" }]
+# The core is permissive-only (MIT/BSD/Apache): synth, calibration, the synthetic
+# detector, tracks/identity/court/crops from given detections, events, plays, render.
 dependencies = [
-    "ultralytics>=8.3",
     "opencv-python-headless>=4.10",
     "numpy>=1.26",
     "pyyaml>=6",
     "pydantic>=2",
     "typer>=0.12",
     "tqdm>=4.66",
-    # ultralytics' ByteTrack needs it and would otherwise pip-install it mid-run
+    # Hungarian assignment for the MOT metrics (D-38); also what ultralytics' trackers
+    # would otherwise pip-install mid-run
     "lap>=0.5",
-    # pinned to the CPU wheels: the dev box and CI have no NVIDIA GPU (D-5)
-    "torch>=2.4",
-    "torchvision>=0.19",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+# `--detector yolo` / `--pose yolo`: ultralytics is AGPL-3.0 (see README "Licence").
+# torch is pinned to the CPU wheels below: CI has no GPU (D-5); the box brings ROCm torch.
+yolo = ["ultralytics>=8.3", "torch>=2.4", "torchvision>=0.19"]
+# `--pose vit`: ViTPose (Apache-2.0 weights) through transformers (D-61)
+vitpose = ["transformers>=5", "torch>=2.4"]
+# voice triggers: Whisper through transformers (`asr_model`)
+asr = ["transformers>=5", "torch>=2.4"]
 # `courtcam autocalib --backend vlm`. The `claude-cli` backend needs neither.
 vlm = ["anthropic>=0.40"]
 

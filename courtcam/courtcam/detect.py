@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 from tqdm import tqdm
 
+from .extras import require
 from .profiles import DetectionCfg
 
 DETS_SCHEMA = "courtcam.dets.v1"
@@ -118,6 +119,7 @@ class YoloDetector:
     def __call__(
         self, video: Path, *, stride: int, max_frames: int | None = None
     ) -> Iterator[FrameDets]:
+        require("yolo", "YoloDetector", "ultralytics")
         from ultralytics import YOLO  # slow import; keep it off the CLI's hot path
 
         model = YOLO(self.weights)
@@ -260,5 +262,6 @@ def make_detector(
             raise ValueError("--detector synthetic needs a ground_truth.json (--ground-truth)")
         return SyntheticDetector(ground_truth)
     if kind == "yolo":
+        require("yolo", "--detector yolo", "ultralytics", "torch")
         return YoloDetector(cfg, fps=fps, backend=backend)
     raise ValueError(f"unknown detector {kind!r} (expected 'yolo' or 'synthetic')")

@@ -27,6 +27,7 @@ from typing import Any
 import numpy as np
 
 from .events import Signals, elbow_spread, hands_overhead, x_pose
+from .extras import require
 from .profiles import TriggerCfg
 from .schema import Attribution, Clip, Play, Trigger
 
@@ -188,6 +189,7 @@ def subject_from_transcript(transcript: str, roster: dict[str, str], cfg: Trigge
 def whisper_asr(model_id: str, device: str | int | None = None) -> ASR:
     """Whisper through `transformers` (MIT weights; ROCm works through torch.cuda), one
     short clip per speech segment, batched."""
+    require("asr", "Whisper ASR (asr_model)", "torch", "transformers")
     import torch
     from transformers import pipeline
 

@@ -182,3 +182,37 @@ see the reference after each title.
 
 ## FL-12 — Static ffmpeg build core-dumps on https inputs (2026-10-06)
 - Task: cut CC clips straight from URLs. Actual: segfault. Severity: low. Workaround: download first, then cut.
+
+## FL-13 — Two `uv`s on the box, and the one on PATH is a shim (2026-10-06)
+- Task: regenerate `uv.lock` after moving ultralytics into `courtcam[yolo]` (M13).
+- Steps: `source env.sh; uv lock`.
+- Expected: a lock. Actual: `env.sh` puts `/workspace/wt/replay-env/bin/uv` first on PATH, a 4-line shell shim that only understands `uv run …` (it strips flags and execs the rest), so `uv lock` would exec a command named `lock`. READY says "real `uv` not installed", but `/workspace/bin/uv` is a real uv 0.12.18 (the version CI pins).
+- Severity: medium (silently wrong tool; easy to conclude the lock cannot be regenerated on the box).
+- Workaround: call `/workspace/bin/uv lock` by full path with `UV_CACHE_DIR` in your own scratch (the CPU-torch resolution pulls ~1.5 GB into the cache on `uv sync`; delete it after).
+- Suggestion: name the shim `uv-run` (or make it exec `/workspace/bin/uv` for anything but `run`) and fix the READY line.
+
+## FL-14 — ultralytics writes a settings file on first import in a fresh venv (2026-10-06)
+- Task: CI-equivalent `uv sync --locked` into a throwaway venv on the box, then `import ultralytics`.
+- Actual: the import prints "Creating new Ultralytics Settings v0.0.8 file" and writes `/root/.config/Ultralytics/settings.json` (outside the venv) unless `YOLO_CONFIG_DIR` is set, which only `env.sh` does. Severity: low (shared home dir on a shared box).
+- Workaround: export `YOLO_CONFIG_DIR` before importing ultralytics anywhere outside `env.sh`.
+- Suggestion: ultralytics should not write user-level config on import.
+
+## FL-15 — `flock <lock> <shell function>` fails with a misleading error (2026-10-06)
+- Task: wrap the worker in a bash function and run it under the CPU lock in scripts/box-demo.sh.
+- Actual: `flock: failed to execute worker: No such file or directory` — flock execs a program, so functions and aliases are invisible to it. Severity: low.
+- Workaround: put `flock` inside the function (`flock <lock> bash -c '…' _ "$@"`).
+
+## FL-16 — zsh expands a leading `=` in unquoted words (2026-10-06)
+- Task: print a separator with `echo =====` in a one-off laptop command.
+- Actual: `(eval):1: ==== not found` and the command chain stops — zsh's `=cmd` expansion looks the word up as a command. Severity: low. Workaround: quote it (`echo '---'`).
+
+## FL-17 — the first tmux session on a shared box leaks its environment into every later one (2026-10-06)
+- Task: `make demo` serves from a tmux session; afterwards scripts/box-test.sh ran in a new tmux session.
+- Actual: two api tests failed (`test_new_local_providers_say_not_configured[tts|embeddings]`). The demo's `tmux new-session` had started the tmux server, and the server copies the caller's environment into its *global* environment. Every later session, including other agents' sessions, then inherited `REPLAY_MODEL_VENVS`, `REPLAY_DATA_DIR`, `REPLAY_CACHE_DIR` and `PYTHONPATH` pointing at the demo copy. Severity: medium (silent cross-agent state on a shared box; Playwright could have written to the demo data dir).
+- Workaround: box-demo.sh now strips its variables from tmux's environment (`env -u … tmux`) and passes them per session (`new-session -e`). Check with `tmux show-environment -g`.
+- Suggestion: start shared tmux servers from a clean login shell, or always pass job env with `-e`.
+
+## FL-18 — a ~10 min foreground `ssh` build dies with the Tailscale link (2026-10-06)
+- Task: the first cold `make demo`, with the build running in the foreground of `ssh hfbox '…'`.
+- Actual: `Connection to fedora.taile77402.ts.net closed by remote host` 2.5 min in. For the next minute every ssh attempt failed with `Connection closed by UNKNOWN port 65535`. The box-side script kept running with a dead stdout, so it would have failed at its next write, and a re-run would have raced it in the same game dir. Severity: medium (half-built demo dir, wasted cold run).
+- Workaround: `make demo` now `nohup`s the build into `<copy>/data/demo-build.log` and follows it with `tail --pid`. `box-demo.sh build` takes a per-demo-dir `flock`, so a re-run waits for a still-running build and then hits the cache.

@@ -2,7 +2,8 @@
 name = "replay-workspace"
 version = "0.0.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["courtcam", "replay-api", "replay-worker", "replay-render"]
+# courtcam's YOLO backend (AGPL ultralytics) is an extra; the replay app uses it by default.
+dependencies = ["courtcam[yolo]", "replay-api", "replay-worker", "replay-render"]
 
 [tool.uv.workspace]
 members = ["courtcam", "services/api", "services/worker", "render"]

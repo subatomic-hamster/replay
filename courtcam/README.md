@@ -43,8 +43,29 @@ uv run courtcam --help
 Standalone:
 
 ```sh
-uv pip install -e "courtcam[dev]"
+uv pip install -e "courtcam[dev]"            # core: synth, calibrate, synthetic detector, events, plays, render
+uv pip install -e "courtcam[dev,yolo]"       # + YOLO11 detection/pose and BoT-SORT (AGPL-3.0, see below)
 ```
+
+| extra | adds | for |
+|---|---|---|
+| *(none)* | OpenCV, NumPy, pydantic, typer, PyYAML, tqdm, lap | everything that does not run a model: `synth`, calibration, `--detector synthetic`, tracks/identity/court/crops from given detections, events/plays from given tracks and poses, overlays, renders, metrics |
+| `yolo` | ultralytics, torch, torchvision | `--detector yolo` (the CLI default), `--pose yolo` |
+| `vitpose` | transformers, torch | `--pose vit` (ViTPose, Apache-2.0 weights) |
+| `asr` | transformers, torch | voice triggers (Whisper, `asr_model`) |
+| `vlm` | anthropic | `autocalib --backend vlm` |
+
+Asking for a backend whose extra is missing fails at once with an `ImportError` that
+names the extra (`pip install 'courtcam[yolo]'`).
+
+### Licence
+
+courtcam's own code is MIT and its required dependencies are permissive (Apache-2.0 /
+BSD / MIT). The `yolo` extra installs **ultralytics, which is AGPL-3.0** (code and
+YOLO11 weights). courtcam does not vendor it and imports it only when a YOLO path is
+asked for, but anything you *distribute* with the `yolo` extra installed is subject to
+the AGPL (or an Ultralytics enterprise licence). Without it, use `--detector synthetic`
+or plug in your own `Detector` (any callable that yields `FrameDets`, see `detect.py`).
 
 Needs `ffmpeg` and `ffprobe` on `PATH`. The H.264 encoder is picked at run time
 (`libx264`, else `libopenh264`, else `h264_qsv`) — not every distro ships libx264.
@@ -283,6 +304,9 @@ defaults to the first entry.
 uv run pytest courtcam/tests -q     # ~15 s; no model weights needed
 uv run ruff check courtcam/
 ```
+
+The suite needs no extra: it passes in a venv with only `courtcam[dev]` installed
+(no ultralytics, torch or transformers).
 
 The suite regenerates the synthetic clip if `samples/synthetic/basketball_half/` is
 missing, runs the whole pipeline over it with `--detector synthetic`, validates every

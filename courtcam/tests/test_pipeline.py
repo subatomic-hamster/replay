@@ -115,6 +115,23 @@ def test_matches_the_golden_within_tolerance(game: Game, pipeline_out: Path):
     assert abs(n_events - golden["events"]) <= EVENT_TOL
 
 
+def test_model_backends_without_their_extra_fail_naming_it(monkeypatch):
+    import sys
+
+    from courtcam import detect, pose
+    from courtcam.profiles import DetectionCfg, PoseCfg
+
+    # a None entry makes importlib.util.find_spec report the module as missing
+    monkeypatch.setitem(sys.modules, "ultralytics", None)
+    monkeypatch.setitem(sys.modules, "transformers", None)
+    with pytest.raises(ImportError, match=r"courtcam\[yolo\].*AGPL"):
+        detect.make_detector("yolo", DetectionCfg())
+    with pytest.raises(ImportError, match=r"courtcam\[yolo\]"):
+        pose.yolo_poser(PoseCfg())
+    with pytest.raises(ImportError, match=r"courtcam\[vitpose\]"):
+        pose.vitpose_poser(PoseCfg())
+
+
 def test_detection_moves_to_the_gpu_model_only_when_there_is_a_gpu(monkeypatch):
     from courtcam import detect
     from courtcam.profiles import DetectionCfg

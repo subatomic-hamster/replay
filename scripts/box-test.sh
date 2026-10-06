@@ -11,6 +11,26 @@ CPU="flock /workspace/wt/replay-env/.cpu.lock"
 PW="flock /workspace/wt/replay-env/.pw.lock" # fixed ports 5177/5178/8000: one run box-wide
 cd "$d" || exit 1
 
+# Playwright's `reuseExistingServer` silently tests whatever already listens on a dev-server
+# port (a stale vite from another copy once held 5181 for 3 h). Run this INSIDE the pw lock,
+# right before playwright: fails, naming the port and the owning PID, if a port is taken.
+# Never kills anything. Ports are read from the playwright config (the non-opt-in ones).
+# Reads /proc/net/tcp{,6} (no ss/lsof on the box); on a runner the ports are simply free.
+cfg_ports() { grep -hoE "^const (PORT|LIVE_PORT|API_PORT) = [0-9]+" "$1" | grep -oE "[0-9]+$" | tr '\n' ' '; }
+port_guard() {
+  local p ino pid rc=0
+  for p in "$@"; do
+    ino=$(awk -v h=$(printf ':%04X$' "$p") '$4 == "0A" && $2 ~ h {print $10; exit}' /proc/net/tcp /proc/net/tcp6 2>/dev/null)
+    [ -n "$ino" ] || continue
+    pid=$(find /proc/[0-9]*/fd -lname "socket:\[$ino\]" 2>/dev/null | head -1 | cut -d/ -f3)
+    echo "PORT GUARD: port $p is already in use (owner pid ${pid:-unknown, not readable}): $(tr '\0' ' ' </proc/${pid:-0}/cmdline 2>/dev/null | cut -c1-120)" >&2
+    echo "  Playwright would reuse that server and test someone else's code. Stop it yourself; not killing." >&2
+    rc=1
+  done
+  return $rc
+}
+export -f port_guard
+
 failed=()
 step() {
   local name=$1
@@ -30,12 +50,14 @@ step infra "cd infra && npm ci --no-audit --no-fund >/dev/null && npx tsc --noEm
 step web-install "cd apps/web && pnpm install --frozen-lockfile >/dev/null"
 step tsc "cd apps/web && pnpm exec tsc --noEmit"
 step eslint "cd apps/web && pnpm exec eslint ."
-step playwright "cd apps/web && $PW pnpm exec playwright test --project=chromium --project=live --workers=4"
+step playwright "cd apps/web && $PW bash -c 'port_guard $(cfg_ports apps/web/playwright.config.ts) && pnpm exec playwright test --project=chromium --project=live --workers=4'"
 # apps/tv has its own pnpm workspace, lockfile and react-native-video patch
 step tv-install "cd apps/tv && pnpm install --frozen-lockfile --offline >/dev/null"
 step tv-tsc "cd apps/tv && pnpm exec tsc --noEmit"
 step tv-eslint "cd apps/tv && pnpm exec eslint ."
-step tv-playwright "cd apps/tv && $PW pnpm exec playwright test --project=tv"
+# shaders + SceneMath of the native scene view (needs glslangValidator and the Gradle cache's Kotlin)
+step scene-check 'if command -v glslangValidator >/dev/null; then source /workspace/wt/replay-env/android/env.sh && bash apps/tv/android/scene-check.sh; else echo "skipped: glslangValidator not installed"; fi'
+step tv-playwright "cd apps/tv && $PW bash -c 'port_guard $(cfg_ports apps/tv/playwright.config.ts) && pnpm exec playwright test --project=tv'"
 
 echo
 if [ ${#failed[@]} -eq 0 ]; then

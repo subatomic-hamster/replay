@@ -87,6 +87,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec eslint .
+      # Native scene view shaders (GLSL ES 1.00). glslang-tools is a few MB. The other half of
+      # android/scene-check.sh (SceneMath on the JVM) needs the Kotlin compiler from a warm
+      # Gradle cache, which a fresh runner lacks, so it runs only in scripts/box-test.sh.
+      - name: native scene shaders compile
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends glslang-tools && glslangValidator android/app/src/main/assets/scene/*.vert android/app/src/main/assets/scene/*.frag
       - run: pnpm exec playwright install --with-deps chromium
       - name: playwright (tv project)
         run: pnpm exec playwright test --project=tv

@@ -30,6 +30,8 @@ REPLAY_API_BASE=http://192.168.1.20:8000 ./gradlew assembleRelease   # REPLAY_AP
 # → app/build/outputs/apk/release/app-release.apk
 ```
 
+- **Prebuilt APK (box, not committed):** `/workspace/wt/replay-ops/apk/replay-tv-0.2.0-scene-release.apk`,
+  built from d352ad3 (Free view JS + native GL scene view, D-77), debug-signed. Copy it off the box and skip the build.
 - **`REPLAY_API_BASE`** (env var or `-PREPLAY_API_BASE=`) is the address baked in as the
   default. Leave it out and the app opens Settings on first run. Either way the address can
   be changed on the TV without a rebuild (section 4).

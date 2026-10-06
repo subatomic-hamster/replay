@@ -1,0 +1,109 @@
+[
+ {
+  "name": "ingest",
+  "after": [],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "calibrate",
+  "after": [
+   "ingest"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "detect",
+  "after": [
+   "ingest"
+  ],
+  "resource": "gpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "track",
+  "after": [
+   "detect"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "court",
+  "after": [
+   "track",
+   "calibrate"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "identity",
+  "after": [
+   "court"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "tracks",
+  "after": [
+   "identity"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "crops",
+  "after": [
+   "identity"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "events",
+  "after": [
+   "identity"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "game",
+  "after": [
+   "ingest",
+   "calibrate",
+   "detect",
+   "track",
+   "court",
+   "identity",
+   "tracks",
+   "crops",
+   "events"
+  ],
+  "resource": "io",
+  "fanout": false,
+  "cached": false,
+  "default": true
+ }
+]

@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from . import pipeline_adapter as adapter
+from . import providers
 from . import stats as stats_mod
 from .config import Settings, from_env
 from .providers.index import LocalIndex
@@ -260,11 +261,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Replay API", version="1.0")
     app.state.settings = s
-    app.state.storage = LocalStorage(s.games_dir)
-    app.state.index = LocalIndex(app.state.storage)
-    app.state.jobs = LocalJobs(s.jobs_state_path)
+    # REPLAY_PROVIDER_<NAME>=local|aws picks each implementation (providers/__init__.py)
+    app.state.storage = providers.create("storage", games_dir=s.games_dir)
+    app.state.index = providers.create("index", storage=app.state.storage)
+    app.state.jobs = providers.create("jobs", state_path=s.jobs_state_path)
     app.state.labeler = get_labeler(s.labeler)
     app.state.query = get_query_engine(s.query)
+    for name in ("tts", "llm", "embeddings", "face", "speaker"):
+        setattr(app.state, name, providers.create(name))
     app.state.sessions: dict[str, dict] = {}
 
     @app.middleware("http")
@@ -302,6 +306,7 @@ def _register_routes(app: FastAPI) -> None:
                 "query": s.query,
                 "pipeline": s.pipeline,
             },
+            "provider_kinds": {name: providers.kind(name) for name in providers.REGISTRY},
             "auth": bool(s.api_key),
         }
 

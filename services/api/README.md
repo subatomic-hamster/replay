@@ -33,7 +33,8 @@ uv run --package replay-api pytest services/api/tests -q
 | `REPLAY_QUERY` | `rules` | query engine provider |
 | `REPLAY_DATA_DIR` | `<repo>/data` | games live in `<data>/games/{id}/`, jobs in `<data>/jobs.json` |
 | `REPLAY_CORS_ORIGINS` | `*` | comma-separated origins |
-| `REPLAY_PIPELINE` | `courtcam` | `fake` copies a fixture output tree instead of running the pipeline |
+| `REPLAY_PIPELINE` | `courtcam` | `fake` copies a fixture output tree instead of running the pipeline; `worker` runs courtcam through services/worker (content-hash cache, GPU lock), falling back to `courtcam` if `replay_worker` is not importable |
+| `REPLAY_PROVIDER_<NAME>` | `local` | `local` or `aws` per provider (storage, index, jobs, labeler, query, tts, llm, embeddings, face, speaker); AWS ones are stubs (docs/aws-integrations.md) |
 | `REPLAY_FAKE_PIPELINE_DIR` | `fixtures/fake_game` | the tree fake mode copies |
 | `REPLAY_FAKE_PIPELINE_DELAY_S` | `0` | fake mode only: seconds each stage stays `running` (S-08) |
 | `REPLAY_DETECTOR` | `yolo` | passed through to courtcam |
@@ -74,7 +75,9 @@ replay_api/
   main.py              app factory, routes, job tasks
   pipeline_adapter.py  the ONLY module that imports courtcam (+ fake mode)
   stats.py             derived stats
-  providers/           storage, index, jobs, labeler, query (Protocol + local impl)
+  providers/           one module per provider (Protocol + local impl): storage, index,
+                       jobs, labeler, query, tts, llm, embeddings, face, speaker;
+                       aws.py = every AWS stub; __init__.py = REPLAY_PROVIDER_* selection
 fixtures/
   fake_game/           schema-valid output tree (2 players, 20 s @ 10 Hz, 4 events)
   tiny.mp4             20 s 1280×720 30 fps test video

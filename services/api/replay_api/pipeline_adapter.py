@@ -1,4 +1,8 @@
-"""The ONLY module that imports `courtcam`.
+"""The ONLY module that imports `courtcam` (and `replay_worker`, which wraps it).
+
+`REPLAY_PIPELINE=worker` runs the same courtcam stages through services/worker: a
+content-hash cache (an unchanged re-process is all cache hits) and the box GPU lock.
+If `replay_worker` is not importable it falls back to calling courtcam directly.
 
 courtcam interface used here (verified against courtcam/courtcam/ on 2026-09-22):
 
@@ -57,6 +61,7 @@ def stage_names(pipeline: str) -> tuple[str, ...]:
         except Exception:  # noqa: BLE001, S110
             pass
     return FAKE_STAGES
+
 
 # Pipeline-owned keys of game.json (§4.5). Identity keys (id/title/sport/court/...) are
 # owned by the API and survive a re-process.
@@ -330,6 +335,32 @@ def run(
 ) -> dict:
     """Process `input_path` into `out_dir`; return the game.json keys the pipeline owns."""
     court = game.get("court") or {}
+    if pipeline == "worker":
+        try:
+            from courtcam.pipeline import STAGES  # type: ignore
+            from replay_worker import run as run_worker  # type: ignore
+        except Exception as exc:  # noqa: BLE001
+            log.warning("replay_worker unavailable (%s); running courtcam directly", exc)
+        else:
+            _prepare_for_courtcam(Path(out_dir), game)
+            run_worker(
+                Path(out_dir),
+                {
+                    "source": str(input_path),
+                    "sport": game.get("sport", "basketball"),
+                    "variant": court.get("variant"),
+                    "landmarks_px": court.get("landmarks_px") or None,
+                    "detector": detector,
+                    "title": game.get("title"),
+                    "game_id": game.get("id"),
+                    "recorded_at": game.get("recorded_at"),
+                },
+                # one CPU task at a time keeps the reported stage order monotonic (D-17)
+                cpu_workers=1,
+                # the worker's own `game` bookkeeping stage is not a status-page stage
+                progress=lambda s, f: progress(s, f) if s in STAGES else None,
+            )
+            return _pipeline_keys(Path(out_dir) / "game.json")
     if pipeline != "fake":
         try:
             from courtcam.pipeline import run as run_pipeline  # type: ignore

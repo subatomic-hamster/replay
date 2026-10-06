@@ -1,0 +1,42 @@
+Worker content-hash cache on the SYNTHETIC sample (samples/synthetic/basketball_half,
+generated, no real footage). Produced on hfbox by running, twice in a row from the laptop:
+
+    make demo BOX_DIR=/workspace/wt/replay-platform
+
+which syncs, then runs on the box
+    python -m replay_worker run samples/synthetic/basketball_half/clip.mp4 \
+        --out data/games/g_synth_basketball_half --game-id g_synth_basketball_half \
+        --title "Synthetic half court (generated)" --detector synthetic
+and rsyncs the game dir back to the laptop's data/games/. Output copied verbatim
+(2026-10-06). The first run misses because courtcam's source had changed since the last
+run (stage version = hash of courtcam sources); the second run, with nothing changed,
+is all hits and never calls a stage.
+
+--- run 1 (20261006T044715-eced)
+ingest           cpu  miss      0.70s
+calibrate        cpu  miss      0.03s
+detect           cpu  miss      0.05s
+track            cpu  miss      0.02s
+court            cpu  miss      0.02s
+identity         cpu  miss      0.12s
+tracks           cpu  miss      0.10s
+crops            cpu  miss      0.14s
+events           cpu  miss      0.15s
+game             io   off       0.01s
+10 tasks: 9 miss, 0 hit; log data/games/g_synth_basketball_half/_work/worker.jsonl
+
+--- run 2 (20261006T044723-6d59)
+ingest           cpu  hit       0.00s
+calibrate        cpu  hit       0.00s
+detect           cpu  hit       0.00s
+track            cpu  hit       0.00s
+court            cpu  hit       0.00s
+identity         cpu  hit       0.00s
+tracks           cpu  hit       0.00s
+events           cpu  hit       0.00s
+crops            cpu  hit       0.00s
+game             io   off       0.02s
+10 tasks: 0 miss, 9 hit; log data/games/g_synth_basketball_half/_work/worker.jsonl
+
+("detect" is cpu here because --detector synthetic reads the generator's ground truth;
+with YOLO it is a gpu task under /workspace/airtools/.gpu.lock — see docs/perf.md.)

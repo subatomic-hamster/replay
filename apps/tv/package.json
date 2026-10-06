@@ -11,6 +11,14 @@
     "lint": "eslint .",
     "e2e": "playwright test"
   },
+  "codegenConfig": {
+    "name": "ReplayTvSpecs",
+    "type": "modules",
+    "jsSrcsDir": "specs",
+    "android": {
+      "javaPackageName": "com.replaytv.specs"
+    }
+  },
   "dependencies": {
     "react": "19.2.3",
     "react-dom": "19.2.3",

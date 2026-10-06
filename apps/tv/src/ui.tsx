@@ -88,20 +88,28 @@ export function Hint({ children }: { children: ReactNode }) {
 
 /** E-22: every screen that fetches renders this instead of a blank screen. */
 export function ApiErrorBanner({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  // Right reaches Settings: a wrong API address must be fixable from here.
+  const [onSettings, setOnSettings] = useState(false);
   useDpad(
     useCallback(
       (a) => {
-        if (a === "select") onRetry();
-        else if (a === "back") navigate({ name: "library" });
+        if (a === "left" || a === "right") setOnSettings(a === "right");
+        else if (a === "select") {
+          if (onSettings) navigate({ name: "settings" });
+          else onRetry();
+        } else if (a === "back") navigate({ name: "library" });
       },
-      [onRetry],
+      [onRetry, onSettings],
     ),
   );
   return (
     <View style={styles.screen} testID="api-error">
       <T style={{ fontSize: font.h2 }}>Could not reach the Replay API.</T>
       <T style={{ color: color.dim }}>{error.message}</T>
-      <Pill label="Retry" focused style={{ alignSelf: "flex-start", marginTop: px(24) }} />
+      <View style={{ flexDirection: "row", marginTop: px(24) }}>
+        <Pill label="Retry" focused={!onSettings} testID="api-error-retry" />
+        <Pill label="Settings" focused={onSettings} testID="api-error-settings" />
+      </View>
     </View>
   );
 }

@@ -3,6 +3,7 @@
 // package (those stay in src/platform/ and playback/PlayerSurface's Media).
 import { useState } from "react";
 import { StatusBar, StyleSheet, View } from "react-native";
+import { apiBase } from "./api";
 import { navigate, useRoute, type Route } from "./nav";
 import { usePlatformKeys } from "./platform/keys";
 import { Advice } from "./screens/Advice";
@@ -16,12 +17,14 @@ import { Players } from "./screens/Players";
 import { Profile } from "./screens/Profile";
 import { Replay, ReplayList } from "./screens/Replay";
 import { Review } from "./screens/Review";
+import { Settings } from "./screens/Settings";
 import { Watch } from "./screens/Watch";
 import { color } from "./theme";
 
 export function App({ initial }: { initial?: Route }) {
-  // Seed the route once, before the first render reads it.
-  useState(() => initial && navigate(initial));
+  // Seed the route once, before the first render reads it. No API address yet (a build
+  // without REPLAY_API_BASE, first run): Settings first.
+  useState(() => navigate(initial ?? (apiBase() ? { name: "library" } : { name: "settings" })));
   usePlatformKeys();
   const route = useRoute();
 
@@ -61,6 +64,8 @@ function screen(r: Route) {
       return <Players from={r.from} />;
     case "profile":
       return <Profile key={r.profileId} profileId={r.profileId} from={r.from} />;
+    case "settings":
+      return <Settings />;
   }
 }
 

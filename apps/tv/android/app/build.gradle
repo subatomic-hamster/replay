@@ -72,7 +72,33 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+/** A gradle property (-P or ~/.gradle/gradle.properties) or else an env var; null if blank. */
+def setting(String name) {
+    def v = project.findProperty(name) ?: System.getenv(name)
+    return v?.toString()?.trim() ?: null
+}
+
+// Default Replay API base baked into the APK (the Settings screen overrides it on the
+// device). Empty = the app opens Settings on first run.
+def replayApiBase = setting("REPLAY_API_BASE") ?: ""
+if (!(replayApiBase ==~ /^(https?:\/\/[A-Za-z0-9.\-]+(:\d+)?(\/[A-Za-z0-9._\-\/]*)?)?$/)) {
+    throw new GradleException("REPLAY_API_BASE must look like http://192.168.1.20:8000, got: ${replayApiBase}")
+}
+
+// Release signing from outside the repo (docs/fire-tv.md). Without all four, the release
+// APK is signed with the debug key, which is fine for side-loading but not for a store.
+def releaseStore = setting("REPLAY_RELEASE_STORE_FILE")
+def releaseSigning = [releaseStore, setting("REPLAY_RELEASE_STORE_PASSWORD"),
+                      setting("REPLAY_RELEASE_KEY_ALIAS"), setting("REPLAY_RELEASE_KEY_PASSWORD")]
+def hasReleaseKey = releaseSigning.every { it != null }
+if (hasReleaseKey && !file(releaseStore).isFile()) {
+    throw new GradleException("REPLAY_RELEASE_STORE_FILE does not exist: ${releaseStore}")
+}
+
 android {
+    buildFeatures {
+        buildConfig true
+    }
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
@@ -84,6 +110,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        buildConfigField "String", "REPLAY_API_BASE", "\"${replayApiBase}\""
     }
     signingConfigs {
         debug {
@@ -92,18 +119,33 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (hasReleaseKey) {
+            release {
+                storeFile file(releaseSigning[0])
+                storePassword releaseSigning[1]
+                keyAlias releaseSigning[2]
+                keyPassword releaseSigning[3]
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
+    }
+}
+
+// Warn only when a release is actually being built, not on every configuration.
+gradle.taskGraph.whenReady { graph ->
+    if (!hasReleaseKey && graph.allTasks.any { it.name.toLowerCase().contains("release") }) {
+        logger.warn("WARNING: REPLAY_RELEASE_STORE_FILE / _STORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD " +
+            "are not all set: the release APK is signed with the DEBUG keystore (side-load only). " +
+            "See docs/fire-tv.md.")
     }
 }
 

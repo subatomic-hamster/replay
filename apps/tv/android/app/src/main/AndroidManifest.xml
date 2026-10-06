@@ -7,7 +7,8 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
-    <!-- Cleartext: the Replay API is a LAN http service (apps/tv/app.json apiBase). -->
+    <!-- Cleartext: the Replay API is a LAN http service (address set on the Settings screen,
+         default REPLAY_API_BASE at build time; docs/fire-tv.md). -->
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"

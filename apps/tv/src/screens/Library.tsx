@@ -14,12 +14,19 @@ export function Library() {
   const [focus, setFocus] = useState(0);
   const games = useMemo(() => data ?? [], [data]);
 
-  // focus -1 is the "Players" pill above the cards (Up/Left from the first card).
+  // The top row above the cards (Up/Left from the first card): focus -1 is "Players",
+  // -2 "Settings" to its right.
   const onAction = useCallback(
     (a: DpadAction) => {
       if (a === "back") return false;
-      if (a === "select" && focus === -1) navigate({ name: "players" });
-      else if (a === "right" || a === "down") setFocus((i) => Math.min(games.length - 1, i + 1));
+      if (focus < 0) {
+        if (a === "select") navigate({ name: focus === -1 ? "players" : "settings" });
+        else if (a === "right") setFocus(-2);
+        else if (a === "left") setFocus(-1);
+        else if (a === "down" && games.length) setFocus(0);
+        return;
+      }
+      if (a === "right" || a === "down") setFocus((i) => Math.min(games.length - 1, i + 1));
       else if (a === "left" || a === "up") setFocus((i) => Math.max(-1, i - 1));
       else if (a === "select" && games[focus]) {
         const g = games[focus];
@@ -38,6 +45,7 @@ export function Library() {
       <View style={styles.head}>
         <T style={[ui.h1, { marginBottom: 0, marginRight: px(32) }]}>Replay</T>
         <Pill label="Players" focused={focus === -1} testID="library-players" />
+        <Pill label="Settings" focused={focus === -2} testID="library-settings" />
       </View>
       {data && games.length === 0 ? (
         <T testID="library-empty">No games yet. Upload one from your phone at /upload.</T>
@@ -72,7 +80,7 @@ export function Library() {
           );
         })}
       </View>
-      <Hint>Arrows move · Select opens a game · Up reaches Players · Back exits</Hint>
+      <Hint>Arrows move · Select opens a game · Up reaches Players and Settings · Back exits</Hint>
     </View>
   );
 }

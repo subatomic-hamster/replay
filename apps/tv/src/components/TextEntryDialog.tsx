@@ -16,9 +16,11 @@ interface Props {
   onSubmit: (value: string) => void;
   onCancel: () => void;
   dataSet?: Record<string, string>;
+  /** Key rows; a key types its label lowercased (a label may be several characters). */
+  keys?: string[][];
 }
 
-const LETTER_ROWS = ["ABCDEFGHIJ", "KLMNOPQRST", "UVWXYZ'-"];
+const LETTER_ROWS = ["ABCDEFGHIJ", "KLMNOPQRST", "UVWXYZ'-"].map((r) => [...r]);
 
 type Cell = { kind: "preset" | "char" | "space" | "del" | "save" | "cancel"; label: string };
 
@@ -31,6 +33,7 @@ export function TextEntryDialog({
   onSubmit,
   onCancel,
   dataSet,
+  keys = LETTER_ROWS,
 }: Props) {
   const [value, setValue] = useState(initial ?? "");
   const [row, setRow] = useState(0);
@@ -38,7 +41,7 @@ export function TextEntryDialog({
 
   const grid: Cell[][] = [
     presets.map((label): Cell => ({ kind: "preset", label })),
-    ...LETTER_ROWS.map((r) => [...r].map((label): Cell => ({ kind: "char", label }))),
+    ...keys.map((r) => r.map((label): Cell => ({ kind: "char", label }))),
     [
       { kind: "space", label: "SPACE" },
       { kind: "del", label: "DEL" },

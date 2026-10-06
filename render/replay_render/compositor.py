@@ -10,6 +10,7 @@ package and the replay sting, and pipe BGR frames to ffmpeg. Audio is mixed sepa
 from __future__ import annotations
 
 import bisect
+import os
 import shutil
 import subprocess
 import time
@@ -401,12 +402,7 @@ def render(
     mix = audio_mod.mix(src_path, t0, t1, replays, narration=narration)
     wav = out_path.with_suffix(".mix.wav")
     audio_mod.write_wav(wav, mix)
-    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
-    subprocess.run(
-        [ffmpeg, "-y", "-v", "error", "-i", str(tmp_video), "-i", str(wav), "-c:v", "copy",
-         "-c:a", "aac", "-b:a", audio_bitrate, "-shortest", "-movflags", "+faststart", str(out_path)],
-        check=True,
-    )  # fmt: skip
+    _mux(tmp_video, wav, out_path, audio_bitrate)
     tmp_video.unlink(missing_ok=True)
     wav.unlink(missing_ok=True)
     if progress:
@@ -419,6 +415,20 @@ def render(
         "size": [out_w, out_h],
         "replays": len([r for r in replays if r[1] > t0 and r[0] < t1]),
     }
+
+
+def _mux(video: Path, wav: Path, out_path: Path, audio_bitrate: str) -> None:
+    """video + wav → out_path (AAC, faststart). Written next to the target, then renamed:
+    the API reports a render "done" as soon as out_path exists, and a player must never
+    load a half-written file."""
+    part = out_path.with_suffix(".part.mp4")
+    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+    subprocess.run(
+        [ffmpeg, "-y", "-v", "error", "-i", str(video), "-i", str(wav), "-c:v", "copy",
+         "-c:a", "aac", "-b:a", audio_bitrate, "-shortest", "-movflags", "+faststart", str(part)],
+        check=True,
+    )  # fmt: skip
+    os.replace(part, out_path)
 
 
 def render_segments(
@@ -474,12 +484,7 @@ def render_segments(
             part[-fade:] *= ramp[::-1]
         parts.append(part)
     wav = audio_mod.write_wav(out_path.with_suffix(".mix.wav"), np.concatenate(parts))
-    ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
-    subprocess.run(
-        [ffmpeg, "-y", "-v", "error", "-i", str(tmp_video), "-i", str(wav), "-c:v", "copy",
-         "-c:a", "aac", "-b:a", audio_bitrate, "-shortest", "-movflags", "+faststart", str(out_path)],
-        check=True,
-    )  # fmt: skip
+    _mux(tmp_video, wav, out_path, audio_bitrate)
     tmp_video.unlink(missing_ok=True)
     wav.unlink(missing_ok=True)
     if progress:

@@ -1,0 +1,31 @@
+{
+ "synthetic": true,
+ "milestone": "M5",
+ "date": "2026-10-06",
+ "host": "hfbox (AMD RX 9070 XT, ROCm), shared venv /workspace/wt/replay-env/venv",
+ "code_state": "laptop working tree at HEAD 5b5bd2b plus uncommitted WIP; courtcam files differing from HEAD: detect.py, pose.py, triggers.py (optional-extra import guards via new extras.py), pyproject.toml, README.md, tests/test_pipeline.py; none changes detection, pose, events, triggers or plays logic",
+ "data": "synthetic only: 9 clips generated now by `courtcam synth --duration 90` (1280x720, 30 fps), seeds 7 and 11",
+ "clips": ["basketball_half_s7", "basketball_half_s11", "basketball_full_s7", "badminton_doubles_s7", "badminton_doubles_s11", "pickleball_doubles_s7", "pickleball_doubles_s11", "volleyball_indoor_s7", "volleyball_indoor_s11"],
+ "models": {
+  "detector": "yolo11m (profile default)",
+  "pose": "yolo11m-pose; ViTPose = usyd-community/vitpose-base-simple (local copy)",
+  "asr": "openai/whisper-small"
+ },
+ "commands": "docs/evidence/M4/eval/run_metrics.sh gen | gt | yolo | vit | mot; agg.py; split.py (see docs/evidence/M4/README.md)",
+ "metrics": {
+  "synthetic_detector_gt_poses": {
+   "gesture": {"tp": 16, "fp": 26, "fn": 6, "by_ok": 16, "clip_ok": 11, "precision": 0.381, "recall": 0.727},
+   "voice": {"tp": 37, "fp": 0, "fn": 0, "subject_needed": 18, "subject_ok": 18, "clip_ok": 30, "precision": 1.0, "recall": 1.0},
+   "tap": {"n": 14, "clip_ok": 10},
+   "resolve_rule_on_gt": {"ok": 73, "n": 73}
+  },
+  "yolo_detect_yolo_pose": {
+   "gesture": {"tp": 0, "fp": 0, "fn": 22, "by_ok": 0, "clip_ok": 0, "precision": null, "recall": 0.0},
+   "voice": {"tp": 37, "fp": 0, "fn": 0, "subject_needed": 18, "subject_ok": 16, "clip_ok": 31, "precision": 1.0, "recall": 1.0},
+   "tap": {"n": 14, "clip_ok": 9}
+  },
+  "accuracy_pass_vitpose": {
+   "gesture": {"tp": 9, "fp": 0, "fn": 13, "by_ok": 9, "clip_ok": 8, "precision": 1.0, "recall": 0.409}
+  }
+ }
+}

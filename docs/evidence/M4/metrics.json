@@ -1,0 +1,43 @@
+{
+ "synthetic": true,
+ "milestone": "M4",
+ "date": "2026-10-06",
+ "host": "hfbox (AMD RX 9070 XT, ROCm), shared venv /workspace/wt/replay-env/venv",
+ "code_state": "laptop working tree at HEAD 5b5bd2b plus uncommitted WIP; courtcam files differing from HEAD: detect.py, pose.py, triggers.py (optional-extra import guards via new extras.py), pyproject.toml, README.md, tests/test_pipeline.py; none changes detection, pose, events, triggers or plays logic",
+ "data": "synthetic only: 9 clips generated now by `courtcam synth --duration 90` (1280x720, 30 fps), seeds 7 and 11",
+ "clips": ["basketball_half_s7", "basketball_half_s11", "basketball_full_s7", "badminton_doubles_s7", "badminton_doubles_s11", "pickleball_doubles_s7", "pickleball_doubles_s11", "volleyball_indoor_s7", "volleyball_indoor_s11"],
+ "models": {
+  "detector": "yolo11m (profile default)",
+  "pose": "yolo11m-pose; ViTPose = usyd-community/vitpose-base-simple (local copy)",
+  "asr": "openai/whisper-small"
+ },
+ "commands": "docs/evidence/M4/eval/run_metrics.sh gen | gt | yolo | vit | mot; agg.py; split.py (see docs/evidence/M4/README.md)",
+ "metrics": {
+  "synthetic_detector_gt_poses": {
+   "shot": {"tp": 18, "fp": 0, "fn": 9, "shooter_ok": 18, "made_known": 13, "made_ok": 13, "points_ok": 18, "team_ok": 18, "precision": 1.0, "recall": 0.667},
+   "shot_half_court": {"tp": 16, "fp": 0, "fn": 4, "precision": 1.0, "recall": 0.8},
+   "possession_change": {"tp": 24, "fp": 5, "fn": 6, "cause_ok": 18, "precision": 0.828, "recall": 0.8},
+   "play": {"tp": 64, "fp": 13, "fn": 17, "precision": 0.831, "recall": 0.79},
+   "contact": {"tp": 222, "fp": 22, "fn": 27, "hitter_ok": 121, "side_ok": 148, "precision": 0.91, "recall": 0.892},
+   "rally": {"tp": 35, "fp": 13, "fn": 17, "precision": 0.729, "recall": 0.673},
+   "point": {"tp": 38, "fp": 10, "fn": 14, "winner_known": 34, "winner_ok": 33, "precision": 0.792, "recall": 0.731},
+   "attack": {"tp": 3, "fp": 7, "fn": 3, "precision": 0.3, "recall": 0.5}
+  },
+  "yolo_detect_yolo_pose": {
+   "shot": {"tp": 21, "fp": 0, "fn": 6, "shooter_ok": 8, "made_known": 12, "made_ok": 10, "points_ok": 14, "team_ok": 19, "precision": 1.0, "recall": 0.778},
+   "shot_half_court": {"tp": 18, "fp": 0, "fn": 2, "precision": 1.0, "recall": 0.9},
+   "possession_change": {"tp": 22, "fp": 7, "fn": 8, "cause_ok": 13, "precision": 0.759, "recall": 0.733},
+   "play": {"tp": 63, "fp": 16, "fn": 18, "precision": 0.797, "recall": 0.778},
+   "contact": {"tp": 223, "fp": 22, "fn": 26, "hitter_ok": 60, "side_ok": 113, "precision": 0.91, "recall": 0.896},
+   "rally": {"tp": 36, "fp": 12, "fn": 16, "precision": 0.75, "recall": 0.692},
+   "point": {"tp": 37, "fp": 11, "fn": 15, "winner_known": 33, "winner_ok": 27, "precision": 0.771, "recall": 0.712},
+   "attack": {"tp": 1, "fp": 9, "fn": 5, "precision": 0.1, "recall": 0.167}
+  },
+  "accuracy_pass_vitpose": {
+   "shot": {"tp": 19, "fp": 0, "fn": 8, "shooter_ok": 5, "made_known": 10, "made_ok": 10, "points_ok": 16, "team_ok": 13, "precision": 1.0, "recall": 0.704},
+   "shot_half_court": {"tp": 17, "fp": 0, "fn": 3, "precision": 1.0, "recall": 0.85},
+   "possession_change": {"tp": 22, "fp": 7, "fn": 8, "cause_ok": 12, "precision": 0.759, "recall": 0.733},
+   "point": {"tp": 37, "fp": 11, "fn": 15, "winner_known": 33, "winner_ok": 24, "precision": 0.771, "recall": 0.712}
+  }
+ }
+}

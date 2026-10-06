@@ -1,0 +1,46 @@
+{
+ "synthetic": true,
+ "milestone": "M1",
+ "date": "2026-10-06",
+ "host": "hfbox (AMD RX 9070 XT, ROCm), shared venv /workspace/wt/replay-env/venv",
+ "code_state": "laptop working tree at HEAD 5b5bd2b plus uncommitted WIP; courtcam files differing from HEAD: detect.py, pose.py, triggers.py (optional-extra import guards via new extras.py), pyproject.toml, README.md, tests/test_pipeline.py; none changes detection, pose, events, triggers or plays logic",
+ "data": "synthetic only: 9 clips generated now by `courtcam synth --duration 90` (1280x720, 30 fps), seeds 7 and 11",
+ "clips": ["basketball_half_s7", "basketball_half_s11", "basketball_full_s7", "badminton_doubles_s7", "badminton_doubles_s11", "pickleball_doubles_s7", "pickleball_doubles_s11", "volleyball_indoor_s7", "volleyball_indoor_s11"],
+ "models": {
+  "detector": "yolo11m (profile default)",
+  "pose": "yolo11m-pose; ViTPose = usyd-community/vitpose-base-simple (local copy)",
+  "asr": "openai/whisper-small"
+ },
+ "commands": "docs/evidence/M4/eval/run_metrics.sh gen | gt | yolo | vit | mot; agg.py; split.py (see docs/evidence/M4/README.md)",
+ "metrics": {
+  "players_mot_yolo": {
+   "basketball_half_s7": {"mota": 0.6366, "idf1": 0.3104, "id_switches": 122, "precision": 0.9814, "recall": 0.6583, "gt_ids": 10, "pred_ids": 22, "court_err_m": {"median": 0.39, "p90": 0.662}},
+   "basketball_full_s7": {"mota": 0.4277, "idf1": 0.2453, "id_switches": 157, "precision": 0.956, "recall": 0.4606, "gt_ids": 10, "pred_ids": 28, "court_err_m": {"median": 0.468, "p90": 0.817}},
+   "pickleball_doubles_s7": {"mota": 0.9793, "idf1": 0.9895, "id_switches": 0, "precision": 1.0, "recall": 0.9793, "gt_ids": 4, "pred_ids": 4, "court_err_m": {"median": 0.268, "p90": 0.373}},
+   "badminton_doubles_s7": {"mota": 0.9944, "idf1": 0.9972, "id_switches": 0, "precision": 1.0, "recall": 0.9944, "gt_ids": 4, "pred_ids": 4, "court_err_m": {"median": 0.262, "p90": 0.364}},
+   "volleyball_indoor_s7": {"mota": 0.9089, "idf1": 0.7503, "id_switches": 37, "precision": 0.9953, "recall": 0.9156, "gt_ids": 12, "pred_ids": 13, "court_err_m": {"median": 0.315, "p90": 0.499}}
+  },
+  "players_mot_gt_detector": {
+   "basketball_half_s7": {"mota": 1.0, "idf1": 1.0, "id_switches": 0, "precision": 1.0, "recall": 1.0, "gt_ids": 10, "pred_ids": 10, "court_err_m": {"median": 0.2, "p90": 0.279}},
+   "basketball_full_s7": {"mota": 1.0, "idf1": 1.0, "id_switches": 0, "precision": 1.0, "recall": 1.0, "gt_ids": 10, "pred_ids": 10, "court_err_m": {"median": 0.299, "p90": 0.422}},
+   "pickleball_doubles_s7": {"mota": 1.0, "idf1": 1.0, "id_switches": 0, "precision": 1.0, "recall": 1.0, "gt_ids": 4, "pred_ids": 4, "court_err_m": {"median": 0.162, "p90": 0.233}},
+   "badminton_doubles_s7": {"mota": 1.0, "idf1": 1.0, "id_switches": 0, "precision": 1.0, "recall": 1.0, "gt_ids": 4, "pred_ids": 4, "court_err_m": {"median": 0.16, "p90": 0.233}},
+   "volleyball_indoor_s7": {"mota": 1.0, "idf1": 1.0, "id_switches": 0, "precision": 1.0, "recall": 1.0, "gt_ids": 12, "pred_ids": 12, "court_err_m": {"median": 0.166, "p90": 0.246}}
+  },
+  "detections_mot_yolo": {
+   "basketball_half_s7": {"mota": 0.7661, "idf1": 0.2696, "id_switches": 230, "precision": 0.9836, "recall": 0.7937, "gt_ids": 12, "pred_ids": 153},
+   "basketball_full_s7": {"mota": 0.5177, "idf1": 0.2999, "id_switches": 268, "precision": 0.9535, "recall": 0.5617, "gt_ids": 12, "pred_ids": 179},
+   "pickleball_doubles_s7": {"mota": 0.981, "idf1": 0.8726, "id_switches": 3, "precision": 1.0, "recall": 0.9814, "gt_ids": 6, "pred_ids": 9},
+   "badminton_doubles_s7": {"mota": 0.9698, "idf1": 0.9846, "id_switches": 0, "precision": 0.9999, "recall": 0.9699, "gt_ids": 6, "pred_ids": 7},
+   "volleyball_indoor_s7": {"mota": 0.9278, "idf1": 0.7114, "id_switches": 94, "precision": 0.9939, "recall": 0.9385, "gt_ids": 14, "pred_ids": 74}
+  },
+  "voice_asr_whisper_small_gt_run": {
+   "voice": {"tp": 37, "fp": 0, "fn": 0, "subject_needed": 18, "subject_ok": 18, "clip_ok": 30, "precision": 1.0, "recall": 1.0},
+   "voice_clips_all_heard": {"n": 9, "ok": 9}
+  },
+  "voice_asr_whisper_small_yolo_run": {
+   "voice": {"tp": 37, "fp": 0, "fn": 0, "subject_needed": 18, "subject_ok": 16, "clip_ok": 31, "precision": 1.0, "recall": 1.0},
+   "voice_clips_all_heard": {"n": 9, "ok": 9}
+  }
+ }
+}

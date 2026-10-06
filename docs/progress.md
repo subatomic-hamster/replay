@@ -119,3 +119,11 @@ Template:
 - Evidence: docs/evidence/M4/accuracy_timeline_yolo_*.png, docs/evidence/M5/accuracy_*_on_synthetic_x_holds.png · docs/evidence/local/{M1,M4,M5}/accuracy_* (Kennesaw)
 - Decisions: D-61.
 - Left / known issues: gesture recall 0.41 vs the 0.8 target (misses are players ≤ 56 px tall); ViTPose not default yet (deps + lock); tracking needs tracklet-level association (real ReID or a stronger small-player detector); real shot recall dropped; contact `side_ok` near chance; pickleball doubles second-server rule.
+
+## M12 — Tier D experiments (2026-10-06)
+
+- Works (experiments only, no product code): A) MoGe-2 point maps scaled onto the calibrated floor, SAM-masked players lifted to court metres, point-splat renders along the production Tier B camera paths, with a hybrid variant; B) VGGT multi-frame static court; C) dynamic splats feasibility. Write-up in docs/tier-d.md and `experiments/tierd-*/README.md`.
+- Verified on hfbox: experiment helper tests 2 passed. A: 0.141 s/frame, 3.19 GB; floor after scaling |z| median 0.02 m (CC) / 0.14 m (synthetic); synthetic players 0.62 / 1.51 m median / p90 position error vs Tier B 0.18 / 0.25 m; held-out cameras player IoU Tier B 0.35–0.80, Tier D raw 0.16–0.75, hybrid 0.38–0.75; floor PSNR Tier B 21–28 dB, hybrid 21–24.6 dB. B: 2.2–5.7 s for 8–32 frames, 8.8 GB; static camera found (≤ 26 mm); off-frustum coverage ≤ 1.4 %. C: gsplat fails without a CUDA/HIP toolkit (exact error in experiments/tierd-dynamic/README.md).
+- Evidence: docs/evidence/M12/ (synthetic + CC BY pickleball)
+- Decisions: D-62.
+- Left / known issues: synthetic court is out of distribution for MoGe (pessimistic numbers); CC clip judged qualitatively only (no ground truth); splat renderer has no anti-aliasing (≈ 4 dB floor PSNR lost); one highlight per clip; experiment tests are not part of the CI suites.

@@ -137,3 +137,10 @@ unenrolled people). Checked, 2026-10-06:
 Findings on court footage are in `docs/evidence/M10/README.md`: synthetic mannequins have no faces (0 usable), and on the CC clips
 only a few percent of person detections carry a face wide enough to embed, so face linking is a suggestion source for
 near-camera players, never the default linking path (manual links and same-name suggestions are).
+
+## 2026-10-06 (M12) — Tier D on the box
+
+- MoGe-2 ViT-L runs on ROCm with cudnn off: 0.14 s per 1080p frame, 3.2 GB GPU. Its metric scale is 10–18 % off on real footage and 1.5–3.8× off on the flat-shaded synthetic court, so depth is always rescaled onto the calibrated floor.
+- VGGT-1B runs in bf16: 5.7 s and 8.8 GB for 32 frames at 518×294. From a tripod there is no parallax, so it reconstructs nothing outside the camera frustum (≤ 1.4 % of off-frustum court cells covered).
+- gsplat cannot JIT without a CUDA/HIP toolkit (`gsplat: No CUDA toolkit found`), and the box has neither; shape-of-motion pins NVIDIA RAPIDS.
+- Details and the tier comparison: `docs/tier-d.md`.

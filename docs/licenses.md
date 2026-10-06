@@ -37,7 +37,10 @@ models, Qwen-research) = no, not even as a default; at most an opt-in extra that
 | gaussian-splatting (Inria/MPII) | Inria non-commercial research licence | same | Tier D experiments only | **No** | Experiments only, never shipped; permissive alternative: gsplat (Apache-2.0) |
 | shape-of-motion | MIT | depends on third-party models (check each) | Tier D experiment | Code yes | Experiments only |
 | monst3r / dust3r | CC-BY-NC-SA-4.0 | CC-BY-NC-SA-4.0 | Tier D experiment at most | **No** | Experiments only, never shipped |
-| VGGT, MoGe-2 (weights found in the shared HF cache) | check model cards before use | check | Tier D candidates | Not decided | Experiments only |
+| MoGe-2 (`microsoft/MoGe`; deps utils3d_moge, pipeline) | MIT | MIT (`Ruicheng/moge-2-vitl-normal`) | Tier D experiment (`experiments/tierd-pointmaps`); candidate plate-lifting stage | Not needed there (replay-side) | Yes (shippable) |
+| VGGT (facebookresearch) | Meta "VGGT License" v1 (custom, with acceptable-use policy) | **CC-BY-NC-4.0** (`facebook/VGGT-1B`); `VGGT-1B-Commercial` is gated (not downloaded) | Tier D experiment only (`experiments/tierd-vggt-static`) | **No** | Experiments only, never shipped |
+| gsplat-amd (AMD-Ecosystem) | Apache-2.0 | n/a | candidate for dynamic splats; needs the ROCm HIP SDK (not on the box), not installed | Yes | Not installed |
+| 4DGaussians | Apache-2.0 code, but Inria-derived non-commercial CUDA rasteriser submodules | n/a | not used | **No** | No |
 | librosa | ISC | n/a | audio onsets / hype detection | Yes | n/a |
 | PyAV | BSD-3-Clause | n/a (links FFmpeg LGPL build in wheels) | ingest | Yes | n/a |
 | FFmpeg static build with libx264 | GPL (libx264 / `--enable-gpl` build) | n/a | rendering on the box; run as subprocess only | Do not vendor the binary; call `ffmpeg` on PATH | n/a |

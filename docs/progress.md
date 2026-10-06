@@ -210,3 +210,18 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Evidence: docs/evidence/M1/README.md "Tracking v2", metrics_tracking_v2.json, eval_tracking_v2/ (scripts behind every number); local sheets in docs/evidence/local/M1/
 - Decisions: D-70.
 - Left / known issues: same-team swaps are invisible to jersey colour (perfect split + link ceiling IDF1 0.85 vs ≈ 0.37 now); needs an appearance embedding or a better tracker.
+
+## Events v2 (2026-10-06)
+
+- Root-caused the GT-pose shot drop since M4: the accuracy pass's lower arm line made synthetic releases longer than `release_max_s` (0.9 s); 1.0 restores GT shots to 23/27 at P 1.00 (YOLO and real Kennesaw unchanged). The M4-logged YOLO rally P 0.97 was a run with audio fusion on, not a code regression.
+- Works: rally end extension from audio onsets; pickleball side-out second-server rule (USA Pickleball 4.B.6); one-touch contact sides for badminton/pickleball.
+- Verified on hfbox, same harness, 9 clips, seeds 7 + 11, before = 005cf87 (YOLO "before" reproduces the committed M4 metrics.json exactly):
+  - GT poses: plays P/R 0.83/0.79 → 0.94/0.89; rallies 0.73/0.67 → 0.90/0.83; points 0.79/0.73 → 0.96/0.89; contact side right 148/222 → 209/239.
+  - YOLO: plays 0.80/0.78 → 0.90/0.88; rallies 0.75/0.69 → 0.90/0.83; points 0.77/0.71 → 0.96/0.89; contact side right 113/223 → 143/239.
+  - Contacts P 0.91 → 0.87 (landing onsets), R 0.89 → 0.96. Real badminton 240 s rallies unchanged (12/14, P 1.00, local).
+  - Synthetic pickleball `winner_side` drops (GT 12 → 9 of 13) because synth.py uses rally scoring; expected, not a regression in the rule.
+  - courtcam 191 passed on the agent's copy.
+- Not yet measured together with Tracking v2 (D-70): both were measured against 005cf87 separately.
+- Evidence: docs/evidence/M4/README.md "Events v2", metrics_events_v2.json, events_v2/ (scripts)
+- Decisions: D-71.
+- Left / known issues: volleyball attack P 0.30 / 0.10 untouched; synth.py should model side-out scoring; side-out assumes the clip starts a game; one_touch and extend_end untested on real pickleball; ViTPose branch not re-measured; commentary still says "Point to X" on a side-out rally.

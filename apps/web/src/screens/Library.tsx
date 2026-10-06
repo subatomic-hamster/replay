@@ -5,13 +5,7 @@ import { api } from "../api/client";
 import { useDpad } from "../platform/keys";
 import { navigate } from "../router";
 import { ApiErrorBanner, fmtDate, fmtDuration, useAsync } from "../ui";
-import type { GameSummary } from "../api/types";
-
-function statusText(g: GameSummary): string {
-  if (g.status === "ready") return "ready";
-  const running = Object.entries(g.stages ?? {}).find(([, v]) => v === "running");
-  return running ? `${running[0]}ing…` : g.status;
-}
+import { statusText } from "../../../../packages/tv-core/src/display";
 
 export function Library() {
   const { data, error, reload } = useAsync(() => api.listGames(), []);

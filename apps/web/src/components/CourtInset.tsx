@@ -2,6 +2,7 @@
 // template (§4.8: the app never branches on sport name). With no template we fall back
 // to a plain rectangle sized by the court variant.
 import type { CourtTemplate, Player, TrackPlayer } from "../api/types";
+import { courtViewBox } from "../../../../packages/tv-core/src/display";
 
 interface Props {
   court?: CourtTemplate;
@@ -16,13 +17,7 @@ const FALLBACK: Record<string, [number, number]> = {
   full: [15, 28],
 };
 
-/** A half court's origin is the baseline centre, so x runs -7.5..7.5: the viewBox has
- *  to start at the court's real minimum, not 0. */
-export function courtViewBox(court: CourtTemplate | undefined, w: number, h: number) {
-  const x = court?.x_range?.[0] ?? 0;
-  const y = court?.y_range?.[0] ?? 0;
-  return { x, y, attr: `${x} ${y} ${w} ${h}` };
-}
+export { courtViewBox };
 
 export function CourtInset({ court, variant, players, roster, selectedId }: Props) {
   const [w, h] = court?.size_m ?? FALLBACK[variant] ?? FALLBACK.half;

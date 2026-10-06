@@ -17,6 +17,6 @@ export const followcam: { mode: "client" | "rendition" } = {
 export const FORCE_SPOTLIGHT = import.meta.env.VITE_FORCE_SPOTLIGHT === "1";
 
 /** R5: events below this confidence and unconfirmed land in the review queue. */
-export const REVIEW_CONFIDENCE_THRESHOLD = 0.6;
+export { REVIEW_CONFIDENCE_THRESHOLD } from "../../../packages/tv-core/src/display";
 
 export const SEEK_STEP_S = 10;

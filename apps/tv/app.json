@@ -1,0 +1,5 @@
+{
+  "name": "ReplayTV",
+  "displayName": "Replay",
+  "apiBase": "http://192.168.1.10:8000"
+}

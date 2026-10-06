@@ -141,3 +141,21 @@ see the reference after each title.
 - Workaround: pass `-4` to every yt-dlp call
 - Suggestion (actionable): none for the project; environment issue worth remembering
 - Date / platform / SDK version: 2026-09-22 / Fedora Linux / yt-dlp 2026.08.19
+
+### FL-8: Metro cannot bundle shared TS outside the RN project root without `nodeModulesPaths`
+- Task attempted: `./gradlew assembleRelease` for apps/tv (react-native-tvos 0.87.1-1), whose
+  screens import pure TS from `packages/tv-core/` (shared with apps/web by relative path).
+- Steps taken: added `packages/tv-core` to Metro `watchFolders` (the documented step for
+  files outside the root); debug build (no JS bundling) succeeded, release bundling ran.
+- Expected: `watchFolders` is enough for plain TS with no imports of its own.
+- Actual: `createBundleReleaseJsAndAssets` failed with `Unable to resolve module
+  @babel/runtime/helpers/interopRequireDefault from packages/tv-core/src/display.ts` —
+  Babel injects runtime-helper imports into every transformed file, and Metro resolves them
+  from the file's own directory upward, where there is no node_modules.
+- Severity: blocker (release APK only; the debug APK and the web build were unaffected)
+- Workaround: `resolver.nodeModulesPaths: [<app>/node_modules]` in `apps/tv/metro.config.js`.
+- Suggestion (actionable): Metro's "files outside the project root" docs should say that
+  watched folders without their own node_modules also need `nodeModulesPaths` because of
+  injected Babel helpers; the error names a module the source never imports.
+- Date / platform / SDK version: 2026-10-06 / hfbox Ubuntu, Node 22.23, JDK 17.0.20.1 /
+  react-native-tvos 0.87.1-1, Metro 0.87, Gradle 9.4.1, AGP (RN 0.87 default)

@@ -7,30 +7,12 @@
 // `clock.ts` (§4.8 overlay sync rule) rather than React state, so it tracks at the video's
 // frame rate without re-rendering the Watch screen 30 times a second.
 import { useEffect, useRef } from "react";
-import type { CropPath, TrackPlayer } from "../api/types";
+import type { CropPath } from "../api/types";
 import type { TracksCache } from "../data/tracksCache";
 import type { Clock } from "../playback/clock";
+import { cropRectAt, mapBB } from "../../../../packages/tv-core/src/follow";
 
-/** The crop rect the follow-cam transform is using at time `t`. Mirrors PlayerSurface's
- *  index math, including E-12's clamp past the last rect. */
-export function cropRectAt(crop: CropPath, t: number): [number, number, number, number] {
-  const i = Math.min(
-    Math.max(Math.round((t - crop.t0) * crop.rate_hz), 0),
-    crop.rects.length - 1,
-  );
-  return crop.rects[i];
-}
-
-/** Frame-normalized box → viewport-normalized box under a crop rect. */
-export function mapBB(
-  bb: TrackPlayer["bb"],
-  rect: [number, number, number, number] | null,
-): TrackPlayer["bb"] {
-  if (!rect) return bb;
-  const [cx, cy, cw, ch] = rect;
-  if (cw <= 0 || ch <= 0) return bb;
-  return [(bb[0] - cx) / cw, (bb[1] - cy) / ch, bb[2] / cw, bb[3] / ch];
-}
+export { cropRectAt, mapBB };
 
 interface Props {
   pid: string;

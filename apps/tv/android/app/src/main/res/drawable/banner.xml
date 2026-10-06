@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 320x180 Android TV launcher banner: ink background, amber play mark. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path android:fillColor="#090B0E" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#FFB020" android:pathData="M130,50 L130,130 L200,90 Z" />
+</vector>

@@ -3,6 +3,7 @@
 // percentages of the player surface, which is exactly the video's rendered rect in
 // wide mode.
 import type { Player, TrackPlayer } from "../api/types";
+import { inkOn } from "../../../../packages/tv-core/src/display";
 
 interface Props {
   players: TrackPlayer[];
@@ -14,15 +15,6 @@ interface Props {
 }
 
 const pct = (v: number) => `${(v * 100).toFixed(3)}%`;
-
-/** The name label sits on the team colour, which ranges from navy to near-white, so the
- *  text colour is picked from the swatch's luminance rather than assumed. */
-function inkOn(hex: string): string {
-  const h = hex.replace("#", "");
-  if (h.length < 6) return "#000";
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45 ? "#0b0d10" : "#ffffff";
-}
 
 export function SelectOverlay({ players, roster, focusId, spotlight, showBoxes = true }: Props) {
   if (players.length === 0) {

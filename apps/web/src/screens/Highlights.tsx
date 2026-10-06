@@ -6,7 +6,8 @@ import { api } from "../api/client";
 import { useDpad, type DpadAction } from "../platform/keys";
 import { PlayerSurface, type PlayerHandle } from "../playback/PlayerSurface";
 import { useClockTime } from "../playback/clock";
-import { FALLBACK_CHIPS, QueryChips } from "../components/QueryChips";
+import { QueryChips } from "../components/QueryChips";
+import { highlightQueries } from "../../../../packages/tv-core/src/display";
 import { TextEntryDialog } from "../components/TextEntryDialog";
 import { navigate, useLocation } from "../router";
 import { storedSession, useSessionMessages } from "../session";
@@ -33,13 +34,7 @@ export function Highlights({ gameId }: { gameId: string }) {
 
   const t = useClockTime(handle?.clock ?? null, 1 / 10);
 
-  const queries = useMemo(() => {
-    const chips = game?.sport_ui?.chips?.length ? game.sport_ui.chips : FALLBACK_CHIPS;
-    const perPlayer = (game?.players ?? [])
-      .filter((p) => p.name)
-      .map((p) => `${p.name} — all shots`);
-    return [...perPlayer, ...chips, ASK_CHIP];
-  }, [game]);
+  const queries = useMemo(() => [...highlightQueries(game), ASK_CHIP], [game]);
 
   const run = useCallback(
     (text: string) => {

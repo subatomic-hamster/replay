@@ -35,14 +35,4 @@ export function ApiErrorBanner({ error, onRetry }: { error: Error; onRetry: () =
   );
 }
 
-export function fmtDuration(s?: number | null) {
-  if (!s && s !== 0) return "—";
-  const m = Math.floor(s / 60);
-  return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-}
-
-export function fmtDate(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString();
-}
+export { fmtDate, fmtDuration } from "../../../packages/tv-core/src/display";

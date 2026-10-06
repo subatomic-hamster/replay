@@ -1,0 +1,17 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+
+# Android build outputs (APKs stay on the build box)
+android/.gradle/
+android/build/
+android/app/build/
+android/.cxx/
+android/app/.cxx/
+android/.kotlin/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+!android/app/debug.keystore

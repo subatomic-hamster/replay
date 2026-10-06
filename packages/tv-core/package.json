@@ -1,0 +1,7 @@
+{
+  "name": "@replay/tv-core",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pure-TS TV client logic shared by apps/web (/tv) and apps/tv (React Native TV): API client + types + mock, spatial focus, media clock, follow-cam math, tracks cache. No dependencies; consumed by relative import.",
+  "type": "module"
+}

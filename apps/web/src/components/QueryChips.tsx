@@ -5,7 +5,7 @@ interface Props {
   activeChip?: string | null;
 }
 
-export const FALLBACK_CHIPS = ["All shots", "Makes", "Top plays"];
+export { FALLBACK_CHIPS } from "../../../../packages/tv-core/src/display";
 
 export function QueryChips({ chips, focusIndex, activeChip }: Props) {
   return (

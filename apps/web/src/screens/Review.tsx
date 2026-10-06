@@ -6,6 +6,7 @@ import { REVIEW_CONFIDENCE_THRESHOLD } from "../config";
 import { useDpad, type DpadAction } from "../platform/keys";
 import { navigate } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
+import { REVIEW_ACTIONS, reviewPanels } from "../../../../packages/tv-core/src/display";
 import type { GameEvent, Stats } from "../api/types";
 
 type HeatGrid = NonNullable<Stats["heatmap"]>[number];
@@ -59,24 +60,9 @@ function Heatmap({ grid, viewBox, size, polygons }: {
   );
 }
 
-// `source: "user"` is set by the API on any field the user changed (§4.5) — the client
-// does not get to claim provenance.
-const ACTIONS: { label: string; patch: Partial<GameEvent> }[] = [
-  { label: "Made", patch: { made: true, confirmed: true } },
-  { label: "Missed", patch: { made: false, confirmed: true } },
-  // D-11 "not a shot": v1 has no delete, so the event is flagged dismissed and drops
-  // out of query and stats while staying in events.json.
-  { label: "Not a shot", patch: { dismissed: true, confirmed: true } },
-];
+const ACTIONS = REVIEW_ACTIONS;
 
 const COURT_FALLBACK: [number, number] = [15, 14];
-
-// §4.8: no sport-name branching — the profile says which panels this sport has
-// (`sport_ui.review`, e.g. basketball `[shot_chart, heatmap]`, pickleball `[heatmap]`).
-// A profile that does not say gets all of them. The review queue is not in that list:
-// it is the screen's job, not a stat, and every sport has events to confirm.
-const ALL_PANELS = ["shot_chart", "heatmap", "box_score"];
-const panelName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_");
 
 export function Review({ gameId }: { gameId: string }) {
   const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
@@ -87,10 +73,9 @@ export function Review({ gameId }: { gameId: string }) {
   // Two focusable rows: the review answers, then the heatmap's player picker.
   const [row, setRow] = useState(0);
   const [heatFocus, setHeatFocus] = useState(0);
-  const panels = useMemo(() => {
-    const listed = game?.sport_ui?.review;
-    return new Set(listed?.length ? listed.map(panelName) : ALL_PANELS);
-  }, [game]);
+  // §4.8: no sport-name branching — the profile says which panels this sport has
+  // (`sport_ui.review`). The review queue is not in that list: every sport has events.
+  const panels = useMemo(() => reviewPanels(game), [game]);
   // Empty when the sport has no heatmap panel, so the D-pad's second row disappears too.
   const heatmap = panels.has("heatmap") ? (stats?.heatmap ?? []) : [];
 

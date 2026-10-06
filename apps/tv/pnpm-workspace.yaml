@@ -1,0 +1,4 @@
+# React Native's Gradle autolinking and Metro expect a flat node_modules.
+nodeLinker: hoisted
+allowBuilds:
+  esbuild: true

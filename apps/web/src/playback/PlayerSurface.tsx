@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 import { createClock, type Clock } from "./clock";
 import type { CropPath } from "../api/types";
+import { cropRectAt, cropTransform } from "../../../../packages/tv-core/src/follow";
 
 export interface PlayerHandle {
   play(): void;
@@ -160,16 +161,15 @@ export function PlayerSurface({ src, crop, muted, children, onEnded, ref }: Prop
     let raf = 0;
     const apply = () => {
       const t = clockRef.current?.now() ?? videoRef.current?.currentTime ?? 0;
-      // E-12: clamp past the last rect instead of reading undefined.
-      const i = clamp(Math.round((t - crop.t0) * crop.rate_hz), 0, crop.rects.length - 1);
-      const [x, y, w, h] = crop.rects[i];
-      const sx = w > 0 ? 1 / w : 1;
-      const sy = h > 0 ? 1 / h : sx;
-      const W = viewport.clientWidth;
-      const H = viewport.clientHeight;
-      box.style.transform = `translate(${(-sx * x * W).toFixed(2)}px, ${(-sy * y * H).toFixed(
-        2,
-      )}px) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
+      // E-12: cropRectAt clamps past the last rect instead of reading undefined.
+      const { tx, ty, sx, sy } = cropTransform(
+        cropRectAt(crop, t),
+        viewport.clientWidth,
+        viewport.clientHeight,
+      );
+      box.style.transform = `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${sx.toFixed(
+        4,
+      )}, ${sy.toFixed(4)})`;
       raf = requestAnimationFrame(apply);
     };
     raf = requestAnimationFrame(apply);

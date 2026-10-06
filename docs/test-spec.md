@@ -78,6 +78,17 @@ append.
   crop rect components ∈ [0,1].
 - **Event/schema names**: `replay.game.v1`, `replay.tracks.v1`, `replay.crops.v1`,
   `replay.events.v1` (plan §4.5).
+- **apps/tv (React Native TV, Fire TV)**: its react-native-web build runs the same scenarios
+  as `apps/tv/e2e/TV-*.spec.ts` (Playwright project `tv`, mock API from
+  `packages/tv-core/src/mock.ts`, port 5181); `evidence` (opt-in, `REPLAY_TV_API=<api base>`)
+  screenshots a processed game. Routes are in-memory; the web build deep-links with the same
+  paths as `/tv` above. Test hooks are the `/tv` ones (`testID` → `data-testid`, `dataSet` →
+  `data-*`), plus `mode-pill`, `watch-chrome`, `nav-pair` and `action-{prev-event|next-event|
+  bookmark|spotlight|tag}` (the Watch action row). Remote map differences: Select toggles
+  play/pause in wide/follow (pausing opens select mode) and follows in select mode; Up opens
+  the action row (from select mode, Up with no box above); in select mode an empty cone with
+  overlapping boxes cycles through them (right/down forward, left/up back) instead of E-11's
+  wall; Back on the library is left to the OS (exits the app).
 
 ---
 

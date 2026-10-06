@@ -20,6 +20,7 @@ import { TagDialog } from "../components/TagDialog";
 import { navigate, setQuery, useLocation } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
 import type { CropPath, GameEvent, Player } from "../api/types";
+import { eventJump } from "../../../../packages/tv-core/src/display";
 
 type Mode = "wide" | "select" | "follow";
 const SCRUB_STEP_S = 5;
@@ -143,13 +144,9 @@ export function Watch({ gameId }: { gameId: string }) {
 
   const jumpEvent = useCallback(
     (dir: 1 | -1) => {
-      if (!handle || sorted.length === 0) return;
-      const now = handle.currentTime();
-      const next =
-        dir > 0
-          ? sorted.find((e) => e.t_key > now + 0.05)
-          : [...sorted].reverse().find((e) => e.t_key < now - 0.05);
-      if (next) handle.seek(next.t_key);
+      if (!handle) return;
+      const next = eventJump(sorted, handle.currentTime(), dir);
+      if (next !== null) handle.seek(next);
     },
     [handle, sorted],
   );

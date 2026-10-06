@@ -1,0 +1,583 @@
+{
+ "g_syn_bb90": {
+  "label": "synthetic basketball (10 players, kp=gt, MotionBERT), worker run",
+  "tasks": [
+   {
+    "run": "20261006T081422-92b7",
+    "stage": "tierc_scene",
+    "item": "pl_0001",
+    "resource": "gpu",
+    "cache": "miss",
+    "wall_s": 12.361,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081422-92b7",
+    "stage": "tierc_scene",
+    "item": "pl_0002",
+    "resource": "gpu",
+    "cache": "miss",
+    "wall_s": 9.262,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081422-92b7",
+    "stage": "tierc_scene",
+    "item": "pl_0004",
+    "resource": "gpu",
+    "cache": "miss",
+    "wall_s": 12.297,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc_scene",
+    "item": "pl_0001",
+    "resource": "gpu",
+    "cache": "hit",
+    "wall_s": 0.002,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc_scene",
+    "item": "pl_0002",
+    "resource": "gpu",
+    "cache": "hit",
+    "wall_s": 0.004,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc_scene",
+    "item": "pl_0004",
+    "resource": "gpu",
+    "cache": "hit",
+    "wall_s": 0.002,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_broadcast_high",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 11.456,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_baseline",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 15.206,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_overhead",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 11.239,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_reverse",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 11.55,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_pov_p1",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 10.545,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_broadcast_high",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 7.578,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_overhead",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 8.139,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_baseline",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 9.791,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_pov_p3",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 3.566,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_reverse",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 8.538,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0004/tierc_broadcast_high",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 12.824,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0004/tierc_baseline",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 13.842,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0004/tierc_overhead",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 11.822,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0004/tierc_reverse",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 11.718,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc",
+    "item": "pl_0004/tierc_pov_p3",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 6.913,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc_manifest",
+    "item": "pl_0002",
+    "resource": "io",
+    "cache": "off",
+    "wall_s": 0.042,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc_manifest",
+    "item": "pl_0001",
+    "resource": "io",
+    "cache": "off",
+    "wall_s": 0.045,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081517-5fba",
+    "stage": "tierc_manifest",
+    "item": "pl_0004",
+    "resource": "io",
+    "cache": "off",
+    "wall_s": 0.047,
+    "lock_wait_s": 0.0
+   }
+  ],
+  "scenes": {
+   "pl_0001": {
+    "frames": 240,
+    "players": 10,
+    "method": "motionbert",
+    "keypoints": "gt",
+    "build_s": 12.33,
+    "quality": {
+     "players": 10,
+     "jitter_ms2": {
+      "before": 6.4971,
+      "after": 2.7287
+     },
+     "foot_slide_cms": {
+      "before": 26.4217,
+      "after": 0.4709
+     },
+     "bone_cv": {
+      "before": 0.0337,
+      "after": 0.0
+     },
+     "penetration": {
+      "before": 0.0028,
+      "after": 0.0006
+     },
+     "planted_frac": 0.185
+    }
+   },
+   "pl_0002": {
+    "frames": 150,
+    "players": 10,
+    "method": "motionbert",
+    "keypoints": "gt",
+    "build_s": 9.25,
+    "quality": {
+     "players": 10,
+     "jitter_ms2": {
+      "before": 25.1909,
+      "after": 7.4844
+     },
+     "foot_slide_cms": {
+      "before": 30.3483,
+      "after": 0.4339
+     },
+     "bone_cv": {
+      "before": 0.0356,
+      "after": 0.0
+     },
+     "penetration": {
+      "before": 0.0006,
+      "after": 0.0006
+     },
+     "planted_frac": 0.084
+    }
+   },
+   "pl_0004": {
+    "frames": 240,
+    "players": 10,
+    "method": "motionbert",
+    "keypoints": "gt",
+    "build_s": 12.27,
+    "quality": {
+     "players": 10,
+     "jitter_ms2": {
+      "before": 11.398,
+      "after": 4.7823
+     },
+     "foot_slide_cms": {
+      "before": 35.3545,
+      "after": 0.6399
+     },
+     "bone_cv": {
+      "before": 0.0421,
+      "after": 0.0
+     },
+     "penetration": {
+      "before": 0.0019,
+      "after": 0.0003
+     },
+     "planted_frac": 0.088
+    }
+   }
+  }
+ },
+ "g_cc_pb90": {
+  "label": "CC BY pickleball_surrey2026 (YOLO11m-pose, MotionBERT), worker run",
+  "tasks": [
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc_scene",
+    "item": "pl_0001",
+    "resource": "gpu",
+    "cache": "miss",
+    "wall_s": 8.767,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc_scene",
+    "item": "pl_0002",
+    "resource": "gpu",
+    "cache": "miss",
+    "wall_s": 7.848,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc_scene",
+    "item": "pl_0003",
+    "resource": "gpu",
+    "cache": "miss",
+    "wall_s": 8.912,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_broadcast_high",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 6.329,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_baseline",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 7.621,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_overhead",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 6.485,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_reverse",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 5.846,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0001/tierc_pov_p1",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 4.204,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_broadcast_high",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 7.52,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_baseline",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 6.109,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_overhead",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 5.535,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_reverse",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 4.901,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0002/tierc_pov_p1",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 3.418,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0003/tierc_broadcast_high",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 5.749,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0003/tierc_baseline",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 5.607,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0003/tierc_overhead",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 5.097,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0003/tierc_reverse",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 5.604,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc",
+    "item": "pl_0003/tierc_pov_p5",
+    "resource": "cpu",
+    "cache": "miss",
+    "wall_s": 4.603,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc_manifest",
+    "item": "pl_0002",
+    "resource": "io",
+    "cache": "off",
+    "wall_s": 0.037,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc_manifest",
+    "item": "pl_0001",
+    "resource": "io",
+    "cache": "off",
+    "wall_s": 0.039,
+    "lock_wait_s": 0.0
+   },
+   {
+    "run": "20261006T081636-5bda",
+    "stage": "tierc_manifest",
+    "item": "pl_0003",
+    "resource": "io",
+    "cache": "off",
+    "wall_s": 0.041,
+    "lock_wait_s": 0.0
+   }
+  ],
+  "scenes": {
+   "pl_0001": {
+    "frames": 201,
+    "players": 2,
+    "method": "motionbert",
+    "keypoints": "yolo",
+    "build_s": 8.75,
+    "quality": {
+     "players": 2,
+     "jitter_ms2": {
+      "before": 39.2773,
+      "after": 8.7853
+     },
+     "foot_slide_cms": {
+      "before": 59.4675,
+      "after": 0.3334
+     },
+     "bone_cv": {
+      "before": 0.0622,
+      "after": 0.0
+     },
+     "penetration": {
+      "before": 0.0,
+      "after": 0.0
+     },
+     "planted_frac": 0.292
+    }
+   },
+   "pl_0002": {
+    "frames": 240,
+    "players": 2,
+    "method": "motionbert",
+    "keypoints": "yolo",
+    "build_s": 7.84,
+    "quality": {
+     "players": 2,
+     "jitter_ms2": {
+      "before": 44.3085,
+      "after": 8.8205
+     },
+     "foot_slide_cms": {
+      "before": 68.8894,
+      "after": 1.3517
+     },
+     "bone_cv": {
+      "before": 0.0839,
+      "after": 0.0
+     },
+     "penetration": {
+      "before": 0.0,
+      "after": 0.0
+     },
+     "planted_frac": 0.119
+    }
+   },
+   "pl_0003": {
+    "frames": 240,
+    "players": 3,
+    "method": "motionbert",
+    "keypoints": "yolo",
+    "build_s": 8.9,
+    "quality": {
+     "players": 3,
+     "jitter_ms2": {
+      "before": 56.3771,
+      "after": 14.6764
+     },
+     "foot_slide_cms": {
+      "before": 66.6619,
+      "after": 0.2066
+     },
+     "bone_cv": {
+      "before": 0.1122,
+      "after": 0.0
+     },
+     "penetration": {
+      "before": 0.0,
+      "after": 0.0
+     },
+     "planted_frac": 0.231
+    }
+   }
+  }
+ }
+}

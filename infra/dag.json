@@ -308,6 +308,38 @@
   "default": false
  },
  {
+  "name": "tierc_scene",
+  "after": [
+   "highlights",
+   "camera"
+  ],
+  "resource": "gpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "tierc",
+  "after": [
+   "tierc_scene"
+  ],
+  "resource": "cpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "tierc_manifest",
+  "after": [
+   "replays",
+   "tierc"
+  ],
+  "resource": "io",
+  "fanout": true,
+  "cached": false,
+  "default": false
+ },
+ {
   "name": "face_match",
   "after": [
    "game"

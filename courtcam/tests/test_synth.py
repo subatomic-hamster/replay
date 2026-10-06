@@ -199,7 +199,7 @@ def test_generate_writes_a_muxed_clip_and_every_contract_file(tmp_path: Path):
     assert sorted(probe) == ["audio", "video"]
     gt = json.loads(paths["ground_truth"].read_text())
     assert gt["synthetic"] is True and len(gt["frames"]) == 90
-    assert {"id", "bb", "ct", "px", "vis", "kp", "oncourt"} <= set(gt["frames"][0]["d"][0])
+    assert {"id", "bb", "ct", "px", "vis", "kp", "kp3", "oncourt"} <= set(gt["frames"][0]["d"][0])
     for name, schema in (("plays", "replay.plays.v1"), ("triggers", "replay.triggers.v1"),
                          ("calibration", "replay.calibration.v1")):  # fmt: skip
         doc = json.loads(paths[name].read_text())

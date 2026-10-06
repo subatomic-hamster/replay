@@ -16,10 +16,10 @@ mixed into the audio, and a phone tap — each placed 1-8 s after a play ends, s
 resolves to that play.
 
 Everything is seeded and written as ground truth labelled `"synthetic": true`:
-`ground_truth.json` (per-frame boxes, court metres, foot pixels, keypoints, visibility,
-ball), `events.json`, `plays.json`, `triggers.json`, `calibration.json` and the
-pipeline's `landmarks.json`. `--detector synthetic` replays the boxes, so tracking tests
-do not depend on YOLO.
+`ground_truth.json` (per-frame boxes, court metres, foot pixels, keypoints in pixels
+and in court metres (`kp3`), visibility, ball), `events.json`, `plays.json`,
+`triggers.json`, `calibration.json` and the pipeline's `landmarks.json`.
+`--detector synthetic` replays the boxes, so tracking tests do not depend on YOLO.
 
 Nothing in here branches on the sport id: the choreography is picked by the template's
 geometry and tuned by the profile's `synth:` block.
@@ -1509,6 +1509,7 @@ def render_frame(
                 "oncourt": p.oncourt,
                 "vis": round(float(vis), 3),
                 "kp": kps,
+                "kp3": np.round(kp3, 3).tolist(),  # same keypoints, court metres (z up)
             }  # fmt: skip
         )
     ball_px = None

@@ -1,0 +1,81 @@
+{
+ "play_id": "pl_0002",
+ "motionbert": {
+  "players": 10,
+  "frames": 240,
+  "mpjpe_mm": {
+   "before": 140.6,
+   "after": 139.2
+  },
+  "mpjpe_pelvis_aligned_mm": {
+   "before": 74.3,
+   "after": 75.1
+  },
+  "height_err_cm": 3.0,
+  "quality": {
+   "players": 10,
+   "jitter_ms2": {
+    "before": 12.8319,
+    "after": 5.1198
+   },
+   "foot_slide_cms": {
+    "before": 28.485,
+    "after": 0.9177
+   },
+   "bone_cv": {
+    "before": 0.0397,
+    "after": 0.0
+   },
+   "penetration": {
+    "before": 0.0006,
+    "after": 0.0004
+   },
+   "planted_frac": 0.128,
+   "build_s": 11.73
+  },
+  "ground_truth": {
+   "jitter_ms2": 5.572,
+   "foot_slide_cms": 24.38,
+   "bone_cv": 0.0044
+  }
+ },
+ "analytic": {
+  "players": 10,
+  "frames": 240,
+  "mpjpe_mm": {
+   "before": 185.2,
+   "after": 187.4
+  },
+  "mpjpe_pelvis_aligned_mm": {
+   "before": 174.2,
+   "after": 175.2
+  },
+  "height_err_cm": 3.0,
+  "quality": {
+   "players": 10,
+   "jitter_ms2": {
+    "before": 16.6508,
+    "after": 6.2477
+   },
+   "foot_slide_cms": {
+    "before": 28.7884,
+    "after": 1.0683
+   },
+   "bone_cv": {
+    "before": 0.0,
+    "after": 0.0
+   },
+   "penetration": {
+    "before": 0.0005,
+    "after": 0.0003
+   },
+   "planted_frac": 0.124,
+   "build_s": 1.19
+  },
+  "ground_truth": {
+   "jitter_ms2": 5.572,
+   "foot_slide_cms": 24.38,
+   "bone_cv": 0.0044
+  }
+ }
+}

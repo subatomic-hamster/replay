@@ -112,6 +112,15 @@ python -m replay_render vertical data/games/g_x --out v.mp4 (--clip c_1 | --play
 Worker stages `hype`, `condensed`, `vertical` (services/worker `stages/discovery.py`, all
 opt-in); API routes in services/api `discovery_routes.py`.
 
+## Tier C 3D replays (M9)
+
+`replay_render/avatars/`: 3D skeletons per player (MotionBERT lift or the analytic
+fallback), `scene/{play_id}.json` (`replay.scene.v1`), capsule-avatar renders from 4 angles
++ the shooter's POV. Contract, pipeline, quality numbers and limits:
+[`replay_render/avatars/README.md`](replay_render/avatars/README.md). Worker stages
+`tierc_scene`, `tierc`, `tierc_manifest` (opt-in) add the angles to
+`replays/{play_id}/manifest.json` as `tier: "C"`.
+
 ## Limits
 
 Single CPU render, ~100 fps at 1080p from a 2560×960 source on the box. Frame

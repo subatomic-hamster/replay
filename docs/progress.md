@@ -127,3 +127,10 @@ Template:
 - Evidence: docs/evidence/M12/ (synthetic + CC BY pickleball)
 - Decisions: D-62.
 - Left / known issues: synthetic court is out of distribution for MoGe (pessimistic numbers); CC clip judged qualitatively only (no ground truth); splat renderer has no anti-aliasing (≈ 4 dB floor PSNR lost); one highlight per clip; experiment tests are not part of the CI suites.
+
+## Backend fix wave (2026-10-06)
+
+- Works: user corrections survive worker re-runs and reach downstream stages (D-63, `edits.json` overlay); `GET /games` tolerates `recorded_at: null`; deleted renders read `missing` and re-render on POST; clips carry `edited`; confirmed events count as verified in stats; model providers name `REPLAY_MODEL_VENVS` when unset and worker commentary falls back to captions; embeddings batched into one model load.
+- Verified on hfbox (staged snapshot, `scripts/box-test.sh` ALL GREEN): courtcam 182, api 218 + 1 skipped, worker 24, render 49, web Playwright 86 passed. Real CLI repro on synthetic basketball_half (patch made/confirmed, rename, merge, user score via a live API, then `replay_worker run` again): events cache hit with every edit intact, plays and pose re-keyed, stats show the renamed player's corrected makes. Embeddings for 10 plays: 82.1 → 10.5 s (GPU), 60.8 → 11.0 s (CPU).
+- Decisions: D-63.
+- Left / known issues: dismissed events still form plays (courtcam `build_plays`); merges re-run pose for the affected chunks; player/clip patches anchored by id only; pre-D-63 corrections can't be recovered; UI to adopt `edited`/`missing` (profiles-UI wave).

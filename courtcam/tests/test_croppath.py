@@ -85,3 +85,24 @@ def test_build_crop_path_matches_the_contract():
 def test_a_track_with_no_boxes_still_yields_finite_rects():
     rects = crop_path(np.full((30, 4), np.nan), W, H, CFG)
     assert np.isfinite(rects).all()
+
+
+def _shake(rects: np.ndarray) -> float:
+    """rms second difference of the window centre, in output (1920-wide) px/frame^2."""
+    c = rects[:, :2] + rects[:, 2:] / 2
+    return float(np.sqrt(np.mean(np.sum((np.diff(c, 2, axis=0) * [W, H]) ** 2, axis=1))))
+
+
+def test_detector_jitter_does_not_shake_the_camera():
+    """A player jogging with +-6 px of box noise (what the detector gives on real
+    footage): the dead zone + smoothed lead remove most of the shake the old camera
+    passed through, and the window still follows the jog."""
+    rng = np.random.default_rng(1)
+    t = np.arange(600) / 30.0
+    centres = np.column_stack([600 + 40 * t, np.full(len(t), 540.0)])
+    noisy = centres + rng.normal(0, 6, centres.shape)
+    new = crop_path(_boxes(noisy), W, H, CFG, court_px_w=1600.0)
+    old = crop_path(_boxes(noisy), W, H, CFG, court_px_w=1600.0, dead_frac=0, vel_tau_s=0)
+    assert _shake(new) < 0.25 * _shake(old), (_shake(new), _shake(old))
+    follow = (new[-1, 0] + new[-1, 2] / 2) * W
+    assert abs(follow - centres[-1, 0]) < 0.25 * new[0, 2] * W

@@ -1,9 +1,10 @@
 """Stage 8 — per-player follow-cam crop paths (plan §4.4 step 8).
 
 One rect per video frame at 30 Hz, normalised to [0, 1], `t0 = 0`. The camera is a
-critically damped spring chasing the player's box centre plus a short motion lead,
-clamped inside the frame. Through a tracking gap the target holds still, so the
-window parks and eases back when the player reappears.
+critically damped spring chasing the player's box centre (through a small dead zone)
+plus a short motion lead from the smoothed velocity, clamped inside the frame. Through
+a tracking gap the target holds still, so the window parks and eases back when the
+player reappears.
 """
 
 from __future__ import annotations
@@ -16,6 +17,12 @@ from .schema import CropPath
 MAX_LEAD_FRACTION = 0.25  # of the crop window, so a sprint cannot throw the frame
 CROP_ASPECT = 16.0 / 9.0  # the TV viewport; a panoramic source must not letterbox it
 MIN_CROP_W = 480.0  # px — below this a 1080p TV is upscaling more than 4x
+# Operator feel (measured, render/README.md "Cameras"): detector jitter inside a
+# band of DEAD_FRAC x the window never moves the camera, and the motion lead comes from
+# an EMA of the target's velocity (time constant VEL_TAU_S), not the raw per-frame step,
+# which multiplied box noise by fps x lead_s. 0 / 0 reproduces the previous camera.
+DEAD_FRAC = 0.04
+VEL_TAU_S = 0.4
 
 
 def _targets(boxes_px: np.ndarray) -> np.ndarray:
@@ -72,6 +79,8 @@ def crop_path(
     *,
     fps: float = 30.0,
     court_px_w: float | None = None,
+    dead_frac: float = DEAD_FRAC,
+    vel_tau_s: float = VEL_TAU_S,
 ) -> np.ndarray:
     """(N, 4) boxes in pixels (NaN rows allowed) → (N, 4) normalised [x, y, w, h] rects."""
     n = len(boxes_px)
@@ -92,11 +101,18 @@ def crop_path(
     pos = np.clip(targets[0], lo, hi).astype(np.float64)
     vel = np.zeros(2)
     max_lead = np.asarray([cw, ch]) * MAX_LEAD_FRACTION
+    band = np.asarray([cw, ch]) * dead_frac
+    alpha = 1.0 - np.exp(-1.0 / (fps * vel_tau_s)) if vel_tau_s > 0 else 1.0
+    held = targets[0].astype(np.float64).copy()
+    motion = np.zeros(2)
     out = np.empty((n, 4))
     for i in range(n):
-        motion = (targets[i] - targets[i - 1]) * fps if i else np.zeros(2)
+        if i:
+            motion += alpha * ((targets[i] - targets[i - 1]) * fps - motion)
+        d = targets[i] - held  # dead zone: only the part of a move beyond the band counts
+        held += np.sign(d) * np.maximum(np.abs(d) - band, 0.0)
         lead = np.clip(motion * cfg.lead_s, -max_lead, max_lead)
-        goal = np.clip(targets[i] + lead, lo, hi)
+        goal = np.clip(held + lead, lo, hi)
         # critically damped spring, semi-implicit Euler
         vel += (omega * omega * (goal - pos) - 2.0 * omega * vel) * dt
         pos = np.clip(pos + vel * dt, lo, hi)

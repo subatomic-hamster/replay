@@ -1,0 +1,23 @@
+[project]
+name = "replay-render"
+version = "0.1.0"
+description = "Replay-side rendering: broadcast auto-director + compositor (M6)"
+requires-python = ">=3.12,<3.13"
+# courtcam: ingest encoder choice, distortion, sport templates. ffmpeg on PATH at runtime.
+dependencies = ["courtcam", "numpy", "opencv-python-headless", "pillow"]
+
+[project.optional-dependencies]
+plots = ["matplotlib"]  # `python -m replay_render jitter`
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["replay_render"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,53 @@
+{
+ "game": "g_synth90",
+ "t0": 0.0,
+ "t1": 90.0,
+ "metric": "Screen-space shake: second difference of the window centre in OUTPUT pixels per\n    frame^2 (a still camera scores 0), plus the zoom's relative second difference.",
+ "wide": {
+  "raw": {
+   "rms_px": 0.6264,
+   "p95_px": 0.8542,
+   "zoom_rms": 0.0
+  },
+  "smoothed": {
+   "rms_px": 0.0223,
+   "p95_px": 0.0473,
+   "zoom_rms": 0.0
+  }
+ },
+ "tight": {
+  "raw": {
+   "rms_px": 25.2848,
+   "p95_px": 4.5477,
+   "zoom_rms": 0.003475
+  },
+  "smoothed": {
+   "rms_px": 0.2513,
+   "p95_px": 0.5185,
+   "zoom_rms": 2.2e-05
+  }
+ },
+ "follow:p1": {
+  "raw": {
+   "rms_px": 1.1602,
+   "p95_px": 1.7533,
+   "zoom_rms": 0.0
+  },
+  "smoothed": {
+   "rms_px": 0.3751,
+   "p95_px": 0.443,
+   "zoom_rms": 0.0
+  }
+ },
+ "followcam": {
+  "before": {
+   "rms_px": 1.3683,
+   "p95_px": 2.5359
+  },
+  "after": {
+   "rms_px": 0.5058,
+   "p95_px": 0.7085
+  },
+  "players": 10
+ }
+}

@@ -1,0 +1,117 @@
+{
+ "schema": "replay.cuts.v1",
+ "duration_s": 90.0,
+ "provisional": false,
+ "geometry": {
+  "projector": "homography",
+  "height_err": 0.003
+ },
+ "rules": {
+  "min_shot_s": 3.0,
+  "pingpong_s": 5.0,
+  "action_on": 1.1,
+  "action_off": 0.7,
+  "action_min_s": 2.0,
+  "bridge_s": 2.0,
+  "shot_pre_s": 2.5,
+  "shot_post_s": 1.0,
+  "replay_speed": 0.5,
+  "replay_pre_s": 3.0,
+  "replay_post_s": 1.0,
+  "replay_delay_s": 2.0,
+  "replay_min_s": 4.0,
+  "replay_spacing_s": 15.0,
+  "long_rally_s": 8.0,
+  "unknown_shot_conf": 0.5,
+  "lower_third_s": 4.0,
+  "lull_wide_s": 12.0,
+  "lull_tight_s": 7.0,
+  "release_z_m": 2.3,
+  "rim_z_m": 3.05
+ },
+ "cuts": [
+  {
+   "t_start": 0.0,
+   "t_end": 8.2,
+   "camera": "wide",
+   "reason": "dead time",
+   "kind": "live",
+   "transition": "cut"
+  },
+  {
+   "t_start": 8.2,
+   "t_end": 11.7,
+   "camera": "follow:p1",
+   "reason": "shot e_0001",
+   "kind": "live",
+   "transition": "ease",
+   "event_id": "e_0001"
+  },
+  {
+   "t_start": 11.7,
+   "t_end": 15.7,
+   "camera": "tight",
+   "reason": "action",
+   "kind": "live",
+   "transition": "ease"
+  },
+  {
+   "t_start": 15.7,
+   "t_end": 19.2,
+   "camera": "follow:p3",
+   "reason": "shot e_0005",
+   "kind": "live",
+   "transition": "ease",
+   "event_id": "e_0005"
+  },
+  {
+   "t_start": 19.2,
+   "t_end": 74.5,
+   "camera": "tight",
+   "reason": "action",
+   "kind": "live",
+   "transition": "ease"
+  },
+  {
+   "t_start": 74.5,
+   "t_end": 78.0,
+   "camera": "follow:p4",
+   "reason": "shot e_0014",
+   "kind": "live",
+   "transition": "ease",
+   "event_id": "e_0014"
+  },
+  {
+   "t_start": 78.0,
+   "t_end": 86.0,
+   "camera": "tight",
+   "reason": "action",
+   "kind": "live",
+   "transition": "ease"
+  },
+  {
+   "t_start": 86.0,
+   "t_end": 90.0,
+   "camera": "wide",
+   "reason": "dead time",
+   "kind": "live",
+   "transition": "ease"
+  }
+ ],
+ "graphics": {
+  "teams": [
+   {
+    "label": "HOME",
+    "color": "#B7A99D"
+   },
+   {
+    "label": "AWAY",
+    "color": "#545E7C"
+   }
+  ],
+  "score": [],
+  "score_provisional": false,
+  "lower_thirds": [],
+  "clock": "elapsed"
+ }
+}

@@ -189,51 +189,90 @@ Kennesaw pickup game (mixed shirts, a grey referee) 0.80, where cutting on colou
 the one stable referee row into four."""
 
 
-def _runs(labels: np.ndarray, min_len: int) -> list[tuple[int, int, int]]:
+def _runs(
+    labels: np.ndarray, min_len: int, weight: np.ndarray | None = None
+) -> list[tuple[int, int, int]]:
     """(start, end, label) runs of `labels`; a run shorter than `min_len` joins the run
-    before it (or after it, at the start), so only sustained changes survive."""
+    before it (or after it, at the start), so only sustained changes survive. With
+    `weight` (1 = a trusted label, 0 = not), a run that is mostly untrusted is short too."""
+    w = np.ones(len(labels)) if weight is None else np.asarray(weight, dtype=float)
     runs: list[list[int]] = []
     for i, x in enumerate(labels.tolist()):
         if runs and runs[-1][2] == x:
             runs[-1][1] = i + 1
         else:
             runs.append([i, i + 1, x])
+
+    def short(r: list[int]) -> bool:
+        return r[1] - r[0] < min_len or w[r[0] : r[1]].mean() < 0.5
+
     out: list[list[int]] = []
     for r in runs:
-        if out and (r[1] - r[0] < min_len or out[-1][2] == r[2]):
+        if out and (short(r) or out[-1][2] == r[2]):
             out[-1][1] = r[1]
-        elif out and out[-1][1] - out[-1][0] < min_len:
+        elif out and short(out[-1]):
             out[-1] = [out[-1][0], r[1], r[2]]
         else:
             out.append(list(r))
     return [tuple(r) for r in out]  # type: ignore[misc]
 
 
+JERSEY_MAX_COVER = 0.5
+"""A torso sample whose rectangle another tracklet's box covers by more than this share
+is untrusted for a jersey cut: it shows whoever stands in front. With the GT detector
+(perfect tracks) D-70 found 15 off-team runs on synthetic basketball half s7 / s11 and
+full s7, each with mean cover 0.59-0.98, against 0.28-0.30 over all samples; under
+YOLO, which rarely keeps both boxes of an overlap, mean cover is 0.06-0.08
+(docs/evidence/M1/README.md, Tracking v3)."""
+
+
+def _cover(rect: tuple[int, int, int, int], boxes: np.ndarray) -> float:
+    """Largest share of `rect` (x, y, w, h) that any one of `boxes` (n x xywh) covers."""
+    if not len(boxes):
+        return 0.0
+    x, y, w, h = rect
+    iw = np.minimum(x + w, boxes[:, 0] + boxes[:, 2]) - np.maximum(x, boxes[:, 0])
+    ih = np.minimum(y + h, boxes[:, 1] + boxes[:, 3]) - np.maximum(y, boxes[:, 1])
+    return float((np.clip(iw, 0, None) * np.clip(ih, 0, None)).max() / (w * h))
+
+
 def jersey_labels(
     video: str, tracks: list[CourtTrack], hists: np.ndarray, teams: np.ndarray, every: int = 2
-) -> list[dict[int, int]]:
+) -> tuple[list[dict[int, int]], list[dict[int, int]]]:
     """Team of every `every`-th sample of each tracklet: the nearer team centroid of its
-    torso histogram. One decode pass, like `sample_appearance`."""
+    torso histogram. One decode pass, like `sample_appearance`. Returns all labels and
+    the subset whose torso no other box covers by more than `JERSEY_MAX_COVER`."""
     cents = np.stack([hists[teams == k].mean(axis=0) for k in (0, 1)])
     wanted: dict[int, list[tuple[int, int]]] = {}
     for i, tr in enumerate(tracks):
         for j in range(0, len(tr.tracklet.frames), every):
             wanted.setdefault(int(tr.tracklet.frames[j]), []).append((i, j))
+    boxes_at: dict[int, list[tuple[int, np.ndarray]]] = {}
+    for i, tr in enumerate(tracks):
+        for f, b in zip(tr.tracklet.frames.tolist(), tr.tracklet.boxes, strict=True):
+            if int(f) in wanted:
+                boxes_at.setdefault(int(f), []).append((i, b))
     lab: list[dict[int, int]] = [{} for _ in tracks]
+    clear: list[dict[int, int]] = [{} for _ in tracks]
     cap = cv2.VideoCapture(str(video))
     try:
         fh = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1
         fw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1
         for frame_idx, frame in _grab_frames(cap, sorted(wanted)):
             for i, j in wanted[frame_idx]:
-                x, y, w, h = torso_rect(tracks[i].tracklet.boxes[j])
+                x, y, w, h = rect = torso_rect(tracks[i].tracklet.boxes[j])
                 crop = frame[max(0, y) : min(fh, y + h), max(0, x) : min(fw, x + w)]
                 if crop.size:
                     d = np.linalg.norm(cents - _hist(crop)[None], axis=1)
                     lab[i][j] = int(np.argmin(d))
+                    others = np.asarray([b for k, b in boxes_at[frame_idx] if k != i]).reshape(
+                        -1, 4
+                    )
+                    if _cover(rect, others) <= JERSEY_MAX_COVER:
+                        clear[i][j] = lab[i][j]
     finally:
         cap.release()
-    return lab
+    return lab, clear
 
 
 def split_switches(
@@ -241,10 +280,13 @@ def split_switches(
     lab: list[dict[int, int]],
     teams: np.ndarray,
     min_run_s: float = 1.0,
+    clear: list[dict[int, int]] | None = None,
 ) -> tuple[list[CourtTrack], np.ndarray]:
     """Cut tracklets where their per-sample team label (`lab`: sample index -> team)
     changes and holds for `min_run_s`: the tracker swapped two players. Each piece takes
-    the team it shows.
+    the team it shows. With `clear` (the samples no one stands over, `jersey_labels`), a
+    run where most torsos sit under another player's box is no change: it is the guard's
+    jersey. The cut still falls where the labels change.
 
     No merge can undo a swap inside a tracklet. On synthetic basketball half s7 (YOLO11m
     + BoT-SORT) 28 of 109 court tracklets carry a swap, and 27 of their 43 swaps are with
@@ -260,7 +302,8 @@ def split_switches(
             out_teams.append(int(teams[i]))
             continue
         step = max(float(np.median(np.diff(t.times[idx]))), 1e-3)
-        runs = _runs(np.asarray([lab[i][j] for j in idx]), max(1, round(min_run_s / step)))
+        weight = None if clear is None else np.asarray([j in clear[i] for j in idx])
+        runs = _runs(np.asarray([lab[i][j] for j in idx]), max(1, round(min_run_s / step)), weight)
         for k, (a, _, team) in enumerate(runs):
             lo = 0 if k == 0 else idx[a]
             hi = len(t.frames) if k == len(runs) - 1 else idx[runs[k + 1][0]]
@@ -563,10 +606,12 @@ def identify(
     teams = assign_teams(hists, tracks, profile, profile.template(variant))
     if profile.team_rule == "jersey_color" and len(np.unique(teams)) == 2:
         n = len(tracks)
-        lab = jersey_labels(video, tracks, hists, teams)  # type: ignore[arg-type]
+        lab, clear = jersey_labels(video, tracks, hists, teams)  # type: ignore[arg-type]
+        # The gate reads every sample, as D-70 measured it (Kennesaw 0.80); only the cut
+        # skips torsos another player stands over.
         agree = np.mean([v == teams[i] for i, d in enumerate(lab) for v in d.values()] or [0])
         if agree >= JERSEY_MIN_AGREE:
-            tracks, teams = split_switches(tracks, lab, teams)
+            tracks, teams = split_switches(tracks, lab, teams, clear=clear)
         if len(tracks) != n:  # the pieces need their own appearance (team colours)
             hists, colors, body = sample_appearance(video, tracks)
     groups = merge_groups(tracks, teams, profile, body)

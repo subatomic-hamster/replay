@@ -249,6 +249,40 @@ def test_split_switches_cuts_a_tracklet_where_the_jersey_changes_for_good():
     assert pieces[1].court_m[0] == pytest.approx(tr.court_m[30])
 
 
+def test_an_opponent_standing_in_front_does_not_cut_a_track(tmp_path):
+    """Two red and two blue players, perfect tracks. Blue p2 stands over red p1 for 1.3 s,
+    so p1's torso box shows blue jersey: a guard, not a tracker swap. D-70 cut p1 there
+    and gave the piece to the blue team (GT-detector basketball, Tracking v3)."""
+    import cv2
+
+    from courtcam.identity import identify
+
+    n, fps = 60, 15
+    t = np.arange(n) / fps
+    px = {1: np.full(n, 60.0), 2: np.where((t >= 20 / fps) & (t < 40 / fps), 60.0, 140.0)}
+    px |= {3: np.full(n, 200.0), 4: np.full(n, 260.0)}
+    bgr = {1: (0, 0, 220), 3: (0, 0, 220), 2: (220, 0, 0), 4: (220, 0, 0)}
+    video = tmp_path / "clip.avi"
+    out = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"MJPG"), fps, (320, 240))
+    for f in range(n):
+        img = np.full((240, 320, 3), 128, np.uint8)
+        for k in (1, 3, 4, 2):  # p2 drawn last: in front of p1
+            x = int(px[k][f])
+            img[40:160, x : x + 40] = bgr[k]
+        out.write(img)
+    out.release()
+    tracks = []
+    for k in (1, 2, 3, 4):
+        boxes = np.column_stack([px[k], np.full(n, 40.0), np.full(n, 40.0), np.full(n, 120.0)])
+        court = np.column_stack([np.linspace(2, 6, n), np.full(n, 3.0 * k)])
+        tracks.append(CourtTrack(Tracklet(k, np.arange(n), t, boxes, np.full(n, 0.9)), court, 1.0))
+
+    players = identify(str(video), tracks, PROFILE)
+    assert sorted(p.members for p in players) == [(1,), (2,), (3,), (4,)]
+    team = {p.members[0]: p.team for p in players}
+    assert team[1] == team[3] != team[2] == team[4]
+
+
 def test_concurrency_cap_ignores_a_handover_overlap():
     from courtcam.identity import _cap_concurrent
 

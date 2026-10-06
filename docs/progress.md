@@ -24,6 +24,14 @@ Template:
 - Decisions: D-34 worker + cache, D-35 provider layout, D-36 courtcam subtree split.
 - Left / known issues: no real fan-out stage yet (first ones arrive with per-play / per-angle work); Step Functions machine is a placeholder chain; local tts/llm/embeddings/face/speaker raise NotConfiguredError until models land.
 
+## M1 — Synthetic generator v2 + tracking metrics (2026-10-06)
+
+- Works: `courtcam synth` renders 5 scenes (basketball half/full, pickleball, badminton, volleyball) with articulated mannequins, ballistic ball, scripted plays, X-gesture/voice/tap triggers, Kokoro voice lines and crowd/contact audio; exports labelled-synthetic GT per the contracts. `courtcam eval` scores CLEAR-MOT/IDF1 + court error. Research pass: every repo on the list checked for URL/license/activity/ROCm (docs/research-log.md, docs/licenses.md); models installed and benchmarked on hfbox (docs/models.md); 5 CC BY clips (basketball, pickleball, badminton) on the box (docs/test-data.md).
+- Verified on hfbox: courtcam pytest 157 passed (goldens match), api 110, worker 11, ruff clean (staged snapshot). YOLO pipeline on synthetic, players MOTA / IDF1: basketball half 0.66 / 0.44, full 0.47 / 0.49, pickleball 0.98 / 0.99, badminton 0.99 / 0.99, volleyball 0.86 / 0.86; GT detector 1.0 everywhere. Whisper-small heard the voice trigger in 8/9 crowd-noise mixes.
+- Evidence: docs/evidence/M1/synthetic_basketball_half_yolo_overlay.{mp4,png} · docs/evidence/local/M1/pickleball_legacypark_240s_overlay_M1.mp4
+- Decisions: D-38, D-39, D-40, D-41.
+- Left / known issues: basketball YOLO tracking weak on small bunched players (IDF1 0.40–0.49); foot-point bias ~0.2 m; no CC volleyball footage; ASR untested on real game audio; ultralytics (AGPL) must become an optional extra before the courtcam split.
+
 ## M3 — Fire TV client (2026-10-06)
 
 - Works: `apps/tv` (react-native-tvos 0.87 + react-native-video) at parity with the browser TV route: Library; Watch with seek-bar event markers, select mode with D-pad cone focus and overlap cycling, transform-based follow, spotlight, court inset, tag/rename, bookmarks; Highlights reel; Review; Pair. Shared logic in `packages/tv-core`, used by apps/web and apps/tv.

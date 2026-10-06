@@ -159,3 +159,26 @@ see the reference after each title.
   injected Babel helpers; the error names a module the source never imports.
 - Date / platform / SDK version: 2026-10-06 / hfbox Ubuntu, Node 22.23, JDK 17.0.20.1 /
   react-native-tvos 0.87.1-1, Metro 0.87, Gradle 9.4.1, AGP (RN 0.87 default)
+
+## FL-9 — MIOpen on gfx1201 breaks or hangs torch models (2026-10-06)
+- Task: run Kokoro TTS and transformers Whisper on the RX 9070 XT (ROCm 7.2, torch 2.14).
+- Steps: default torch settings, model on `cuda`.
+- Expected: speech / transcripts.
+- Actual: Kokoro's `nn.LSTM` raises `miopenStatusUnknownError`; the first Whisper call hung at 0 % CPU for 20+ min while holding the box-wide GPU lock.
+- Severity: high (a hang blocks every other GPU user of a shared box).
+- Workaround: `torch.backends.cudnn.enabled = False` for every non-ultralytics model; wrap GPU jobs as `flock <gpu.lock> timeout N <cmd>`.
+- Suggestion: ROCm/MIOpen should fail fast instead of hanging; the box READY notes should carry the workaround.
+
+## FL-10 — llama.cpp ROCm release silently runs on CPU (2026-10-06)
+- Task: serve Qwen3-4B with `llama-server -ngl 99` from the prebuilt ROCm tarball.
+- Expected: GPU offload. Actual: CPU at 11 tok/s, no error; `ldd` shows the HIP libs "not found" (no /opt/rocm in the container).
+- Severity: medium. Workaround: symlink torch's bundled ROCm libs into a dir on `LD_LIBRARY_PATH` (`--list-devices` then shows ROCm0; 93–131 tok/s).
+- Suggestion: llama.cpp should warn loudly when `-ngl` is requested but no GPU backend loads.
+
+## FL-11 — SAM 2.1 default dtype is 10× slower on ROCm (2026-10-06)
+- Task: box-prompted video propagation with `transformers.Sam2VideoModel`.
+- Expected: < 100 ms/frame. Actual: 428 ms/frame (small) in fp32. Severity: medium.
+- Workaround: bf16 → 39.6 ms/frame. Also `pip install git+…/sam2` pulls CUDA torch through build isolation; use `--no-build-isolation --no-deps` with `SAM2_BUILD_CUDA=0`.
+
+## FL-12 — Static ffmpeg build core-dumps on https inputs (2026-10-06)
+- Task: cut CC clips straight from URLs. Actual: segfault. Severity: low. Workaround: download first, then cut.

@@ -149,3 +149,11 @@ Template:
 - Evidence: docs/evidence/M10-ui/ (tv-synthetic-live via the real API in fake-pipeline mode on synthetic games, tv-mock, phone-mock; synthetic only)
 - Decisions: D-65.
 - Left / known issues: declined suggestions return on reopen (no decline endpoint); face enrollment never exercised end to end through the UI against real face models (fake pipeline answers 503/422; delete verified directly on the API); no face suggestion in live evidence (mannequins have no faces; mock shows it).
+
+## M13 — Packaging, `make demo`, perf, demo script, README (2026-10-06)
+
+- Works: courtcam extras (`yolo` AGPL, `vitpose`, `asr`, `vlm`, `dev`) with fail-fast errors naming the extra; `uv.lock` regenerated (real uv 0.12.18); `make demo` / `demo-tunnel` / `demo-stop` build two synthetic 60 s games (basketball + pickleball) through the worker — plays, broadcast with narration, Tier A/B/C replays, hype, condensed, vertical — and serve API :8090, TV :5190, phone :5191; docs/perf.md with measured demo and CC BY tables and Fire TV rendition specs; docs/demo-script.md (4-minute walk-through); README overhauled; friction-log FL-13..FL-18.
+- Verified on hfbox: no-ultralytics venv (`uv sync --locked --package courtcam --extra dev`, 23 packages, no ultralytics/torch/transformers) imports every courtcam module and passes courtcam pytest 183; full workspace `uv sync --locked` OK; `uv lock --check` OK. `make demo` cold 551 s (332 s worker compute + ≈ 210 s waiting on the shared CPU lock, + 117 s synth; SAM 2.1 segment 30–68 s per play dominates), warm 222 s (0.5 s worker compute, rest lock wait); synth deterministic (same sha256 on regeneration); HTTP Range 206. CC BY 90 s pickleball through the worker: cold 92.8 s, warm 1.4 s (26/26 cache hits).
+- Evidence: docs/evidence/M13/ (demo broadcast-replay GIF, replay angles sheet, TV demo screenshots; synthetic) · docs/perf.md
+- Decisions: D-66.
+- Left / known issues: services/api and services/worker rely on the root package for `courtcam[yolo]`; ViTPose could now become the default via the locked `vitpose` extra (D-61); device playback not measured; the 240 s CC pickleball landmarks run produced 0 events (teams split 15 vs 1, not root-caused; the 90 s cut works); courtcam source edits invalidate courtcam stage caches once.

@@ -120,6 +120,11 @@ shot:
   # point; the confirm z-score has a noise floor (a static ROI's MAD is ~0, so any
   # flicker scored z >= 4). Synthetic, ViTPose: 14/27 -> 19/27 shots at precision 1.0.
   release_up_min: -0.2
+  # The lower arm line above makes every measured release longer: a synthetic jump shot
+  # is 0.83-0.87 s above the nose but 0.90-0.93 s above that line, so the 0.9 s default threw
+  # 5 of 23 GT-pose shots out as "held" (18/27 -> 23/27 at P 1.00 with 1.0; YOLO pose
+  # unchanged at 21/27; real Kennesaw unchanged, 3 shots, all real).
+  release_max_s: 1.0
   hoop_from_camera: true
   confirm_mad_floor: 0.5
 # `zoom` divides the court's *pixel* width (calib.court_polygon_px, clipped to the

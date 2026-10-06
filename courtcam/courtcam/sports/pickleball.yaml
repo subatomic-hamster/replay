@@ -75,10 +75,11 @@ tracking:
   merge_max_dist_m: 3.0
   smooth_window: 5
 events: [rally, hype]
-# point winner = the side serving next: the server stands behind their baseline
-# (side-out doubles: wrong when the serving team keeps the serve on its second server)
+# point winner from who serves next: the server stands behind their baseline. Side-out
+# doubles (USA Pickleball rulebook 4.B.6): the same side serving next with the partner
+# serving means the first server lost the rally (events.assign_winners)
 rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0],
-        server_behind_line: true, server_min_depth_m: 0.0}
+        server_behind_line: true, server_min_depth_m: 0.0, side_out: true, one_touch: true}
 # M4 play grammar (courtcam.plays): serve -> point, last 3 shots as an option.
 plays:
   - name: rally

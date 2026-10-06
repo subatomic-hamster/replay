@@ -618,9 +618,11 @@ def detect_rallies(
         m0 = max(0.0, m0 - cfg.lead_s)
         conf = round(min(0.95, 0.5 + 0.2 * (peak / cfg.on_mps - 1.0)), 3)
         if not cfg.audio_fusion:  # motion bounds the rally; strong onsets are its contacts
-            hits = [o for o in signals.onsets
-                    if m0 <= o.t <= m1 and o.strength >= cfg.contact_min_strength]  # fmt: skip
-            out += _rally(m0, m1, conf, hits, players, signals, cfg)
+            pad = cfg.onset_pad_s if cfg.audio_extend_end else 0.0
+            strong = [o for o in signals.onsets if o.strength >= cfg.contact_min_strength]
+            hits = [o for o in strong if m0 <= o.t <= m1 + pad]
+            t1 = max(m1, bounds(hits)[1]) if pad and len(hits) >= 2 else m1
+            out += _rally(m0, t1, conf, hits, players, signals, cfg)
             continue
         runs = fuse_rallies(m0, m1, signals.onsets, cfg)
         for hits in runs or [[]]:
@@ -636,15 +638,48 @@ def detect_rallies(
         for hits in fuse_rallies(-np.inf, np.inf, free, cfg):
             if len(hits) >= cfg.audio_only_min_contacts:
                 out += _rally(*bounds(hits), 0.4, hits, players, signals, cfg)
-    assign_winners(out, players, profile.template(calib.get("variant")), cfg)
+    tpl = profile.template(calib.get("variant"))
+    assign_winners(out, players, tpl, cfg)
+    if cfg.one_touch:
+        alternate_contacts(out, players, signals, tpl, cfg)
     return out
 
 
-def serve_side(serve: Event, players: list[PlayerTrack], tpl, cfg: RallyCfg) -> int | None:
-    """Which side served (0 = court y below the net, as `identity.net_side`). With
-    `rally.server_behind_line`, the side of the player standing deepest behind their own
-    baseline at the serve (>= `server_min_depth_m`); else, or when nobody is that deep,
-    the team of the first contact (pose wrist speed)."""
+def alternate_contacts(
+    events: list[Event], players: list[PlayerTrack], signals: Signals, tpl, cfg: RallyCfg
+) -> None:
+    """One touch per side (`rally.one_touch`: badminton, pickleball): contact sides
+    alternate through a rally. Which side hit first is the one most of the per-contact
+    wrist-speed guesses agree with (a tie: the serving side, `serve_side`); each contact
+    then goes to its side, hitter = the fastest wrists there (`_contact`). In place."""
+    contacts = sorted((e for e in events if e.type == "contact"), key=lambda e: e.t_key)
+    for rally in (e for e in events if e.type == "rally"):
+        mine = [c for c in contacts if rally.t_start <= c.t_key <= rally.t_end]
+        votes = [sum(c.team == (s + k) % 2 for k, c in enumerate(mine)) for s in (0, 1)]
+        side: int | None = int(votes[1] > votes[0])
+        if votes[0] == votes[1]:
+            serve = next(
+                (e for e in events if e.type == "serve" and e.t_start == rally.t_start), None
+            )
+            side = serve_side(serve, players, tpl, cfg)[0] if serve is not None else None
+        if side is None:
+            continue
+        for k, c in enumerate(mine):
+            team = side if k % 2 == 0 else 1 - side
+            near = [p for p in players if p.team == team]
+            c.team, c.player_id = (
+                team,
+                _contact(Onset(t=c.t_key, strength=0.0), near, signals, cfg).player_id,
+            )
+
+
+def serve_side(
+    serve: Event, players: list[PlayerTrack], tpl, cfg: RallyCfg
+) -> tuple[int | None, str | None]:
+    """(side, server player id) of a serve (side 0 = court y below the net, as
+    `identity.net_side`). With `rally.server_behind_line`, the player standing deepest
+    behind their own baseline at the serve (>= `server_min_depth_m`); else, or when
+    nobody is that deep, the first contact's team and hitter (pose wrist speed)."""
     if cfg.server_behind_line and tpl.net_y is not None:
         length = float(tpl.size[1])
         best, depth = None, cfg.server_min_depth_m
@@ -654,25 +689,46 @@ def serve_side(serve: Event, players: list[PlayerTrack], tpl, cfg: RallyCfg) -> 
             y = float(p.track.court_at(serve.t_key)[1])
             d = -y if y < tpl.net_y else y - length
             if d >= depth:
-                best, depth = int(y > tpl.net_y), d
+                best, depth = (int(y > tpl.net_y), p.player_id), d
         if best is not None:
             return best
-    return serve.team
+    return serve.team, serve.player_id
 
 
 def assign_winners(events: list[Event], players: list[PlayerTrack], tpl, cfg: RallyCfg) -> None:
-    """`winner_side` of every point (and its rally) but the last: the side that serves
-    the next rally. Holds for rally scoring (badminton, volleyball, rally-scored
-    pickleball) and for side-out scoring (the rally winner serves next), except a
-    doubles side-out team keeping the serve on its second server. In place."""
+    """`winner_side` of every point (and its rally) but the last, from who serves the next
+    rally. Rally scoring (badminton, volleyball): the side serving next won. Side-out
+    scoring (`rally.side_out`) also sets the point's `points` (1 if the serving side won,
+    else 0; `plays.score_timeline` adds it). In place."""
     serves = sorted((e for e in events if e.type == "serve"), key=lambda e: e.t_key)
     points = sorted((e for e in events if e.type == "point"), key=lambda e: e.t_key)
     rallies = sorted((e for e in events if e.type == "rally"), key=lambda e: e.t_end)
+    # USA Pickleball Official Rulebook (2025) 4.B.6: in doubles both partners serve before
+    # a side out, except at the start of each game, when only the starting server serves
+    # (designated "Second Server"). After a side out the First Server serves until their
+    # team loses a rally (4.B.6.d), then the Second Server (4.B.6.e). Section 1: points
+    # are scored only by the serving side. The clip is taken to start a game.
+    second = True
     for pt, rally in zip(points, rallies, strict=False):
         nxt = next((s for s in serves if s.t_key > pt.t_key), None)
-        side = serve_side(nxt, players, tpl, cfg) if nxt is not None else None
-        if side is not None:
-            pt.winner_side = rally.winner_side = int(side)
+        side, pid = serve_side(nxt, players, tpl, cfg) if nxt is not None else (None, None)
+        if side is None:
+            continue
+        cur = next((s for s in reversed(serves) if s.t_key <= pt.t_key), None)
+        cur_side, cur_pid = serve_side(cur, players, tpl, cfg) if cur else (None, None)
+        if not cfg.side_out or cur_side is None:
+            won = side
+        elif side != cur_side:  # side out: the receivers won, and serve from server 1
+            won, second = side, False
+        elif second or pid == cur_pid:  # the server holds serve: their side won
+            won = side
+        elif pid is None or cur_pid is None:
+            continue  # same side, server unknown: a won point or the partner taking over
+        else:  # the partner serves next: the first server's side lost the rally
+            won, second = 1 - side, True
+        pt.winner_side = rally.winner_side = int(won)
+        if cfg.side_out and cur_side is not None:
+            pt.points = int(won == cur_side)
 
 
 def _rally(t0, t1, conf, hits, players, signals, cfg) -> list[Event]:

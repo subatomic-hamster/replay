@@ -1,0 +1,550 @@
+{
+ "synthetic": true,
+ "milestone": "M4 events v2",
+ "date": "2026-10-06",
+ "host": "hfbox (AMD RX 9070 XT, ROCm), shared venv /workspace/wt/replay-env/venv",
+ "data": "synthetic only: the 9 clips of metrics.json, regenerated today by ../eval/run_metrics.sh gen (seeds 7, 11)",
+ "harness": "../eval/run1.py + ../eval/eval_synth.py (unchanged); run_trig.py (whisper voice) not run: no M4 row needs it",
+ "code": {
+  "before": "HEAD 005cf87 (git archive)",
+  "after": "005cf87 + events.py, plays.py, profiles.py, sports/basketball.yaml, sports/pickleball.yaml, sports/badminton.yaml of this change"
+ },
+ "runs": {
+  "head_gt": {
+   "label": "GT poses, before (HEAD 005cf87)",
+   "how": "bisect.sh _old/head _m/synth head_gt synthetic auto",
+   "clips": [
+    "badminton_doubles_s11",
+    "badminton_doubles_s7",
+    "basketball_full_s7",
+    "basketball_half_s11",
+    "basketball_half_s7",
+    "pickleball_doubles_s11",
+    "pickleball_doubles_s7",
+    "volleyball_indoor_s11",
+    "volleyball_indoor_s7"
+   ],
+   "shot": {
+    "tp": 18,
+    "fp": 0,
+    "fn": 9,
+    "shooter_ok": 18,
+    "made_known": 13,
+    "made_ok": 13,
+    "points_ok": 18,
+    "team_ok": 18,
+    "precision": 1.0,
+    "recall": 0.667
+   },
+   "shot_half_court": {
+    "tp": 16,
+    "fp": 0,
+    "fn": 4,
+    "precision": 1.0,
+    "recall": 0.8
+   },
+   "possession_change": {
+    "tp": 24,
+    "fp": 5,
+    "fn": 6,
+    "cause_ok": 18,
+    "precision": 0.828,
+    "recall": 0.8
+   },
+   "play": {
+    "tp": 64,
+    "fp": 13,
+    "fn": 17,
+    "precision": 0.831,
+    "recall": 0.79
+   },
+   "contact": {
+    "tp": 222,
+    "fp": 22,
+    "fn": 27,
+    "hitter_ok": 121,
+    "side_ok": 148,
+    "precision": 0.91,
+    "recall": 0.892
+   },
+   "rally": {
+    "tp": 35,
+    "fp": 13,
+    "fn": 17,
+    "precision": 0.729,
+    "recall": 0.673
+   },
+   "point": {
+    "tp": 38,
+    "fp": 10,
+    "fn": 14,
+    "winner_known": 34,
+    "winner_ok": 33,
+    "precision": 0.792,
+    "recall": 0.731
+   },
+   "attack": {
+    "tp": 3,
+    "fp": 7,
+    "fn": 3,
+    "precision": 0.3,
+    "recall": 0.5
+   }
+  },
+  "v3_gt": {
+   "label": "GT poses, after (events v2)",
+   "how": "bisect.sh _old/v2 ... v2_gt synthetic auto, then rekeep.sh _old/v3 (events stage) on v2_gt",
+   "clips": [
+    "badminton_doubles_s11",
+    "badminton_doubles_s7",
+    "basketball_full_s7",
+    "basketball_half_s11",
+    "basketball_half_s7",
+    "pickleball_doubles_s11",
+    "pickleball_doubles_s7",
+    "volleyball_indoor_s11",
+    "volleyball_indoor_s7"
+   ],
+   "shot": {
+    "tp": 23,
+    "fp": 0,
+    "fn": 4,
+    "shooter_ok": 23,
+    "made_known": 17,
+    "made_ok": 17,
+    "points_ok": 23,
+    "team_ok": 23,
+    "precision": 1.0,
+    "recall": 0.852
+   },
+   "shot_half_court": {
+    "tp": 20,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0
+   },
+   "possession_change": {
+    "tp": 24,
+    "fp": 5,
+    "fn": 6,
+    "cause_ok": 22,
+    "precision": 0.828,
+    "recall": 0.8
+   },
+   "play": {
+    "tp": 72,
+    "fp": 5,
+    "fn": 9,
+    "precision": 0.935,
+    "recall": 0.889
+   },
+   "contact": {
+    "tp": 239,
+    "fp": 36,
+    "fn": 10,
+    "hitter_ok": 168,
+    "side_ok": 209,
+    "precision": 0.869,
+    "recall": 0.96
+   },
+   "rally": {
+    "tp": 43,
+    "fp": 5,
+    "fn": 9,
+    "precision": 0.896,
+    "recall": 0.827
+   },
+   "point": {
+    "tp": 46,
+    "fp": 2,
+    "fn": 6,
+    "winner_known": 41,
+    "winner_ok": 36,
+    "precision": 0.958,
+    "recall": 0.885
+   },
+   "attack": {
+    "tp": 3,
+    "fp": 7,
+    "fn": 3,
+    "precision": 0.3,
+    "recall": 0.5
+   }
+  },
+  "head_yolo": {
+   "label": "YOLO detect + pose, before (HEAD 005cf87)",
+   "how": "bisect.sh _old/head _m/synth head_yolo yolo yolo",
+   "clips": [
+    "badminton_doubles_s11",
+    "badminton_doubles_s7",
+    "basketball_full_s7",
+    "basketball_half_s11",
+    "basketball_half_s7",
+    "pickleball_doubles_s11",
+    "pickleball_doubles_s7",
+    "volleyball_indoor_s11",
+    "volleyball_indoor_s7"
+   ],
+   "shot": {
+    "tp": 21,
+    "fp": 0,
+    "fn": 6,
+    "shooter_ok": 8,
+    "made_known": 12,
+    "made_ok": 10,
+    "points_ok": 14,
+    "team_ok": 19,
+    "precision": 1.0,
+    "recall": 0.778
+   },
+   "shot_half_court": {
+    "tp": 18,
+    "fp": 0,
+    "fn": 2,
+    "precision": 1.0,
+    "recall": 0.9
+   },
+   "possession_change": {
+    "tp": 22,
+    "fp": 7,
+    "fn": 8,
+    "cause_ok": 13,
+    "precision": 0.759,
+    "recall": 0.733
+   },
+   "play": {
+    "tp": 63,
+    "fp": 16,
+    "fn": 18,
+    "precision": 0.797,
+    "recall": 0.778
+   },
+   "contact": {
+    "tp": 223,
+    "fp": 22,
+    "fn": 26,
+    "hitter_ok": 60,
+    "side_ok": 113,
+    "precision": 0.91,
+    "recall": 0.896
+   },
+   "rally": {
+    "tp": 36,
+    "fp": 12,
+    "fn": 16,
+    "precision": 0.75,
+    "recall": 0.692
+   },
+   "point": {
+    "tp": 37,
+    "fp": 11,
+    "fn": 15,
+    "winner_known": 33,
+    "winner_ok": 27,
+    "precision": 0.771,
+    "recall": 0.712
+   },
+   "attack": {
+    "tp": 1,
+    "fp": 9,
+    "fn": 5,
+    "precision": 0.1,
+    "recall": 0.167
+   }
+  },
+  "v3_yolo": {
+   "label": "YOLO detect + pose, after (events v2)",
+   "how": "bisect.sh _old/v2 ... v2_yolo yolo yolo, then rekeep.sh _old/v3 (events stage) on v2_yolo",
+   "clips": [
+    "badminton_doubles_s11",
+    "badminton_doubles_s7",
+    "basketball_full_s7",
+    "basketball_half_s11",
+    "basketball_half_s7",
+    "pickleball_doubles_s11",
+    "pickleball_doubles_s7",
+    "volleyball_indoor_s11",
+    "volleyball_indoor_s7"
+   ],
+   "shot": {
+    "tp": 21,
+    "fp": 0,
+    "fn": 6,
+    "shooter_ok": 8,
+    "made_known": 12,
+    "made_ok": 10,
+    "points_ok": 14,
+    "team_ok": 19,
+    "precision": 1.0,
+    "recall": 0.778
+   },
+   "shot_half_court": {
+    "tp": 18,
+    "fp": 0,
+    "fn": 2,
+    "precision": 1.0,
+    "recall": 0.9
+   },
+   "possession_change": {
+    "tp": 22,
+    "fp": 7,
+    "fn": 8,
+    "cause_ok": 13,
+    "precision": 0.759,
+    "recall": 0.733
+   },
+   "play": {
+    "tp": 71,
+    "fp": 8,
+    "fn": 10,
+    "precision": 0.899,
+    "recall": 0.877
+   },
+   "contact": {
+    "tp": 239,
+    "fp": 35,
+    "fn": 10,
+    "hitter_ok": 75,
+    "side_ok": 143,
+    "precision": 0.872,
+    "recall": 0.96
+   },
+   "rally": {
+    "tp": 43,
+    "fp": 5,
+    "fn": 9,
+    "precision": 0.896,
+    "recall": 0.827
+   },
+   "point": {
+    "tp": 46,
+    "fp": 2,
+    "fn": 6,
+    "winner_known": 41,
+    "winner_ok": 31,
+    "precision": 0.958,
+    "recall": 0.885
+   },
+   "attack": {
+    "tp": 1,
+    "fp": 9,
+    "fn": 5,
+    "precision": 0.1,
+    "recall": 0.167
+   }
+  },
+  "v3_gt_rally_scoring": {
+   "label": "GT poses, after, pickleball rally.side_out=false",
+   "how": "rekeep.sh _old/v3 on v2_gt, pickleball clips, override rally.side_out=false",
+   "clips": [
+    "pickleball_doubles_s11",
+    "pickleball_doubles_s7"
+   ],
+   "shot": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "shooter_ok": 0,
+    "made_known": 0,
+    "made_ok": 0,
+    "points_ok": 0,
+    "team_ok": 0,
+    "precision": null,
+    "recall": null
+   },
+   "play": {
+    "tp": 15,
+    "fp": 0,
+    "fn": 1,
+    "precision": 1.0,
+    "recall": 0.938
+   },
+   "contact": {
+    "tp": 88,
+    "fp": 9,
+    "fn": 3,
+    "hitter_ok": 58,
+    "side_ok": 73,
+    "precision": 0.907,
+    "recall": 0.967
+   },
+   "rally": {
+    "tp": 15,
+    "fp": 0,
+    "fn": 1,
+    "precision": 1.0,
+    "recall": 0.938
+   },
+   "point": {
+    "tp": 15,
+    "fp": 0,
+    "fn": 1,
+    "winner_known": 13,
+    "winner_ok": 12,
+    "precision": 1.0,
+    "recall": 0.938
+   }
+  },
+  "v3_yolo_rally_scoring": {
+   "label": "YOLO, after, pickleball rally.side_out=false",
+   "how": "rekeep.sh _old/v3 on v2_yolo, pickleball clips, override rally.side_out=false",
+   "clips": [
+    "pickleball_doubles_s11",
+    "pickleball_doubles_s7"
+   ],
+   "shot": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "shooter_ok": 0,
+    "made_known": 0,
+    "made_ok": 0,
+    "points_ok": 0,
+    "team_ok": 0,
+    "precision": null,
+    "recall": null
+   },
+   "play": {
+    "tp": 15,
+    "fp": 0,
+    "fn": 1,
+    "precision": 1.0,
+    "recall": 0.938
+   },
+   "contact": {
+    "tp": 88,
+    "fp": 8,
+    "fn": 3,
+    "hitter_ok": 21,
+    "side_ok": 43,
+    "precision": 0.917,
+    "recall": 0.967
+   },
+   "rally": {
+    "tp": 15,
+    "fp": 0,
+    "fn": 1,
+    "precision": 1.0,
+    "recall": 0.938
+   },
+   "point": {
+    "tp": 15,
+    "fp": 0,
+    "fn": 1,
+    "winner_known": 13,
+    "winner_ok": 10,
+    "precision": 1.0,
+    "recall": 0.938
+   }
+  },
+  "v3_gt_no1t": {
+   "label": "GT poses, after, rally.one_touch=false",
+   "how": "rekeep.sh _old/v3 on v2_gt, badminton + pickleball clips, override rally.one_touch=false",
+   "clips": [
+    "badminton_doubles_s11",
+    "badminton_doubles_s7",
+    "pickleball_doubles_s11",
+    "pickleball_doubles_s7"
+   ],
+   "shot": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "shooter_ok": 0,
+    "made_known": 0,
+    "made_ok": 0,
+    "points_ok": 0,
+    "team_ok": 0,
+    "precision": null,
+    "recall": null
+   },
+   "play": {
+    "tp": 30,
+    "fp": 0,
+    "fn": 3,
+    "precision": 1.0,
+    "recall": 0.909
+   },
+   "contact": {
+    "tp": 177,
+    "fp": 15,
+    "fn": 10,
+    "hitter_ok": 94,
+    "side_ok": 106,
+    "precision": 0.922,
+    "recall": 0.947
+   },
+   "rally": {
+    "tp": 30,
+    "fp": 0,
+    "fn": 3,
+    "precision": 1.0,
+    "recall": 0.909
+   },
+   "point": {
+    "tp": 30,
+    "fp": 0,
+    "fn": 3,
+    "winner_known": 26,
+    "winner_ok": 21,
+    "precision": 1.0,
+    "recall": 0.909
+   }
+  },
+  "v3_yolo_no1t": {
+   "label": "YOLO, after, rally.one_touch=false",
+   "how": "rekeep.sh _old/v3 on v2_yolo, badminton + pickleball clips, override rally.one_touch=false",
+   "clips": [
+    "badminton_doubles_s11",
+    "badminton_doubles_s7",
+    "pickleball_doubles_s11",
+    "pickleball_doubles_s7"
+   ],
+   "shot": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 0,
+    "shooter_ok": 0,
+    "made_known": 0,
+    "made_ok": 0,
+    "points_ok": 0,
+    "team_ok": 0,
+    "precision": null,
+    "recall": null
+   },
+   "play": {
+    "tp": 30,
+    "fp": 0,
+    "fn": 3,
+    "precision": 1.0,
+    "recall": 0.909
+   },
+   "contact": {
+    "tp": 177,
+    "fp": 14,
+    "fn": 10,
+    "hitter_ok": 65,
+    "side_ok": 92,
+    "precision": 0.927,
+    "recall": 0.947
+   },
+   "rally": {
+    "tp": 30,
+    "fp": 0,
+    "fn": 3,
+    "precision": 1.0,
+    "recall": 0.909
+   },
+   "point": {
+    "tp": 30,
+    "fp": 0,
+    "fn": 3,
+    "winner_known": 26,
+    "winner_ok": 18,
+    "precision": 1.0,
+    "recall": 0.909
+   }
+  }
+ }
+}

@@ -255,6 +255,13 @@ class RallyCfg(_Cfg):
     # (real hits are weaker onsets than the synthetic ones). Off, onsets inside a motion
     # rally above `contact_min_strength` are still its contacts.
     audio_fusion: bool = False
+    # Without fusion: a strong onset up to `onset_pad_s` after a motion rally's end is
+    # still its last hit, so the rally ends after it (never earlier, never split): players
+    # stop running before the last shot lands. Synthetic badminton + pickleball, GT poses:
+    # 22 -> 30 of 33 rallies, P 1.00; real badminton 240 s unchanged (12/14, P 1.00).
+    # Cost: the landing onset after the last hit counts as a contact (contact P 0.91 ->
+    # 0.87, R 0.89 -> 0.96 over the 9 synthetic clips).
+    audio_extend_end: bool = True
     onset_pad_s: float = 1.5
     contact_window_s: float = 0.3  # pose wrist motion this close to an onset names the hitter
     # onset strength (robust sigmas over the local median) a contact needs. Synthetic:
@@ -268,6 +275,14 @@ class RallyCfg(_Cfg):
     # (volleyball: the server is alone behind the end line), else the first contact's team.
     server_behind_line: bool = False
     server_min_depth_m: float = 0.3
+    # Side-out scoring (traditional pickleball): only the serving side scores, and in
+    # doubles a lost rally passes the serve to the partner first (events.assign_winners)
+    side_out: bool = False
+    # One touch per side (badminton, pickleball): contact sides alternate through a rally
+    # (events.alternate_contacts) instead of the fastest wrists anywhere. Synthetic
+    # badminton + pickleball contact side right: GT poses 106 -> 158 of 177, YOLO pose
+    # 92 -> 112 (docs/evidence/M4/README.md "Events v2"); not measured on real footage.
+    one_touch: bool = False
 
 
 class Profile(_Cfg):

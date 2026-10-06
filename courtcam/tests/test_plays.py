@@ -264,6 +264,33 @@ def test_point_winner_is_the_side_serving_next():
     assert [e.winner_side for e in events if e.type == "rally"] == [1, 1, None]
 
 
+def test_side_out_doubles_second_server():
+    """USA Pickleball Official Rulebook (2025) 4.B.6: both partners serve before a side
+    out, except the game's starting server, who alone serves (as "Second Server");
+    4.B.6.e: after the First Server's team loses a rally the Second Server serves;
+    Section 1: only the serving side scores."""
+    from courtcam.events import assign_winners
+    from courtcam.profiles import RallyCfg
+
+    # serving side, server, per rally; side 0 = a1/a2, side 1 = b1/b2
+    serves = [(0, "a1"), (0, "a2"), (1, "b1"), (1, "b1"), (1, "b2"), (0, "a2"), (0, "a2")]
+    events = []
+    for k, (side, pid) in enumerate(serves):
+        t0 = 10.0 * k
+        events += [ev("", "rally", t0), ev("", "serve", t0, team=side, pid=pid),
+                   ev("", "point", t0 + 5)]  # fmt: skip
+        events[-3].t_end = t0 + 5
+    tpl = load_profile("pickleball").template("doubles")
+    assign_winners(events, [], tpl, RallyCfg(side_out=True))
+    points = [e for e in events if e.type == "point"]
+    # 1: game start, a different server on the same side is still the starting server
+    #    holding serve (a lost rally there is a side out); 2: a lost -> side out;
+    # 3: b1 holds; 4: b1 loses, partner b2 serves; 5: b2 loses -> side out; 6: a2 holds
+    assert [p.winner_side for p in points] == [0, 1, 1, 0, 0, 0, None]
+    assert [p.points for p in points] == [1, 0, 1, 0, 0, 1, None]
+    assert score_timeline(events)[-1].scores == (2, 1)
+
+
 def test_parse_command_is_fuzzy_and_needs_both_words():
     roster = {"Jordan Lee": "p3", "Sam": "p7"}
     assert parse_command(tokens("Replay, clip that."), roster, CFG)[2] is None

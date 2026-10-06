@@ -87,7 +87,8 @@ tracking:
   merge_max_dist_m: 3.0
   smooth_window: 5
 events: [rally, hype]
-rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0]}
+# one_touch: contact sides alternate through a rally (events.alternate_contacts)
+rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0], one_touch: true}
 # M4 play grammar (courtcam.plays): serve -> point; `last_n` adds the window of the last
 # 3 shots to long rallies.
 plays:

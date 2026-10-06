@@ -156,14 +156,15 @@ def build_plays(events: list[Event], grammars: list[dict[str, Any]], sport: str)
 
 def score_timeline(events: list[Event], user: Iterable[ScoreEntry] = ()) -> list[ScoreEntry]:
     """The running score: every made shot with `points` (basketball) or `point` with a
-    `winner_side` (rally scoring) adds to its team; a user entry sets the score outright
-    from its time on, and later automatic entries add on top of it."""
+    `winner_side` adds `points` (unset: 1, rally scoring; 0: a side-out rally the
+    receivers won) to its team; a user entry sets the score outright from its time on,
+    and later automatic entries add on top of it."""
     items: list[tuple[float, int, Any]] = []
     for e in events:
         if e.type == "shot" and e.made and e.points and e.team in (0, 1):
             items.append((e.t_key, 1, (e.team, e.points, e.id)))
-        elif e.type == "point" and e.winner_side in (0, 1):
-            items.append((e.t_key, 1, (e.winner_side, 1, e.id)))
+        elif e.type == "point" and e.winner_side in (0, 1) and e.points != 0:
+            items.append((e.t_key, 1, (e.winner_side, e.points or 1, e.id)))
     for u in user:
         items.append((u.t, 0, u))
     items.sort(key=lambda x: (x[0], x[1]))

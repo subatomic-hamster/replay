@@ -1,0 +1,16 @@
+{
+ "variant": "indoor",
+ "_note": "Hand-measured on a 43-frame temporal median of the 240 s clip (players removed), each point the intersection of two painted red volleyball lines read off 7x zoom crops with a pixel grid. Elevated fixed camera at one end of the net line (court long axis runs left-right, the net projects to a near-vertical line at x~1040-1090). Naming: near end = LEFT end line, far end = RIGHT end line; l sideline = the far/top sideline (y~485), r sideline = the near/bottom sideline (y~703) - a rotation, not a mirror, of the template (+x toward r, +y toward the far end). net_post_l / net_post_r are where the painted centre line under the net (the blue half-court line, which lies under the net: it agrees with the post-base line to ~2 px) crosses each sideline.",
+ "landmarks_px": {
+  "corner_nl": [584.4, 485.4],
+  "corner_nr": [331.0, 703.4],
+  "corner_fl": [1496.3, 483.7],
+  "corner_fr": [1852.0, 700.4],
+  "net_post_l": [1038.4, 484.8],
+  "net_post_r": [1088.8, 703.4],
+  "attack_nl": [885.5, 485.6],
+  "attack_nr": [836.6, 703.1],
+  "attack_fl": [1189.1, 484.6],
+  "attack_fr": [1342.1, 702.0]
+ }
+}

@@ -39,6 +39,22 @@ plenty of elevated, clean, single-court pickleball footage exists, but nearly
 all of it is shot on standard GoPro wide, which shows negligible barrel
 curvature at the frame edges, not the strong fisheye the brief asked for).
 
+**2026-10-06 fourth pass (volleyball — the corpus had none):** searched YouTube
+(including its Creative-Commons filter) for amateur/rec/school indoor
+volleyball from a fixed, elevated camera showing the whole court in one shot
+(both end lines, the net, players on both sides), ≥1080p, no pan/zoom, no
+scorebug. Of the ~16 candidates probed by real frames, one qualified
+(`westwashington`, **Creative Commons Attribution**, so it is the first corpus
+clip in `samples/real` whose licence would allow committed evidence — see its entry for the
+attribution it needs; it is still not committed). Nearly all other volleyball
+on YouTube is shot from a low sideline/endline tripod (partial court), is a
+broadcast production with pans and a score bar, or is a 360° camera upload. See
+the rejected list below. Tooling: `yt-dlp` lives in
+`/workspace/wt/replay-env/venvs/ytdlp`; the box's static `ffmpeg` segfaults on
+DNS lookups (it can only read local files), so the cut was made by fetching only
+the needed HLS segments of the 1080p H.264 stream with a small script and
+muxing locally, instead of downloading the whole 3.5 h stream.
+
 Naming: `<sport>_<venue-slug>_<NNN>s.mp4` = a continuous stream-copied
 segment of live play (`ffmpeg -c copy`, cut on the nearest keyframe).
 `<sport>_<venue-slug>_smoke.mp4` = a short re-encoded (H.264/AAC, constant
@@ -165,6 +181,21 @@ matching `.jpg` — one representative extracted frame.
 - **Players on court:** ~8–10 (pickup game, mixed clothing, no uniforms/referee — amateur)
 - **Issues:** two small wall-mounted electronic scoreboards are visible top-left and top-right of frame — confirmed static/non-live-updating across the two sampled timestamps, consistent with real physical venue scoreboards (as elsewhere in this manifest), not a video overlay. Native resolution is 720p, not 1080p — flagged above. No cuts, no software overlay, no commentary (ambient gym audio only).
 
+### 9. `volleyball_westwashington_240s.mp4` + `volleyball_westwashington_smoke.mp4` — **primary volleyball clip, Creative Commons (CC BY)**
+
+- **Source:** https://www.youtube.com/watch?v=b3aiaYKG3-c — "25 Volleyball Austin vs West Washington" (livestream recording, uploaded 2025-10-19, 12 499 s)
+- **Uploader:** West Washington Livestream (https://www.youtube.com/@WestWashingtonLivestream)
+- **License/terms:** **Creative Commons Attribution license (reuse allowed)** — read from the video's YouTube metadata (`license` field) by `yt-dlp`, 2026-10-06. Attribution required if any derivative is ever published or committed: "West Washington Livestream, '25 Volleyball Austin vs West Washington', https://www.youtube.com/watch?v=b3aiaYKG3-c, CC BY". Under D-7 the footage itself is still not committed here; the licence only means that a later decision may allow committed evidence from it (check the licence on the page again at that point; it is the uploader's claim and says nothing about the players or any music/trademarks).
+- **Decision (D-76): local only despite CC BY.** The players are high-school students (minors) at a school game. Frames, cutouts, scene packages and recordings derived from this clip stay in gitignored docs/evidence/local/ and on the box, like every YouTube clip; nothing derived from it is committed or published.
+- **Resolution/fps:** 1920x1080, 30 fps, H.264 (stream-copied from the 1080p HLS rendition), AAC audio. The audio track is **re-encoded** (AAC 128 kb/s, 44.1 kHz stereo) because muxing the HLS audio segments with `-c copy` silently truncated it to 108 s; the video is a pure stream copy. Mean volume −36.9 dB (gym ambience, whistles, ball contact — no commentary).
+- **Duration:** main clip 240 s, cut from source t = 4377.9–4617.9 s (first HLS segment boundary at/after 4380 s); smoke 30 s = the first 30 s of the main clip, re-encoded H.264 yuv420p CFR 30 + AAC, faststart. Sizes: main 58.1 MB, smoke 10.0 MB.
+- **Sport:** indoor volleyball, high-school girls (Austin vs West Washington), a school gym ("Senator Pride", bleachers with spectators on the far side). Amateur and unbranded production; the gym is a shared basketball/volleyball floor (blue basketball lines, red volleyball lines — the red lines are the court; the blue centre line lies under the net).
+- **Camera:** fixed (verified identical at source t = 100, 1000, 3000, 4500, 6000, 8000, 10 000 and at the last frame of the cut), **elevated and standing in the plane of the net** (like `badminton_auditorium`): the court's long axis runs left–right in the image, the net projects to a near-vertical line at x ≈ 1040–1090, and **both end lines, both sidelines, both attack lines and the net are fully in frame** with players on both sides. The lens is rectilinear (the painted lines stay straight edge to edge; no `k1` model was needed — homography reprojection error 1.26 px, see the landmarks file).
+- **Framing measurements (native 1920x1080):** far sideline y ≈ 485, near sideline y ≈ 702 (net direction, 9 m ≈ 217 px); end lines at x ≈ 331–584 (left) and 1496–1852 (right) (18 m ≈ 1270–1520 px); players ≈ 90–130 px tall.
+- **Players on court:** 12 (6 a side) in white/navy vs black; plus a referee standing at the near net post, a person at each end line, and the teams' benches along the bottom edge (bottom left and bottom right of the frame, outside the court polygon).
+- **Landmarks:** `volleyball_westwashington_240s.landmarks.json` — 10 hand-clicked points (4 corners, 2 centre-line/sideline crossings, 4 attack-line ends) read off zoomed crops of a 43-frame temporal median of the clip. Naming: near end = left end line, `l` sideline = the far/top one (a rotation, not a mirror, of the template).
+- **Issues:** a small physical scoreboard hangs top-left (a real LED scoreboard, partly a venue sign, not a video overlay; no software overlay anywhere). The cut contains a team huddle/timeout (seen at ≈ 150 s into the clip) and between-rally dead time — normal for a real set. Spectators and the team benches sit outside the court polygon; the gym's blue basketball arcs and lines are decoys for any line detector. The source is a livestream recording of several matches, so a different part of it can be cut on request (frames at source t = 100, 3000, 4500, 6000, 8000 s show live play; t = 1000 s a huddle; t = 10 000 s an empty floor).
+
 ---
 
 ## Rejected candidates
@@ -223,9 +254,31 @@ Basketball:
 
 **Verdict on this pass:** strongly barrel-distorted (fisheye/superview) footage that also satisfies the elevated-fixed-camera, single-court, overlay-free framing bar **exists for badminton and basketball** but is rare and took real search effort to isolate — most "GoPro badminton/basketball" results are POV/head-mounted, multi-court gym-wide shots, or have channel-branding overlays. For **pickleball specifically, no qualifying clip was found in this pass**: clean, elevated, single-court, overlay-free pickleball footage is comparatively easy to find, but essentially all of it is shot on a standard (not ultra-wide/superview) GoPro or phone lens with negligible barrel distortion at the frame edges — the distortion requirement, not the framing requirement, is the bottleneck for this sport. Revisit with a dedicated search for phone-native 0.5x-lens pickleball uploads (e.g. TikTok/Instagram re-uploads) if a distorted pickleball clip is still needed.
 
+**2026-10-06 fourth pass (volleyball) — rejected candidates** (each probed by extracting real frames at one to eight timestamps; licence is the YouTube `license` field, "standard" = no CC marking):
+
+- `d1yMxzgAJrU` "Semi-Finals: Hilo vs Waiakea" (Hilo High School; CC BY, 1080p60, 1 h 40 min) — school broadcast production: full-width lower-third graphics and title cards over the court, camera at bleacher level and panning with the play, only part of the court in frame.
+- `Z9yffRnNo88` "Frontier Regional School Volleyball vs Lenox" (FCATMedia; CC BY, 1080p30) — low sideline camera showing about half the court, persistent live scorebug box top-left.
+- `_OI_ZgrKriA` "Warner University (Los Gallos de Oro) Vs Insystem (adult team)" (Mr Meow; CC BY, 1080p30, 426 s) — adult team but a low handheld-looking sideline view of a part of the court, only 7 min long.
+- `9uNiGQNQMmw` "2020 MN SELECT 16-1s vs NL 17-2 Set 1" (Lisa Stremmel; CC BY, 1080p24) — camera behind the net at near-net height (net mesh fills the foreground), far court only; 24 fps youth club game.
+- `N1G7oWrS6YA` "LWCS Varsity Girls vs JCA" (Living Water Christian School; CC BY, 1080p30) — shot from the referee's stand: a referee fills the right third of the frame at close range, a basketball-court floor, only a few players visible.
+- `XD6HIjJF8bk` "Beechwood 7th vs Summit View" (Beechwood Class of 202x; CC BY, 1080p30) — low corner camera, tight on one half of the court.
+- `ZkCYtf-VFJ0` "Champions Cup 25 — Court 1" (SRDS Preston; CC BY, 1080p30, 10.9 h livestream) — low sideline view, persistent score/sponsor overlay top-left and top-right, players on the near side much larger than the far side.
+- `K_UqS490MSs` "Coed Tournament Feb 6/semifinal" (Andre Troyer; standard, 1080p30) and the same channel's other coed-tournament uploads (`pk46UoPr0a8`, `pctziBt34HM`, `MMFNsIdpZBs`, `0iJ6qmwzdN4`, `7zwl1MvOzAU` — only the first was probed by frame, the rest were judged from the channel) — low sideline tripod at gym floor height, about 2/3 of one court, people in the foreground.
+- `ke81j9xEBaI` / `5T5YnoIny-Y` (Luck Sports & Entertainment; standard, 1080p60/30, ~1 h each) — rec-league coed 6v6 at ground level from one side with a basketball backboard in the way, partial court.
+- `A6Zslh8ijPc` "NFJC - EVPC Friday League" (SundaySchool VolleyballClub; standard, 1080p30) — low corner shot, two courts in frame, each only partly visible.
+- `0zBSGdQ2y9U` "Cream Team (Game 1) [Yankee C+ 10/23/22]" (The AHU Project; standard, 2560x1440p60) — low corner camera, partial court.
+- `FP0cyNH5GJk` "Volleyball GJSD vs Richland" (Darren Buchko StreamPro; standard) — corner camera at spectator height, persistent score banner at the top of the frame.
+- `WYYTzOeRnks` "Varsity Lady Indians vs. Summersville (Full Court)" (Couch K-12 Schools; standard, **720p**) — a fixed mid-height shot with the whole court but the scorers' heads fill the bottom of the frame and the source is only 1280x720; kept as a backup if a second fixed-camera volleyball venue is wanted.
+- `4hy0iMH5_j0` "Delaney Moon Volleyball Game film … 18s Nationals" (standard, 1080p30) — low end-line tripod in a convention-centre hall with a persistent score bar and many neighbouring courts.
+- `XaYCXR-5O5E` "DCD Coed Quads A/B" (Jason Shen; standard, 1080p60) — outdoor sand court, 4v4 at net height.
+- Not probed by frame (judged from metadata/title): the `IVL … Coed League` series by Paul Sander (spherical 360° videos, "lifeguard view" — reframing needed, and the descriptions say so); all POV/GoPro head-cam uploads (MaKuro, Hamaji Neo, BrodesVolleyball, DTvolleyball, Volleyball Gorillas, moomoocowjonny GoPro); NCAA/Olympic/club-nationals broadcasts (`mSlJCiiYkBA`, `LcAWutYusEE`, `rKahSdKGgv4`, `lTh-Fk3E5QQ`, …) — professional or produced, out of scope; `jTfTKiIM0I8` and `MoIrAlqAOMc` — "video not available" when probed.
+- Search phrasings that returned no usable fixed/elevated rec volleyball: "volleyball end line camera full match high angle", "volleyball scrimmage high camera wall mounted", "volleyball bleachers high angle view game", "adult recreational volleyball match full court view" (returns only product-review/ camera-gear videos and tutorials).
+
+**Verdict on this pass:** a genuinely elevated, fixed, whole-court, overlay-free **indoor volleyball** clip at 1080p exists on YouTube under a CC licence, but it is a school livestream (one fixed camera on the gym wall) rather than rec-league footage; every adult rec-league upload found was filmed from the floor. Search effort was high: the CC filter yields very few volleyball videos and each frame probe costs a minute through yt-dlp.
+
 ---
 
 ## Disk usage
 
-- `samples/real/` total: **~855 MB** (19 video clips + 19 JPEG frames)
-- All intermediate/full source downloads were deleted after cutting.
+- `samples/real/` total: **~855 MB** (19 video clips + 19 JPEG frames) + **~68 MB** for the volleyball pass (2 clips + 2 JPEG frames + 1 landmarks file) added 2026-10-06.
+- All intermediate/full source downloads were deleted after cutting (the volleyball pass never downloaded a full source: only the 258 s of HLS segments around the cut, deleted afterwards).

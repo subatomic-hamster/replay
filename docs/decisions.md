@@ -310,3 +310,6 @@ Ceilings:
 - hoop heights are off on panoramic rigs (D-53);
 - no tracked ball;
 - the envelope is a sampled box, not proven inside.
+
+## D-76 (2026-10-06) — Real volleyball clip joins the corpus, local only despite CC BY
+`volleyball_westwashington` is added to samples/real: a CC BY school livestream, 1080p30, from a fixed elevated whole-court camera in the plane of the net. Its 10 hand-clicked landmarks give a 1.26 px reprojection error with no lens model (`*.landmarks.json` is tracked, as for the other clips). No adult rec-league volleyball upload with an elevated whole-court camera was found; the rejected candidates are in MANIFEST.md. The licence would allow committed evidence with attribution, but the players are minors, so the privacy rule (unenrolled people stay anonymous) wins: everything derived from this clip stays local, exactly like the YouTube clips (D-7).

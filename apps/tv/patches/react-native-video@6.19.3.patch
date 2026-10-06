@@ -1,0 +1,163 @@
+diff --git a/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt b/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
+index 75e2307fc6616aff7f0f9d884c907b4bdad14899..0080260fbc154ff2dec8dd5753a38f4bfbf7744f 100644
+--- a/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
++++ b/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
+@@ -4,6 +4,8 @@ import android.content.Context
+ import android.graphics.Color
+ import android.graphics.drawable.GradientDrawable
+ import android.util.AttributeSet
++import android.view.LayoutInflater
++import android.view.SurfaceView
+ import android.view.View
+ import android.view.View.MeasureSpec
+ import android.widget.FrameLayout
+@@ -17,6 +19,8 @@ import androidx.media3.ui.DefaultTimeBar
+ import androidx.media3.ui.PlayerView
+ import com.brentvatne.common.api.ResizeMode
+ import com.brentvatne.common.api.SubtitleStyle
++import com.brentvatne.common.api.ViewType
++import com.brentvatne.react.R
+
+ @UnstableApi
+ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0) :
+@@ -37,20 +41,40 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+         visibility = View.GONE
+     }
+
+-    private val playerView = PlayerView(context).apply {
+-        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+-        setShutterBackgroundColor(Color.TRANSPARENT)
+-        useController = true
+-        controllerAutoShow = true
+-        controllerHideOnTouch = true
+-        controllerShowTimeoutMs = 5000
+-        // Don't show subtitle button by default - will be enabled when tracks are available
+-        setShowSubtitleButton(false)
+-        // Enable proper surface view handling to prevent rendering issues
+-        setUseArtwork(false)
+-        setDefaultArtwork(null)
+-        // Ensure proper video scaling - start with FIT mode
+-        resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
++    // Settings that live only on the PlayerView, kept so updateSurfaceView can rebuild it.
++    private var surfaceType = ViewType.VIEW_TYPE_SURFACE
++    private var shutterColor = Color.TRANSPARENT
++    private var showSubtitleButton = false
++    private var playerViewFocusable: Boolean? = null
++    private var controllerVisibilityListener: PlayerView.ControllerVisibilityListener? = null
++    private var fullscreenButtonClickListener: PlayerView.FullscreenButtonClickListener? = null
++    private val layoutChangeListeners = mutableListOf<View.OnLayoutChangeListener>()
++
++    private var playerView = createPlayerView(ViewType.VIEW_TYPE_SURFACE)
++
++    // PlayerView reads its surface type only from XML attributes, so a TextureView one is inflated.
++    private fun createPlayerView(type: Int): PlayerView {
++        val view = if (type == ViewType.VIEW_TYPE_TEXTURE) {
++            LayoutInflater.from(context).inflate(R.layout.rnv_texture_player_view, this, false) as PlayerView
++        } else {
++            PlayerView(context)
++        }
++        (view.videoSurfaceView as? SurfaceView)?.setSecure(type == ViewType.VIEW_TYPE_SURFACE_SECURE)
++        return view.apply {
++            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
++            setShutterBackgroundColor(Color.TRANSPARENT)
++            useController = true
++            controllerAutoShow = true
++            controllerHideOnTouch = true
++            controllerShowTimeoutMs = 5000
++            // Don't show subtitle button by default - will be enabled when tracks are available
++            setShowSubtitleButton(false)
++            // Enable proper surface view handling to prevent rendering issues
++            setUseArtwork(false)
++            setDefaultArtwork(null)
++            // Ensure proper video scaling - start with FIT mode
++            resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
++        }
+     }
+
+     init {
+@@ -137,11 +161,40 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+     }
+
+     fun setShutterColor(color: Int) {
++        shutterColor = color
+         playerView.setShutterBackgroundColor(color)
+     }
+
++    // The surface type is fixed when a PlayerView is built, so a new one replaces the current
++    // one with the same settings, listeners and player.
+     fun updateSurfaceView(viewType: Int) {
+-        // TODO: Implement proper surface type switching if needed
++        if (viewType == surfaceType) return
++        surfaceType = viewType
++        val old = playerView
++        val next = createPlayerView(viewType).apply {
++            resizeMode = old.resizeMode
++            useController = old.useController
++            controllerAutoShow = old.controllerAutoShow
++            controllerHideOnTouch = old.controllerHideOnTouch
++            controllerShowTimeoutMs = old.controllerShowTimeoutMs
++            setShutterBackgroundColor(shutterColor)
++            setShowSubtitleButton(showSubtitleButton)
++            setControllerVisibilityListener(controllerVisibilityListener)
++            setFullscreenButtonClickListener(fullscreenButtonClickListener)
++            playerViewFocusable?.let { isFocusable = it }
++        }
++        layoutChangeListeners.forEach {
++            old.removeOnLayoutChangeListener(it)
++            next.addOnLayoutChangeListener(it)
++        }
++        val player = old.player
++        old.player = null
++        removeView(old)
++        addView(next, 0)
++        playerView = next
++        next.player = player
++        setSubtitleStyle(localStyle)
++        requestLayout()
+     }
+
+     val isPlaying: Boolean
+@@ -189,10 +242,12 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+     }
+
+     fun setFullscreenButtonClickListener(listener: PlayerView.FullscreenButtonClickListener?) {
++        fullscreenButtonClickListener = listener
+         playerView.setFullscreenButtonClickListener(listener)
+     }
+
+     fun setShowSubtitleButton(show: Boolean) {
++        showSubtitleButton = show
+         playerView.setShowSubtitleButton(show)
+     }
+
+@@ -205,14 +260,17 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+     fun isControllerVisible(): Boolean = playerView.isControllerFullyVisible
+
+     fun setControllerVisibilityListener(listener: PlayerView.ControllerVisibilityListener?) {
++        controllerVisibilityListener = listener
+         playerView.setControllerVisibilityListener(listener)
+     }
+
+     override fun addOnLayoutChangeListener(listener: View.OnLayoutChangeListener) {
++        layoutChangeListeners.add(listener)
+         playerView.addOnLayoutChangeListener(listener)
+     }
+
+     override fun setFocusable(focusable: Boolean) {
++        playerViewFocusable = focusable
+         playerView.isFocusable = focusable
+     }
+
+diff --git a/android/src/main/res/layout/rnv_texture_player_view.xml b/android/src/main/res/layout/rnv_texture_player_view.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..fd456c1d2fc6f5d3abda3f4dd8d7cf90dcd8e7fc
+--- /dev/null
++++ b/android/src/main/res/layout/rnv_texture_player_view.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- PlayerView takes its surface type only from XML; ExoPlayerView inflates this for viewType TEXTURE. -->
++<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    app:surface_type="texture_view" />

@@ -2,3 +2,5 @@
 nodeLinker: hoisted
 allowBuilds:
   esbuild: true
+patchedDependencies:
+  react-native-video@6.19.3: patches/react-native-video@6.19.3.patch

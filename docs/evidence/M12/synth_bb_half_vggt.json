@@ -1,0 +1,90 @@
+{
+ "model": "facebook/VGGT-1B",
+ "licence": "CC-BY-NC-4.0 weights (experiment only)",
+ "load_s": 7.8,
+ "input": [
+  518,
+  294
+ ],
+ "frustum_ceiling": 0.992,
+ "runs": [
+  {
+   "frames": 8,
+   "forward_s": 2.24,
+   "s_per_frame": 0.28,
+   "gpu_peak_gb": 8.05,
+   "camera_motion_m": {
+    "median": 0.0019,
+    "max": 0.0054
+   },
+   "camera_rotation_deg": {
+    "median": 0.0338,
+    "max": 0.056
+   },
+   "focal_err_pct": 111.0,
+   "depth_scale_s0": 9.058,
+   "depth_scale_cv": 0.001,
+   "floor_rel_depth_err_med": 0.0303,
+   "floor_abs_z_med_m": 0.1818,
+   "floor_abs_z_p90_m": 0.6206,
+   "coverage_frame0": 0.121,
+   "coverage_fused": 0.147,
+   "coverage_fused_outside_frustum": 0.0,
+   "coverage_calibK_frame0": 0.3,
+   "coverage_calibK_fused": 0.325,
+   "coverage_calibK_fused_outside_frustum": 0.0001
+  },
+  {
+   "frames": 16,
+   "forward_s": 2.54,
+   "s_per_frame": 0.159,
+   "gpu_peak_gb": 8.31,
+   "camera_motion_m": {
+    "median": 0.0036,
+    "max": 0.0261
+   },
+   "camera_rotation_deg": {
+    "median": 0.0396,
+    "max": 0.0791
+   },
+   "focal_err_pct": 118.04,
+   "depth_scale_s0": 9.126,
+   "depth_scale_cv": 0.003,
+   "floor_rel_depth_err_med": 0.0328,
+   "floor_abs_z_med_m": 0.197,
+   "floor_abs_z_p90_m": 0.6259,
+   "coverage_frame0": 0.118,
+   "coverage_fused": 0.153,
+   "coverage_fused_outside_frustum": 0.0,
+   "coverage_calibK_frame0": 0.282,
+   "coverage_calibK_fused": 0.317,
+   "coverage_calibK_fused_outside_frustum": 0.0003
+  },
+  {
+   "frames": 32,
+   "forward_s": 5.7,
+   "s_per_frame": 0.178,
+   "gpu_peak_gb": 8.77,
+   "camera_motion_m": {
+    "median": 0.0028,
+    "max": 0.0084
+   },
+   "camera_rotation_deg": {
+    "median": 0.0396,
+    "max": 0.0839
+   },
+   "focal_err_pct": 119.42,
+   "depth_scale_s0": 9.191,
+   "depth_scale_cv": 0.0018,
+   "floor_rel_depth_err_med": 0.0327,
+   "floor_abs_z_med_m": 0.1964,
+   "floor_abs_z_p90_m": 0.6377,
+   "coverage_frame0": 0.115,
+   "coverage_fused": 0.154,
+   "coverage_fused_outside_frustum": 0.0,
+   "coverage_calibK_frame0": 0.278,
+   "coverage_calibK_fused": 0.312,
+   "coverage_calibK_fused_outside_frustum": 0.0007
+  }
+ ]
+}

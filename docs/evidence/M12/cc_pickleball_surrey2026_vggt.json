@@ -1,0 +1,90 @@
+{
+ "model": "facebook/VGGT-1B",
+ "licence": "CC-BY-NC-4.0 weights (experiment only)",
+ "load_s": 7.7,
+ "input": [
+  518,
+  294
+ ],
+ "frustum_ceiling": 0.857,
+ "runs": [
+  {
+   "frames": 8,
+   "forward_s": 2.18,
+   "s_per_frame": 0.272,
+   "gpu_peak_gb": 8.05,
+   "camera_motion_m": {
+    "median": 0.005,
+    "max": 0.0076
+   },
+   "camera_rotation_deg": {
+    "median": 0.014,
+    "max": 0.0626
+   },
+   "focal_err_pct": 15.17,
+   "depth_scale_s0": 9.282,
+   "depth_scale_cv": 0.002,
+   "floor_rel_depth_err_med": 0.0134,
+   "floor_abs_z_med_m": 0.0275,
+   "floor_abs_z_p90_m": 0.519,
+   "coverage_frame0": 0.55,
+   "coverage_fused": 0.692,
+   "coverage_fused_outside_frustum": 0.0008,
+   "coverage_calibK_frame0": 0.434,
+   "coverage_calibK_fused": 0.491,
+   "coverage_calibK_fused_outside_frustum": 0.0113
+  },
+  {
+   "frames": 16,
+   "forward_s": 2.54,
+   "s_per_frame": 0.159,
+   "gpu_peak_gb": 8.31,
+   "camera_motion_m": {
+    "median": 0.0054,
+    "max": 0.0123
+   },
+   "camera_rotation_deg": {
+    "median": 0.0396,
+    "max": 0.0791
+   },
+   "focal_err_pct": 15.04,
+   "depth_scale_s0": 9.685,
+   "depth_scale_cv": 0.0019,
+   "floor_rel_depth_err_med": 0.0084,
+   "floor_abs_z_med_m": 0.0172,
+   "floor_abs_z_p90_m": 0.3984,
+   "coverage_frame0": 0.546,
+   "coverage_fused": 0.714,
+   "coverage_fused_outside_frustum": 0.0013,
+   "coverage_calibK_frame0": 0.465,
+   "coverage_calibK_fused": 0.552,
+   "coverage_calibK_fused_outside_frustum": 0.0144
+  },
+  {
+   "frames": 32,
+   "forward_s": 5.71,
+   "s_per_frame": 0.178,
+   "gpu_peak_gb": 8.77,
+   "camera_motion_m": {
+    "median": 0.0052,
+    "max": 0.0088
+   },
+   "camera_rotation_deg": {
+    "median": 0.0396,
+    "max": 0.0685
+   },
+   "focal_err_pct": 14.99,
+   "depth_scale_s0": 9.485,
+   "depth_scale_cv": 0.0022,
+   "floor_rel_depth_err_med": 0.0081,
+   "floor_abs_z_med_m": 0.0165,
+   "floor_abs_z_p90_m": 0.3675,
+   "coverage_frame0": 0.541,
+   "coverage_fused": 0.717,
+   "coverage_fused_outside_frustum": 0.0016,
+   "coverage_calibK_frame0": 0.465,
+   "coverage_calibK_fused": 0.559,
+   "coverage_calibK_fused_outside_frustum": 0.0141
+  }
+ ]
+}

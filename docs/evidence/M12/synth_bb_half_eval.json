@@ -1,0 +1,189 @@
+{
+ "synthetic": true,
+ "npz_meta": {
+  "model": "Ruicheng/moge-2-vitl-normal",
+  "stride": 2,
+  "fov_x_deg": 113.89775442119058,
+  "plate": {
+   "scale": 3.809912244202115,
+   "n_floor_px": 430180,
+   "rel_depth_err_med": 0.05648936295701519,
+   "rel_depth_err_p90": 0.14466545822347207,
+   "floor_abs_z_med_m": 0.33893332213148053,
+   "floor_abs_z_p90_m": 0.8679854363141697
+  },
+  "timing": {
+   "load_s": 3.85,
+   "plate_s": 0.889,
+   "frame_s_median": 0.141,
+   "frame_s_max": 0.214,
+   "frames": 120,
+   "gpu_peak_gb": 3.19
+  }
+ },
+ "calibration_vs_truth": {
+  "focal_err_pct": 0.002,
+  "position_err_m": 0.0
+ },
+ "moge_scale": {
+  "plate": 3.81,
+  "frames_mean": 1.463,
+  "frames_cv": 0.0493
+ },
+ "moge_floor_after_scale": {
+  "rel_depth_err_med": 0.023,
+  "floor_abs_z_med_m": 0.136,
+  "floor_abs_z_p90_m": 0.335
+ },
+ "players": {
+  "samples": 1199,
+  "tierb_xy_err_m": {
+   "median": 0.182,
+   "p90": 0.253
+  },
+  "tierd_xy_err_m": {
+   "median": 0.624,
+   "p90": 1.514
+  },
+  "tierb_height_err_m": {
+   "median_abs": 0.132,
+   "median_signed": 0.129
+  },
+  "tierd_height_err_m": {
+   "median_abs": 0.277,
+   "median_signed": -0.275
+  },
+  "tierd_depth_spread_p10_p90_m": {
+   "median": 0.707,
+   "p90": 0.921,
+   "note": "a real body is ~0.3 m deep"
+  }
+ },
+ "heldout_frames": [
+  184,
+  244,
+  304
+ ],
+ "heldout": {
+  "real (sanity)": {
+   "tierb": {
+    "player_iou": 0.796,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 28.2,
+    "player_region_psnr": 17.73
+   },
+   "tierd": {
+    "player_iou": 0.751,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 24.04,
+    "player_region_psnr": 15.37
+   },
+   "tierd_hybrid": {
+    "player_iou": 0.754,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 24.55,
+    "player_region_psnr": 15.36
+   }
+  },
+  "orbit +30": {
+   "tierb": {
+    "player_iou": 0.608,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 24.08,
+    "player_region_psnr": 13.38
+   },
+   "tierd": {
+    "player_iou": 0.345,
+    "floor_coverage": 0.994,
+    "floor_psnr_covered": 16.66,
+    "player_region_psnr": 10.77
+   },
+   "tierd_hybrid": {
+    "player_iou": 0.533,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 23.59,
+    "player_region_psnr": 12.44
+   }
+  },
+  "orbit -30": {
+   "tierb": {
+    "player_iou": 0.501,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 24.66,
+    "player_region_psnr": 12.89
+   },
+   "tierd": {
+    "player_iou": 0.352,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 18.09,
+    "player_region_psnr": 11.39
+   },
+   "tierd_hybrid": {
+    "player_iou": 0.5,
+    "floor_coverage": 0.997,
+    "floor_psnr_covered": 23.91,
+    "player_region_psnr": 12.57
+   }
+  },
+  "orbit +60": {
+   "tierb": {
+    "player_iou": 0.549,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 21.45,
+    "player_region_psnr": 12.45
+   },
+   "tierd": {
+    "player_iou": 0.204,
+    "floor_coverage": 0.942,
+    "floor_psnr_covered": 15.35,
+    "player_region_psnr": 10.17
+   },
+   "tierd_hybrid": {
+    "player_iou": 0.422,
+    "floor_coverage": 0.983,
+    "floor_psnr_covered": 21.79,
+    "player_region_psnr": 11.62
+   }
+  },
+  "orbit -60": {
+   "tierb": {
+    "player_iou": 0.347,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 21.09,
+    "player_region_psnr": 11.73
+   },
+   "tierd": {
+    "player_iou": 0.157,
+    "floor_coverage": 0.981,
+    "floor_psnr_covered": 14.78,
+    "player_region_psnr": 10.43
+   },
+   "tierd_hybrid": {
+    "player_iou": 0.381,
+    "floor_coverage": 0.993,
+    "floor_psnr_covered": 21.35,
+    "player_region_psnr": 11.51
+   }
+  },
+  "high 15 m back, 9 m up": {
+   "tierb": {
+    "player_iou": 0.727,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 23.58,
+    "player_region_psnr": 17.58
+   },
+   "tierd": {
+    "player_iou": 0.69,
+    "floor_coverage": 1.0,
+    "floor_psnr_covered": 18.53,
+    "player_region_psnr": 13.96
+   },
+   "tierd_hybrid": {
+    "player_iou": 0.712,
+    "floor_coverage": 0.998,
+    "floor_psnr_covered": 24.13,
+    "player_region_psnr": 14.72
+   }
+  }
+ }
+}

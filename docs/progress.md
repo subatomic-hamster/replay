@@ -262,6 +262,23 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Fixed: `box-demo.sh serve` ran the API on /opt/venv's python, and vite hung on a corepack prompt, when tmux's global PATH lacked env.sh. Each window now sources env.sh; tmux's global env is untouched.
 - Evidence: docs/evidence/E2E/README.md (commands, beat timestamps, caveats)
 - Decisions: D-73.
+
+## Tracking v3: jersey cut skips guarded torsos (2026-10-06)
+
+- Cause of the D-70 side effect: every false cut with the GT detector sat on a torso covered by an opponent's box. The cross-team player on half s11 was one mislabelled piece.
+- Fix: a changed run where most torsos are more than half covered by another box is not a cut (D-74). New test: an opponent standing in front does not cut a track (fails on 81e1e99).
+- Verified on hfbox, same harness, same 9 clips, seeds 7 + 11; the before run reproduced metrics_combined_9b777bb.json exactly:
+  - GT-detector basketball MOTA / IDF1 / switches: half s7 0.989 / 0.995 / 3, half s11 0.951 / 0.925 / 9 (never measured before), full s7 0.990 / 0.995 / 2; all three now 1.000 / 1.000 / 0.
+  - GT 2-vs-3 points right 22/23 → 23/23; every other M4 row identical.
+  - YOLO identity output byte-identical to D-70 (IDF1 0.366 / 0.326 / 0.263 kept).
+  - Dev seeds 13/17: GT 1.000 on all four clips; YOLO within ±0.001.
+  - box-test ALL GREEN on the committed snapshot (courtcam 192).
+- Evidence: docs/evidence/M1/metrics_tracking_v3.json, docs/evidence/M1/README.md "Tracking v3", docs/evidence/M1/eval_tracking_v3/
+- Decisions: D-74.
+- Left / known issues:
+  - The YOLO rows D-70 costs one shot each remain: points right 14 → 13/21, shooter 8 → 7, team 19 → 18, made 10/12 → 10/13. They come from D-70's real YOLO cuts and links.
+  - Kennesaw not re-run (the gate input is unchanged).
+  - One "before" clip was briefly run with an intermediate file and redone; noted in the README.
 - Left / known issues:
   - No audio in the recording, so the Kokoro narration is not heard.
   - The demo games use the synthetic detector.

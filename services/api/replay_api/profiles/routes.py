@@ -10,6 +10,8 @@ opt-in face enrollment.
     DELETE /profiles/{id}/links/{game_id}/{player_id}
     GET    /profiles/{id}/suggestions                  same-name roster players (+ face matches
                                                        from faces.json, enrolled profiles only)
+    POST   /profiles/{id}/suggestions/decline {game_id, player_id}   never suggest it again
+                                                       (until the profile is deleted)
     GET    /profiles/{id}/card[?llm=true]              card JSON
     POST   /profiles/{id}/card[?llm=true]              + renders card.png / thumb.jpg
     GET    /profiles/{id}/reel                         career reel manifest
@@ -180,14 +182,18 @@ def delete_profile(request: Request, pid: str):
     shutil.rmtree(_dir(request, pid), ignore_errors=True)
 
 
-@router.post("/profiles/{pid}/links")
-def link(request: Request, pid: str, body: LinkIn):
-    doc = _doc(request, pid)
+def _need_player(request: Request, body: LinkIn) -> None:
     game = request.app.state.index.load(body.game_id)
     if game is None:
         raise HTTPException(404, f"game {body.game_id} not found")
     if body.player_id not in {p["id"] for p in game.get("players") or []}:
         raise HTTPException(404, f"player {body.player_id} not found")
+
+
+@router.post("/profiles/{pid}/links")
+def link(request: Request, pid: str, body: LinkIn):
+    doc = _doc(request, pid)
+    _need_player(request, body)
     try:
         store(request).link(pid, body.game_id, body.player_id)
     except LinkConflict as exc:
@@ -215,6 +221,7 @@ def suggestions(request: Request, pid: str):
     Face: only when this profile opted in, from faces.json (enrolled matches only)."""
     doc = _doc(request, pid)
     st, profiles = request.app.state, store(request)
+    declined = profiles.declined(pid)
     out = []
     for game in st.index.list():
         faces = {}
@@ -224,6 +231,8 @@ def suggestions(request: Request, pid: str):
                 faces = {m["player_id"]: m for m in json.loads(p.read_text())["matches"]
                          if m["profile_id"] == pid}  # fmt: skip
         for player in game.get("players") or []:
+            if (game["id"], player["id"]) in declined:
+                continue
             if profiles.owner(game["id"], player["id"]) is not None:
                 continue
             reasons = []
@@ -236,6 +245,15 @@ def suggestions(request: Request, pid: str):
                 out.append({"game_id": game["id"], "game_title": game.get("title"),
                             "player_id": player["id"], "reasons": reasons})  # fmt: skip
     return {"profile_id": pid, "suggestions": out}
+
+
+@router.post("/profiles/{pid}/suggestions/decline")
+def decline_suggestion(request: Request, pid: str, body: LinkIn):
+    """'Not this person': that roster player is never suggested to this profile again."""
+    _doc(request, pid)
+    _need_player(request, body)
+    store(request).decline(pid, body.game_id, body.player_id)
+    return suggestions(request, pid)
 
 
 def _card(request: Request, pid: str, llm: bool) -> tuple[dict, list]:

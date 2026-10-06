@@ -97,6 +97,30 @@ async function walkTo(page: Page, id: string) {
   await expect(page.getByTestId(id)).toHaveAttribute("data-focused", "true");
 }
 
+/** Every video 404s, and live 50 ms intervals (the screens' "wait for duration()"
+ *  pollers) are counted; read the count with `pollers`. Call before `goto`. */
+export async function failVideoAndCountPollers(page: Page) {
+  await page.route(/\/mock\/wide\.mp4/, (route) => route.fulfill({ status: 404 }));
+  await page.addInitScript(() => {
+    const live = new Set<number>();
+    const set = window.setInterval.bind(window);
+    const clear = window.clearInterval.bind(window);
+    Object.assign(window, { __pollers: live });
+    window.setInterval = ((fn: TimerHandler, ms?: number, ...args: unknown[]) => {
+      const id = set(fn, ms, ...args);
+      if (ms === 50) live.add(id);
+      return id;
+    }) as typeof window.setInterval;
+    window.clearInterval = ((id?: number) => {
+      if (id !== undefined) live.delete(id);
+      clear(id);
+    }) as typeof window.clearInterval;
+  });
+}
+
+export const pollers = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __pollers: Set<number> }).__pollers.size);
+
 /** No rendered text below 24 px at 1080p (NF-01). */
 export async function smallText(page: Page) {
   return page.evaluate(() =>

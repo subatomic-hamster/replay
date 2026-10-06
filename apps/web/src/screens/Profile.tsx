@@ -480,7 +480,6 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
   const id = profile.profile_id;
   const { data: games } = useAsync(() => api.listGames(), []);
   const { data: raw, reload } = useAsync(() => api.getSuggestions(id), [id, profile]);
-  const [declined, setDeclined] = useState<Set<string>>(new Set());
   const [row, setRow] = useState(0);
   const [col, setCol] = useState(0);
   const [note, setNote] = useState("");
@@ -490,7 +489,7 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
     const missing = new Map((profile.missing_links ?? []).map((m) => [suggestionKey(m), m.missing]));
     return [
       ...profile.linked.map((l): LinkRow => ({ kind: "link", ...l, missing: missing.get(suggestionKey(l)) })),
-      ...visibleSuggestions(profile, raw ?? [], declined).map(
+      ...visibleSuggestions(profile, raw ?? []).map(
         (s): LinkRow => ({
           kind: "suggestion",
           game_id: s.game_id,
@@ -501,7 +500,7 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
         }),
       ),
     ];
-  }, [profile, raw, declined]);
+  }, [profile, raw]);
 
   const act = useCallback(
     (r: LinkRow, c: number) => {
@@ -516,8 +515,10 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
       } else if (c === 0) {
         api.linkProfile(id, r.game_id, r.player_id).then(done(`Linked #${r.player_id} in ${title(r.game_id)}`), fail);
       } else {
-        setDeclined((s) => new Set(s).add(suggestionKey(r)));
-        setNote("Suggestion declined");
+        api.declineSuggestion(id, r.game_id, r.player_id).then(() => {
+          reload();
+          setNote("Suggestion declined");
+        }, fail);
       }
       setCol(0);
     },

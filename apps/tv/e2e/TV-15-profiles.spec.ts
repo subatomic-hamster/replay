@@ -5,7 +5,16 @@
 // player from Watch and from Review. The mock state lives in the page, so each test walks
 // inside the app instead of reloading.
 import { expect, test, type Page } from "@playwright/test";
-import { GAME_ID, enterSelectMode, menuTo, mockCalls, openWatch, smallText } from "./helpers";
+import {
+  GAME_ID,
+  enterSelectMode,
+  failVideoAndCountPollers,
+  menuTo,
+  mockCalls,
+  openWatch,
+  pollers,
+  smallText,
+} from "./helpers";
 
 const MARCUS = "pr_00000000a001";
 const JORDAN = "pr_00000000a002";
@@ -149,7 +158,40 @@ test("TV-15 card: JSON fields with EDITED tiles; Select renders the PNG", async 
   expect((await mockCalls(page)).some((c) => c.method === "POST" && c.path === `/profiles/${MARCUS}/card`)).toBe(true);
 });
 
-test("TV-15 links: decline / accept a same-name suggestion, unlink; the reel crosses games in order", async ({
+test("TV-15 links: a declined suggestion is sent to the API and stays declined after reopening", async ({
+  page,
+}) => {
+  await openProfile(page, MARCUS);
+  await openTab(page, "links");
+  const sug = page.getByTestId("suggestion-row");
+  await expect(sug).toHaveCount(1);
+  await expect(sug).toHaveAttribute("data-game-id", "g_mock02");
+
+  // Decline (Right → Decline, Select): gone from the list
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(sug).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("suggestion-decline")).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press("Enter");
+  await expect(sug).toHaveCount(0);
+  await expect(page.getByTestId("links-note")).toHaveText("Suggestion declined");
+  expect((await mockCalls(page)).filter((c) => c.method !== "GET")).toEqual([
+    { method: "POST", path: `/profiles/${MARCUS}/suggestions/decline`, body: { game_id: "g_mock02", player_id: "p1" } },
+  ]);
+
+  // Re-entering the profile does not ask again
+  await page.keyboard.press("Escape"); // tabs
+  await page.keyboard.press("Escape"); // players
+  await expect(page.getByTestId("profile-card")).toHaveCount(3);
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("profile")).toHaveAttribute("data-profile-id", MARCUS);
+  await openTab(page, "links");
+  await expect(page.getByTestId("link-row")).toHaveCount(2);
+  await expect(sug).toHaveCount(0);
+});
+
+test("TV-15 links: accept a same-name suggestion, unlink; the reel crosses games in order", async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -163,25 +205,6 @@ test("TV-15 links: decline / accept a same-name suggestion, unlink; the reel cro
   await expect(sug.getByTestId("suggestion-reason")).toContainText("SUGGESTION · needs your confirmation");
   await expect(sug.getByTestId("suggestion-reason")).toContainText("Same name tag");
 
-  // Decline (Right → Decline, Select): gone from the list; nothing sent to the API
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
-  await expect(sug).toHaveAttribute("data-focused", "true");
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("suggestion-decline")).toHaveAttribute("data-focused", "true");
-  await page.keyboard.press("Enter");
-  await expect(sug).toHaveCount(0);
-  await expect(page.getByTestId("links-note")).toHaveText("Suggestion declined");
-  expect((await mockCalls(page)).filter((c) => c.method !== "GET")).toEqual([]);
-
-  // Declines are this screen's only: re-entering the profile asks again. Accept it.
-  await page.keyboard.press("Escape"); // tabs
-  await page.keyboard.press("Escape"); // players
-  await expect(page.getByTestId("profile-card")).toHaveCount(3);
-  await page.keyboard.press("Enter");
-  await expect(page.getByTestId("profile")).toHaveAttribute("data-profile-id", MARCUS);
-  await openTab(page, "links");
-  await expect(sug).toHaveCount(1);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("suggestion-accept")).toHaveAttribute("data-focused", "true");
@@ -329,4 +352,15 @@ test("TV-15 Review: an identity question links the player to a profile", async (
   expect(posts).toEqual([
     { method: "POST", path: `/profiles/${SAM}/links`, body: { game_id: GAME_ID, player_id: "p2" } },
   ]);
+});
+
+test("TV-15 reel: a reel video that fails shows Video unavailable and stops waiting for it", async ({ page }) => {
+  await failVideoAndCountPollers(page);
+  await openProfile(page, MARCUS);
+  await openTab(page, "reel");
+  await expect(page.getByTestId("reel-item").first()).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("reel-counter")).toBeAttached();
+  await expect(page.getByTestId("player-error")).toContainText("Video unavailable");
+  await expect.poll(() => pollers(page)).toBe(0);
 });

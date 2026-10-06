@@ -139,7 +139,9 @@ KINDS = {"machine": run_machine, "sequence": run_sequence}
 
 
 def build_plays(events: list[Event], grammars: list[dict[str, Any]], sport: str) -> list[Play]:
-    """Every grammar over the same events; ids `pl_0001`... in start order."""
+    """Every grammar over the same events; ids `pl_0001`... in start order. Events a
+    person dismissed (the extra key `dismissed`, set by the API) are not part of any play."""
+    events = [e for e in events if not getattr(e, "dismissed", False)]
     plays: list[Play] = []
     for g in grammars:
         kind = g.get("kind", "machine")

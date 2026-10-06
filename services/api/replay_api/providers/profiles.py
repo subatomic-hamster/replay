@@ -5,7 +5,8 @@ A profile row holds only what a person typed or opted into: name, photo, sports,
 positions, user stat corrections (`stats_user`), which fields they edited, and the
 face / voice enrollment flags. Links `(game_id, player_id) -> profile_id` live in their own
 table whose primary key makes "one game player belongs to at most one profile" a
-database constraint. Auto stats are not stored: the routes aggregate them from the
+database constraint. Declined link suggestions live in `declines` (added later with
+CREATE IF NOT EXISTS, so older databases gain it on open) and cascade with the profile. Auto stats are not stored: the routes aggregate them from the
 linked games on read (profiles/career.py), the way `stats.py` derives a game's box score.
 """
 
@@ -36,6 +37,8 @@ class Profiles(Protocol):
     def link(self, profile_id: str, game_id: str, player_id: str) -> None: ...
     def unlink(self, profile_id: str, game_id: str, player_id: str) -> bool: ...
     def owner(self, game_id: str, player_id: str) -> str | None: ...
+    def decline(self, profile_id: str, game_id: str, player_id: str) -> None: ...
+    def declined(self, profile_id: str) -> set[tuple[str, str]]: ...
 
 
 def blank(name: str) -> dict:
@@ -65,6 +68,10 @@ class LocalProfiles:
                     profile_id TEXT NOT NULL REFERENCES profiles ON DELETE CASCADE,
                     PRIMARY KEY (game_id, player_id));
                 CREATE INDEX IF NOT EXISTS links_profile ON links (profile_id);
+                CREATE TABLE IF NOT EXISTS declines (
+                    profile_id TEXT NOT NULL REFERENCES profiles ON DELETE CASCADE,
+                    game_id TEXT NOT NULL, player_id TEXT NOT NULL,
+                    PRIMARY KEY (profile_id, game_id, player_id));
                 """
             )
 
@@ -148,6 +155,19 @@ class LocalProfiles:
     def owner(self, game_id: str, player_id: str) -> str | None:
         with self._db() as db:
             return self._owner(db, game_id, player_id)
+
+    def decline(self, profile_id: str, game_id: str, player_id: str) -> None:
+        with self._db() as db:
+            db.execute(
+                "INSERT OR IGNORE INTO declines VALUES (?, ?, ?)", (profile_id, game_id, player_id)
+            )
+
+    def declined(self, profile_id: str) -> set[tuple[str, str]]:
+        with self._db() as db:
+            rows = db.execute(
+                "SELECT game_id, player_id FROM declines WHERE profile_id = ?", (profile_id,)
+            )
+            return {(g, p) for g, p in rows}
 
 
 class _Tx:

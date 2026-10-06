@@ -204,6 +204,14 @@ class DynamoProfiles:
     def owner(self, game_id: str, player_id: str) -> str | None:
         raise _todo("DynamoDB", "owner")
 
+    def decline(self, profile_id: str, game_id: str, player_id: str) -> None:
+        """TODO: PutItem into a `declines` table (partition key `profile_id`, sort key
+        `game_id#player_id`); `delete` removes them in the same transaction."""
+        raise _todo("DynamoDB", "decline")
+
+    def declined(self, profile_id: str) -> set[tuple[str, str]]:
+        raise _todo("DynamoDB", "declined")
+
 
 class SageMakerSpeaker:
     """Target: a SageMaker endpoint hosting the local speaker-embedding model (no managed

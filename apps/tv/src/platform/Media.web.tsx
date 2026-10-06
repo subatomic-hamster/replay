@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { clamp, type MediaHandle, type MediaProps } from "../playback/media";
 
-export function Media({ src, muted, loop, onEnded, ref }: MediaProps) {
+export function Media({ src, muted, loop, onEnded, onError, ref }: MediaProps) {
   const video = useRef<HTMLVideoElement>(null);
   const wantPlay = useRef(false);
   const tries = useRef(0);
@@ -104,6 +104,7 @@ export function Media({ src, muted, loop, onEnded, ref }: MediaProps) {
         timeRef.current = e.currentTarget.currentTime;
       }}
       onEnded={onEnded}
+      onError={(e) => onError?.(e.currentTarget.error?.message || "Playback failed")}
       // The surface is 16:9; "fill" keeps the rendered rect equal to it, which is what
       // makes the normalized box math exact.
       style={{ display: "block", width: "100%", height: "100%", objectFit: "fill" }}

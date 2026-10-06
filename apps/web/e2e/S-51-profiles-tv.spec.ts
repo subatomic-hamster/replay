@@ -111,7 +111,33 @@ test("S-51 card: JSON fields with EDITED tiles; Enter renders the PNG", async ({
   expect(await writes(page)).toEqual([{ method: "POST", path: `/profiles/${MARCUS}/card` }]);
 });
 
-test("S-51 links: decline, accept, unlink; the reel crosses games in order", async ({ page }) => {
+test("S-51 links: a declined suggestion is sent to the API and stays declined after reopening", async ({ page }) => {
+  await openProfile(page, MARCUS);
+  await openTab(page, "links");
+  const sug = page.getByTestId("suggestion-row");
+  await expect(sug).toHaveCount(1);
+
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("suggestion-decline")).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press("Enter");
+  await expect(sug).toHaveCount(0);
+  expect(await writes(page)).toEqual([
+    { method: "POST", path: `/profiles/${MARCUS}/suggestions/decline`, body: { game_id: "g_mock02", player_id: "p1" } },
+  ]);
+
+  // re-open the profile from Players (in-app): the declined suggestion is not asked again
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("profile-card")).toHaveCount(3);
+  await page.keyboard.press("Enter");
+  await openTab(page, "links");
+  await expect(page.getByTestId("link-row")).toHaveCount(2);
+  await expect(sug).toHaveCount(0);
+});
+
+test("S-51 links: accept, unlink; the reel crosses games in order", async ({ page }) => {
   test.setTimeout(60_000);
   await openProfile(page, MARCUS);
   await openTab(page, "links");
@@ -121,21 +147,6 @@ test("S-51 links: decline, accept, unlink; the reel crosses games in order", asy
   await expect(sug).toHaveAttribute("data-face", "false");
   await expect(sug.getByTestId("suggestion-reason")).toContainText("SUGGESTION · needs your confirmation");
 
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("suggestion-decline")).toHaveAttribute("data-focused", "true");
-  await page.keyboard.press("Enter");
-  await expect(sug).toHaveCount(0);
-  expect(await writes(page)).toEqual([]);
-
-  // re-open the profile from Players (in-app): the declined suggestion is asked again
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("profile-card")).toHaveCount(3);
-  await page.keyboard.press("Enter");
-  await openTab(page, "links");
-  await expect(sug).toHaveCount(1);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("suggestion-accept")).toHaveAttribute("data-focused", "true");

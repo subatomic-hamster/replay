@@ -125,6 +125,8 @@ export interface ReplayApi {
   linkProfile(id: string, gameId: string, playerId: string): Promise<Profile>;
   unlinkProfile(id: string, gameId: string, playerId: string): Promise<Profile>;
   getSuggestions(id: string): Promise<ProfileSuggestion[]>;
+  /** "Not this person": never suggested to this profile again; answers the new list. */
+  declineSuggestion(id: string, gameId: string, playerId: string): Promise<ProfileSuggestion[]>;
   getCard(id: string): Promise<PlayerCard>;
   /** Renders card.png (and the best-moment thumbnail) and answers with the card JSON. */
   renderCard(id: string): Promise<PlayerCard>;
@@ -369,6 +371,11 @@ export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
       ),
     getSuggestions: (id) =>
       req<{ suggestions: ProfileSuggestion[] }>(`/profiles/${id}/suggestions`).then((r) => r.suggestions),
+    declineSuggestion: (id, game_id, player_id) =>
+      req<{ suggestions: ProfileSuggestion[] }>(`/profiles/${id}/suggestions/decline`, {
+        method: "POST",
+        json: { game_id, player_id },
+      }).then((r) => r.suggestions),
     getCard: (id) => req<PlayerCard>(`/profiles/${id}/card`),
     renderCard: (id) => req<PlayerCard>(`/profiles/${id}/card`, { method: "POST" }),
     getReel: (id) => req<CareerReel>(`/profiles/${id}/reel`),

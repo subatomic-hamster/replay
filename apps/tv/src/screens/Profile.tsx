@@ -335,10 +335,11 @@ function ReelTab({ profile, active, onExit }: TabProps) {
   const item = cur !== null ? items[cur] : undefined;
 
   // Each item starts at its play's start once its video knows its duration; a new game
-  // is a new <video> (keyed by URL), so the old one's position never leaks in.
+  // is a new <video> (keyed by URL), so the old one's position never leaks in. A failed
+  // video never will (the handle changes when it fails, so this re-runs and stops).
   useEffect(() => {
     armed.current = false;
-    if (!handle || !item) return;
+    if (!handle || handle.error() || !item) return;
     const timer = setInterval(() => {
       if (handle.duration() > 0) {
         handle.seek(item.t_start);
@@ -436,7 +437,6 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
   const id = profile.profile_id;
   const { data: games } = useAsync(() => api.listGames(), []);
   const { data: raw, reload } = useAsync(() => api.getSuggestions(id), [id, profile]);
-  const [declined, setDeclined] = useState<Set<string>>(new Set());
   const [row, setRow] = useState(0);
   const [col, setCol] = useState(0);
   const [note, setNote] = useState("");
@@ -446,7 +446,7 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
     const missing = new Map((profile.missing_links ?? []).map((m) => [suggestionKey(m), m.missing]));
     return [
       ...profile.linked.map((l): LinkRow => ({ kind: "link", ...l, missing: missing.get(suggestionKey(l)) })),
-      ...visibleSuggestions(profile, raw ?? [], declined).map(
+      ...visibleSuggestions(profile, raw ?? []).map(
         (s): LinkRow => ({
           kind: "suggestion",
           game_id: s.game_id,
@@ -457,7 +457,7 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
         }),
       ),
     ];
-  }, [profile, raw, declined]);
+  }, [profile, raw]);
   const nLinks = profile.linked.length;
 
   const act = useCallback(
@@ -473,8 +473,10 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
       } else if (c === 0) {
         api.linkProfile(id, r.game_id, r.player_id).then(done(`Linked #${r.player_id} in ${title(r.game_id)}`), fail);
       } else {
-        setDeclined((s) => new Set(s).add(suggestionKey(r)));
-        setNote("Suggestion declined");
+        api.declineSuggestion(id, r.game_id, r.player_id).then(() => {
+          reload();
+          setNote("Suggestion declined");
+        }, fail);
       }
       setCol(0);
     },

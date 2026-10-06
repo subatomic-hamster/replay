@@ -125,9 +125,10 @@ export function Watch({
     tracks?.ensure(t);
   }, [tracks, t]);
 
-  // Deep-link restore (?t=) once the media knows its duration.
+  // Deep-link restore (?t=) once the media knows its duration; a failed source never will
+  // (the handle changes when it fails, so this re-runs and stops).
   useEffect(() => {
-    if (!handle || restoreT.current === null) return;
+    if (!handle || handle.error() || restoreT.current === null) return;
     const target = restoreT.current;
     const timer = setInterval(() => {
       if (handle.duration() > 0) {

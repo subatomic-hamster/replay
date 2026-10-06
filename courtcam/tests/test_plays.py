@@ -53,6 +53,18 @@ def test_basketball_possessions_become_plays():
     assert plays[1].event_ids == ["e3", "e4"]
 
 
+def test_dismissed_events_form_no_plays():
+    # D-11 "not a shot" stays in events.json as `dismissed: true` (an extra key)
+    events = [
+        ev("e1", "possession_change", 1.0, 0, "a", cause="inbound"),
+        ev("e2", "shot", 3.0, 0, "b", dismissed=True),
+        ev("e3", "shot", 5.0, 0, "b"),
+        ev("e4", "possession_change", 8.0, 1, "c", cause="steal", dismissed=True),
+    ]
+    plays = build_plays(events, load_profile("basketball").plays, "basketball")
+    assert [(p.t_start, p.t_end, p.event_ids) for p in plays] == [(1.0, 5.0, ["e1", "e3"])]
+
+
 def test_rally_and_attack_grammars():
     events = [
         ev("s", "serve", 1.0, 0, "p1"),

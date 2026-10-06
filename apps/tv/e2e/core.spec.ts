@@ -126,7 +126,6 @@ test("profiles: stat rows, D-pad steps, PATCH body, suggestion guard, face photo
   // Never a face suggestion for a profile that did not enroll.
   expect(visibleSuggestions({ face_enrolled: false }, list).map(suggestionKey)).toEqual(["g1/p2"]);
   expect(visibleSuggestions({ face_enrolled: true }, list).map(suggestionKey)).toEqual(["g1/p1", "g1/p2"]);
-  expect(visibleSuggestions({ face_enrolled: true }, list, new Set(["g1/p1"])).map(suggestionKey)).toEqual(["g1/p2"]);
 
   expect(facePhotosError(0)).not.toBeNull();
   expect(facePhotosError(1)).toBeNull();

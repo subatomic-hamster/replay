@@ -175,15 +175,11 @@ export const statPatch = (sport: string, key: string, value: number | null): Pro
 export const suggestionKey = (s: { game_id: string; player_id: string }) => `${s.game_id}/${s.player_id}`;
 
 /** What the TV may show: face reasons only for a face-enrolled profile (the API already
- *  never sends others; this is the client's own guard), minus suggestions declined here. */
-export function visibleSuggestions(
-  p: Pick<Profile, "face_enrolled">,
-  list: ProfileSuggestion[],
-  declined: ReadonlySet<string> = new Set(),
-): ProfileSuggestion[] {
+ *  never sends others; this is the client's own guard). Declines are kept by the API. */
+export function visibleSuggestions(p: Pick<Profile, "face_enrolled">, list: ProfileSuggestion[]): ProfileSuggestion[] {
   return list
     .map((s) => ({ ...s, reasons: s.reasons.filter((r) => r.kind !== "face" || p.face_enrolled) }))
-    .filter((s) => s.reasons.length > 0 && !declined.has(suggestionKey(s)));
+    .filter((s) => s.reasons.length > 0);
 }
 
 export function reasonText(r: SuggestionReason): string {

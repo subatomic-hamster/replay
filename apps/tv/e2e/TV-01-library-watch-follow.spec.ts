@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { FRAME, GAME_ID, enterSelectMode, focusedBoxId, menuTo, transform, video } from "./helpers";
+import {
+  FRAME,
+  GAME_ID,
+  enterSelectMode,
+  failVideoAndCountPollers,
+  focusedBoxId,
+  menuTo,
+  pollers,
+  transform,
+  video,
+} from "./helpers";
 
 // The DoD path on the RN TV app's web build: library → watch → select → follow → back,
 // driven only by remote keys (Arrows, Enter = Select, Escape = Back).
@@ -89,4 +99,14 @@ test("TV-02 Up at the top of select mode opens the action row; spotlight + event
   await menuTo(page, "action-spotlight");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("spotlight-overlay")).toBeVisible();
+});
+
+test("TV-01 a video that fails shows Video unavailable and the ?t= restore stops waiting for it", async ({
+  page,
+}) => {
+  await failVideoAndCountPollers(page);
+  await page.goto(`/tv/${GAME_ID}?t=5`);
+  await expect(page.getByTestId("player-error")).toBeVisible();
+  await expect(page.getByTestId("player-error")).toContainText("Video unavailable");
+  await expect.poll(() => pollers(page)).toBe(0);
 });

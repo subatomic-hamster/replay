@@ -937,7 +937,7 @@ export const mockApi: ReplayApi = {
     const out: ProfileSuggestion[] = [];
     for (const g of games.values()) {
       for (const p of g.players) {
-        if (profileLinks.has(`${g.id}/${p.id}`)) continue;
+        if (profileLinks.has(`${g.id}/${p.id}`) || declinedSuggestions.has(`${id}/${g.id}/${p.id}`)) continue;
         const reasons: ProfileSuggestion["reasons"] = [];
         if (norm(p.name) && norm(p.name) === norm(doc.name)) reasons.push({ kind: "same_name" });
         // D-58: face matches exist only for enrolled profiles (deleting enrollment drops them)
@@ -949,6 +949,14 @@ export const mockApi: ReplayApi = {
       }
     }
     return delay(out);
+  },
+
+  declineSuggestion(id, gameId, playerId) {
+    log("POST", `/profiles/${id}/suggestions/decline`, { game_id: gameId, player_id: playerId });
+    needProfile(id);
+    if (!needGame(gameId).players.some((p) => p.id === playerId)) throw new Error(`player ${playerId} not found`);
+    declinedSuggestions.add(`${id}/${gameId}/${playerId}`);
+    return mockApi.getSuggestions(id);
   },
 
   getCard(id) {
@@ -1259,6 +1267,8 @@ const profileLinks = new Map<string, string>([
   ["g_mock01/p1", "pr_00000000a001"],
   ["g_pickle4/p1", "pr_00000000a001"],
 ]);
+/** "profile/game/player" suggestions a person declined. */
+const declinedSuggestions = new Set<string>();
 /** What a face_match job would have written for enrolled profiles (faces.json). */
 let faceMatches = [{ profile_id: "pr_00000000a002", game_id: "g_mock01", player_id: "p3", similarity: 0.58, votes: 4 }];
 const renderedCards = new Set<string>();

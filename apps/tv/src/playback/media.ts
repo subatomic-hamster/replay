@@ -20,7 +20,7 @@ export interface MediaProps {
   /** Restart at the end (the Replay view loops a highlight). */
   loop?: boolean;
   onEnded?: () => void;
-  /** The source failed to load or play (native only so far; the web <video> never calls it). */
+  /** The source failed to load or play. */
   onError?: (message: string) => void;
   ref?: Ref<MediaHandle>;
 }

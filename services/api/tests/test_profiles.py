@@ -82,6 +82,41 @@ def test_suggestions_by_name_only_without_enrollment(client, two_games):
     assert [s["game_id"] for s in sug] == [two_games[1]]  # linked players drop out
 
 
+def test_declined_suggestions_stay_declined_until_the_profile_is_deleted(client, two_games):
+    g1, g2 = two_games
+    pid, other = _profile(client, "alex"), _profile(client, "Alex")
+    r = client.post(f"/profiles/{pid}/suggestions/decline", json={"game_id": g1, "player_id": "p2"})
+    assert r.status_code == 200, r.text
+    assert [s["game_id"] for s in r.json()["suggestions"]] == [g2]
+    assert [s["game_id"] for s in client.get(f"/profiles/{pid}/suggestions").json()["suggestions"]] == [g2]  # fmt: skip
+    # per profile: another profile with the same name is still asked
+    assert len(client.get(f"/profiles/{other}/suggestions").json()["suggestions"]) == 2
+    bad = {"game_id": g1, "player_id": "nope"}
+    assert client.post(f"/profiles/{pid}/suggestions/decline", json=bad).status_code == 404
+    assert client.post("/profiles/pr_000000000000/suggestions/decline", json={"game_id": g1, "player_id": "p2"}).status_code == 404  # fmt: skip
+    # deleting the profile purges its declines
+    store = client.app.state.profiles
+    assert store.declined(pid) == {(g1, "p2")}
+    assert client.delete(f"/profiles/{pid}").status_code == 204
+    assert store.declined(pid) == set()
+
+
+def test_store_adds_the_declines_table_to_an_older_db(tmp_path):
+    import sqlite3
+
+    db = sqlite3.connect(tmp_path / "p.sqlite")  # the pre-decline schema
+    db.executescript(
+        "CREATE TABLE profiles (profile_id TEXT PRIMARY KEY, seq INTEGER NOT NULL, doc TEXT NOT NULL);"
+        "INSERT INTO profiles VALUES ('pr_00000000000a', 1, '{\"name\": \"Ana\"}');"
+    )
+    db.commit()
+    db.close()
+    s = LocalProfiles(tmp_path / "p.sqlite")
+    assert s.get("pr_00000000000a")["name"] == "Ana"
+    s.decline("pr_00000000000a", "g_1", "p1")
+    assert s.declined("pr_00000000000a") == {("g_1", "p1")}
+
+
 def test_stats_aggregate_across_games_and_user_values_win(client, two_games):
     pid = _profile(client)
     rows = []

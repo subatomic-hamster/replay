@@ -78,3 +78,11 @@ Template:
 - Evidence: docs/evidence/M7/ (synthetic, incl. synthetic_bb90_narrated.mp4) · docs/evidence/local/M7/ (Kennesaw: template 32/32, LLM 30/32)
 - Decisions: D-52.
 - Left / known issues: runner reloads the model per call (index build 107 s for 10 plays); TTS on CPU while llama-server is up; no TV/web UI yet for commentary, advice or search (integration wave); SigLIP retrieval weak on synthetic frames.
+
+## M8 — Tier B virtual replay angles + TV angle switching (2026-10-06)
+
+- Works: full `calibration.json` (K, R, t, k1, height landmarks, mirrored rigs); court plate; SAM 2.1 masks; Tier A (wide, follow, tight) and Tier B 2.5D (broadcast_high, orbit, push_in) renders per highlight, time-aligned; worker fan-out per play × angle, cached; `GET /games/{id}/replays[/{play_id}]`; Replay screen in apps/tv and apps/web /tv cutting between six angles with Left/Right at the same media time.
+- Verified on hfbox (staged snapshot, `scripts/box-test.sh`): ruff clean, courtcam 178, api 196 + 1 skipped, worker 19, render 29 passed, dag drift none, infra synth ok, web tsc/eslint clean, Playwright chromium+live 66 passed; apps/tv tsc/eslint clean, Playwright tv 15 passed + 1 skipped; TV-09/S-38 40/40 on repeat (agent run). Calibration on synthetic truth (20 seeds, 1 px noise): focal 0.25–0.64 %, rotation 0.11–0.28°, camera position 4–8 cm median; lens k1 −0.2 up to 1.9 % / 0.56 m. Real clips: floor reprojection 0.03–2.64 px; held-out hoop 53–92 px. Tier B ≈ 32–62 ms/frame; SAM ≈ 26 ms per object per frame. Angle cut keeps media time to within 8 ms through the real API.
+- Evidence: docs/evidence/M8/ (9 highlights × 6 angles: synthetic basketball, synthetic volleyball, CC BY pickleball; angle sheets, orbit mp4/GIF, TV screenshots through the real API, calibration tables) · docs/evidence/local/M8/ (real-clip calibration)
+- Decisions: D-53, D-54, D-55, D-56, D-57.
+- Left / known issues: hoop 50–90 px off on wide real basketball rigs (heights approximate); plate ghosts and void floor on far orbits; thin billboards side-on; no ball model outside basketball; SAM GPU cost and lock contention; native TV path untested on a device. Fixed on the way: `apps/web/src/data/tracksCache.ts` had never been committed (the unanchored `data/` ignore hid it), so fresh clones did not build.

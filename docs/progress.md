@@ -225,3 +225,14 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Evidence: docs/evidence/M4/README.md "Events v2", metrics_events_v2.json, events_v2/ (scripts)
 - Decisions: D-71.
 - Left / known issues: volleyball attack P 0.30 / 0.10 untouched; synth.py should model side-out scoring; side-out assumes the clip starts a game; one_touch and extend_end untested on real pickleball; ViTPose branch not re-measured; commentary still says "Point to X" on a side-out rally.
+
+## Low-confidence calibration guard (2026-10-06)
+
+- Works: an auto-calibration proposal with ok=false is refused, unless explicitly overridden, in all four places: courtcam (`run`, `calibrate`), the worker, `POST /calibration` and the S-04b uploader (Accept is disabled until confirmed, or a dot is dragged). The override is recorded.
+- Verified on hfbox:
+  - The real CC 240 s pickleball autocalib file (score 0.74) is refused by `courtcam run`, `courtcam calibrate` and `replay_worker run` (exit 2, message names 0.74 / 0.90).
+  - Same clip with tierB's hand-clicked landmarks for the same fixed camera: teams 5/8, 54 events (15 rallies, 15 serves, 15 points, 9 contacts), 15 plays. With the autocalib file plus the override: 12/1 and 0 events. The run used the events v2 code before it was committed.
+  - Tests: one courtcam CLI test, one API test, Playwright S-04b-10/11 (docs/test-spec.md). box-test ALL GREEN on the agent's copy (courtcam 191, api 221 + 1 skipped, Playwright 102, tv 50).
+- Evidence: run log on the box only (`/workspace/wt/replay-calibok/runs/pb240.log`); the footage is CC but no frames were committed.
+- Decisions: D-72.
+- Left / known issues: the API-path override is not carried into the pipeline's calib.json; the autocalib fit itself still lands in the fence on this clip.

@@ -151,3 +151,64 @@ rally.
 
 Not attempted: volleyball attack (P 0.30 GT / 0.10 YOLO, unchanged).
 <!-- events-v2:end -->
+
+## Combined (9b777bb)
+
+**Synthetic data only.** Tracking v2 (D-70, `ac0053a`) and events v2 (D-71) measured
+together for the first time: commit `9b777bb` extracted with `git archive`, the same 9 clips
+(`courtcam synth --duration 90`, seeds 7 and 11) regenerated today, the same unchanged harness.
+Numbers: `metrics_combined_9b777bb.json` (`eval/agg.py` output as written). The "events v2"
+columns are `metrics_events_v2.json` (005cf87 + events change only); the "tracking v2" rows are
+`../M1/metrics_tracking_v2.json` (005cf87 + identity change only, YOLO only, tracking rows only).
+
+| item | GT poses, events v2 | GT poses, combined | YOLO, events v2 | YOLO, combined |
+|---|---|---|---|---|
+| shots (27) | P 1.00 / R 0.85 (23 TP) | P 1.00 / R 0.85 (23 TP) | P 1.00 / R 0.78 (21 TP) | P 1.00 / R 0.78 (21 TP) |
+| shots, half court (20) | P 1.00 / R 1.00 (20 TP) | P 1.00 / R 1.00 (20 TP) | P 1.00 / R 0.90 (18 TP) | P 1.00 / R 0.90 (18 TP) |
+| 2 vs 3 points right / shots found | 23/23 | **22/23** | 14/21 | **13/21** |
+| shooter right / shots found | 23/23 | 23/23 | 8/21 | **7/21** |
+| shot team right / shots found | 23/23 | 23/23 | 19/21 | **18/21** |
+| shot made right / made known | 17/17 | 17/17 | 10/12 | **10/13** |
+| possession change | P 0.83 / R 0.80 (24 TP) | P 0.83 / R 0.80 (24 TP) | P 0.76 / R 0.73 (22 TP) | P 0.79 / R 0.77 (23 TP) |
+| possession cause right | 22/24 | 22/24 | 13/22 | 15/23 |
+| plays | P 0.94 / R 0.89 (72 TP) | P 0.94 / R 0.89 (72 TP) | P 0.90 / R 0.88 (71 TP) | P 0.92 / R 0.88 (71 TP) |
+| contacts | P 0.87 / R 0.96 (239 TP) | P 0.87 / R 0.96 (239 TP) | P 0.87 / R 0.96 (239 TP) | P 0.87 / R 0.96 (239 TP) |
+| contact side right / found | 209/239 | 209/239 | 143/239 | 142/239 |
+| contact hitter right / found | 168/239 | 168/239 | 75/239 | 76/239 |
+| rallies | P 0.90 / R 0.83 (43 TP) | P 0.90 / R 0.83 (43 TP) | P 0.90 / R 0.83 (43 TP) | P 0.90 / R 0.83 (43 TP) |
+| points | P 0.96 / R 0.89 (46 TP) | P 0.96 / R 0.89 (46 TP) | P 0.96 / R 0.89 (46 TP) | P 0.96 / R 0.89 (46 TP) |
+| point `winner_side` right / known | 36/41 | 36/41 | 31/41 | 31/41 |
+| volleyball attack | P 0.30 / R 0.50 (3 TP) | P 0.30 / R 0.50 (3 TP) | P 0.10 / R 0.17 (1 TP) | P 0.20 / R 0.33 (2 TP) |
+
+M1 tracking rows (players, `courtcam eval`, seed-7 scenes). The YOLO combined column equals
+the tracking-v2 "after" exactly (tracking is upstream of events); the GT-detector column was
+not measured for tracking v2 alone, the M1 baseline is 1.00 / 1.00 / 0 on all five.
+
+| scene | tracking v2 after, YOLO (MOTA / IDF1 / ID sw) | combined, YOLO | combined, GT detector |
+|---|---|---|---|
+| basketball half | 0.627 / 0.366 / 119 | 0.627 / 0.366 / 119 | 0.989 / 0.995 / 3 |
+| basketball full | 0.422 / 0.263 / 158 | 0.422 / 0.263 / 158 | 0.990 / 0.995 / 2 |
+| pickleball | 0.979 / 0.990 / 0 | 0.979 / 0.990 / 0 | 1.000 / 1.000 / 0 |
+| badminton | 0.994 / 0.997 / 0 | 0.994 / 0.997 / 0 | 1.000 / 1.000 / 0 |
+| volleyball | 0.906 / 0.785 / 37 | 0.906 / 0.785 / 37 | 1.000 / 1.000 / 0 |
+
+Reading: no tracking or events row moved by more than 0.02 in the wrong direction except the
+basketball shot attribution rows, which a bisect traced to identity v2. The same four
+basketball YOLO/GT clips rerun with 9b777bb's courtcam but 005cf87's `identity.py` give
+exactly the events-v2 numbers, so the differences are all identity v2. With the GT detector,
+the jersey cut splits perfect tracks (basketball half s11: tracks 5, 6, 9 and 10 are cut and
+relinked; one piece of 10 (team 0) ends up in the same player as a piece of 9 (team 1)),
+which renumbers players and puts one shooter on the wrong tracklet (2 vs 3 points 23 → 22). Net gains from identity v2 under
+YOLO: possession change 22 → 23 TP, cause right 13/22 → 15/23, plays P 0.90 → 0.92, attack
+1 → 2 TP. Volleyball, badminton and pickleball rows are unchanged by identity v2.
+
+Commands (box copy of `git archive 9b777bb`, `samples/real` symlinked per READY):
+
+```bash
+mkdir -p _m && cp docs/evidence/M4/eval/* _m/
+for s in gen gt yolo mot; do bash _m/run_metrics.sh $s; done   # GPU and CPU locks are taken inside
+python _m/agg.py _m/out > docs/evidence/M4/metrics_combined_9b777bb.json
+# bisect (not committed): 9b777bb courtcam with 005cf87 identity.py
+bash _m/bisect.sh _old/noident _m/synth noid_gt synthetic auto basketball_half_s11 basketball_half_s7 basketball_full_s7
+bash _m/bisect.sh _old/noident _m/synth noid_yolo yolo yolo basketball_half_s11 basketball_half_s7 basketball_full_s7
+```

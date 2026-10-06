@@ -236,3 +236,16 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Evidence: run log on the box only (`/workspace/wt/replay-calibok/runs/pb240.log`); the footage is CC but no frames were committed.
 - Decisions: D-72.
 - Left / known issues: the API-path override is not carried into the pipeline's calib.json; the autocalib fit itself still lands in the fence on this clip.
+
+## Tracking v2 + events v2 combined (2026-10-06)
+
+- Measured together for the first time on 9b777bb with the unchanged harness (9 clips, seeds 7 + 11, GT and YOLO; ViTPose not run). No code changes.
+- Rows identical to events v2 alone: shots, rallies, points, `winner_side`, contacts.
+- Better with identity v2 (YOLO): possession change P/R 0.76/0.73 → 0.79/0.77, cause right 13/22 → 15/23; plays P 0.90 → 0.92; volleyball attack 1 → 2 TP.
+- Worse by one shot each, and swapping 005cf87's identity.py back restores them exactly, so the cause is identity v2:
+  - points right: GT 23/23 → 22/23; YOLO 14/21 → 13/21
+  - YOLO shooter right 8/21 → 7/21
+  - YOLO shot team right 19/21 → 18/21
+  - YOLO made right 10/12 → 10/13
+- Side effect D-70 missed: the jersey cut also fires on perfect GT-detector tracks. Basketball half/full IDF1 goes 1.000 → 0.995 with 3 / 2 ID switches, including one cross-team relink on half s11. Likely torso colour under a guarding opponent (not confirmed).
+- Evidence: docs/evidence/M4/metrics_combined_9b777bb.json, docs/evidence/M4/README.md "Combined (9b777bb)"

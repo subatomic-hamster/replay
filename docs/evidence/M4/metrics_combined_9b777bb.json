@@ -1,0 +1,1887 @@
+{
+ "synthetic": true,
+ "runs": {
+  "gt": {
+   "shot": {
+    "tp": 23,
+    "fp": 0,
+    "fn": 4,
+    "shooter_ok": 23,
+    "made_known": 17,
+    "made_ok": 17,
+    "points_ok": 22,
+    "team_ok": 23,
+    "precision": 1.0,
+    "recall": 0.852
+   },
+   "rally": {
+    "tp": 43,
+    "fp": 5,
+    "fn": 9,
+    "precision": 0.896,
+    "recall": 0.827
+   },
+   "point": {
+    "tp": 46,
+    "fp": 2,
+    "fn": 6,
+    "winner_known": 41,
+    "winner_ok": 36,
+    "precision": 0.958,
+    "recall": 0.885
+   },
+   "contact": {
+    "tp": 239,
+    "fp": 36,
+    "fn": 10,
+    "hitter_ok": 168,
+    "side_ok": 209,
+    "precision": 0.869,
+    "recall": 0.96
+   },
+   "play": {
+    "tp": 72,
+    "fp": 5,
+    "fn": 9,
+    "precision": 0.935,
+    "recall": 0.889
+   },
+   "gesture": {
+    "tp": 22,
+    "fp": 0,
+    "fn": 0,
+    "by_ok": 22,
+    "clip_ok": 18,
+    "precision": 1.0,
+    "recall": 1.0
+   },
+   "voice": {
+    "tp": 37,
+    "fp": 0,
+    "fn": 0,
+    "subject_needed": 18,
+    "subject_ok": 18,
+    "clip_ok": 33,
+    "precision": 1.0,
+    "recall": 1.0
+   },
+   "tap": {
+    "n": 14,
+    "clip_ok": 11
+   },
+   "resolve_rule_on_gt": {
+    "ok": 73,
+    "n": 73
+   },
+   "voice_clips_all_heard": {
+    "n": 9,
+    "ok": 9
+   },
+   "possession_change": {
+    "tp": 24,
+    "fp": 5,
+    "fn": 6,
+    "cause_ok": 22,
+    "precision": 0.828,
+    "recall": 0.8
+   },
+   "shot_half_court": {
+    "tp": 20,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0
+   },
+   "attack": {
+    "tp": 3,
+    "fp": 7,
+    "fn": 3,
+    "precision": 0.3,
+    "recall": 0.5
+   }
+  },
+  "yolo": {
+   "shot": {
+    "tp": 21,
+    "fp": 0,
+    "fn": 6,
+    "shooter_ok": 7,
+    "made_known": 13,
+    "made_ok": 10,
+    "points_ok": 13,
+    "team_ok": 18,
+    "precision": 1.0,
+    "recall": 0.778
+   },
+   "rally": {
+    "tp": 43,
+    "fp": 5,
+    "fn": 9,
+    "precision": 0.896,
+    "recall": 0.827
+   },
+   "point": {
+    "tp": 46,
+    "fp": 2,
+    "fn": 6,
+    "winner_known": 41,
+    "winner_ok": 31,
+    "precision": 0.958,
+    "recall": 0.885
+   },
+   "contact": {
+    "tp": 239,
+    "fp": 35,
+    "fn": 10,
+    "hitter_ok": 76,
+    "side_ok": 142,
+    "precision": 0.872,
+    "recall": 0.96
+   },
+   "play": {
+    "tp": 71,
+    "fp": 6,
+    "fn": 10,
+    "precision": 0.922,
+    "recall": 0.877
+   },
+   "gesture": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 22,
+    "by_ok": 0,
+    "clip_ok": 0,
+    "precision": null,
+    "recall": 0.0
+   },
+   "voice": {
+    "tp": 37,
+    "fp": 0,
+    "fn": 0,
+    "subject_needed": 18,
+    "subject_ok": 15,
+    "clip_ok": 33,
+    "precision": 1.0,
+    "recall": 1.0
+   },
+   "tap": {
+    "n": 14,
+    "clip_ok": 10
+   },
+   "resolve_rule_on_gt": {
+    "ok": 73,
+    "n": 73
+   },
+   "voice_clips_all_heard": {
+    "n": 9,
+    "ok": 9
+   },
+   "possession_change": {
+    "tp": 23,
+    "fp": 6,
+    "fn": 7,
+    "cause_ok": 15,
+    "precision": 0.793,
+    "recall": 0.767
+   },
+   "shot_half_court": {
+    "tp": 18,
+    "fp": 0,
+    "fn": 2,
+    "precision": 1.0,
+    "recall": 0.9
+   },
+   "attack": {
+    "tp": 2,
+    "fp": 8,
+    "fn": 4,
+    "precision": 0.2,
+    "recall": 0.333
+   }
+  },
+  "vit": {}
+ },
+ "mot": {
+  "badminton_doubles_s7_gt": {
+   "players": {
+    "mota": 1.0,
+    "idf1": 1.0,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.16,
+     "p90": 0.233
+    }
+   },
+   "detections": {
+    "mota": 1.0,
+    "idf1": 1.0,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "gt_ids": 6,
+    "pred_ids": 6
+   }
+  },
+  "badminton_doubles_s7_yolo": {
+   "players": {
+    "mota": 0.9944,
+    "idf1": 0.9972,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9944,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.262,
+     "p90": 0.364
+    }
+   },
+   "detections": {
+    "mota": 0.9698,
+    "idf1": 0.9846,
+    "id_switches": 0,
+    "precision": 0.9999,
+    "recall": 0.9699,
+    "gt_ids": 6,
+    "pred_ids": 7
+   }
+  },
+  "basketball_full_s7_gt": {
+   "players": {
+    "mota": 0.9902,
+    "idf1": 0.9949,
+    "id_switches": 2,
+    "precision": 1.0,
+    "recall": 0.9903,
+    "gt_ids": 10,
+    "pred_ids": 10,
+    "court_err_m": {
+     "median": 0.299,
+     "p90": 0.422
+    }
+   },
+   "detections": {
+    "mota": 1.0,
+    "idf1": 1.0,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "gt_ids": 12,
+    "pred_ids": 12
+   }
+  },
+  "basketball_full_s7_yolo": {
+   "players": {
+    "mota": 0.4215,
+    "idf1": 0.2628,
+    "id_switches": 158,
+    "precision": 0.9525,
+    "recall": 0.456,
+    "gt_ids": 10,
+    "pred_ids": 24,
+    "court_err_m": {
+     "median": 0.464,
+     "p90": 0.809
+    }
+   },
+   "detections": {
+    "mota": 0.5177,
+    "idf1": 0.2999,
+    "id_switches": 268,
+    "precision": 0.9535,
+    "recall": 0.5617,
+    "gt_ids": 12,
+    "pred_ids": 179
+   }
+  },
+  "basketball_half_s7_gt": {
+   "players": {
+    "mota": 0.9893,
+    "idf1": 0.9945,
+    "id_switches": 3,
+    "precision": 1.0,
+    "recall": 0.9895,
+    "gt_ids": 10,
+    "pred_ids": 10,
+    "court_err_m": {
+     "median": 0.2,
+     "p90": 0.279
+    }
+   },
+   "detections": {
+    "mota": 1.0,
+    "idf1": 1.0,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "gt_ids": 12,
+    "pred_ids": 12
+   }
+  },
+  "basketball_half_s7_yolo": {
+   "players": {
+    "mota": 0.6267,
+    "idf1": 0.3656,
+    "id_switches": 119,
+    "precision": 0.9824,
+    "recall": 0.6473,
+    "gt_ids": 10,
+    "pred_ids": 19,
+    "court_err_m": {
+     "median": 0.395,
+     "p90": 0.633
+    }
+   },
+   "detections": {
+    "mota": 0.7661,
+    "idf1": 0.2696,
+    "id_switches": 230,
+    "precision": 0.9836,
+    "recall": 0.7937,
+    "gt_ids": 12,
+    "pred_ids": 153
+   }
+  },
+  "pickleball_doubles_s7_gt": {
+   "players": {
+    "mota": 1.0,
+    "idf1": 1.0,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.162,
+     "p90": 0.233
+    }
+   },
+   "detections": {
+    "mota": 1.0,
+    "idf1": 1.0,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "gt_ids": 6,
+    "pred_ids": 6
+   }
+  },
+  "pickleball_doubles_s7_yolo": {
+   "players": {
+    "mota": 0.9793,
+    "idf1": 0.9895,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9793,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.268,
+     "p90": 0.373
+    }
+   },
+   "detections": {
+    "mota": 0.981,
+    "idf1": 0.8726,
+    "id_switches": 3,
+    "precision": 1.0,
+    "recall": 0.9814,
+    "gt_ids": 6,
+    "pred_ids": 9
+   }
+  },
+  "volleyball_indoor_s7_gt": {
+   "players": {
+    "mota": 1.0,
+    "idf1": 1.0,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "gt_ids": 12,
+    "pred_ids": 12,
+    "court_err_m": {
+     "median": 0.166,
+     "p90": 0.246
+    }
+   },
+   "detections": {
+    "mota": 1.0,
+    "idf1": 1.0,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "gt_ids": 14,
+    "pred_ids": 14
+   }
+  },
+  "volleyball_indoor_s7_yolo": {
+   "players": {
+    "mota": 0.9063,
+    "idf1": 0.7853,
+    "id_switches": 37,
+    "precision": 0.9953,
+    "recall": 0.913,
+    "gt_ids": 12,
+    "pred_ids": 13,
+    "court_err_m": {
+     "median": 0.315,
+     "p90": 0.498
+    }
+   },
+   "detections": {
+    "mota": 0.9278,
+    "idf1": 0.7114,
+    "id_switches": 94,
+    "precision": 0.9939,
+    "recall": 0.9385,
+    "gt_ids": 14,
+    "pred_ids": 74
+   }
+  }
+ },
+ "per_clip": {
+  "badminton_doubles_s11": {
+   "gt": {
+    "pid_mapped": "4/4",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "mean_iou": 0.741
+    },
+    "point": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "winner_known": 7,
+     "winner_ok": 7
+    },
+    "contact": {
+     "tp": 49,
+     "fp": 4,
+     "fn": 1,
+     "hitter_ok": 43,
+     "side_ok": 49
+    },
+    "play": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "grammar": "rally"
+    },
+    "gesture": {
+     "tp": 2,
+     "fp": 0,
+     "fn": 0,
+     "by_ok": 2,
+     "clip_ok": 2
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip that.",
+      "Replay Clip Jordan.",
+      "Replay clip then.",
+      "Replay Clip Sam."
+     ],
+     "clip_ok": 4
+    },
+    "tap": {
+     "n": 1,
+     "clip_ok": 1
+    },
+    "resolve_rule_on_gt": "7/7",
+    "counts": {
+     "events": {
+      "rally": 8,
+      "contact": 53,
+      "serve": 8,
+      "point": 8,
+      "hype": 8
+     },
+     "plays": {
+      "rally": 8
+     },
+     "triggers": {
+      "gesture": 2,
+      "voice": 4
+     }
+    }
+   },
+   "yolo": {
+    "pid_mapped": "4/4",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "mean_iou": 0.739
+    },
+    "point": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "winner_known": 7,
+     "winner_ok": 5
+    },
+    "contact": {
+     "tp": 49,
+     "fp": 4,
+     "fn": 1,
+     "hitter_ok": 27,
+     "side_ok": 35
+    },
+    "play": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "grammar": "rally"
+    },
+    "gesture": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 2,
+     "by_ok": 0,
+     "clip_ok": 0
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip that.",
+      "Replay Clip Jordan.",
+      "Replay clip then.",
+      "Replay Clip Sam."
+     ],
+     "clip_ok": 4
+    },
+    "tap": {
+     "n": 1,
+     "clip_ok": 1
+    },
+    "resolve_rule_on_gt": "7/7",
+    "counts": {
+     "events": {
+      "rally": 8,
+      "contact": 53,
+      "serve": 8,
+      "point": 8,
+      "hype": 8
+     },
+     "plays": {
+      "rally": 8
+     },
+     "triggers": {
+      "voice": 4
+     }
+    }
+   }
+  },
+  "badminton_doubles_s7": {
+   "gt": {
+    "pid_mapped": "4/4",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 2,
+     "mean_iou": 0.724
+    },
+    "point": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 2,
+     "winner_known": 6,
+     "winner_ok": 5
+    },
+    "contact": {
+     "tp": 40,
+     "fp": 2,
+     "fn": 6,
+     "hitter_ok": 32,
+     "side_ok": 36
+    },
+    "play": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 2,
+     "grammar": "rally"
+    },
+    "gesture": {
+     "tp": 2,
+     "fp": 0,
+     "fn": 0,
+     "by_ok": 2,
+     "clip_ok": 2
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip this.",
+      "Replay Clip Jordan.",
+      "Replay clip that.",
+      "Replay Clip Jordan."
+     ],
+     "clip_ok": 3
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 1
+    },
+    "resolve_rule_on_gt": "8/8",
+    "counts": {
+     "events": {
+      "rally": 7,
+      "contact": 42,
+      "serve": 7,
+      "point": 7,
+      "hype": 9
+     },
+     "plays": {
+      "rally": 7
+     },
+     "triggers": {
+      "gesture": 2,
+      "voice": 4
+     }
+    }
+   },
+   "yolo": {
+    "pid_mapped": "4/4",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 2,
+     "mean_iou": 0.724
+    },
+    "point": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 2,
+     "winner_known": 6,
+     "winner_ok": 5
+    },
+    "contact": {
+     "tp": 40,
+     "fp": 2,
+     "fn": 6,
+     "hitter_ok": 23,
+     "side_ok": 34
+    },
+    "play": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 2,
+     "grammar": "rally"
+    },
+    "gesture": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 2,
+     "by_ok": 0,
+     "clip_ok": 0
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip this.",
+      "Replay Clip Jordan.",
+      "Replay clip that.",
+      "Replay Clip Jordan."
+     ],
+     "clip_ok": 3
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 1
+    },
+    "resolve_rule_on_gt": "8/8",
+    "counts": {
+     "events": {
+      "rally": 7,
+      "contact": 42,
+      "serve": 7,
+      "point": 7,
+      "hype": 9
+     },
+     "plays": {
+      "rally": 7
+     },
+     "triggers": {
+      "voice": 4
+     }
+    }
+   }
+  },
+  "basketball_full_s7": {
+   "gt": {
+    "pid_mapped": "10/10",
+    "shot": {
+     "tp": 3,
+     "fp": 0,
+     "fn": 4,
+     "shooter_ok": 3,
+     "made_known": 2,
+     "made_ok": 2,
+     "points_ok": 3,
+     "team_ok": 3
+    },
+    "possession_change": {
+     "tp": 6,
+     "fp": 2,
+     "fn": 2,
+     "cause_ok": 5,
+     "causes": {
+      "inbound->inbound": 2,
+      "defensive_rebound->defensive_rebound": 2,
+      "steal->steal": 1,
+      "defensive_rebound->steal": 1
+     }
+    },
+    "play": {
+     "tp": 6,
+     "fp": 2,
+     "fn": 2,
+     "grammar": "possession"
+    },
+    "gesture": {
+     "tp": 2,
+     "fp": 0,
+     "fn": 0,
+     "by_ok": 2,
+     "clip_ok": 1
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay Clip Jordan.",
+      "Replay clip that.",
+      "Replay clip Alex."
+     ],
+     "clip_ok": 3
+    },
+    "tap": {
+     "n": 1,
+     "clip_ok": 0
+    },
+    "resolve_rule_on_gt": "7/7",
+    "counts": {
+     "events": {
+      "possession_change": 8,
+      "shot": 3,
+      "hype": 4,
+      "turnover": 3
+     },
+     "plays": {
+      "possession": 8
+     },
+     "triggers": {
+      "gesture": 2,
+      "voice": 4
+     }
+    }
+   },
+   "yolo": {
+    "pid_mapped": "24/24",
+    "shot": {
+     "tp": 3,
+     "fp": 0,
+     "fn": 4,
+     "shooter_ok": 0,
+     "made_known": 2,
+     "made_ok": 2,
+     "points_ok": 0,
+     "team_ok": 3
+    },
+    "possession_change": {
+     "tp": 6,
+     "fp": 2,
+     "fn": 2,
+     "cause_ok": 5,
+     "causes": {
+      "inbound->inbound": 2,
+      "defensive_rebound->defensive_rebound": 2,
+      "steal->steal": 1,
+      "defensive_rebound->steal": 1
+     }
+    },
+    "play": {
+     "tp": 6,
+     "fp": 2,
+     "fn": 2,
+     "grammar": "possession"
+    },
+    "gesture": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 2,
+     "by_ok": 0,
+     "clip_ok": 0
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay Clip Jordan.",
+      "Replay clip that.",
+      "Replay clip Alex."
+     ],
+     "clip_ok": 4
+    },
+    "tap": {
+     "n": 1,
+     "clip_ok": 0
+    },
+    "resolve_rule_on_gt": "7/7",
+    "counts": {
+     "events": {
+      "possession_change": 8,
+      "shot": 3,
+      "hype": 4,
+      "turnover": 3
+     },
+     "plays": {
+      "possession": 8
+     },
+     "triggers": {
+      "voice": 4
+     }
+    }
+   }
+  },
+  "basketball_half_s11": {
+   "gt": {
+    "pid_mapped": "11/11",
+    "shot": {
+     "tp": 11,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 11,
+     "made_known": 8,
+     "made_ok": 8,
+     "points_ok": 10,
+     "team_ok": 11
+    },
+    "possession_change": {
+     "tp": 9,
+     "fp": 2,
+     "fn": 2,
+     "cause_ok": 8,
+     "causes": {
+      "defensive_rebound->defensive_rebound": 6,
+      "defensive_rebound->steal": 1,
+      "inbound->inbound": 2
+     }
+    },
+    "play": {
+     "tp": 11,
+     "fp": 0,
+     "fn": 0,
+     "grammar": "possession"
+    },
+    "gesture": {
+     "tp": 3,
+     "fp": 0,
+     "fn": 0,
+     "by_ok": 3,
+     "clip_ok": 3
+    },
+    "voice": {
+     "tp": 5,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay Clip Casey.",
+      "Replay clip that.",
+      "Replay Clip Casey.",
+      "Replay clip that."
+     ],
+     "clip_ok": 5
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 2
+    },
+    "resolve_rule_on_gt": "10/10",
+    "counts": {
+     "events": {
+      "possession_change": 11,
+      "shot": 11,
+      "turnover": 1,
+      "hype": 4
+     },
+     "plays": {
+      "possession": 11
+     },
+     "triggers": {
+      "gesture": 3,
+      "voice": 5
+     }
+    }
+   },
+   "yolo": {
+    "pid_mapped": "15/15",
+    "shot": {
+     "tp": 10,
+     "fp": 0,
+     "fn": 1,
+     "shooter_ok": 3,
+     "made_known": 6,
+     "made_ok": 4,
+     "points_ok": 7,
+     "team_ok": 8
+    },
+    "possession_change": {
+     "tp": 9,
+     "fp": 2,
+     "fn": 2,
+     "cause_ok": 5,
+     "causes": {
+      "defensive_rebound->defensive_rebound": 4,
+      "inbound->defensive_rebound": 1,
+      "inbound->inbound": 1,
+      "defensive_rebound->steal": 3
+     }
+    },
+    "play": {
+     "tp": 11,
+     "fp": 0,
+     "fn": 0,
+     "grammar": "possession"
+    },
+    "gesture": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 3,
+     "by_ok": 0,
+     "clip_ok": 0
+    },
+    "voice": {
+     "tp": 5,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay Clip Casey.",
+      "Replay clip that.",
+      "Replay Clip Casey.",
+      "Replay clip that."
+     ],
+     "clip_ok": 5
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 2
+    },
+    "resolve_rule_on_gt": "10/10",
+    "counts": {
+     "events": {
+      "possession_change": 11,
+      "shot": 10,
+      "hype": 4,
+      "turnover": 3
+     },
+     "plays": {
+      "possession": 11
+     },
+     "triggers": {
+      "voice": 5
+     }
+    }
+   }
+  },
+  "basketball_half_s7": {
+   "gt": {
+    "pid_mapped": "10/10",
+    "shot": {
+     "tp": 9,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 9,
+     "made_known": 7,
+     "made_ok": 7,
+     "points_ok": 9,
+     "team_ok": 9
+    },
+    "possession_change": {
+     "tp": 9,
+     "fp": 1,
+     "fn": 2,
+     "cause_ok": 9,
+     "causes": {
+      "inbound->inbound": 5,
+      "steal->steal": 1,
+      "defensive_rebound->defensive_rebound": 3
+     }
+    },
+    "play": {
+     "tp": 10,
+     "fp": 0,
+     "fn": 0,
+     "grammar": "possession"
+    },
+    "gesture": {
+     "tp": 3,
+     "fp": 0,
+     "fn": 0,
+     "by_ok": 3,
+     "clip_ok": 3
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip that.",
+      "Replay Clip Quinn.",
+      "Replay clip that.",
+      "Replay Clip Jordan."
+     ],
+     "clip_ok": 4
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 2
+    },
+    "resolve_rule_on_gt": "9/9",
+    "counts": {
+     "events": {
+      "possession_change": 10,
+      "shot": 9,
+      "hype": 5,
+      "turnover": 1
+     },
+     "plays": {
+      "possession": 10
+     },
+     "triggers": {
+      "gesture": 3,
+      "voice": 4
+     }
+    }
+   },
+   "yolo": {
+    "pid_mapped": "19/19",
+    "shot": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 1,
+     "shooter_ok": 4,
+     "made_known": 5,
+     "made_ok": 4,
+     "points_ok": 6,
+     "team_ok": 7
+    },
+    "possession_change": {
+     "tp": 8,
+     "fp": 2,
+     "fn": 3,
+     "cause_ok": 5,
+     "causes": {
+      "inbound->defensive_rebound": 1,
+      "steal->steal": 1,
+      "defensive_rebound->defensive_rebound": 2,
+      "inbound->steal": 1,
+      "inbound->inbound": 2,
+      "defensive_rebound->steal": 1
+     }
+    },
+    "play": {
+     "tp": 9,
+     "fp": 1,
+     "fn": 1,
+     "grammar": "possession"
+    },
+    "gesture": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 3,
+     "by_ok": 0,
+     "clip_ok": 0
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 1,
+     "transcripts": [
+      "Replay clip that.",
+      "Replay Clip Quinn.",
+      "Replay clip that.",
+      "Replay Clip Jordan."
+     ],
+     "clip_ok": 4
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 2
+    },
+    "resolve_rule_on_gt": "9/9",
+    "counts": {
+     "events": {
+      "possession_change": 10,
+      "shot": 8,
+      "hype": 5,
+      "turnover": 3
+     },
+     "plays": {
+      "possession": 10
+     },
+     "triggers": {
+      "voice": 4
+     }
+    }
+   }
+  },
+  "pickleball_doubles_s11": {
+   "gt": {
+    "pid_mapped": "4/4",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 1,
+     "mean_iou": 0.783
+    },
+    "point": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 1,
+     "winner_known": 6,
+     "winner_ok": 3
+    },
+    "contact": {
+     "tp": 42,
+     "fp": 2,
+     "fn": 3,
+     "hitter_ok": 24,
+     "side_ok": 34
+    },
+    "play": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 1,
+     "grammar": "rally"
+    },
+    "gesture": {
+     "tp": 2,
+     "fp": 0,
+     "fn": 0,
+     "by_ok": 2,
+     "clip_ok": 2
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip",
+      "Replay, Clip Alex.",
+      "Replay clip then.",
+      "Replay Clip Jordan."
+     ],
+     "clip_ok": 4
+    },
+    "tap": {
+     "n": 1,
+     "clip_ok": 0
+    },
+    "resolve_rule_on_gt": "7/7",
+    "counts": {
+     "events": {
+      "rally": 7,
+      "contact": 44,
+      "serve": 7,
+      "point": 7,
+      "hype": 8
+     },
+     "plays": {
+      "rally": 7
+     },
+     "triggers": {
+      "gesture": 2,
+      "voice": 4
+     }
+    }
+   },
+   "yolo": {
+    "pid_mapped": "4/4",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 1,
+     "mean_iou": 0.806
+    },
+    "point": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 1,
+     "winner_known": 6,
+     "winner_ok": 3
+    },
+    "contact": {
+     "tp": 42,
+     "fp": 1,
+     "fn": 3,
+     "hitter_ok": 7,
+     "side_ok": 12
+    },
+    "play": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 1,
+     "grammar": "rally"
+    },
+    "gesture": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 2,
+     "by_ok": 0,
+     "clip_ok": 0
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip",
+      "Replay, Clip Alex.",
+      "Replay clip then.",
+      "Replay Clip Jordan."
+     ],
+     "clip_ok": 4
+    },
+    "tap": {
+     "n": 1,
+     "clip_ok": 0
+    },
+    "resolve_rule_on_gt": "7/7",
+    "counts": {
+     "events": {
+      "rally": 7,
+      "contact": 43,
+      "serve": 7,
+      "point": 7,
+      "hype": 8
+     },
+     "plays": {
+      "rally": 7
+     },
+     "triggers": {
+      "voice": 4
+     }
+    }
+   }
+  },
+  "pickleball_doubles_s7": {
+   "gt": {
+    "pid_mapped": "4/4",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "mean_iou": 0.716
+    },
+    "point": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "winner_known": 7,
+     "winner_ok": 6
+    },
+    "contact": {
+     "tp": 46,
+     "fp": 7,
+     "fn": 0,
+     "hitter_ok": 34,
+     "side_ok": 39
+    },
+    "play": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "grammar": "rally"
+    },
+    "gesture": {
+     "tp": 2,
+     "fp": 0,
+     "fn": 0,
+     "by_ok": 2,
+     "clip_ok": 2
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay Clip Jordan.",
+      "Replay clip then.",
+      "Replay Clip Riley."
+     ],
+     "clip_ok": 4
+    },
+    "tap": {
+     "n": 1,
+     "clip_ok": 1
+    },
+    "resolve_rule_on_gt": "7/7",
+    "counts": {
+     "events": {
+      "rally": 8,
+      "contact": 53,
+      "serve": 8,
+      "hype": 8,
+      "point": 8
+     },
+     "plays": {
+      "rally": 8
+     },
+     "triggers": {
+      "gesture": 2,
+      "voice": 4
+     }
+    }
+   },
+   "yolo": {
+    "pid_mapped": "4/4",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "mean_iou": 0.727
+    },
+    "point": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "winner_known": 7,
+     "winner_ok": 5
+    },
+    "contact": {
+     "tp": 46,
+     "fp": 7,
+     "fn": 0,
+     "hitter_ok": 14,
+     "side_ok": 31
+    },
+    "play": {
+     "tp": 8,
+     "fp": 0,
+     "fn": 0,
+     "grammar": "rally"
+    },
+    "gesture": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 2,
+     "by_ok": 0,
+     "clip_ok": 0
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay Clip Jordan.",
+      "Replay clip then.",
+      "Replay Clip Riley."
+     ],
+     "clip_ok": 4
+    },
+    "tap": {
+     "n": 1,
+     "clip_ok": 1
+    },
+    "resolve_rule_on_gt": "7/7",
+    "counts": {
+     "events": {
+      "rally": 8,
+      "contact": 53,
+      "serve": 8,
+      "hype": 8,
+      "point": 8
+     },
+     "plays": {
+      "rally": 8
+     },
+     "triggers": {
+      "voice": 4
+     }
+    }
+   }
+  },
+  "volleyball_indoor_s11": {
+   "gt": {
+    "pid_mapped": "12/12",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 7,
+     "fp": 2,
+     "fn": 2,
+     "mean_iou": 0.775
+    },
+    "point": {
+     "tp": 8,
+     "fp": 1,
+     "fn": 1,
+     "winner_known": 7,
+     "winner_ok": 7
+    },
+    "contact": {
+     "tp": 33,
+     "fp": 11,
+     "fn": 0,
+     "hitter_ok": 20,
+     "side_ok": 28
+    },
+    "play": {
+     "tp": 8,
+     "fp": 1,
+     "fn": 1,
+     "grammar": "rally"
+    },
+    "attack": {
+     "tp": 2,
+     "fp": 3,
+     "fn": 2
+    },
+    "gesture": {
+     "tp": 3,
+     "fp": 0,
+     "fn": 0,
+     "by_ok": 3,
+     "clip_ok": 2
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay clip Jamie.",
+      "Replay clip then.",
+      "Replay clip Jamie."
+     ],
+     "clip_ok": 3
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 2
+    },
+    "resolve_rule_on_gt": "9/9",
+    "counts": {
+     "events": {
+      "rally": 9,
+      "contact": 44,
+      "serve": 9,
+      "point": 9,
+      "hype": 9
+     },
+     "plays": {
+      "attack": 5,
+      "rally": 9
+     },
+     "triggers": {
+      "gesture": 3,
+      "voice": 4
+     }
+    }
+   },
+   "yolo": {
+    "pid_mapped": "13/13",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 7,
+     "fp": 2,
+     "fn": 2,
+     "mean_iou": 0.775
+    },
+    "point": {
+     "tp": 8,
+     "fp": 1,
+     "fn": 1,
+     "winner_known": 7,
+     "winner_ok": 7
+    },
+    "contact": {
+     "tp": 33,
+     "fp": 11,
+     "fn": 0,
+     "hitter_ok": 2,
+     "side_ok": 18
+    },
+    "play": {
+     "tp": 8,
+     "fp": 1,
+     "fn": 1,
+     "grammar": "rally"
+    },
+    "attack": {
+     "tp": 2,
+     "fp": 5,
+     "fn": 2
+    },
+    "gesture": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 3,
+     "by_ok": 0,
+     "clip_ok": 0
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 0,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay clip Jamie.",
+      "Replay clip then.",
+      "Replay clip Jamie."
+     ],
+     "clip_ok": 2
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 1
+    },
+    "resolve_rule_on_gt": "9/9",
+    "counts": {
+     "events": {
+      "rally": 9,
+      "contact": 44,
+      "serve": 9,
+      "point": 9,
+      "hype": 9
+     },
+     "plays": {
+      "rally": 9,
+      "attack": 7
+     },
+     "triggers": {
+      "voice": 4
+     }
+    }
+   }
+  },
+  "volleyball_indoor_s7": {
+   "gt": {
+    "pid_mapped": "12/12",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 6,
+     "fp": 3,
+     "fn": 4,
+     "mean_iou": 0.804
+    },
+    "point": {
+     "tp": 8,
+     "fp": 1,
+     "fn": 2,
+     "winner_known": 8,
+     "winner_ok": 8
+    },
+    "contact": {
+     "tp": 29,
+     "fp": 10,
+     "fn": 0,
+     "hitter_ok": 15,
+     "side_ok": 23
+    },
+    "play": {
+     "tp": 7,
+     "fp": 2,
+     "fn": 3,
+     "grammar": "rally"
+    },
+    "attack": {
+     "tp": 1,
+     "fp": 4,
+     "fn": 1
+    },
+    "gesture": {
+     "tp": 3,
+     "fp": 0,
+     "fn": 0,
+     "by_ok": 3,
+     "clip_ok": 1
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay Clip Jordan.",
+      "Replay clip that.",
+      "Replay Clip Sam."
+     ],
+     "clip_ok": 3
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 2
+    },
+    "resolve_rule_on_gt": "9/9",
+    "counts": {
+     "events": {
+      "rally": 9,
+      "contact": 39,
+      "serve": 9,
+      "hype": 10,
+      "point": 9
+     },
+     "plays": {
+      "rally": 9,
+      "attack": 5
+     },
+     "triggers": {
+      "gesture": 3,
+      "voice": 4
+     }
+    }
+   },
+   "yolo": {
+    "pid_mapped": "13/13",
+    "shot": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 0,
+     "shooter_ok": 0,
+     "made_known": 0,
+     "made_ok": 0,
+     "points_ok": 0,
+     "team_ok": 0
+    },
+    "rally": {
+     "tp": 6,
+     "fp": 3,
+     "fn": 4,
+     "mean_iou": 0.804
+    },
+    "point": {
+     "tp": 8,
+     "fp": 1,
+     "fn": 2,
+     "winner_known": 8,
+     "winner_ok": 6
+    },
+    "contact": {
+     "tp": 29,
+     "fp": 10,
+     "fn": 0,
+     "hitter_ok": 3,
+     "side_ok": 12
+    },
+    "play": {
+     "tp": 7,
+     "fp": 2,
+     "fn": 3,
+     "grammar": "rally"
+    },
+    "attack": {
+     "tp": 0,
+     "fp": 3,
+     "fn": 2
+    },
+    "gesture": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 3,
+     "by_ok": 0,
+     "clip_ok": 0
+    },
+    "voice": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 0,
+     "subject_needed": 2,
+     "subject_ok": 2,
+     "transcripts": [
+      "Replay clip then.",
+      "Replay Clip Jordan.",
+      "Replay clip that.",
+      "Replay Clip Sam."
+     ],
+     "clip_ok": 3
+    },
+    "tap": {
+     "n": 2,
+     "clip_ok": 2
+    },
+    "resolve_rule_on_gt": "9/9",
+    "counts": {
+     "events": {
+      "rally": 9,
+      "contact": 39,
+      "serve": 9,
+      "hype": 10,
+      "point": 9
+     },
+     "plays": {
+      "attack": 3,
+      "rally": 9
+     },
+     "triggers": {
+      "voice": 4
+     }
+    }
+   }
+  }
+ }
+}

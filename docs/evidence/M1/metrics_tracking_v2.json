@@ -1,0 +1,635 @@
+{
+ "synthetic": true,
+ "runs": {
+  "gt": {},
+  "yolo": {},
+  "vit": {}
+ },
+ "mot": {
+  "badminton_doubles_s11_after": {
+   "players": {
+    "mota": 0.9894,
+    "idf1": 0.9947,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9894,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.254,
+     "p90": 0.357
+    }
+   },
+   "detections": {
+    "mota": 0.9454,
+    "idf1": 0.8738,
+    "id_switches": 2,
+    "precision": 0.9982,
+    "recall": 0.9474,
+    "gt_ids": 6,
+    "pred_ids": 10
+   }
+  },
+  "badminton_doubles_s11_before": {
+   "players": {
+    "mota": 0.9894,
+    "idf1": 0.9947,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9894,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.254,
+     "p90": 0.357
+    }
+   },
+   "detections": {
+    "mota": 0.9454,
+    "idf1": 0.8738,
+    "id_switches": 2,
+    "precision": 0.9982,
+    "recall": 0.9474,
+    "gt_ids": 6,
+    "pred_ids": 10
+   }
+  },
+  "badminton_doubles_s7_after": {
+   "players": {
+    "mota": 0.9944,
+    "idf1": 0.9972,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9944,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.262,
+     "p90": 0.364
+    }
+   },
+   "detections": {
+    "mota": 0.9698,
+    "idf1": 0.9846,
+    "id_switches": 0,
+    "precision": 0.9999,
+    "recall": 0.9699,
+    "gt_ids": 6,
+    "pred_ids": 7
+   }
+  },
+  "badminton_doubles_s7_before": {
+   "players": {
+    "mota": 0.9944,
+    "idf1": 0.9972,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9944,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.262,
+     "p90": 0.364
+    }
+   },
+   "detections": {
+    "mota": 0.9698,
+    "idf1": 0.9846,
+    "id_switches": 0,
+    "precision": 0.9999,
+    "recall": 0.9699,
+    "gt_ids": 6,
+    "pred_ids": 7
+   }
+  },
+  "basketball_full_s13_after": {
+   "players": {
+    "mota": 0.433,
+    "idf1": 0.3279,
+    "id_switches": 137,
+    "precision": 0.9459,
+    "recall": 0.4701,
+    "gt_ids": 10,
+    "pred_ids": 18,
+    "court_err_m": {
+     "median": 0.463,
+     "p90": 0.858
+    }
+   },
+   "detections": {
+    "mota": 0.5407,
+    "idf1": 0.304,
+    "id_switches": 283,
+    "precision": 0.9466,
+    "recall": 0.5917,
+    "gt_ids": 12,
+    "pred_ids": 177
+   }
+  },
+  "basketball_full_s13_before": {
+   "players": {
+    "mota": 0.4467,
+    "idf1": 0.2868,
+    "id_switches": 144,
+    "precision": 0.9436,
+    "recall": 0.4865,
+    "gt_ids": 10,
+    "pred_ids": 22,
+    "court_err_m": {
+     "median": 0.464,
+     "p90": 0.873
+    }
+   },
+   "detections": {
+    "mota": 0.5407,
+    "idf1": 0.304,
+    "id_switches": 283,
+    "precision": 0.9466,
+    "recall": 0.5917,
+    "gt_ids": 12,
+    "pred_ids": 177
+   }
+  },
+  "basketball_full_s17_after": {
+   "players": {
+    "mota": 0.4168,
+    "idf1": 0.2421,
+    "id_switches": 176,
+    "precision": 0.9261,
+    "recall": 0.4673,
+    "gt_ids": 10,
+    "pred_ids": 27,
+    "court_err_m": {
+     "median": 0.471,
+     "p90": 0.831
+    }
+   },
+   "detections": {
+    "mota": 0.5343,
+    "idf1": 0.2709,
+    "id_switches": 310,
+    "precision": 0.9424,
+    "recall": 0.5897,
+    "gt_ids": 12,
+    "pred_ids": 196
+   }
+  },
+  "basketball_full_s17_before": {
+   "players": {
+    "mota": 0.4284,
+    "idf1": 0.2443,
+    "id_switches": 167,
+    "precision": 0.9265,
+    "recall": 0.4789,
+    "gt_ids": 10,
+    "pred_ids": 24,
+    "court_err_m": {
+     "median": 0.466,
+     "p90": 0.827
+    }
+   },
+   "detections": {
+    "mota": 0.5343,
+    "idf1": 0.2709,
+    "id_switches": 310,
+    "precision": 0.9424,
+    "recall": 0.5897,
+    "gt_ids": 12,
+    "pred_ids": 196
+   }
+  },
+  "basketball_full_s7_after": {
+   "players": {
+    "mota": 0.4215,
+    "idf1": 0.2628,
+    "id_switches": 158,
+    "precision": 0.9525,
+    "recall": 0.456,
+    "gt_ids": 10,
+    "pred_ids": 24,
+    "court_err_m": {
+     "median": 0.464,
+     "p90": 0.809
+    }
+   },
+   "detections": {
+    "mota": 0.5177,
+    "idf1": 0.2999,
+    "id_switches": 268,
+    "precision": 0.9535,
+    "recall": 0.5617,
+    "gt_ids": 12,
+    "pred_ids": 179
+   }
+  },
+  "basketball_full_s7_before": {
+   "players": {
+    "mota": 0.4277,
+    "idf1": 0.2453,
+    "id_switches": 157,
+    "precision": 0.956,
+    "recall": 0.4606,
+    "gt_ids": 10,
+    "pred_ids": 28,
+    "court_err_m": {
+     "median": 0.468,
+     "p90": 0.817
+    }
+   },
+   "detections": {
+    "mota": 0.5177,
+    "idf1": 0.2999,
+    "id_switches": 268,
+    "precision": 0.9535,
+    "recall": 0.5617,
+    "gt_ids": 12,
+    "pred_ids": 179
+   }
+  },
+  "basketball_half_s11_after": {
+   "players": {
+    "mota": 0.6694,
+    "idf1": 0.3262,
+    "id_switches": 125,
+    "precision": 0.9881,
+    "recall": 0.6871,
+    "gt_ids": 10,
+    "pred_ids": 15,
+    "court_err_m": {
+     "median": 0.387,
+     "p90": 0.614
+    }
+   },
+   "detections": {
+    "mota": 0.7856,
+    "idf1": 0.2794,
+    "id_switches": 256,
+    "precision": 0.9856,
+    "recall": 0.8136,
+    "gt_ids": 12,
+    "pred_ids": 166
+   }
+  },
+  "basketball_half_s11_before": {
+   "players": {
+    "mota": 0.6644,
+    "idf1": 0.3112,
+    "id_switches": 125,
+    "precision": 0.99,
+    "recall": 0.6807,
+    "gt_ids": 10,
+    "pred_ids": 18,
+    "court_err_m": {
+     "median": 0.386,
+     "p90": 0.603
+    }
+   },
+   "detections": {
+    "mota": 0.7856,
+    "idf1": 0.2794,
+    "id_switches": 256,
+    "precision": 0.9856,
+    "recall": 0.8136,
+    "gt_ids": 12,
+    "pred_ids": 166
+   }
+  },
+  "basketball_half_s13_after": {
+   "players": {
+    "mota": 0.6843,
+    "idf1": 0.4607,
+    "id_switches": 74,
+    "precision": 0.9806,
+    "recall": 0.7038,
+    "gt_ids": 10,
+    "pred_ids": 14,
+    "court_err_m": {
+     "median": 0.389,
+     "p90": 0.653
+    }
+   },
+   "detections": {
+    "mota": 0.7714,
+    "idf1": 0.3087,
+    "id_switches": 202,
+    "precision": 0.9821,
+    "recall": 0.7987,
+    "gt_ids": 12,
+    "pred_ids": 148
+   }
+  },
+  "basketball_half_s13_before": {
+   "players": {
+    "mota": 0.6401,
+    "idf1": 0.4156,
+    "id_switches": 84,
+    "precision": 0.9818,
+    "recall": 0.6586,
+    "gt_ids": 10,
+    "pred_ids": 12,
+    "court_err_m": {
+     "median": 0.39,
+     "p90": 0.678
+    }
+   },
+   "detections": {
+    "mota": 0.7714,
+    "idf1": 0.3087,
+    "id_switches": 202,
+    "precision": 0.9821,
+    "recall": 0.7987,
+    "gt_ids": 12,
+    "pred_ids": 148
+   }
+  },
+  "basketball_half_s17_after": {
+   "players": {
+    "mota": 0.7117,
+    "idf1": 0.5631,
+    "id_switches": 101,
+    "precision": 0.991,
+    "recall": 0.7258,
+    "gt_ids": 10,
+    "pred_ids": 14,
+    "court_err_m": {
+     "median": 0.387,
+     "p90": 0.61
+    }
+   },
+   "detections": {
+    "mota": 0.8134,
+    "idf1": 0.3132,
+    "id_switches": 222,
+    "precision": 0.9867,
+    "recall": 0.8386,
+    "gt_ids": 12,
+    "pred_ids": 147
+   }
+  },
+  "basketball_half_s17_before": {
+   "players": {
+    "mota": 0.6419,
+    "idf1": 0.3558,
+    "id_switches": 102,
+    "precision": 0.9738,
+    "recall": 0.6675,
+    "gt_ids": 10,
+    "pred_ids": 16,
+    "court_err_m": {
+     "median": 0.393,
+     "p90": 0.634
+    }
+   },
+   "detections": {
+    "mota": 0.8134,
+    "idf1": 0.3132,
+    "id_switches": 222,
+    "precision": 0.9867,
+    "recall": 0.8386,
+    "gt_ids": 12,
+    "pred_ids": 147
+   }
+  },
+  "basketball_half_s7_after": {
+   "players": {
+    "mota": 0.6267,
+    "idf1": 0.3656,
+    "id_switches": 119,
+    "precision": 0.9824,
+    "recall": 0.6473,
+    "gt_ids": 10,
+    "pred_ids": 19,
+    "court_err_m": {
+     "median": 0.395,
+     "p90": 0.633
+    }
+   },
+   "detections": {
+    "mota": 0.7661,
+    "idf1": 0.2696,
+    "id_switches": 230,
+    "precision": 0.9836,
+    "recall": 0.7937,
+    "gt_ids": 12,
+    "pred_ids": 153
+   }
+  },
+  "basketball_half_s7_before": {
+   "players": {
+    "mota": 0.6366,
+    "idf1": 0.3104,
+    "id_switches": 122,
+    "precision": 0.9814,
+    "recall": 0.6583,
+    "gt_ids": 10,
+    "pred_ids": 22,
+    "court_err_m": {
+     "median": 0.39,
+     "p90": 0.662
+    }
+   },
+   "detections": {
+    "mota": 0.7661,
+    "idf1": 0.2696,
+    "id_switches": 230,
+    "precision": 0.9836,
+    "recall": 0.7937,
+    "gt_ids": 12,
+    "pred_ids": 153
+   }
+  },
+  "pickleball_doubles_s11_after": {
+   "players": {
+    "mota": 0.9852,
+    "idf1": 0.9925,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9852,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.256,
+     "p90": 0.382
+    }
+   },
+   "detections": {
+    "mota": 0.9852,
+    "idf1": 0.8644,
+    "id_switches": 5,
+    "precision": 1.0,
+    "recall": 0.9858,
+    "gt_ids": 6,
+    "pred_ids": 11
+   }
+  },
+  "pickleball_doubles_s11_before": {
+   "players": {
+    "mota": 0.9852,
+    "idf1": 0.9925,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9852,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.256,
+     "p90": 0.382
+    }
+   },
+   "detections": {
+    "mota": 0.9852,
+    "idf1": 0.8644,
+    "id_switches": 5,
+    "precision": 1.0,
+    "recall": 0.9858,
+    "gt_ids": 6,
+    "pred_ids": 11
+   }
+  },
+  "pickleball_doubles_s7_after": {
+   "players": {
+    "mota": 0.9793,
+    "idf1": 0.9895,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9793,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.268,
+     "p90": 0.373
+    }
+   },
+   "detections": {
+    "mota": 0.981,
+    "idf1": 0.8726,
+    "id_switches": 3,
+    "precision": 1.0,
+    "recall": 0.9814,
+    "gt_ids": 6,
+    "pred_ids": 9
+   }
+  },
+  "pickleball_doubles_s7_before": {
+   "players": {
+    "mota": 0.9793,
+    "idf1": 0.9895,
+    "id_switches": 0,
+    "precision": 1.0,
+    "recall": 0.9793,
+    "gt_ids": 4,
+    "pred_ids": 4,
+    "court_err_m": {
+     "median": 0.268,
+     "p90": 0.373
+    }
+   },
+   "detections": {
+    "mota": 0.981,
+    "idf1": 0.8726,
+    "id_switches": 3,
+    "precision": 1.0,
+    "recall": 0.9814,
+    "gt_ids": 6,
+    "pred_ids": 9
+   }
+  },
+  "volleyball_indoor_s11_after": {
+   "players": {
+    "mota": 0.9145,
+    "idf1": 0.7369,
+    "id_switches": 25,
+    "precision": 0.9961,
+    "recall": 0.9196,
+    "gt_ids": 12,
+    "pred_ids": 13,
+    "court_err_m": {
+     "median": 0.317,
+     "p90": 0.5
+    }
+   },
+   "detections": {
+    "mota": 0.9316,
+    "idf1": 0.6368,
+    "id_switches": 68,
+    "precision": 0.9955,
+    "recall": 0.9395,
+    "gt_ids": 14,
+    "pred_ids": 62
+   }
+  },
+  "volleyball_indoor_s11_before": {
+   "players": {
+    "mota": 0.923,
+    "idf1": 0.7464,
+    "id_switches": 23,
+    "precision": 0.9963,
+    "recall": 0.9279,
+    "gt_ids": 12,
+    "pred_ids": 13,
+    "court_err_m": {
+     "median": 0.317,
+     "p90": 0.499
+    }
+   },
+   "detections": {
+    "mota": 0.9316,
+    "idf1": 0.6368,
+    "id_switches": 68,
+    "precision": 0.9955,
+    "recall": 0.9395,
+    "gt_ids": 14,
+    "pred_ids": 62
+   }
+  },
+  "volleyball_indoor_s7_after": {
+   "players": {
+    "mota": 0.9063,
+    "idf1": 0.7853,
+    "id_switches": 37,
+    "precision": 0.9953,
+    "recall": 0.913,
+    "gt_ids": 12,
+    "pred_ids": 13,
+    "court_err_m": {
+     "median": 0.315,
+     "p90": 0.498
+    }
+   },
+   "detections": {
+    "mota": 0.9278,
+    "idf1": 0.7114,
+    "id_switches": 94,
+    "precision": 0.9939,
+    "recall": 0.9385,
+    "gt_ids": 14,
+    "pred_ids": 74
+   }
+  },
+  "volleyball_indoor_s7_before": {
+   "players": {
+    "mota": 0.9089,
+    "idf1": 0.7503,
+    "id_switches": 37,
+    "precision": 0.9953,
+    "recall": 0.9156,
+    "gt_ids": 12,
+    "pred_ids": 13,
+    "court_err_m": {
+     "median": 0.315,
+     "p90": 0.499
+    }
+   },
+   "detections": {
+    "mota": 0.9278,
+    "idf1": 0.7114,
+    "id_switches": 94,
+    "precision": 0.9939,
+    "recall": 0.9385,
+    "gt_ids": 14,
+    "pred_ids": 74
+   }
+  }
+ },
+ "per_clip": {}
+}

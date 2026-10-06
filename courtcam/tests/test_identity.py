@@ -224,6 +224,31 @@ def test_merge_takes_the_closest_continuation_not_the_earliest():
     assert sorted(groups) == [[0], [1, 2]]
 
 
+def test_merge_is_one_global_assignment_not_closest_first():
+    """Two players run left through a 0.5 s gap. Closest-first hands the nearest new
+    tracklet to the rear runner and leaves the front one a 4 m link; the assignment that
+    is cheapest overall pairs each with the one ahead of it."""
+    front = _track(1, 0.0, 4.0, (8.0, 5.0), (0.0, 5.0))
+    rear = _track(2, 0.0, 4.0, (10.0, 5.0), (2.0, 5.0))
+    ahead_of_front = _track(3, 4.5, 8.0, (-2.2, 5.0), (-9.0, 5.0))
+    ahead_of_rear = _track(4, 4.5, 8.0, (0.2, 5.0), (-6.0, 5.0))
+    groups = merge_groups([front, rear, ahead_of_front, ahead_of_rear], np.zeros(4, int), PROFILE)
+    assert sorted(groups) == [[0, 2], [1, 3]]
+
+
+def test_split_switches_cuts_a_tracklet_where_the_jersey_changes_for_good():
+    from courtcam.identity import split_switches
+
+    tr = _track(7, 0.0, 4.0, (0.0, 5.0), (4.0, 5.0))  # 60 samples at 15 fps
+    swap = {j: int(j >= 30) for j in range(60)}
+    blip = {j: int(30 <= j < 35) for j in range(60)}  # 1/3 s: noise, not a swap
+    pieces, teams = split_switches([tr, tr], [swap, blip], np.array([0, 0]))
+    assert [len(p.tracklet.frames) for p in pieces] == [30, 30, 60]
+    assert teams.tolist() == [0, 1, 0]
+    assert pieces[1].tracklet.t_start == pytest.approx(tr.tracklet.times[30])
+    assert pieces[1].court_m[0] == pytest.approx(tr.court_m[30])
+
+
 def test_concurrency_cap_ignores_a_handover_overlap():
     from courtcam.identity import _cap_concurrent
 

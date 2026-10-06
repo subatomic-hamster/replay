@@ -37,3 +37,63 @@ contact sounds.
 
 This is not necessarily the same test as the old "8/9 crowd-noise mixes" claim. The script
 behind that claim was not found.
+
+## Tracking v2: jersey-swap splitting and global linking (2026-10-06)
+
+**Synthetic data only.** Numbers in `metrics_tracking_v2.json` (`../M4/eval/agg.py` over
+`courtcam eval` outputs; keys `<clip>_before` / `<clip>_after`). Scripts in `eval_tracking_v2/`;
+`final.sh` lists the exact steps. "Before" is identity at HEAD 005cf87; "after" re-runs only the
+identity stage on the same YOLO11m + BoT-SORT detections (`courtcam/botsort.yaml` unchanged), so
+detection and tracker output are identical in both columns. The baseline reproduced exactly
+(half s7 0.6366 / 0.3104 / 122, full s7 0.4277 / 0.2453 / 157, half s11 0.6644 / 0.3112 / 125).
+
+### Where identities break (half s7 / full s7, `diag.py`, `oracle.py`)
+
+- 28 of 109 / 27 of 117 on-court tracklets already carry two or more people (16 % / 14 % of
+  their samples). 27 of 43 / 20 of 37 of those swaps are with an **opponent**.
+- `merge_groups` then made more wrong links than right ones: 28 right vs 43 wrong / 39 vs 43.
+- Ceilings on the same tracklets: perfect linking gives IDF1 0.73 / 0.56; perfect splitting
+  plus linking gives 0.85 / 0.64. The loss is association, not detection.
+- No single link cue picks the true successor reliably (`feat.py`, top-1 among same-team
+  candidates): end distance 65-66 %, velocity extrapolation 50-69 %, body histogram 52-59 %
+  (60-61 % on the last / first 2 s only), relative stature 43-44 %.
+
+### What changed (`courtcam/identity.py`)
+
+1. `jersey_labels` + `split_switches`: every 2nd sample gets the nearer team's torso colour;
+   a change that holds ≥ 1 s cuts the tracklet, and each piece takes its own team. Only for
+   `team_rule: jersey_color`, and only when ≥ 85 % of sampled torsos agree with their
+   tracklet's team (`JERSEY_MIN_AGREE`): synthetic 0.875-0.966, Kennesaw pickup 0.80.
+2. `merge_groups` links by one Hungarian assignment (`lap`) over
+   `dist / (1 m + 3 m/s × gap) + 0.3 × gap`, links above 2.0 left unmade, instead of
+   cheapest-first greedy. Costs tuned on dev seeds 13 and 17 only.
+
+### Results (YOLO11m + BoT-SORT, players)
+
+| clip | MOTA before → after | IDF1 before → after | ID switches before → after |
+|---|---|---|---|
+| basketball half s7 | 0.637 → 0.627 | **0.310 → 0.366** | 122 → 119 |
+| basketball full s7 | 0.428 → 0.422 | **0.245 → 0.263** | 157 → 158 |
+| basketball half s11 | 0.664 → 0.669 | **0.311 → 0.326** | 125 → 125 |
+| pickleball s7 / s11 | 0.979 / 0.985, unchanged | 0.990 / 0.993, unchanged | 0 / 0 |
+| badminton s7 / s11 | 0.994 / 0.989, unchanged | 0.997 / 0.995, unchanged | 0 / 0 |
+| volleyball s7 | 0.909 → 0.906 | 0.750 → 0.785 | 37 → 37 |
+| volleyball s11 | 0.923 → 0.915 | 0.746 → 0.737 | 23 → 25 |
+| dev: basketball half s13 / s17 | 0.640 → 0.684 / 0.642 → 0.712 | 0.416 → 0.461 / 0.356 → 0.563 | 84 → 74 / 102 → 101 |
+| dev: basketball full s13 / s17 | 0.447 → 0.433 / 0.428 → 0.417 | 0.287 → 0.328 / 0.244 → 0.242 | 144 → 137 / 167 → 176 |
+
+Court error medians move by ≤ 0.005 m. Identity stage time on Kennesaw 240 s: 11.6 s wall.
+
+- **Held-out basketball (M1 seeds):** IDF1 +0.015 to +0.056; mean 0.289 → 0.318. MOTA within
+  ±0.01. CLEAR-MOT ID switches do not move: they are swaps inside BoT-SORT tracklets, and a
+  cut piece is still counted as a switch when it is relinked to someone else.
+- **Not shipped (measured, no gain on the dev seeds):** BoT-SORT `fuse_score: false` (raw
+  tracklets halve, but more swaps inside them: dev IDF1 0.274 base / 0.345 with this pass),
+  thresholds 0.15 / 0.05 / 0.4 (0.293 / 0.371), `match_thresh` 0.9, stride 1 (half s7 0.307),
+  appearance cost in the assignment (±0.01), "only unambiguous links", splitting at net
+  crossings for net sports (no change on 6 clips).
+- **Kennesaw 150-210 s (local, hand count, ±5):** about 51 visible changes in 19 rows before,
+  about 42 in 21 rows after; the referee stays one stable row. Without the agreement gate,
+  colour cuts broke the referee into four rows. Sheets:
+  `docs/evidence/local/M1/tracking_v2_kennesaw_id_rows_150-210s_{before,after}.jpg` (my count of
+  the before sheet is higher than the 38 in progress.md; same counter for both).

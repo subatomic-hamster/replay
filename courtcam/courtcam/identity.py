@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
+import lap
 import numpy as np
 
 from .court import CourtTrack, bystander, track_from_json, track_json
@@ -181,6 +182,98 @@ def split_teams(hists: np.ndarray, *, k: int = 2, seed: int = 0) -> np.ndarray:
     return labels.ravel().astype(int)
 
 
+JERSEY_MIN_AGREE = 0.85
+"""`split_switches` on jersey colour only when at least this share of sampled torsos
+agree with their tracklet's team: two real kits. Synthetic basketball 0.875-0.966; the
+Kennesaw pickup game (mixed shirts, a grey referee) 0.80, where cutting on colour broke
+the one stable referee row into four."""
+
+
+def _runs(labels: np.ndarray, min_len: int) -> list[tuple[int, int, int]]:
+    """(start, end, label) runs of `labels`; a run shorter than `min_len` joins the run
+    before it (or after it, at the start), so only sustained changes survive."""
+    runs: list[list[int]] = []
+    for i, x in enumerate(labels.tolist()):
+        if runs and runs[-1][2] == x:
+            runs[-1][1] = i + 1
+        else:
+            runs.append([i, i + 1, x])
+    out: list[list[int]] = []
+    for r in runs:
+        if out and (r[1] - r[0] < min_len or out[-1][2] == r[2]):
+            out[-1][1] = r[1]
+        elif out and out[-1][1] - out[-1][0] < min_len:
+            out[-1] = [out[-1][0], r[1], r[2]]
+        else:
+            out.append(list(r))
+    return [tuple(r) for r in out]  # type: ignore[misc]
+
+
+def jersey_labels(
+    video: str, tracks: list[CourtTrack], hists: np.ndarray, teams: np.ndarray, every: int = 2
+) -> list[dict[int, int]]:
+    """Team of every `every`-th sample of each tracklet: the nearer team centroid of its
+    torso histogram. One decode pass, like `sample_appearance`."""
+    cents = np.stack([hists[teams == k].mean(axis=0) for k in (0, 1)])
+    wanted: dict[int, list[tuple[int, int]]] = {}
+    for i, tr in enumerate(tracks):
+        for j in range(0, len(tr.tracklet.frames), every):
+            wanted.setdefault(int(tr.tracklet.frames[j]), []).append((i, j))
+    lab: list[dict[int, int]] = [{} for _ in tracks]
+    cap = cv2.VideoCapture(str(video))
+    try:
+        fh = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1
+        fw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1
+        for frame_idx, frame in _grab_frames(cap, sorted(wanted)):
+            for i, j in wanted[frame_idx]:
+                x, y, w, h = torso_rect(tracks[i].tracklet.boxes[j])
+                crop = frame[max(0, y) : min(fh, y + h), max(0, x) : min(fw, x + w)]
+                if crop.size:
+                    d = np.linalg.norm(cents - _hist(crop)[None], axis=1)
+                    lab[i][j] = int(np.argmin(d))
+    finally:
+        cap.release()
+    return lab
+
+
+def split_switches(
+    tracks: list[CourtTrack],
+    lab: list[dict[int, int]],
+    teams: np.ndarray,
+    min_run_s: float = 1.0,
+) -> tuple[list[CourtTrack], np.ndarray]:
+    """Cut tracklets where their per-sample team label (`lab`: sample index -> team)
+    changes and holds for `min_run_s`: the tracker swapped two players. Each piece takes
+    the team it shows.
+
+    No merge can undo a swap inside a tracklet. On synthetic basketball half s7 (YOLO11m
+    + BoT-SORT) 28 of 109 court tracklets carry a swap, and 27 of their 43 swaps are with
+    an opponent (a defender stays close), which the jersey shows.
+    """
+    out: list[CourtTrack] = []
+    out_teams: list[int] = []
+    for i, tr in enumerate(tracks):
+        t = tr.tracklet
+        idx = sorted(lab[i])
+        if len(idx) < 2:
+            out.append(tr)
+            out_teams.append(int(teams[i]))
+            continue
+        step = max(float(np.median(np.diff(t.times[idx]))), 1e-3)
+        runs = _runs(np.asarray([lab[i][j] for j in idx]), max(1, round(min_run_s / step)))
+        for k, (a, _, team) in enumerate(runs):
+            lo = 0 if k == 0 else idx[a]
+            hi = len(t.frames) if k == len(runs) - 1 else idx[runs[k + 1][0]]
+            if hi - lo < 2:
+                continue
+            piece = Tracklet(
+                t.track_id, t.frames[lo:hi], t.times[lo:hi], t.boxes[lo:hi], t.confs[lo:hi]
+            )
+            out.append(CourtTrack(piece, tr.court_m[lo:hi], tr.inside_fraction))
+            out_teams.append(int(team) if len(runs) > 1 else int(teams[i]))
+    return out, np.asarray(out_teams, dtype=int)
+
+
 # --- net side ---------------------------------------------------------------
 
 NET_WINDOW_S = 60.0
@@ -243,6 +336,15 @@ def team_colors(teams: np.ndarray, profile: Profile, colors: np.ndarray | None) 
 
 # --- merging ----------------------------------------------------------------
 
+# Link cost (merge_groups): court distance in units of LINK_SCALE_M + LINK_SPEED_MPS x gap
+# (where the player can plausibly have got to), plus LINK_GAP_COST per second of gap; a
+# link that costs more than LINK_MAX_COST is left unmade. Tuned on synthetic basketball
+# seeds 13 and 17 (not the M1 seeds 7 / 11), docs/evidence/M1/README.md.
+LINK_SCALE_M = 1.0
+LINK_SPEED_MPS = 3.0
+LINK_GAP_COST = 0.3
+LINK_MAX_COST = 2.0
+
 
 def merge_groups(
     tracks: list[CourtTrack],
@@ -253,19 +355,21 @@ def merge_groups(
     """Group tracklet indices that are the same person: small time gap, small court
     distance, same team (§4.4 step 6).
 
-    Links are taken cheapest (closest) first, and each tracklet gets at most one
-    predecessor and one successor, so a group is a chain through time. Earliest-first
-    used to hand a fragment to whichever old track *started* first even when another
-    one had ended right where it appeared.
+    Each tracklet gets at most one predecessor and one successor, so a group is a chain
+    through time, and the links are one global assignment (Hungarian, `lap`) over a cost
+    that grows with distance per second of gap (LINK_* above). Cheapest-first greedy
+    linking used to take a long-gap link that happened to land close over the short-gap
+    one that was right; earliest-first before it handed a fragment to whichever old
+    track *started* first.
 
     A link may overlap by up to `merge_overlap_s`: ByteTrack gives a person a new id a
     frame or so before it drops the old one, and on the badminton clip that one-frame
     overlap alone kept a 57 s tracklet out of every group (samples/real/RESULTS.md).
 
-    With `body` descriptors (`body_hist`) and `tracking.appearance_weight` > 0, a link's
-    cost is its court distance in units of `merge_max_dist_m` plus the weight times the
-    appearance distance, and links above `appearance_max` are refused: on synthetic
-    basketball 61 % of the distance-only links joined two different people.
+    With `body` descriptors (`body_hist`) and `tracking.appearance_weight` > 0, the weight
+    times the appearance distance is added to a link's cost, and links above
+    `appearance_max` are refused. It stays off: it did not move IDF1 (D-61, and again
+    with the global assignment).
     """
     cfg = profile.tracking
     use_app = body is not None and cfg.appearance_weight > 0
@@ -289,12 +393,21 @@ def merge_groups(
                 reach = min(reach, cfg.merge_reach_m + cfg.max_speed_mps * max(gap[b], 0.0))
             if dist > reach:
                 continue
+            g = max(float(gap[b]), 0.0)
+            cost = dist / (LINK_SCALE_M + LINK_SPEED_MPS * g) + LINK_GAP_COST * g
             if use_app:
                 d_app = app_distance(body[a], body[b])  # type: ignore[index]
                 if d_app > cfg.appearance_max:
                     continue
-                dist = dist / cfg.merge_max_dist_m + cfg.appearance_weight * d_app
-            links.append((dist, a, int(b)))
+                cost += cfg.appearance_weight * d_app
+            links.append((cost, a, int(b)))
+
+    if links:  # one global assignment of successors to predecessors
+        mat = np.full((n, n), 1e6)
+        for c, a, b in links:
+            mat[a, b] = c
+        _, x, _ = lap.lapjv(mat, extend_cost=True, cost_limit=LINK_MAX_COST)
+        links = [(mat[a, b], a, int(b)) for a, b in enumerate(x) if b >= 0 and mat[a, b] < 1e6]
 
     parent = list(range(n))
 
@@ -448,6 +561,14 @@ def identify(
     need = profile.team_rule == "jersey_color" or profile.tracking.appearance_weight > 0
     hists, colors, body = sample_appearance(video, tracks) if need else (None, None, None)
     teams = assign_teams(hists, tracks, profile, profile.template(variant))
+    if profile.team_rule == "jersey_color" and len(np.unique(teams)) == 2:
+        n = len(tracks)
+        lab = jersey_labels(video, tracks, hists, teams)  # type: ignore[arg-type]
+        agree = np.mean([v == teams[i] for i, d in enumerate(lab) for v in d.values()] or [0])
+        if agree >= JERSEY_MIN_AGREE:
+            tracks, teams = split_switches(tracks, lab, teams)
+        if len(tracks) != n:  # the pieces need their own appearance (team colours)
+            hists, colors, body = sample_appearance(video, tracks)
     groups = merge_groups(tracks, teams, profile, body)
     colours = team_colors(teams, profile, colors)
     polygon = profile.template(variant).polygon

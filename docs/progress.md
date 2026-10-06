@@ -94,3 +94,19 @@ Template:
 - Evidence: docs/evidence/M10/ (synthetic cards, profiles, reels; face yield and match metrics as JSON, no face images committed)
 - Decisions: D-58.
 - Left / known issues: TV/web profile screens not built; no voice-enrollment route (field always false); no held-out labelled face clip; `match_game` uses seek-based frame reads (~11 s for 48 players); career reel not rendered.
+
+## M9 — Tier C reconstruction replays (2026-10-06)
+
+- Works: MotionBERT 2D→3D lift (analytic fallback) placed on the calibrated court, motion clean-up (smoothing, rigid bones, foot pinning, collision push), `replay.scene.v1`, capsule-mannequin renders from broadcast_high, baseline, overhead, reverse and shooter POV, basketball ball arc; opt-in worker stages that merge Tier C angles into the replays manifest, so the M8 Replay screen shows them.
+- Verified on hfbox (staged snapshot, `scripts/box-test.sh` ALL GREEN): courtcam 178, api 211 + 1 skipped, worker 22, render 49 passed. Synthetic full-court basketball, 12 body joints, all players: MotionBERT MPJPE 125–139 mm (74–75 mm pelvis-aligned), analytic 172–187 mm; jitter 10–13 → 4–5 m/s² (GT itself 4.5–5.6), foot slide 25–29 → ≤ 0.9 cm/s, bone-length CV 0.04 → 0, height error ≤ 3 cm; torso overlap ≤ 0.28 % → ≤ 0.06 %. CC BY pickleball with YOLO keypoints: jitter 39–56 → 9–15 m/s², foot slide 59–69 → 0.2–1.4 cm/s. `tierc_scene` 8–12 s per play; 3.6–15 s per angle at 1280×720.
+- Evidence: docs/evidence/M9/ (synthetic basketball make/miss angle sheets, overhead GIF, POV and baseline MP4s; CC BY pickleball sheet + MP4s; metrics and timings). The make/miss outcome on the synthetic sheets was set from synthetic GT in a copy's highlights.json, standing in for a user-confirmed answer (stated in the README).
+- Decisions: D-59.
+- Left / known issues: shot outcome never automatic (ball stops at the rim unless confirmed); untracked players are absent; grounding flattens jumps; depth along the ray is the weak axis (absolute ≈ 2× pelvis-aligned error); Kennesaw (panoramic) not attempted. Worker re-runs restore cached `events.json` and drop user event edits (bug, all corrections).
+
+## M13 (part) — TV/web integration of M5, M6, M7, M11 (2026-10-06)
+
+- Works in apps/tv and the web /tv route: broadcast mode with commentary captions; clips list with attribution, D-pad trim, 9:16 share (export, poll, portrait preview); phone tap-to-clip and phone search → "Play on TV" in the web companion; hype meter above the scrubber with jump-to-peak; rally browser (in order / longest) and condensed game with a synced rally counter; API-driven review queue with identity naming/merging and the extended auto-detected box score; search with a labelled keyword fallback; per-player advice.
+- Verified on hfbox (staged snapshot): web tsc/eslint clean, Playwright chromium+live 86 passed; apps/tv tsc/eslint clean, Playwright tv 33 passed + 1 skipped; agent runs: `--repeat-each=3` tv 99 passed, web chromium 237 passed; evidence spec against the real API on worker-processed synthetic games 4/4.
+- Evidence: docs/evidence/M13-ui/ (tv-synthetic-live/ via the real API, tv-mock/; synthetic only)
+- Decisions: D-60.
+- Left / known issues: `GET /games` 500s when `recorded_at` is null (worker-made synthetic games); a deleted export with a "done" job returns `url: null`; clips have no `edited` flag; Watch menu (16 items) wraps to two rows over the video; worker-made games have no search index by default; commentary TTS needs `REPLAY_MODEL_VENVS`; profile screens not built.

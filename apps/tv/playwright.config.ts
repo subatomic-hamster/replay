@@ -12,6 +12,9 @@ const VIEWPORT = { viewport: { width: 1920, height: 1080 } };
 const PORT = 5181;
 const EVIDENCE_PORT = 5182;
 const API = process.env.REPLAY_TV_API;
+//  recording — opt-in (REPLAY_REC_TV=<TV web build served against the real API>): the
+//              recorded end-to-end run, TV + phone, video on (scripts/record-e2e.sh).
+const REC_TV = process.env.REPLAY_REC_TV;
 
 export default defineConfig({
   fullyParallel: true,
@@ -36,6 +39,22 @@ export default defineConfig({
               ...devices["Desktop Chrome"],
               ...VIEWPORT,
               baseURL: `http://localhost:${EVIDENCE_PORT}`,
+            },
+          },
+        ]
+      : []),
+    ...(REC_TV
+      ? [
+          {
+            name: "recording",
+            testDir: "./e2e-recording",
+            fullyParallel: false,
+            use: {
+              ...devices["Desktop Chrome"],
+              ...VIEWPORT,
+              baseURL: REC_TV,
+              actionTimeout: 20_000, // a missing control fails its beat instead of hanging the run
+              video: { mode: "on" as const, size: { width: 1920, height: 1080 } },
             },
           },
         ]

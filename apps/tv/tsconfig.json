@@ -20,5 +20,5 @@
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "specs", "e2e", "e2e-evidence", "index.js", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "specs", "e2e", "e2e-evidence", "e2e-recording","index.js", "vite.config.ts", "playwright.config.ts"]
 }

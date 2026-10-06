@@ -124,12 +124,15 @@ serve() {
     [ -n "${!v+x}" ] && keep+=(-e "$v=${!v}")
   done
   tmux() { env "${strip[@]}" tmux "$@"; }
+  # Each window sources env.sh itself: the server's global PATH has neither the venv's python
+  # (the API ran on /opt/venv's) nor the env's pnpm (corepack then prompts to download one).
+  local sh="source /workspace/wt/replay-env/env.sh &&"
   tmux new-session -d -s "$TMUX_NAME" "${keep[@]}" -n api \
-    "cd $d && REPLAY_PIPELINE=worker python -m uvicorn replay_api.main:app --host 127.0.0.1 --port $API_PORT 2>&1 | tee $DEMO/api.log"
+    "$sh cd $d && REPLAY_PIPELINE=worker python -m uvicorn replay_api.main:app --host 127.0.0.1 --port $API_PORT 2>&1 | tee $DEMO/api.log"
   tmux new-window -t "$TMUX_NAME" -n tv \
-    "cd $d/apps/tv && VITE_REPLAY_API_BASE=$base pnpm exec vite --host 127.0.0.1 --port $TV_PORT --strictPort 2>&1 | tee $DEMO/tv.log"
+    "$sh cd $d/apps/tv && VITE_REPLAY_API_BASE=$base pnpm exec vite --host 127.0.0.1 --port $TV_PORT --strictPort 2>&1 | tee $DEMO/tv.log"
   tmux new-window -t "$TMUX_NAME" -n phone \
-    "cd $d/apps/web && VITE_REPLAY_API_BASE=$base pnpm exec vite --host 127.0.0.1 --port $WEB_PORT --strictPort 2>&1 | tee $DEMO/phone.log"
+    "$sh cd $d/apps/web && VITE_REPLAY_API_BASE=$base pnpm exec vite --host 127.0.0.1 --port $WEB_PORT --strictPort 2>&1 | tee $DEMO/phone.log"
   for _ in $(seq 60); do
     curl -sf "$base/games" >/dev/null && curl -sf "http://127.0.0.1:$TV_PORT/" >/dev/null &&
       curl -sf "http://127.0.0.1:$WEB_PORT/" >/dev/null && break

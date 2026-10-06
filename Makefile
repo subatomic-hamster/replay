@@ -6,6 +6,8 @@
 #                     app + phone companion there (scripts/box-demo.sh)
 #   make demo-tunnel  forward the demo ports to this machine (foreground; Ctrl-C to close)
 #   make demo-stop    stop the demo servers on the box
+#   make record-e2e   sync, record the automated end-to-end run on the box
+#                     (scripts/record-e2e.sh), copy the MP4 to docs/evidence/E2E/
 BOX ?= hfbox
 BOX_DIR ?= /workspace/wt/replay-dev
 DEMO_API_PORT ?= 8090
@@ -23,7 +25,7 @@ DEMO_TMUX ?= replay-demo
 DEMO_ENV := DEMO_API_PORT=$(DEMO_API_PORT) DEMO_TV_PORT=$(DEMO_TV_PORT) \
 	DEMO_WEB_PORT=$(DEMO_WEB_PORT) DEMO_TMUX=$(DEMO_TMUX)
 
-.PHONY: sync test demo demo-tunnel demo-stop
+.PHONY: sync test demo demo-tunnel demo-stop record-e2e
 
 sync:
 	$(RSYNC) --delete $(SYNC_EXCLUDES) ./ $(BOX):$(BOX_DIR)/
@@ -53,3 +55,9 @@ demo-tunnel:
 
 demo-stop:
 	$(SSH) '$(DEMO_ENV) bash $(BOX_DIR)/scripts/box-demo.sh $(BOX_DIR) stop'
+
+# The recorded end-to-end run (TV web build + phone companion, real API + worker, SYNTHETIC
+# footage): scripts/record-e2e.sh on the box, then the <= 25 MB copy back here.
+record-e2e: sync
+	$(SSH) 'bash $(BOX_DIR)/scripts/record-e2e.sh $(BOX_DIR)'; \
+	$(RSYNC) $(BOX):$(BOX_DIR)/out/replay-e2e.mp4 docs/evidence/E2E/

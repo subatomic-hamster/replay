@@ -309,9 +309,9 @@ STAGES = [
         outputs=("poses/{item}.json",),
         params=("sport", "pose", "pose_model", "detector"),
         after=("tracks",),
-        resource=lambda cfg: "gpu" if _pose_kind(cfg) == "yolo" else "cpu",
+        resource=lambda cfg: "gpu" if _pose_kind(cfg) in ("yolo", "vit") else "cpu",
         fanout=_pose_chunks,
-        key_extra=lambda cfg: _device() if _pose_kind(cfg) == "yolo" else None,
+        key_extra=lambda cfg: _device() if _pose_kind(cfg) in ("yolo", "vit") else None,
     ),
     Stage(
         "events",

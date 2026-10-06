@@ -114,6 +114,14 @@ shot:
   burst_sigma: 2.5
   pre_s: 3.0
   post_s: 2.0
+  # Pose path (samples/real/RESULTS.md "Accuracy pass"): a release counts with the
+  # wrists at shoulder height or above (a far player's nose is rarely scored); the hoop
+  # pixel comes from the full camera model, not a guessed lift above the rim's floor
+  # point; the confirm z-score has a noise floor (a static ROI's MAD is ~0, so any
+  # flicker scored z >= 4). Synthetic, ViTPose: 14/27 -> 19/27 shots at precision 1.0.
+  release_up_min: -0.2
+  hoop_from_camera: true
+  confirm_mad_floor: 0.5
 # `zoom` divides the court's *pixel* width (calib.court_polygon_px, clipped to the
 # frame) to get the follow-cam window, not the frame width — so the same number means
 # the same framing on a tight 720p clip and on a 2560x960 whole-court panorama, and the

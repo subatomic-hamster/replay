@@ -80,10 +80,38 @@ def _grab_frames(cap: cv2.VideoCapture, wanted: list[int]):
             nxt = next(todo, None)
 
 
+BODY_BINS = (8, 4, 4)  # H, S, V per half of the body box
+
+
+def body_hist(crop: np.ndarray) -> np.ndarray:
+    """Re-ID descriptor of a whole person box: an HSV histogram of the upper half and one
+    of the lower half (the middle 60 % of the width, off the background), concatenated.
+    The jersey alone cannot tell teammates apart; skin, hair, shorts and shoes can a bit:
+    same-team same-person ROC AUC 0.72-0.73 on synthetic basketball vs 0.57-0.61 for the
+    torso histogram, and as good as CLIP / SigLIP embeddings (0.64-0.71) at no GPU cost."""
+    h, w = crop.shape[:2]
+    hsv = cv2.cvtColor(
+        crop[:, int(0.2 * w) : max(int(0.2 * w) + 1, int(0.8 * w))], cv2.COLOR_BGR2HSV
+    )
+    out = []
+    for part in (hsv[: max(1, h // 2)], hsv[h // 2 :]):
+        hist = cv2.calcHist([part], [0, 1, 2], None, list(BODY_BINS), [0, 180, 0, 256, 0, 256])
+        hist = hist.ravel()
+        out.append(hist / max(float(hist.sum()), 1.0))
+    return np.concatenate(out)
+
+
+def app_distance(a: np.ndarray, b: np.ndarray) -> float:
+    """1 - Bhattacharyya coefficient per half, averaged (0 same, 1 disjoint)."""
+    n = len(a) // 2
+    return 1.0 - 0.5 * float(np.sum(np.sqrt(a[:n] * b[:n])) + np.sum(np.sqrt(a[n:] * b[n:])))
+
+
 def sample_appearance(
     video: str, tracks: list[CourtTrack], *, samples: int = 8
-) -> tuple[np.ndarray, np.ndarray]:
-    """Per-tracklet (HSV histogram, mean BGR) from `samples` torso crops each."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Per-tracklet (torso HSV histogram, mean torso BGR, `body_hist`) from `samples`
+    crops each."""
     wanted: dict[int, list[tuple[int, np.ndarray]]] = {}
     for i, tr in enumerate(tracks):
         t = tr.tracklet
@@ -93,6 +121,7 @@ def sample_appearance(
 
     hists = [[] for _ in tracks]
     colors = [[] for _ in tracks]
+    bodies = [[] for _ in tracks]
     cap = cv2.VideoCapture(str(video))
     try:
         fh = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1
@@ -109,6 +138,10 @@ def sample_appearance(
                     continue
                 hists[i].append(_hist(crop))
                 colors[i].append(crop.reshape(-1, 3).mean(axis=0))
+                bx, by, bw, bh = (int(round(v)) for v in box)
+                full = frame[max(0, by) : min(fh, by + bh), max(0, bx) : min(fw, bx + bw)]
+                if full.shape[0] >= 4 and full.shape[1] >= 4:
+                    bodies[i].append(body_hist(full))
     finally:
         cap.release()
 
@@ -119,7 +152,11 @@ def sample_appearance(
     color_arr = np.asarray(
         [np.mean(c, axis=0) if c else np.full(3, 128.0) for c in colors], dtype=np.float64
     )
-    return hist_arr, color_arr
+    bdim = 2 * int(np.prod(BODY_BINS))
+    body_arr = np.asarray(
+        [np.mean(b, axis=0) if b else np.full(bdim, 1.0 / (bdim // 2)) for b in bodies]
+    )
+    return hist_arr, color_arr, body_arr
 
 
 def bgr_to_hex(bgr: np.ndarray) -> str:
@@ -199,9 +236,7 @@ def team_colors(teams: np.ndarray, profile: Profile, colors: np.ndarray | None) 
     so the jersey tells you nothing), otherwise the mean torso colour per team."""
     fixed = profile.teams.colors
     return {
-        int(t): fixed[int(t) % len(fixed)]
-        if fixed
-        else bgr_to_hex(colors[teams == t].mean(axis=0))  # type: ignore[index]
+        int(t): fixed[int(t) % len(fixed)] if fixed else bgr_to_hex(colors[teams == t].mean(axis=0))  # type: ignore[index]
         for t in np.unique(teams)
     }
 
@@ -209,7 +244,12 @@ def team_colors(teams: np.ndarray, profile: Profile, colors: np.ndarray | None) 
 # --- merging ----------------------------------------------------------------
 
 
-def merge_groups(tracks: list[CourtTrack], teams: np.ndarray, profile: Profile) -> list[list[int]]:
+def merge_groups(
+    tracks: list[CourtTrack],
+    teams: np.ndarray,
+    profile: Profile,
+    body: np.ndarray | None = None,
+) -> list[list[int]]:
     """Group tracklet indices that are the same person: small time gap, small court
     distance, same team (§4.4 step 6).
 
@@ -221,8 +261,14 @@ def merge_groups(tracks: list[CourtTrack], teams: np.ndarray, profile: Profile) 
     A link may overlap by up to `merge_overlap_s`: ByteTrack gives a person a new id a
     frame or so before it drops the old one, and on the badminton clip that one-frame
     overlap alone kept a 57 s tracklet out of every group (samples/real/RESULTS.md).
+
+    With `body` descriptors (`body_hist`) and `tracking.appearance_weight` > 0, a link's
+    cost is its court distance in units of `merge_max_dist_m` plus the weight times the
+    appearance distance, and links above `appearance_max` are refused: on synthetic
+    basketball 61 % of the distance-only links joined two different people.
     """
     cfg = profile.tracking
+    use_app = body is not None and cfg.appearance_weight > 0
     n = len(tracks)
     starts = np.asarray([t.tracklet.t_start for t in tracks])
     ends = np.asarray([t.tracklet.t_end for t in tracks])
@@ -238,8 +284,17 @@ def merge_groups(tracks: list[CourtTrack], teams: np.ndarray, profile: Profile) 
         for b in cand:
             here = tracks[a].court_at(starts[b]) if gap[b] < 0 else tracks[a].court_m[-1]
             dist = float(np.linalg.norm(tracks[b].court_m[0] - here))
-            if dist <= cfg.merge_max_dist_m:
-                links.append((dist, a, int(b)))
+            reach = cfg.merge_max_dist_m
+            if cfg.merge_reach_m > 0:  # nobody covers 7 m in a tenth of a second
+                reach = min(reach, cfg.merge_reach_m + cfg.max_speed_mps * max(gap[b], 0.0))
+            if dist > reach:
+                continue
+            if use_app:
+                d_app = app_distance(body[a], body[b])  # type: ignore[index]
+                if d_app > cfg.appearance_max:
+                    continue
+                dist = dist / cfg.merge_max_dist_m + cfg.appearance_weight * d_app
+            links.append((dist, a, int(b)))
 
     parent = list(range(n))
 
@@ -390,11 +445,10 @@ def identify(
         return []
     # Only `jersey_color` needs pixels, and decoding the clip for torso crops is the
     # expensive half of this stage — a net sport skips it entirely.
-    hists, colors = (
-        sample_appearance(video, tracks) if profile.team_rule == "jersey_color" else (None, None)
-    )
+    need = profile.team_rule == "jersey_color" or profile.tracking.appearance_weight > 0
+    hists, colors, body = sample_appearance(video, tracks) if need else (None, None, None)
     teams = assign_teams(hists, tracks, profile, profile.template(variant))
-    groups = merge_groups(tracks, teams, profile)
+    groups = merge_groups(tracks, teams, profile, body)
     colours = team_colors(teams, profile, colors)
     polygon = profile.template(variant).polygon
     merged = [

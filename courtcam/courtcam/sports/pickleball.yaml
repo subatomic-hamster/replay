@@ -75,7 +75,10 @@ tracking:
   merge_max_dist_m: 3.0
   smooth_window: 5
 events: [rally, hype]
-rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0]}
+# point winner = the side serving next: the server stands behind their baseline
+# (side-out doubles: wrong when the serving team keeps the serve on its second server)
+rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0],
+        server_behind_line: true, server_min_depth_m: 0.0}
 # M4 play grammar (courtcam.plays): serve -> point, last 3 shots as an option.
 plays:
   - name: rally

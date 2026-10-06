@@ -1454,3 +1454,152 @@ missing); every identity/court/pipeline/net-sport test passes. `services/api`: 8
 - **Referees are players** to every rule here (they move and stay inside the lines).
 - A stitched or merged gap is **interpolated** (`court.resample`), so for up to 5 s a box
   slides between where a player vanished and where they reappeared.
+
+## Accuracy pass — gestures, shots, tracking, point winners (overnight M4/M5 follow-up)
+
+All numbers use the real detector and pose model, not ground truth. Synthetic: the nine
+90 s clips (basketball half s7/s11, full s7; badminton, pickleball, volleyball s7/s11),
+scored by the plays agent's `eval_synth.py`. "Before" is the same code with the old
+defaults, re-run in the same tree. Real: Kennesaw and badminton auditorium, 240 s each
+(480 s in total).
+
+### What was wrong
+
+- **Shots (5/27 → 21/27).** The pose model was not the main problem. There were three
+  separate faults:
+  1. The hoop confirm took a robust z-score with MAD + 1e-6. On a static hoop ROI the MAD
+     is about 0, so codec flicker alone scored z ≥ 4.
+  2. The hoop pixel was a guessed lift above the rim's floor point. On the synthetic
+     camera that guess was off by about one ROI width.
+  3. A release needed the wrists above the *nose*, and a far player's nose is rarely
+     scored.
+
+  Fixes, all on `shot`:
+  - a noise floor on the MAD (`confirm_mad_floor`);
+  - the hoop pixel from the full camera model (`hoop_from_camera`, using tierB's
+    `calibrate.camera_calibration`);
+  - wrists at shoulder height or above (`release_up_min`).
+
+  On Kennesaw a fourth fault showed up: the x264 keyframes, every 250 frames, shift every
+  pixel at once. With a lower floor, that produced false shots at 116.7, 125.0, 200.0 and
+  208.3 s. `rim_energy` now subtracts the whole frame's median change, sampled from every
+  8th pixel. A resize would not work here, because area averaging smooths the codec
+  noise away.
+- **Gestures (0/22).**
+  - YOLO11-pose does not find the gesturing far player at all: box confidence 0.17–0.4,
+    arm keypoints present in 14–25 % of frames.
+  - ViTPose-B (top-down on the track box) finds the arms, but a far X comes out as *two
+    wrists touching, uncrossed*. Pose models label wrists by side.
+  - The new rule therefore accepts "hands together overhead" (`events.hands_overhead`),
+    voted over the hold (`gesture_vote`).
+  - It also requires the **elbows apart** (`gesture_elbow_min`). That is the X's
+    signature: elbow spread is 0.6–0.9 torso lengths on synthetic X holds, against a
+    median of 0.23 on the real arms-up samples that passed the relaxed rule.
+  - Without that guard, ViTPose gave 2 false triggers on Kennesaw: a player calling for
+    the ball with both arms up for 2.5 s, and a shot contest. Evidence:
+    `docs/evidence/local/M5/accuracy_kennesaw_false_gestures_before_elbow_guard.png`.
+- **Point winner (none → 27/33 on points whose winner the GT knows).** `winner_side` is
+  the side that serves the next rally. For volleyball and pickleball, that side is the
+  player deepest behind their own baseline at the serve (`rally.server_behind_line`).
+  Badminton keeps the first-contact team, because a badminton server stands near the
+  short service line, not behind the baseline.
+
+### Synthetic, before → after
+
+| item | before (YOLO pose) | after, YOLO pose (default) | after, `--pose vit` |
+|---|---|---|---|
+| shot (27) | 5 TP, P 0.83, R 0.19 | **21 TP, P 1.00, R 0.78** | 19 TP, P 1.00, R 0.70 |
+| shot, half court only (20) | — | 18 / 20 | 17 / 20 |
+| gesture (22) | 0 TP | 0 TP | **9 TP, P 1.00, R 0.41** |
+| point winner_ok / winner_known | — (no field) | **27 / 33** | 24 / 33 |
+| possession_change | 22 TP, P 0.76 | 22 TP, P 0.76 | 22 TP, P 0.76 |
+| contact / rally / point detection | unchanged | unchanged | unchanged |
+
+- **Full court shots.** `shot.extra_rims: true` gets to 24/27 (full court 6/7), but on
+  Kennesaw the far ROI still fires on a keyframe (100.0 s). It stays off.
+- **Gesture ceiling.**
+  - Every remaining miss is a 48–56 px tall player whose arm keypoints score about 0.1.
+  - No rule setting reached 0.8 recall without real false triggers. The best rule with
+    0 real false triggers recovers 9–10 of 22.
+  - `vitpose-plus-base` and a taller crop (`vit_top`) did not help.
+- **Winner side, per sport** (winner_ok / winner_known):
+  - Volleyball: 9/15 → 13/15.
+  - Pickleball: 8/9.
+  - Badminton: 6/9.
+
+### Real, before → after
+
+**False gesture triggers** (must stay 0):
+
+| pose | rule | Kennesaw | badminton |
+|---|---|---|---|
+| YOLO | old default (strict, held) | 0 | 0 |
+| ViTPose | relaxed + vote, no elbow guard | 2 | 0 |
+| YOLO / ViTPose | new defaults | 0 / 0 | 0 / 0 |
+
+**Kennesaw shots, hand-checked from hoop strips** (`docs/evidence/local/M4/accuracy_kennesaw_shots_{before_0,before_1,after}.jpg`):
+
+| | shots | real shots | precision |
+|---|---|---|---|
+| before | 10 | 5 (8.7, 111.5, 136.0, 183.3, 234.6) | 0.50 |
+| after (YOLO and ViTPose agree) | 3 (8.8, 134.0, 230.8) | 3 | **1.00** |
+
+- The union of known real shots is 6. The new rules miss 111.5 s and 183 s (a layup in
+  traffic).
+- Real recall on known shots fell from 5/6 to 3/6. This is the trade for removing the
+  false positives.
+
+### Tracking (gap 3) — not closed
+
+Synthetic basketball, YOLO detections, players. The 90 s clips score lower than M1's
+0.44 / 0.49, which came from the 30 s fixtures.
+
+| clip | baseline MOTA / IDF1 / IDSW | best variant | that variant MOTA / IDF1 / IDSW |
+|---|---|---|---|
+| half s7 | 0.637 / 0.310 / 122 | appearance + reach | 0.612 / 0.324 / — |
+| half s11 | 0.664 / 0.311 / 125 | BoT-SORT ReID on | 0.643 / 0.335 / 145 |
+| full s7 | 0.428 / 0.245 / 157 | BoT-SORT ReID on | 0.415 / 0.296 / 161 |
+
+The variants tried:
+- `detection.imgsz` 1280: halves detection recall (0.79 → 0.43).
+- A tighter BoT-SORT config: fewer ID switches (89–113), but lower recall and lower
+  IDF1.
+- Appearance-gated merging, an upper/lower-body HSV histogram
+  (`tracking.appearance_weight`, `appearance_max`).
+- Running-reach gating (`tracking.merge_reach_m`).
+
+Results, in short:
+- Appearance-gated merging and reach gating each move IDF1 by 0.02 or less.
+- Body histograms separate same-team players best (AUC 0.72–0.73), ahead of CLIP
+  (0.64–0.68) and SigLIP (0.67–0.71).
+
+The cause is upstream:
+- 15 % of raw tracklet frames are already on the wrong person.
+- 27 of 109 tracklets switch person inside BoT-SORT.
+
+Merging cannot undo that. The knobs ship but default off.
+
+**Kennesaw 150–210 s, hand count** (`docs/evidence/local/M1/accuracy_kennesaw_id_rows_150-210s.jpg`;
+one row per id, one crop every 3 s):
+- 19 ids, of which 1 referee is stable throughout.
+- About 38 visible person changes inside rows (±5, at 3 s sampling).
+- Unchanged by this pass.
+
+### Runtime (box, per stage)
+
+| stage | before | after |
+|---|---|---|
+| pose, synthetic 90 s (YOLO crop poser) | 16–38 s | 16–38 s (unchanged default) |
+| pose, synthetic 90 s, `--pose vit` (fp16) | — | 10–17 s |
+| pose, Kennesaw 240 s | YOLO 88 s | ViTPose fp16 38 s (fp32 was 320 s) |
+| pose, badminton 240 s | YOLO 42 s | ViTPose fp16 26 s |
+| events, Kennesaw | 3.7 s | 3.7–4.0 s (keyframe term, camera hoop) |
+| events, synthetic basketball | 0.30–0.33 s | 0.45–0.70 s |
+
+ViTPose runs in fp16 on the GPU (fp32 is 12× slower on gfx1201) and is faster than the
+YOLO crop poser. It stays opt-in (`--pose vit`, `COURTCAM_VIT_MODEL`) only because
+`transformers` is not yet a courtcam dependency in `uv.lock`.
+
+Synthetic evidence:
+- `docs/evidence/M4/accuracy_timeline_yolo_{basketball_half_s7,volleyball_indoor_s7}.png`
+- `docs/evidence/M5/accuracy_{vitpose,yolopose}_on_synthetic_x_holds.png`

@@ -55,6 +55,38 @@ def test_does_not_merge_across_a_long_gap_a_long_distance_or_teams():
     assert sorted(groups) == [[0], [1], [2], [3]]
 
 
+def test_appearance_and_running_reach_gate_merges():
+    """Two candidates continue `a`: the nearer one looks like someone else. With
+    appearance on, the look-alike wins; with running reach, a 1.8 m jump in 0.1 s is
+    refused even though it is inside merge_max_dist_m."""
+    from courtcam.identity import app_distance, body_hist
+
+    red = np.zeros((40, 20, 3), np.uint8)
+    red[:20] = (0, 0, 210)  # BGR: red shirt, dark shorts
+    blue = np.full((40, 20, 3), 230, np.uint8)
+    blue[:20] = (200, 0, 0)  # blue shirt, white shorts
+    noisy = red.copy()
+    noisy[:20] = (0, 0, 225)  # the same red under other light
+    noisy[:3] = (90, 120, 160)  # and a few rows of someone's head
+    assert app_distance(body_hist(red), body_hist(noisy)) < 0.3
+    assert app_distance(body_hist(red), body_hist(blue)) > 0.7
+    a = _track(1, 0.0, 4.0, (0.0, 5.0), (2.0, 6.0))
+    near_other = _track(2, 4.5, 8.0, (2.3, 6.0), (3.0, 7.0))  # 0.3 m, looks different
+    far_same = _track(3, 4.5, 8.0, (3.4, 6.0), (4.0, 7.0))  # 1.4 m, looks the same
+    body = np.stack([body_hist(red), body_hist(blue), body_hist(noisy)])
+    teams = np.zeros(3, int)
+    assert merge_groups([a, near_other, far_same], teams, MERGE)[0] == [0, 1]
+    look = {"appearance_weight": 2.0, "appearance_max": 0.6}
+    app = MERGE.model_copy(update={"tracking": MERGE.tracking.model_copy(update=look)})
+    assert sorted(merge_groups([a, near_other, far_same], teams, app, body)) == [[0, 2], [1]]
+    jump = _track(4, 4.1, 8.0, (3.8, 6.0), (4.0, 7.0))  # 1.8 m in 0.1 s
+    reach = MERGE.model_copy(
+        update={"tracking": MERGE.tracking.model_copy(update={"merge_reach_m": 0.5})}
+    )
+    assert merge_groups([a, jump], np.zeros(2, int), MERGE) == [[0, 1]]
+    assert sorted(merge_groups([a, jump], np.zeros(2, int), reach)) == [[0], [1]]
+
+
 def test_does_not_merge_tracklets_that_overlap_in_time():
     a = _track(1, 0.0, 5.0, (0.0, 5.0), (2.0, 6.0))
     b = _track(2, 2.0, 7.0, (2.1, 6.1), (3.0, 7.0))
@@ -79,7 +111,7 @@ def test_identify_caps_merged_players_at_max_and_prefers_fragmented_ones(tmp_pat
     hists = np.zeros((len(tracks), 48), dtype=np.float32)
     colors = np.full((len(tracks), 3), 128.0)
     profile = MERGE.model_copy(update={"players": MERGE.players.model_copy(update={"max": 4})})
-    with patch("courtcam.identity.sample_appearance", return_value=(hists, colors)):
+    with patch("courtcam.identity.sample_appearance", return_value=(hists, colors, None)):
         players = identify("unused.mp4", tracks, profile)
 
     assert len(players) == 4

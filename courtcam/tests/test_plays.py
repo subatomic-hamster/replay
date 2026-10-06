@@ -124,6 +124,23 @@ def test_pose_crop_and_pick():
     assert pick((500, 300, 20, 40), boxes, kps, [0.9, 0.8], 0.3) is None
 
 
+def test_vitpose_box_affine_and_heatmap_decode_round_trip():
+    from courtcam.pose import decode_heatmaps, vit_affine
+
+    box = (400.0, 200.0, 30.0, 70.0)  # a small far player
+    a = vit_affine(box)
+    # the box centre lands on the input centre, and the tall box fills 1/1.25 of 256
+    assert np.allclose(a @ [415.0, 235.0, 1.0], [96.0, 128.0])
+    assert abs(a[1, 1] * 70.0 - 256 / 1.25) < 1e-6
+    hm = np.zeros((17, 64, 48))
+    hm[9, 10, 30] = 1.0  # left wrist peak at heatmap (x 30, y 10)
+    hm[9, 10, 31] = 0.5  # its right neighbour is stronger than its left: +0.25 px
+    kp = decode_heatmaps(hm, a)
+    want = (np.array([30.25 * 4, 10 * 4]) - a[:, 2]) / a[0, 0]
+    assert np.allclose(kp[9, :2], want) and kp[9, 2] == 1.0
+    assert box[0] <= kp[9, 0] <= box[0] + box[2] and box[1] - 20 <= kp[9, 1] <= box[1] + 20
+
+
 # --- triggers ---------------------------------------------------------------------
 
 
@@ -156,6 +173,51 @@ def test_gesture_must_be_held():
     kp = np.stack([_pose(1.0 <= t <= 2.0 or 4.0 <= t <= 4.4) for t in ts])
     found = detect_gestures(Signals(poses={"p3": (ts, kp)}), CFG)
     assert [(g.t_start, g.t, g.by_player_id) for g in found] == [(1.0, 2.0, "p3")]
+
+
+def test_relaxed_gesture_votes_over_the_hold():
+    """A small player's X comes out of the pose model as hands together overhead, with
+    a few misread samples; the relaxed rule plus a vote finds it, the strict one does not,
+    a brief two-hands-overhead release is still not a gesture, nor are arms reaching
+    straight up with the elbows by the head (a shot contest)."""
+    together = _pose(False)
+    together[9, :2], together[10, :2] = (103, 25), (98, 25)  # wrists touching, not crossed
+    reach = together.copy()
+    reach[7, :2], reach[8, :2] = (110, 55), (92, 55)  # elbows by the head: 0.18 torso apart
+    down = _pose(False)
+    down[[9, 10], 1] = 180
+    ts = np.round(np.arange(0.0, 9.0, 0.1), 3)
+    dropped = {1.3, 1.6, 1.7}  # misread samples inside the 1.0-2.1 s hold
+
+    def at(t):
+        if 1.0 <= t <= 2.1 and t not in dropped:
+            return together
+        if 6.0 <= t <= 7.5:
+            return reach
+        return together if 4.0 <= t <= 4.3 else down  # 4.0-4.3: a shot release
+
+    sig = Signals(poses={"p2": (ts, np.stack([at(t) for t in ts]))})
+    strict = TriggerCfg(gesture_relaxed=False, gesture_vote=1.0)
+    assert detect_gestures(sig, strict) == []
+    found = detect_gestures(sig, CFG)
+    assert [(g.t_start, g.t, g.by_player_id) for g in found] == [(1.0, 2.1, "p2")]
+
+
+def test_point_winner_is_the_side_serving_next():
+    from courtcam.events import assign_winners
+    from courtcam.profiles import RallyCfg
+
+    events = []
+    for t0, t1, server_team in ((1.0, 6.0, 0), (10.0, 14.0, 1), (18.0, 25.0, 1)):
+        events += [
+            ev("", "rally", t0), ev("", "serve", t0, team=server_team), ev("", "point", t1),
+        ]  # fmt: skip
+        events[-3].t_end = t1
+    tpl = load_profile("badminton").template("doubles")
+    assign_winners(events, [], tpl, RallyCfg())
+    points = [e for e in events if e.type == "point"]
+    assert [p.winner_side for p in points] == [1, 1, None]  # the last point: nobody serves
+    assert [e.winner_side for e in events if e.type == "rally"] == [1, 1, None]
 
 
 def test_parse_command_is_fuzzy_and_needs_both_words():

@@ -26,7 +26,7 @@ from typing import Any
 
 import numpy as np
 
-from .events import Signals, x_pose
+from .events import Signals, elbow_spread, hands_overhead, x_pose
 from .profiles import TriggerCfg
 from .schema import Attribution, Clip, Play, Trigger
 
@@ -41,27 +41,53 @@ THAT = {"that", "this", "it", "dat"}
 # --- gesture ---------------------------------------------------------------------
 
 
+def gesture_samples(kp: np.ndarray, cfg: TriggerCfg) -> np.ndarray:
+    """(n,) bool: this pose sample shows the X (strict crossing, or with
+    `gesture_relaxed` the hands-together-overhead form a small player's pose gives). The
+    relaxed form also needs the elbows apart, on the crossing too: a pose model reads a
+    shot contest (arms straight up, elbows by the head) as crossed wrists now and then."""
+    hit = x_pose(kp, cfg.gesture_min_kp)
+    if cfg.gesture_relaxed:
+        hit |= hands_overhead(kp, cfg.gesture_min_kp, cfg.gesture_up_min, cfg.gesture_gap_max)
+        hit &= elbow_spread(kp) >= cfg.gesture_elbow_min
+    return hit
+
+
+def held(ts: np.ndarray, hit: np.ndarray, hold: float, vote: float, max_gap: float):
+    """[(first, last)] hit times of every hold: a window of `hold` s in which at least
+    `vote` of the pose samples hit. Overlapping windows (or ones `max_gap` apart) merge.
+    vote = 1 is the old strict run; < 1 rides out a few misread samples of a small player."""
+    out: list[list[float]] = []
+    hits = ts[hit]
+    for t0 in hits:
+        inside = (ts >= t0 - 1e-6) & (ts <= t0 + hold + 1e-6)
+        if ts[inside][-1] < t0 + hold - 0.15:  # the window runs past the samples
+            continue
+        if hit[inside].mean() < vote - 1e-6:
+            continue
+        last = float(hits[(hits >= t0) & (hits <= t0 + hold + 1e-6)][-1])
+        if out and t0 <= out[-1][1] + max_gap:
+            out[-1][1] = max(out[-1][1], last)
+        else:
+            out.append([float(t0), last])
+    return [(a, b) for a, b in out]
+
+
 def detect_gestures(signals: Signals, cfg: TriggerCfg) -> list[Trigger]:
     """One trigger per held X: t_start = first X sample, t = last one."""
     out: list[Trigger] = []
     for pid in sorted(signals.poses):
         ts, kp = signals.kp_px(pid, -np.inf, np.inf)
-        hit = x_pose(kp, cfg.gesture_min_kp)
-        run: list[float] = []
-        for t, h in zip([*ts, np.inf], [*hit, False], strict=True):
-            if h and (not run or t - run[-1] <= cfg.gesture_max_gap_s):
-                run.append(float(t))
-                continue
-            if run and run[-1] - run[0] >= cfg.gesture_hold_s - 1e-6:
-                held = run[-1] - run[0]
-                out.append(
-                    Trigger(
-                        id="", type="gesture", t_start=round(run[0], 3), t=round(run[-1], 3),
-                        by_player_id=pid,
-                        confidence=round(min(0.95, 0.2 + 0.3 * held / cfg.gesture_hold_s), 3),
-                    )
-                )  # fmt: skip
-            run = [float(t)] if h else []
+        if not len(ts):
+            continue
+        hit = gesture_samples(kp, cfg)
+        for a, b in held(ts, hit, cfg.gesture_hold_s, cfg.gesture_vote, cfg.gesture_max_gap_s):
+            out.append(
+                Trigger(
+                    id="", type="gesture", t_start=round(a, 3), t=round(b, 3), by_player_id=pid,
+                    confidence=round(min(0.95, 0.2 + 0.3 * (b - a) / cfg.gesture_hold_s), 3),
+                )
+            )  # fmt: skip
     return sorted(out, key=lambda tr: tr.t)
 
 

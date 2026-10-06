@@ -100,7 +100,7 @@ def rim_energy(
     y0, y1 = max(0, cy - roi_px), min(h, cy + roi_px)
     times: list[float] = []
     energy: list[float] = []
-    prev: np.ndarray | None = None
+    prev: tuple[np.ndarray, np.ndarray] | None = None  # (ROI, whole frame / 8), gray
     i = -1
     try:
         if x1 <= x0 or y1 <= y0:  # rim projects outside the frame
@@ -120,10 +120,16 @@ def rim_energy(
             if not ok:
                 break
             roi = cv2.cvtColor(frame[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY).astype(np.float32)
-            if prev is not None and prev.shape == roi.shape:
+            # every 8th pixel, not a resize: area averaging smooths the codec noise away
+            small = cv2.cvtColor(frame[::8, ::8], cv2.COLOR_BGR2GRAY).astype(np.float32)
+            if prev is not None and prev[0].shape == roi.shape:
+                # minus the whole frame's median change: an encoder keyframe (x264: every
+                # 250 frames) shifts every pixel at once, and on a static hoop that alone
+                # was a "ball at the rim" (Kennesaw: false shots at 116.7, 125.0, 200.0 s)
+                glob = float(np.median(np.abs(small - prev[1])))
                 times.append(t)
-                energy.append(float(np.mean(np.abs(roi - prev))))
-            prev = roi
+                energy.append(max(0.0, float(np.mean(np.abs(roi - prev[0]))) - glob))
+            prev = (roi, small)
     finally:
         cap.release()
     return np.asarray(times), np.asarray(energy)
@@ -185,7 +191,8 @@ def detect_shots(
     labeler = labeler or HeuristicLabeler()
     rim = np.asarray(rim_m, dtype=np.float64)
     if signals.poses:
-        found = _pose_shots(video, players, signals, _rims(profile, calib), profile, fps)
+        top = rim_top_px(calib, profile) if cfg.hoop_from_camera else None
+        found = _pose_shots(video, players, signals, _rims(profile, calib), profile, fps, top)
         return [
             _shot_event(video, labeler, cfg, zones, t_key, shooter, t_rel, conf)
             for t_key, shooter, t_rel, conf in found
@@ -262,11 +269,14 @@ def _shot_event(video, labeler, cfg, zones, t_key, shooter, t_rel, conf) -> Even
 
 
 def hoop_roi(
-    rim_px, rim_m: np.ndarray, players: list[PlayerTrack], height_m: float = 3.05
+    rim_px, rim_m: np.ndarray, players: list[PlayerTrack], height_m: float = 3.05, top_px=None
 ) -> tuple[tuple[float, float], int] | None:
-    """The hoop in pixels: `rim_px` is the floor point under it, so lift it by 3.05 m at
-    the pixels-per-metre of the people standing near it (median box height / 1.8 m).
-    ROI half-size: a third of a person. None when nobody comes within 4 m of the rim."""
+    """The hoop in pixels: `top_px` (the rim projected through the full camera) when
+    there is one, else `rim_px` — the floor point under it — lifted straight up the image
+    by 3.05 m at the pixels-per-metre of the people standing near it (median box height /
+    1.8 m). Straight up is only right at the image centre: on the synthetic baseline
+    camera the lifted point missed the rim by a whole ROI. ROI half-size: a third of a
+    person. None when nobody comes within 4 m of the rim."""
     hs = []
     for p in players:
         t = p.track.tracklet
@@ -275,7 +285,35 @@ def hoop_roi(
     if not hs:
         return None
     h = float(np.median(hs))
-    return (float(rim_px[0]), float(rim_px[1]) - h * height_m / 1.8), max(12, int(0.35 * h))
+    centre = (
+        (float(top_px[0]), float(top_px[1]))
+        if top_px is not None
+        else (float(rim_px[0]), float(rim_px[1]) - h * height_m / 1.8)
+    )
+    return centre, max(12, int(0.35 * h))
+
+
+def rim_top_px(calib: dict[str, Any], profile: Profile) -> Callable[[np.ndarray], Any]:
+    """rim_m -> pixel of the hoop 3.05 m above it, through the full camera fitted from the
+    court homography (`calibrate.camera_calibration`), or -> None when no camera fits."""
+    from . import calibrate, distortion
+
+    try:
+        cam = calibrate.camera_calibration(calib, profile)
+        p = calibrate.camera_matrix(cam)
+    except Exception:  # noqa: BLE001 — no camera: hoop_roi falls back to box heights
+        return lambda rim: None
+    size = tuple(calib.get("image_size") or ())
+    k1 = float(calib.get("k1") or 0.0)
+
+    def project(rim: np.ndarray):
+        x = p @ np.array([rim[0], rim[1], calibrate.RIM_HEIGHT_M, 1.0])
+        if x[2] <= 0:
+            return None
+        px = x[:2] / x[2]
+        return distortion.distort_points([px], k1, size)[0] if k1 and size else px
+
+    return project
 
 
 def _runs(ts: np.ndarray, hit: np.ndarray, max_gap: float) -> list[tuple[float, float]]:
@@ -320,24 +358,26 @@ def _rims(profile: Profile, calib: dict[str, Any]) -> list[tuple[np.ndarray, Any
     return out
 
 
-def _pose_shots(video, players, signals, rims, profile, fps):
+def _pose_shots(video, players, signals, rims, profile, fps, top=None):
     """[(t_key, shooter, t_release, confidence)] — see `detect_shots`. A release counts
-    for the rim nearest the shooter; each rim confirms its own shots."""
+    for the rim nearest the shooter; each rim confirms its own shots. `top` maps a rim to
+    its hoop pixel (`rim_top_px`)."""
     out = []
     for i, (rim, rim_px) in enumerate(rims):
         others = [r for j, (r, _) in enumerate(rims) if j != i]
-        out += _pose_shots_at(video, players, signals, rim, rim_px, others, profile, fps)
+        top_px = top(rim) if top else None
+        out += _pose_shots_at(video, players, signals, rim, rim_px, others, profile, fps, top_px)
     return sorted(out, key=lambda s: s[0])
 
 
-def _pose_shots_at(video, players, signals, rim, rim_px, others, profile, fps):
+def _pose_shots_at(video, players, signals, rim, rim_px, others, profile, fps, top_px=None):
     cfg = profile.shot
     rel = []
     for p in players:
         ts, kp = signals.kp_px(p.player_id, -np.inf, np.inf)
         if not len(ts):
             continue
-        up = arms_up(kp) & ~x_pose(kp)
+        up = arms_up(kp, up_min=cfg.release_up_min) & ~x_pose(kp)
         for a, b in _runs(ts, up, 0.15):
             if b - a > cfg.release_max_s:
                 continue  # held: a gesture or a celebration, not a release
@@ -354,7 +394,7 @@ def _pose_shots_at(video, players, signals, rim, rim_px, others, profile, fps):
         else:
             groups.append([r])
     picks = [max(g, key=lambda r: r[2]) for g in groups]
-    hoop = hoop_roi(rim_px, rim, players)
+    hoop = hoop_roi(rim_px, rim, players, top_px=top_px)
     if hoop is None:
         return [(t + cfg.release_lead_s, p, t, 0.3) for t, p, _ in picks]
     lo, hi = cfg.confirm_window_s
@@ -372,11 +412,19 @@ def _pose_shots_at(video, players, signals, rim, rim_px, others, profile, fps):
         if len(base) < 4 or not m.any():
             continue
         med = float(np.median(base))
-        mad = float(np.median(np.abs(base - med))) * 1.4826 + 1e-6
+        # a static ROI has a MAD of ~0, and then compression noise alone is "4 sigma"
+        mad = max(float(np.median(np.abs(base - med))) * 1.4826, cfg.confirm_mad_floor)
         z = (energy[m] - med) / mad
         k = int(np.argmax(z))
-        if z[k] >= cfg.confirm_sigma:
-            out.append((float(times[m][k]), p, t, float(min(0.95, 0.4 + 0.05 * z[k]))))
+        if z[k] < cfg.confirm_sigma:
+            continue
+        shot = (float(times[m][k]), p, t, float(min(0.95, 0.4 + 0.05 * z[k])))
+        # two releases confirmed by the same ball at the rim are one shot: keep the later
+        # release (the earlier one was the gather or a pass to the shooter)
+        if out and shot[0] - out[-1][0] < cfg.min_gap_s:
+            out[-1] = shot
+        else:
+            out.append(shot)
     return out
 
 
@@ -400,9 +448,11 @@ def _points(spot: tuple[float, float] | None, zones: list[np.ndarray]) -> int | 
     return 2 if any(cv2.pointPolygonTest(z, p, False) >= 0 for z in zones) else 3
 
 
-def arms_up(kp: np.ndarray, min_score: float = 0.3) -> np.ndarray:
+def arms_up(kp: np.ndarray, min_score: float = 0.3, up_min: float | None = None) -> np.ndarray:
     """(n,) bool: both wrists above the nose (or, without a nose, a torso-third above the
-    shoulders). `kp` is (n, 17, 3) in pixels."""
+    shoulders); with `up_min`, both wrists at least that many torso lengths above the
+    shoulders instead (a small player's nose is the least reliable keypoint).
+    `kp` is (n, 17, 3) in pixels."""
     ok = (kp[:, [L_SH, R_SH, L_WR, R_WR], 2] >= min_score).all(axis=1)
     sh_y = kp[:, [L_SH, R_SH], 1].mean(axis=1)
     hip_y = kp[:, [L_HIP, R_HIP], 1].mean(axis=1)
@@ -412,6 +462,8 @@ def arms_up(kp: np.ndarray, min_score: float = 0.3) -> np.ndarray:
         np.abs(kp[:, L_SH, 0] - kp[:, R_SH, 0]) * 1.5,
     )
     head_y = np.where(kp[:, NOSE, 2] >= min_score, kp[:, NOSE, 1], sh_y - 0.35 * torso)
+    if up_min is not None:
+        head_y = sh_y - up_min * torso
     wr_y = kp[:, [L_WR, R_WR], 1].max(axis=1)  # the lower wrist (image y grows down)
     return ok & (wr_y < head_y) & (torso > 0)
 
@@ -438,6 +490,49 @@ def x_pose(kp: np.ndarray, min_score: float = 0.3) -> np.ndarray:
     lw, rw, le, re_ = kp[:, L_WR, :2], kp[:, R_WR, :2], kp[:, L_EL, :2], kp[:, R_EL, :2]
     swapped = np.sign(lw[:, 0] - rw[:, 0]) != np.sign(le[:, 0] - re_[:, 0])
     return up & el_ok & (swapped | _cross(le, lw, re_, rw))
+
+
+def hands_overhead(
+    kp: np.ndarray,
+    min_score: float = 0.3,
+    up_min: float = 0.2,
+    gap_max: float = 0.3,
+    elbow_min: float = 0.0,
+) -> np.ndarray:
+    """(n,) bool: the X as a pose model sees a small player — both wrists at least
+    `up_min` torso lengths above the shoulders and within `gap_max` torso lengths of each
+    other across, elbows at least `elbow_min` torso lengths apart. Pose models label
+    wrists by side, so a real X mostly comes out as two wrists touching, not crossed
+    (ViTPose on synthetic X holds: wrists 0.1-0.3 torso apart, uncrossed). The elbow
+    spread is what separates the X (forearms converging from wide elbows, 0.6-0.9 torso)
+    from arms reaching straight up to contest a shot or call for the ball (elbows by the
+    head, median 0.23 on real basketball). The hold time and the vote in
+    `triggers.detect_gestures` keep releases out."""
+    if not len(kp):
+        return np.zeros(0, bool)
+    ok = (kp[:, [L_SH, R_SH, L_EL, R_EL, L_WR, R_WR], 2] >= min_score).all(axis=1)
+    sh_y = kp[:, [L_SH, R_SH], 1].mean(axis=1)
+    torso = np.abs(kp[:, [L_HIP, R_HIP], 1].mean(axis=1) - sh_y)
+    torso = np.where((kp[:, [L_HIP, R_HIP], 2] >= min_score).all(axis=1), torso, 0.0)
+    up = sh_y - kp[:, [L_WR, R_WR], 1].max(axis=1)  # the lower wrist, image y grows down
+    gap = np.abs(kp[:, L_WR, 0] - kp[:, R_WR, 0])
+    return (
+        ok
+        & (torso > 0)
+        & (up >= up_min * torso)
+        & (gap <= gap_max * torso)
+        & (elbow_spread(kp) >= elbow_min)
+    )
+
+
+def elbow_spread(kp: np.ndarray) -> np.ndarray:
+    """(n,) horizontal elbow-to-elbow distance in torso lengths (0 without a torso)."""
+    if not len(kp):
+        return np.zeros(0)
+    sh_y = kp[:, [L_SH, R_SH], 1].mean(axis=1)
+    torso = np.abs(kp[:, [L_HIP, R_HIP], 1].mean(axis=1) - sh_y)
+    elbows = np.abs(kp[:, L_EL, 0] - kp[:, R_EL, 0])
+    return np.divide(elbows, torso, out=np.zeros_like(elbows), where=torso > 0)
 
 
 def court_activity(
@@ -541,7 +636,43 @@ def detect_rallies(
         for hits in fuse_rallies(-np.inf, np.inf, free, cfg):
             if len(hits) >= cfg.audio_only_min_contacts:
                 out += _rally(*bounds(hits), 0.4, hits, players, signals, cfg)
+    assign_winners(out, players, profile.template(calib.get("variant")), cfg)
     return out
+
+
+def serve_side(serve: Event, players: list[PlayerTrack], tpl, cfg: RallyCfg) -> int | None:
+    """Which side served (0 = court y below the net, as `identity.net_side`). With
+    `rally.server_behind_line`, the side of the player standing deepest behind their own
+    baseline at the serve (>= `server_min_depth_m`); else, or when nobody is that deep,
+    the team of the first contact (pose wrist speed)."""
+    if cfg.server_behind_line and tpl.net_y is not None:
+        length = float(tpl.size[1])
+        best, depth = None, cfg.server_min_depth_m
+        for p in players:
+            if not p.t_start <= serve.t_key <= p.t_end:
+                continue
+            y = float(p.track.court_at(serve.t_key)[1])
+            d = -y if y < tpl.net_y else y - length
+            if d >= depth:
+                best, depth = int(y > tpl.net_y), d
+        if best is not None:
+            return best
+    return serve.team
+
+
+def assign_winners(events: list[Event], players: list[PlayerTrack], tpl, cfg: RallyCfg) -> None:
+    """`winner_side` of every point (and its rally) but the last: the side that serves
+    the next rally. Holds for rally scoring (badminton, volleyball, rally-scored
+    pickleball) and for side-out scoring (the rally winner serves next), except a
+    doubles side-out team keeping the serve on its second server. In place."""
+    serves = sorted((e for e in events if e.type == "serve"), key=lambda e: e.t_key)
+    points = sorted((e for e in events if e.type == "point"), key=lambda e: e.t_key)
+    rallies = sorted((e for e in events if e.type == "rally"), key=lambda e: e.t_end)
+    for pt, rally in zip(points, rallies, strict=False):
+        nxt = next((s for s in serves if s.t_key > pt.t_key), None)
+        side = serve_side(nxt, players, tpl, cfg) if nxt is not None else None
+        if side is not None:
+            pt.winner_side = rally.winner_side = int(side)
 
 
 def _rally(t0, t1, conf, hits, players, signals, cfg) -> list[Event]:

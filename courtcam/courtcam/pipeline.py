@@ -406,6 +406,8 @@ def pose_kind(kind: str | None, detector_kind: str, ground_truth: Path | None) -
 def make_poser(kind: str, profile: Profile, model: str | None, ground_truth: Path | None):
     if kind == "yolo":
         return pose_mod.yolo_poser(profile.pose, model or os.environ.get("COURTCAM_POSE_MODEL"))
+    if kind == "vit":
+        return pose_mod.vitpose_poser(profile.pose, model or os.environ.get("COURTCAM_VIT_MODEL"))
     if kind == "synthetic":
         if ground_truth is None:
             raise ValueError("pose 'synthetic' needs the clip's ground_truth.json")
@@ -434,9 +436,11 @@ def stage_pose(
         else sorted(int(p.stem) for p in (out_dir / "tracks").glob("*.json"))
     )
     poser = poser or make_poser(kind, profile, model, ground_truth)
-    source = {"yolo": Path(model or profile.pose.model).name, "synthetic": "synthetic"}.get(
-        kind, "none"
-    )
+    source = {
+        "yolo": Path(model or profile.pose.model).name,
+        "vit": Path(model or profile.pose.vit_model).name,
+        "synthetic": "synthetic",
+    }.get(kind, "none")
     written = []
     for n, c in enumerate(todo):
         chunk = read_json(out_dir / TRACKS_TEMPLATE.format(chunk=c), TracksChunk)
@@ -448,7 +452,7 @@ def stage_pose(
                 (info.width, info.height),
                 info.fps,
                 poser,
-                video=out_dir / WIDE_REL if kind == "yolo" else None,
+                video=out_dir / WIDE_REL if kind in ("yolo", "vit") else None,
                 source=source,
             )
         written.append(write_json(out_dir / POSES_TEMPLATE.format(chunk=c), doc))

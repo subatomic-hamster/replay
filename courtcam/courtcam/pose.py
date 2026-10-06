@@ -102,6 +102,88 @@ def yolo_poser(cfg: PoseCfg, model: str | None = None) -> Poser:
     return run
 
 
+VIT_W, VIT_H, VIT_PAD = 192, 256, 1.25  # ViTPose input and its box padding
+VIT_MEAN = np.array([0.485, 0.456, 0.406]) * 255
+VIT_STD = np.array([0.229, 0.224, 0.225]) * 255
+
+
+def vit_affine(box: Box) -> np.ndarray:
+    """2x3 frame -> ViTPose-input map: the box centre, grown to 3:4 and padded 1.25x."""
+    x, y, w, h = box
+    cx, cy = x + w / 2, y + h / 2
+    w, h = max(w, h * VIT_W / VIT_H), max(h, w * VIT_H / VIT_W)
+    s = VIT_W / (w * VIT_PAD)
+    return np.array([[s, 0, VIT_W / 2 - s * cx], [0, s, VIT_H / 2 - s * cy]])
+
+
+def decode_heatmaps(hm: np.ndarray, affine: np.ndarray) -> np.ndarray:
+    """(17, h, w) heatmaps -> (17, 3) frame px + peak score: argmax, a quarter-pixel step
+    toward the larger neighbour (the standard ViTPose/SimpleBaseline decode)."""
+    k, hh, ww = hm.shape
+    flat = hm.reshape(k, -1)
+    idx = flat.argmax(axis=1)
+    ys, xs = (idx // ww).astype(float), (idx % ww).astype(float)
+    for j in range(k):
+        xi, yi = int(xs[j]), int(ys[j])
+        if 0 < xi < ww - 1:
+            xs[j] += 0.25 * np.sign(hm[j, yi, xi + 1] - hm[j, yi, xi - 1])
+        if 0 < yi < hh - 1:
+            ys[j] += 0.25 * np.sign(hm[j, yi + 1, xi] - hm[j, yi - 1, xi])
+    stride = VIT_W / ww
+    px = np.stack([xs * stride, ys * stride], axis=1)
+    s = affine[0, 0]
+    frame = (px - affine[:, 2]) / s
+    return np.concatenate([frame, flat.max(axis=1, keepdims=True)], axis=1)
+
+
+def vitpose_poser(cfg: PoseCfg, model: str | None = None) -> Poser:
+    """ViTPose (top-down, Apache-2.0 weights, `transformers`) on every track box: the box
+    is the person, so there is no detection step to miss a small or odd-looking player.
+    `model` is a local directory or an HF repo id (`pose.vit_model`)."""
+    import torch
+    from transformers import VitPoseForPoseEstimation
+
+    torch.backends.cudnn.enabled = False  # MIOpen on gfx1201 (D-39)
+    gpu = torch.cuda.is_available()
+    device = "cuda" if gpu else "cpu"
+    # fp32 matmuls run ~12x slower than fp16 on the RX 9070 XT (123 vs 9 ms per 10 crops)
+    dtype = torch.float16 if gpu else torch.float32
+    net = VitPoseForPoseEstimation.from_pretrained(model or cfg.vit_model)
+    net = net.to(device=device, dtype=dtype).eval()
+    plus = (
+        getattr(net.config, "backbone_config", None) is not None
+        and getattr(net.config.backbone_config, "num_experts", 1) > 1
+    )
+    mean = torch.tensor(VIT_MEAN[::-1].copy(), device=device, dtype=torch.float32)  # BGR
+    std = torch.tensor(VIT_STD[::-1].copy(), device=device, dtype=torch.float32)
+
+    def run(index: int, img: np.ndarray | None, boxes: list[Box]) -> list[Found]:
+        assert img is not None
+        if not boxes:
+            return []
+        top = cfg.vit_top
+        affs = [vit_affine((x, y - top * h, w, h * (1 + top))) for x, y, w, h in boxes]
+        batch = np.stack(
+            [cv2.warpAffine(img, a, (VIT_W, VIT_H), flags=cv2.INTER_LINEAR) for a in affs]
+        )
+        x = torch.from_numpy(batch).to(device).float()  # (n, H, W, 3) BGR
+        x = ((x - mean) / std).flip(-1).permute(0, 3, 1, 2).to(dtype)  # RGB, NCHW
+        kw = (
+            {"dataset_index": torch.zeros(len(boxes), dtype=torch.long, device=device)}
+            if plus
+            else {}
+        )
+        with torch.inference_mode():
+            hm = net(pixel_values=x, **kw).heatmaps.float().cpu().numpy()
+        out: list[Found] = []
+        for h, a in zip(hm, affs, strict=True):
+            kp = decode_heatmaps(h, a)
+            out.append((kp, float(np.mean(kp[:, 2]))))
+        return out
+
+    return run
+
+
 def synthetic_poser(ground_truth: Path, cfg: PoseCfg) -> Poser:
     """Ground-truth COCO keypoints of a synthetic clip (visible 0.9, occluded 0.4)."""
     gt = json.loads(Path(ground_truth).read_text(encoding="utf-8"))

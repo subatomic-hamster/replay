@@ -84,6 +84,13 @@ class TrackingCfg(_Cfg):
     merge_overlap_s: float = 1.0  # a re-id'd person overlaps their old id by a few frames
     stitch_max_gap_s: float = 5.0  # identity._stitch: longest vanish a lane survives
     max_speed_mps: float = 8.0  # a sprinting player; bounds how far a stitch may reach
+    # appearance re-ID in identity.merge_groups (0 = court distance only); a link whose
+    # body-histogram distance (identity.app_distance) exceeds appearance_max is refused
+    appearance_weight: float = 0.0
+    appearance_max: float = 1.0
+    # > 0: a merge link must also be within running reach, merge_reach_m + max_speed_mps
+    # x gap (identity.merge_groups); 0 = merge_max_dist_m whatever the gap
+    merge_reach_m: float = 0.0
     smooth_window: int = 5
     # Seated officials and the bench: alive this long without leaving a circle this
     # wide (p90 radius) is not a player. See court.stationary.
@@ -126,9 +133,16 @@ class ShotCfg(_Cfg):
     # within this range of the rim, confirmed by a hoop-ROI burst this many robust sigmas
     # high in this window after the release
     release_max_s: float = 0.9
+    # arms up = both wrists this many torso lengths above the shoulders (None: above the nose)
+    release_up_min: float | None = None
     max_range_m: float = 9.0
     confirm_window_s: tuple[float, float] = (0.3, 2.2)
     confirm_sigma: float = 4.0
+    # robust sigma floor (mean |frame diff| grey levels) for the hoop-ROI confirm
+    confirm_mad_floor: float = 1e-6
+    # put the hoop ROI where the full camera (calibrate.camera_calibration) projects the
+    # rim, not straight up the image from the floor point under it
+    hoop_from_camera: bool = False
     # Also watch the template's other rims (the far basket of a full court), projected
     # through the homography. Off: on the real Kennesaw ultra-wide the far rim projects
     # ~500 px from the real hoop, and every far-end "shot" came from that wrong ROI.
@@ -162,6 +176,10 @@ class PoseCfg(_Cfg):
     margin: float = 0.25  # crop margin per side, as a fraction of the box
     conf: float = 0.25
     min_iou: float = 0.3  # the crop's detection must overlap the track box this much
+    # `--pose vit` (pose.vitpose_poser): top-down ViTPose on the track box itself; a local
+    # directory or an HF repo id (Apache-2.0 weights)
+    vit_model: str = "usyd-community/vitpose-base-simple"
+    vit_top: float = 0.0  # grow the box upward by this fraction of its height (raised arms)
 
 
 class AudioCfg(_Cfg):
@@ -188,7 +206,17 @@ class TriggerCfg(_Cfg):
 
     gesture_hold_s: float = 0.8
     gesture_max_gap_s: float = 0.3  # one missed pose sample does not break a hold
-    gesture_min_kp: float = 0.3  # keypoint score floor
+    gesture_min_kp: float = 0.2  # keypoint score floor (a 60 px player's arms score 0.2-0.4)
+    # share of the pose samples in a gesture_hold_s window that must show the X (1 = all);
+    # small players drop keypoints, so a strict all-samples hold almost never survives
+    gesture_vote: float = 0.6
+    # also accept hands together overhead (events.hands_overhead): wrists >= up_min torso
+    # above the shoulders, <= gap_max torso apart across, elbows >= elbow_min torso apart
+    # (the elbow spread keeps arms-straight-up contests out: 0 false on 480 s of real)
+    gesture_relaxed: bool = True
+    gesture_up_min: float = 0.2
+    gesture_gap_max: float = 0.3
+    gesture_elbow_min: float = 0.5
     wake: str = "replay"
     command: str = "clip"
     fuzzy: float = 0.7  # difflib ratio for wake word / command / roster names
@@ -229,6 +257,11 @@ class RallyCfg(_Cfg):
     # A run of at least this many contacts outside every motion rally is a rally on its
     # own (0: never). Off by default: measured only on synthetic volleyball.
     audio_only_min_contacts: int = 0
+    # Point winner = the side serving next (events.assign_winners). The serving side is
+    # the side of the player standing deepest behind their baseline when this is on
+    # (volleyball: the server is alone behind the end line), else the first contact's team.
+    server_behind_line: bool = False
+    server_min_depth_m: float = 0.3
 
 
 class Profile(_Cfg):

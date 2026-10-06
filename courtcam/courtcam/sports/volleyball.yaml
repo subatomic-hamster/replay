@@ -63,7 +63,10 @@ events: [rally, block, hype]
 # only, seed 7: rally recall 0.40 inside motion rallies, 0.60 with silence splits and
 # audio-only rallies; no real volleyball footage)
 rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.5, 2.0],
-        audio_fusion: true, audio_only_min_contacts: 2}
+        audio_fusion: true, audio_only_min_contacts: 2,
+        # point winner = the side serving next; the server stands alone behind the end
+        # line (synthetic: 13/15 points right vs 9/15 from the first-contact team)
+        server_behind_line: true, server_min_depth_m: 0.0}
 # M4 play grammars (courtcam.plays): the rally (serve -> point), a block (front-row
 # jump at the net + contact sound) and an attack (pass -> set -> spike: three
 # consecutive same-side contacts, each credited to the nearest-moving player by pose).

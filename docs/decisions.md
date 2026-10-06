@@ -313,3 +313,27 @@ Ceilings:
 
 ## D-76 (2026-10-06) — Real volleyball clip joins the corpus, local only despite CC BY
 `volleyball_westwashington` is added to samples/real: a CC BY school livestream, 1080p30, from a fixed elevated whole-court camera in the plane of the net. Its 10 hand-clicked landmarks give a 1.26 px reprojection error with no lens model (`*.landmarks.json` is tracked, as for the other clips). No adult rec-league volleyball upload with an elevated whole-court camera was found; the rejected candidates are in MANIFEST.md. The licence would allow committed evidence with attribution, but the players are minors, so the privacy rule (unenrolled people stay anonymous) wins: everything derived from this clip stays local, exactly like the YouTube clips (D-7).
+
+## D-77 (2026-10-06) — Free view: one shared camera module, a raw WebGL2 renderer on web and a GL Fabric view on Fire TV
+Free view is a mode of the Replay screen (D-57). Down enters it at the angle's media time; Back returns to the same angle at the scene's time.
+
+All remote handling, envelope clamps, presets and the GL camera maths live in `apps/tv/src/scene/camera.ts`, shared by both renderers. A renderer receives a target camera and eases toward it (`EASE_MS` = 140), so native gets one prop update per key press. Mapping: Left/Right azimuth, Up/Down elevation (dolly in zoom mode), Menu toggles zoom, Rew/FF cycle presets, Select plays/pauses (docs/scene-format.md).
+
+Web (`FreeView.web.tsx`) is raw WebGL2, about 400 lines, with no three.js:
+- It blends in the same 8-bit sRGB space as the CPU reference and shares its GLSL with the native path.
+- The bundle does not grow.
+- It reaches 41.9 dB / SSIM 0.995 on the scene and 40.4 dB / 0.997 on players against the reference renderer (synthetic fixture), once GL's half-pixel centre offset is applied.
+
+Fire TV (`ReplaySceneView`, Kotlin):
+- A GLSurfaceView with an ES 3.0 context and GLSL ES 1.00 shaders (`samplerExternalOES`).
+- ExoPlayer/media3 1.8.0, already in the APK through react-native-video, decodes the atlas into a SurfaceTexture.
+- Frame-metadata release time → media time sync, so the drawn sprites always match the decoded frame.
+- Premultiplied blending throughout.
+- Verified offline only: the APK builds, the component registers, glslangValidator passes the shaders, and the camera maths matches the fixture's real camera within 0.011 px.
+
+The FreeHud shows the package's `honesty_label` plus a view-limit gauge, because the real envelopes are small.
+
+Ceilings:
+- Nothing has run on a Fire TV. The main risk is the SurfaceView over the paused TextureView angle player.
+- Two decoders are alive while Free view is open.
+- Holding a direction on Fire TV moves about 21°/s, because of its 120 ms JS key repeat.

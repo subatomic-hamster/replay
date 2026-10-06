@@ -310,7 +310,38 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - Push-in is blurry, and one SAM mask carries a neighbour's head.
   - The caption text on the reference stills overlaps.
   - Fire TV decoder limits are unchecked for the 1920×768 atlas.
-  - Viewers (web, native) not built yet.
+  - Viewers (web, native) not built yet. Built in "Free view" below.
+
+## Real volleyball corpus clip (2026-10-06)
+
+- `volleyball_westwashington`: CC BY school livestream, 1080p30, from a fixed elevated whole-court camera.
+- 10 hand-clicked landmarks, 1.26 px reprojection error. The projected court lines sit on the painted lines within about 1 px.
+- Smoke run (30 s): 17 track ids (refs and benches inside the court margin), 2 teams, 2 rallies, 3 blocks; 86 s wall time.
+- Local only (D-76): the players are minors.
+
+## Free view (2.5D) on the TV, web and Fire TV renderers (2026-10-06)
+
+- Works:
+  - Free view mode on the Replay screen. Down enters at the angle's time; Back returns.
+  - D-pad orbit and dolly with hard envelope clamps, edge bars, a view-limit gauge, the package's honesty label, and presets on Rew/FF.
+  - Web renderer in raw WebGL2.
+  - Fire TV renderer as a Kotlin GL Fabric view, sharing `camera.ts`.
+- Verified on hfbox:
+  - box-test ALL GREEN on the committed snapshot: courtcam 192, api 225 + 1 skipped, worker 25, render 54, web Playwright 102, tv Playwright 53 + 3 skipped (TV-17 included).
+  - `scene-check.sh`: all 6 shaders pass glslangValidator; camera maths OK.
+  - Web against the reference renderer on the synthetic fixture: 41.9 dB / 0.995 on the scene, 40.4 dB / 0.997 on players.
+  - Web speed in desktop Chromium on the box: 60 fps on the GPU, 34–37 fps under headless SwiftShader. Indicative only, not a Fire TV.
+  - Real Kennesaw and Powell gym packages ran live through the API and passed TV-17's opt-in live test. Envelopes reached: ±6–12.5° azimuth, with Powell's pl_0010 at −7.5…+22.5°. Evidence is local only.
+  - Release APK with the native view: `/workspace/wt/replay-viewnative/scratch/replay-tv-scene-release.apk`, built from in-progress JS. Rebuild it from HEAD.
+- Evidence:
+  - docs/evidence/scene/web/ (synthetic comparison pairs, fps and compare JSON)
+  - docs/evidence/local/scene/web/ (real, local only)
+- Decisions: D-77.
+- Left / known issues:
+  - Never run on a Fire TV (checkboxes in docs/fire-tv.md).
+  - The native view draws no ball trail and clears to a flat colour.
+  - The real camera often sits on the d-max limit, so "farthest" shows on entry.
+  - A stale vite server left by an earlier agent held port 5181 for ~3 h, so TV Playwright runs in that window may have reused another copy's server. The tsc/eslint results stand. This run proved the server matched the snapshot, because the new TV-17 passed. box-test needs a port guard.
 - Left / known issues:
   - No audio in the recording, so the Kokoro narration is not heard.
   - The demo games use the synthetic detector.

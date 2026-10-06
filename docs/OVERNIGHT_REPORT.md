@@ -387,8 +387,9 @@ docs/aws-integrations.md:60-67. The HLS/MediaConvert ladder is not built (perf.m
   - Kokoro's espeak-ng G2P is GPL-3.0, loaded as a shared library (licenses.md:52).
 - apps/tv tsc, eslint and Playwright now run in `scripts/box-test.sh` and
   `.github/workflows/ci.yml` (50c0cdf).
-- **Native TV config:** the API base is hardcoded in apps/tv/app.json, and the release APK is
-  signed with the debug keystore. The react-native-video patch must be dropped when upgrading
+- **Native TV config:** fixed after the night by D-69: the API base is set on the device
+  (Settings screen) and release signing reads a key from outside the repo; the shipped APK is
+  still debug-signed until a real key is supplied. The react-native-video patch must be dropped when upgrading
   (D-64).
 - **Evidence specs:** `apps/tv/e2e-evidence` M3-walkthrough and M13-ui did not fully pass
   against the menu restructure. The tag dialog did not open on `t` (M13/README.md:18-22).

@@ -48,7 +48,7 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Verified on hfbox: apps/tv `tsc` + `eslint` clean, `playwright test --project=tv` 11 passed; apps/web `tsc` + `eslint` clean, Playwright chromium+live 62 passed. Gradle `assembleDebug` + `assembleRelease` → arm64/armv7 APKs (leanback launcher, targetSdk 36), box-only at /workspace/wt/replay-tv-scratch/apk/.
 - Evidence: docs/evidence/M3/tv-synthetic/01..09.png (synthetic game) · docs/evidence/local/M3/tv-real-kennesaw/ (real footage, not committed)
 - Decisions: D-37.
-- Left / known issues: never run on a device or emulator (no KVM, no Fire TV attached) — playback, key codes and performance on Fire OS unverified; API base hardcoded in apps/tv/app.json; release signed with the debug keystore; Highlights reel plays wide only.
+- Left / known issues: never run on a device or emulator (no KVM, no Fire TV attached) — playback, key codes and performance on Fire OS unverified; API base hardcoded in apps/tv/app.json and release signed with the debug keystore (both fixed by D-69, "TV first-run" below); Highlights reel plays wide only.
 
 ## M4 — Events + plays (2026-10-06)
 
@@ -150,7 +150,7 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Works: after the M8–M13 screens, the Metro release bundle, `assembleRelease` and `assembleDebug` all build (release 1m17s, debug 43 s of Gradle time); universal APK with arm64-v8a + armeabi-v7a, minSdk 24, targetSdk 36, leanback launcher; release bundle contains the Replay, Clips, Rallies, Search, Advice and Review screens. Native playback: seeks/play queued until load, restart after end, looping replays no longer pause on each wrap, video errors shown, held D-pad arrows repeat (D-64).
 - Verified on hfbox: aapt2 badging (leanback-launchable-activity present); after the hardening, apps/tv tsc + eslint clean, Playwright tv 33 passed + 1 skipped on the committed tree, release Metro bundle builds (1.07 MB). APKs at /workspace/wt/replay-tv-scratch/apk/ (release 30.6 MB, debug 61.2 MB; box only).
 - TextureView: a pnpm patch for react-native-video 6.19.3 makes `viewType=TEXTURE` produce a real TextureView (Media3 1.8.0 PlayerView inflated with `surface_type="texture_view"`); frozen offline install applies it, tsc clean, Playwright tv 45 passed + 1 skipped on the committed tree, `assembleRelease` OK with dex and layout confirmed in the APK (box only: /workspace/wt/replay-tv-scratch/apk/replay-tv-0.1.0-release-texture.apk, 30.6 MB).
-- Left / known issues: never run on a Fire TV or emulator (no KVM); TextureView follow-cam transform/clip and its GPU cost unverified on hardware; key-repeat feel, error payloads and rapid angle cuts need a device; Watch/Profile duration pollers do not yet stop on `error()`; API base hardcoded in app.json; release signed with the debug keystore.
+- Left / known issues: never run on a Fire TV or emulator (no KVM); TextureView follow-cam transform/clip and its GPU cost unverified on hardware; key-repeat feel, error payloads and rapid angle cuts need a device; Watch/Profile duration pollers do not yet stop on `error()` (fixed by D-67); API base hardcoded in app.json and release signed with the debug keystore (fixed by D-69).
 
 ## M10 UI — Profiles on TV and phone, one-row Watch menu (2026-10-06)
 
@@ -181,3 +181,19 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Evidence: docs/evidence/M5/README.md ("Gesture fix (D-68)": before → after) + metrics.json
 - Decisions: D-68.
 - Left / known issues: far-player X under ViTPose capped at 9/22 (arm keypoints score ≈ 0.1 on 48–56 px players); a held two-hands-overhead ball call (≥ 0.9 s, elbows wide) would read as an X; the synthetic rig's shot pose has the hands closer than the ball is wide (rig realism, left to keep goldens).
+
+## TV first-run (2026-10-06)
+
+- Works:
+  - Settings screen for the API address: D-pad keyboard, connection test, kept on the device, opens on first run, reachable from the library and the error banner.
+  - Release signing from env vars or Gradle properties, with a debug-key fallback warning.
+  - docs/fire-tv.md: side-load and first-run checklist.
+  - The M3/M13 evidence specs pass live on the demo games.
+  - Atomic render mux: a 9:16 export used to read as "done" while still being written.
+- Verified on hfbox:
+  - box-test ALL GREEN: tv Playwright 50 (incl. TV-16 settings), web 100, courtcam 186, api 220 + 1 skipped, worker 24, render 49.
+  - Evidence project: 8/8 on the mock; live, M3 1/1 and M13 4/4, twice.
+  - `assembleRelease` offline: `/workspace/wt/replay-tvnative/apk/replay-tv-0.1.0-release.apk`, sha256 f657241e…; leanback launcher and banner present (aapt2).
+- Evidence: docs/evidence/M13/README.md (re-run section), docs/evidence/M13/tv-demo-rerun/
+- Decisions: D-69.
+- Left / known issues: everything in docs/fire-tv.md's device checklist needs a real Fire TV; the APK is debug-signed until a real key is supplied.

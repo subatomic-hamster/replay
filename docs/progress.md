@@ -249,3 +249,22 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - YOLO made right 10/12 → 10/13
 - Side effect D-70 missed: the jersey cut also fires on perfect GT-detector tracks. Basketball half/full IDF1 goes 1.000 → 0.995 with 3 / 2 ID switches, including one cross-team relink on half s11. Likely torso colour under a guarding opponent (not confirmed).
 - Evidence: docs/evidence/M4/metrics_combined_9b777bb.json, docs/evidence/M4/README.md "Combined (9b777bb)"
+
+## Recorded end-to-end run (2026-10-06)
+
+- Works: `make record-e2e` records an automated run of the TV web build (1920×1080) plus the phone companion (390×844) against the real API and worker pipeline on hfbox. docs/evidence/E2E/replay-e2e.mp4, 3:25, 1280×720, 4.2 MB; full 1080p copy on the box at /workspace/wt/replay-recording/out/replay-e2e-full.mp4.
+- Steps:
+  - TV Settings shows "Connected".
+  - The phone uploads a 20 s synthetic clip. Its auto-calibration proposal is refused (D-72) and the points are placed by hand.
+  - The real worker pipeline finishes cold in 19 s, and the uploaded game plays on the TV.
+  - The demo beats on the TV: watch, follow/spotlight/inset, broadcast + commentary, phone pairing + "Clip that" + trim, 9:16, replay angles A/B/C, highlights + SigLIP search, review, profile card, pickleball rallies/condensed.
+- Verified on hfbox: 15/15 beats asserted and passing; box-test ALL GREEN on the committed snapshot (courtcam 191, api 221 + 1 skipped, worker 24, render 49, web Playwright 102, tv 50 + 1 skipped). Key frames checked by eye.
+- Fixed: `box-demo.sh serve` ran the API on /opt/venv's python, and vite hung on a corepack prompt, when tmux's global PATH lacked env.sh. Each window now sources env.sh; tmux's global env is untouched.
+- Evidence: docs/evidence/E2E/README.md (commands, beat timestamps, caveats)
+- Decisions: D-73.
+- Left / known issues:
+  - No audio in the recording, so the Kokoro narration is not heard.
+  - The demo games use the synthetic detector.
+  - Not a Fire TV.
+  - Auto-calibration scored 0.83 (< 0.90) even on the clean synthetic half-court clip.
+  - On the replay-angle screen, the "TIER C 3D" stage label overlaps the "REPLAY Shot" header (top left).

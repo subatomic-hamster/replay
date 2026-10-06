@@ -15,3 +15,5 @@ data/
 .ruff_cache/
 test-results/
 playwright-report/
+# Evidence rendered from YouTube-licensed local footage (samples/real, D-7) never ships.
+docs/evidence/local/

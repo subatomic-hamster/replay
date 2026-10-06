@@ -344,3 +344,14 @@ Playwright's `reuseExistingServer` silently tested a stale vite left on 5181 by 
 - reads the non-opt-in ports from the Playwright configs, then /proc/net/tcp{,6} (the box has no ss or lsof);
 - fails the step naming the port and the owning PID, and never kills anything.
 A `scene-check` step (6 shaders through glslangValidator, plus SceneMath on the JVM) runs when glslangValidator is present, and is skipped with a message otherwise. CI runs a shaders-only step in the tv job; the runner lacks a warm Gradle cache for Kotlin.
+
+## D-79 (2026-10-06) — Uploads can run opt-in worker stages; real-footage E2E recordings stay local
+The API always ran the worker's default DAG, so a game uploaded from the phone could never get replays or a scene package, and therefore never Free view. `REPLAY_WORKER_STAGES` (e.g. `hype,replays,scene`, parsed in config.py) adds opt-in stages on top of the default DAG for every upload. The status page reads ready only after they finish. `box-demo.sh` passes the setting through.
+
+The D-73 harness gains `REC_REAL=<sport>` (`make record-e2e-real SPORT=basketball|volleyball`):
+- It cuts 90 s of a samples/real clip and serves an empty library.
+- The phone shows the auto-calibration proposal and its D-72 refusal, then places the tracked landmarks by hand.
+- The real pipeline (YOLO) runs. The waiting is cut in post and captioned with the real elapsed time.
+- Six Free view beats assert the envelope edges, dolly, presets, play and Back.
+
+Everything recorded from real footage stays local (D-7, D-76); the README describes the runs without frames.

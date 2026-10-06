@@ -341,7 +341,46 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - Never run on a Fire TV (checkboxes in docs/fire-tv.md).
   - The native view draws no ball trail and clears to a flat colour.
   - The real camera often sits on the d-max limit, so "farthest" shows on entry.
-  - A stale vite server left by an earlier agent held port 5181 for ~3 h, so TV Playwright runs in that window may have reused another copy's server. The tsc/eslint results stand. This run proved the server matched the snapshot, because the new TV-17 passed. box-test needs a port guard.
+  - A stale vite server left by an earlier agent held port 5181 for ~3 h, so TV Playwright runs in that window may have reused another copy's server. The tsc/eslint results stand. This run proved the server matched the snapshot, because the new TV-17 passed. box-test needs a port guard. Added by D-78.
+
+## Real-footage E2E recordings with Free view (2026-10-06)
+
+- Works:
+  - `make record-e2e-real SPORT=basketball|volleyball` runs the real API and worker pipeline on a 90 s real cut.
+  - Calibration: the D-72 refusal, then hand-placed landmarks.
+  - Then: watch, follow, replay angles, six Free view beats, highlights, review/heatmap, and volleyball rallies/condensed.
+  - `REPLAY_WORKER_STAGES` lets uploads get replays and scene packages (D-79).
+- Verified on hfbox:
+  - Kennesaw basketball: 16/16 beats PASS, 3:04 recording.
+    - 6 min 48 s processing.
+    - Auto-calibration score 0.61 refused; 14 points placed by hand, 3.3 px fit.
+    - Free view envelope: azimuth −7.5…+5°, elevation 12.1…17.1°.
+  - West Washington volleyball: 17/17 beats PASS, 4:05 recording.
+    - 6 min 28 s processing.
+    - Auto-calibration score 0.888 refused; 10 points placed by hand, 2.0 px fit.
+    - Free view envelope: azimuth ±17°, elevation 15.6…32.6°.
+  - box-test ALL GREEN on the committed snapshot: courtcam 192, api 226 + 1 skipped, worker 25, render 54, web Playwright 102, tv 53 + 3 skipped, scene-check OK.
+  - Key frames read by the agent and by the orchestrator.
+- Evidence:
+  - docs/evidence/local/E2E-real/{basketball,volleyball}/: MP4, beats, frames, worker.jsonl. Local only.
+  - Full-quality copies on the box under /workspace/wt/replay-recreal/out-real-*/.
+  - docs/evidence/E2E/README.md: text only.
+- Decisions: D-79.
+- Left / known issues:
+  - Basketball Free view:
+    - a large backdrop void at the upper right, even at the real preset
+    - hoop primitives floating off the real hoops (D-53)
+    - ghost streaks and a smeared scorer's table baked into the floor
+  - Volleyball Free view:
+    - a double net: the model net next to the real one baked flat into the floor
+    - a line judge and a spectator smeared into the plates
+    - one cutout holding two overlapping players (seen on dolly-in)
+  - Kennesaw 130–220 s cut found 0 shots, although the full 240 s run found one at 133 s.
+  - 14 volleyball "blocks" in 90 s, likely false.
+  - The calibration status shows a meaningless "0.0 px" for template-fit proposals.
+  - Recorded WebGL is SwiftShader, so motion is not representative.
+  - Broadcast, Search and Tier C are not in the real runs.
+  - The restructured synthetic `make record-e2e` was not re-recorded.
 - Left / known issues:
   - No audio in the recording, so the Kokoro narration is not heard.
   - The demo games use the synthetic detector.

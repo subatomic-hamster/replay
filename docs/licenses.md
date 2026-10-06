@@ -15,6 +15,7 @@ models, Qwen-research) = no, not even as a default; at most an opt-in extra that
 | Component | Code licence | Weights licence | Where used | Allowed in MIT courtcam? | Optional extra? |
 |---|---|---|---|---|---|
 | ultralytics (YOLO11 det / pose) | AGPL-3.0 | AGPL-3.0 (Ultralytics weights; enterprise licence exists) | courtcam detect/pose/track today (D-5, D-31) | **Flag.** Currently a hard dependency of `courtcam` (pyproject). Not vendored, but anyone shipping a combined app must comply with AGPL. Recommend: make it the `courtcam[yolo]` extra and keep a permissive detector path (see "Permissive 2D pose / detection" in research-log) | Yes (should become) |
+| Barlow Condensed (font) | SIL OFL 1.1 (google/fonts) | n/a | render/replay_render/assets (broadcast graphics), OFL.txt bundled | Not needed there (replay-side render/) | No (bundled asset) |
 | boxmot (BoT-SORT, etc. as a package) | AGPL-3.0 | n/a (ReID weights have their own, mostly research licences) | not used (ultralytics ships BoT-SORT / ByteTrack) | No | Not planned |
 | ByteTrack (FoundationVision, ex-ifzhang) | MIT | MIT (COCO/MOT weights; not used) | ultralytics' built-in ByteTrack tracker config | Yes (algorithm re-implemented in ultralytics, which is AGPL) | n/a |
 | supervision (roboflow) | MIT | n/a | optional overlays / zones | Yes | n/a |

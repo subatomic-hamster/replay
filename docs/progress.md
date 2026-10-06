@@ -86,3 +86,11 @@ Template:
 - Evidence: docs/evidence/M8/ (9 highlights × 6 angles: synthetic basketball, synthetic volleyball, CC BY pickleball; angle sheets, orbit mp4/GIF, TV screenshots through the real API, calibration tables) · docs/evidence/local/M8/ (real-clip calibration)
 - Decisions: D-53, D-54, D-55, D-56, D-57.
 - Left / known issues: hoop 50–90 px off on wide real basketball rigs (heights approximate); plate ghosts and void floor on far orbits; thin billboards side-on; no ball model outside basketball; SAM GPU cost and lock contention; native TV path untested on a device. Fixed on the way: `apps/web/src/data/tracksCache.ts` had never been committed (the unanchored `data/` ignore hid it), so fresh clones did not build.
+
+## M10 — Profiles, player cards, cross-game linking, opt-in faces (backend) (2026-10-06)
+
+- Works: profile CRUD (SQLite, DynamoDB stub), link/unlink with roster naming and rename propagation, same-name link suggestions, per-sport career stats with flagged user edits, career reel manifest, collectible card JSON + 810×1080 PNG with a grounded title (template; LLM paraphrase optional), opt-in face enrollment with consent and purge, `face_match` worker stage (opt-in, skips without enrolled profiles) and API job.
+- Verified on hfbox (staged snapshot, `scripts/box-test.sh` ALL GREEN): ruff clean, courtcam 178, api 211 + 1 skipped, worker 21, render 29, web Playwright 66 passed. Synthetic cards (4 synthetic games, 3 profiles, one spanning basketball + badminton): titles grounded 3/3, card JSON byte-identical on rebuild 3/3, 0.5–1.1 s per profile; LLM titles 3/3 accepted. Faces on CC footage: usable faces in 2.8–14.8 % of person samples (synthetic mannequins 0 %). Hand-labelled CC fisheye badminton clip (tuning set, not held out) at threshold 0.45: genuine face match 64–72 %, unenrolled 3 %; genuine windows suggested 39/45, unenrolled 0/47.
+- Evidence: docs/evidence/M10/ (synthetic cards, profiles, reels; face yield and match metrics as JSON, no face images committed)
+- Decisions: D-58.
+- Left / known issues: TV/web profile screens not built; no voice-enrollment route (field always false); no held-out labelled face clip; `match_game` uses seek-based frame reads (~11 s for 48 players); career reel not rendered.

@@ -1,0 +1,75 @@
+{
+ "schema": "replay.card.v1",
+ "profile_id": "pr_e88d4b2aba33",
+ "name": "Alex",
+ "sport": "basketball",
+ "sports": [
+  "basketball"
+ ],
+ "positions": [
+  "guard"
+ ],
+ "games": 2,
+ "title": "Alex the scorer: 6 points in 2 games",
+ "title_source": "template",
+ "title_template": "Alex the scorer: 6 points in 2 games",
+ "grounding": {
+  "template_ok": true,
+  "tried": [
+   {
+    "template": "{name} the scorer: {n} points in {g}",
+    "ok": true,
+    "violations": []
+   }
+  ]
+ },
+ "stats": [
+  {
+   "key": "points",
+   "label": "PTS",
+   "value": 6,
+   "edited": false
+  },
+  {
+   "key": "shots",
+   "label": "FG",
+   "value": "3/6",
+   "edited": false
+  },
+  {
+   "key": "rebounds",
+   "label": "REB",
+   "value": 4,
+   "edited": true
+  },
+  {
+   "key": "distance_m",
+   "label": "METRES",
+   "value": 139,
+   "edited": false
+  }
+ ],
+ "user_edited": true,
+ "label": "auto-detected",
+ "best_moment": {
+  "game_id": "g_bb1",
+  "player_id": "p4",
+  "play_id": "pl_0002",
+  "sport": "basketball",
+  "t_start": 13.8,
+  "t_end": 23.4,
+  "t": 21.4,
+  "points": 2,
+  "hype": 0.807,
+  "event_ids": [
+   "e_0004"
+  ],
+  "clip_ids": [
+   "c_0002"
+  ]
+ },
+ "photo_url": null,
+ "face_enrolled": false,
+ "png": "/media/profiles/pr_e88d4b2aba33/card.png",
+ "thumb": "/media/profiles/pr_e88d4b2aba33/thumb.jpg"
+}

@@ -1,0 +1,68 @@
+{
+ "schema": "replay.profile.v1",
+ "profile_id": "pr_f907ce72a1e4",
+ "name": "Sam",
+ "photo_url": null,
+ "sports": [
+  "badminton"
+ ],
+ "positions": [],
+ "user_edited_fields": [],
+ "face_enrolled": false,
+ "voice_enrolled": false,
+ "linked": [
+  {
+   "game_id": "g_bd1",
+   "player_id": "p4"
+  },
+  {
+   "game_id": "g_bd2",
+   "player_id": "p3"
+  }
+ ],
+ "stats_by_sport": {
+  "badminton": {
+   "auto": {
+    "games": 2,
+    "plays": 14,
+    "distance_m": 141.6,
+    "rallies": 14,
+    "contacts": 26,
+    "serves": 2
+   },
+   "games": [
+    {
+     "game_id": "g_bd1",
+     "player_id": "p4",
+     "games": 1,
+     "plays": 7,
+     "distance_m": 69.8,
+     "rallies": 7,
+     "contacts": 11,
+     "serves": 0
+    },
+    {
+     "game_id": "g_bd2",
+     "player_id": "p3",
+     "games": 1,
+     "plays": 7,
+     "distance_m": 71.8,
+     "rallies": 7,
+     "contacts": 15,
+     "serves": 2
+    }
+   ],
+   "stats": {
+    "games": 2,
+    "plays": 14,
+    "distance_m": 141.6,
+    "rallies": 14,
+    "contacts": 26,
+    "serves": 2
+   },
+   "edited": [],
+   "label": "auto-detected"
+  }
+ },
+ "missing_links": []
+}

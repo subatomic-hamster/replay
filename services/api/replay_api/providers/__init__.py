@@ -26,6 +26,7 @@ REGISTRY: dict[str, tuple[str, str, str]] = {
     "embeddings": ("embeddings:Embeddings", "embeddings:LocalEmbeddings", "aws:BedrockEmbeddings"),
     "face": ("face:Face", "face:LocalFace", "aws:RekognitionFace"),
     "speaker": ("speaker:Speaker", "speaker:LocalSpeaker", "aws:SageMakerSpeaker"),
+    "profiles": ("profiles:Profiles", "profiles:LocalProfiles", "aws:DynamoProfiles"),
 }
 
 

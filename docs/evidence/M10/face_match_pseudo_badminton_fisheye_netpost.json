@@ -1,0 +1,194 @@
+{
+ "video": "badminton_fisheye_netpost_240s.mp4",
+ "segment_s": [
+  0.0,
+  120.0
+ ],
+ "stride": 2,
+ "tracks_seen": 91,
+ "track_and_embed_s": 70.9,
+ "tracks_with_usable_face": 13,
+ "usable_faces": 577,
+ "labels": "pseudo-identities = ByteTrack track ids (an id switch or fragment counts as an error)",
+ "people": 13,
+ "eligible_people": 7,
+ "folds": [
+  {
+   "enrolled": [
+    "1",
+    "2",
+    "68",
+    "98"
+   ],
+   "unenrolled_people": 9,
+   "genuine_probes": 416,
+   "unenrolled_probes": 115,
+   "genuine_similarity_p10_p50_p90": [
+    0.115,
+    0.375,
+    0.666
+   ],
+   "unenrolled_best_similarity_p50_p90_p99": [
+    0.607,
+    0.743,
+    0.771
+   ],
+   "sweep": {
+    "0.3": {
+     "genuine_correct": 0.43,
+     "genuine_wrong_profile": 0.481,
+     "unenrolled_face_matched": 0.922,
+     "genuine_windows": 33,
+     "genuine_windows_suggested": 33,
+     "genuine_windows_suggested_right": 15,
+     "unenrolled_windows": 8,
+     "unenrolled_windows_suggested": 8,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.363": {
+     "genuine_correct": 0.409,
+     "genuine_wrong_profile": 0.452,
+     "unenrolled_face_matched": 0.878,
+     "genuine_windows": 33,
+     "genuine_windows_suggested": 32,
+     "genuine_windows_suggested_right": 15,
+     "unenrolled_windows": 8,
+     "unenrolled_windows_suggested": 8,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.4": {
+     "genuine_correct": 0.385,
+     "genuine_wrong_profile": 0.416,
+     "unenrolled_face_matched": 0.87,
+     "genuine_windows": 33,
+     "genuine_windows_suggested": 32,
+     "genuine_windows_suggested_right": 15,
+     "unenrolled_windows": 8,
+     "unenrolled_windows_suggested": 8,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.45": {
+     "genuine_correct": 0.363,
+     "genuine_wrong_profile": 0.361,
+     "unenrolled_face_matched": 0.783,
+     "genuine_windows": 33,
+     "genuine_windows_suggested": 30,
+     "genuine_windows_suggested_right": 15,
+     "unenrolled_windows": 8,
+     "unenrolled_windows_suggested": 7,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.5": {
+     "genuine_correct": 0.315,
+     "genuine_wrong_profile": 0.293,
+     "unenrolled_face_matched": 0.696,
+     "genuine_windows": 33,
+     "genuine_windows_suggested": 23,
+     "genuine_windows_suggested_right": 12,
+     "unenrolled_windows": 8,
+     "unenrolled_windows_suggested": 6,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.6": {
+     "genuine_correct": 0.185,
+     "genuine_wrong_profile": 0.12,
+     "unenrolled_face_matched": 0.522,
+     "genuine_windows": 33,
+     "genuine_windows_suggested": 6,
+     "genuine_windows_suggested_right": 4,
+     "unenrolled_windows": 8,
+     "unenrolled_windows_suggested": 6,
+     "unenrolled_windows_suggested_right": 0
+    }
+   }
+  },
+  {
+   "enrolled": [
+    "147",
+    "67",
+    "90"
+   ],
+   "unenrolled_people": 10,
+   "genuine_probes": 69,
+   "unenrolled_probes": 484,
+   "genuine_similarity_p10_p50_p90": [
+    0.202,
+    0.353,
+    0.547
+   ],
+   "unenrolled_best_similarity_p50_p90_p99": [
+    0.358,
+    0.591,
+    0.703
+   ],
+   "sweep": {
+    "0.3": {
+     "genuine_correct": 0.29,
+     "genuine_wrong_profile": 0.551,
+     "unenrolled_face_matched": 0.707,
+     "genuine_windows": 5,
+     "genuine_windows_suggested": 5,
+     "genuine_windows_suggested_right": 2,
+     "unenrolled_windows": 37,
+     "unenrolled_windows_suggested": 15,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.363": {
+     "genuine_correct": 0.275,
+     "genuine_wrong_profile": 0.522,
+     "unenrolled_face_matched": 0.481,
+     "genuine_windows": 5,
+     "genuine_windows_suggested": 5,
+     "genuine_windows_suggested_right": 2,
+     "unenrolled_windows": 37,
+     "unenrolled_windows_suggested": 12,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.4": {
+     "genuine_correct": 0.232,
+     "genuine_wrong_profile": 0.449,
+     "unenrolled_face_matched": 0.374,
+     "genuine_windows": 5,
+     "genuine_windows_suggested": 5,
+     "genuine_windows_suggested_right": 2,
+     "unenrolled_windows": 37,
+     "unenrolled_windows_suggested": 11,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.45": {
+     "genuine_correct": 0.174,
+     "genuine_wrong_profile": 0.377,
+     "unenrolled_face_matched": 0.269,
+     "genuine_windows": 5,
+     "genuine_windows_suggested": 4,
+     "genuine_windows_suggested_right": 1,
+     "unenrolled_windows": 37,
+     "unenrolled_windows_suggested": 9,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.5": {
+     "genuine_correct": 0.145,
+     "genuine_wrong_profile": 0.333,
+     "unenrolled_face_matched": 0.205,
+     "genuine_windows": 5,
+     "genuine_windows_suggested": 3,
+     "genuine_windows_suggested_right": 1,
+     "unenrolled_windows": 37,
+     "unenrolled_windows_suggested": 8,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.6": {
+     "genuine_correct": 0.043,
+     "genuine_wrong_profile": 0.232,
+     "unenrolled_face_matched": 0.091,
+     "genuine_windows": 5,
+     "genuine_windows_suggested": 1,
+     "genuine_windows_suggested_right": 0,
+     "unenrolled_windows": 37,
+     "unenrolled_windows_suggested": 2,
+     "unenrolled_windows_suggested_right": 0
+    }
+   }
+  }
+ ]
+}

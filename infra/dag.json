@@ -306,5 +306,15 @@
   "fanout": true,
   "cached": true,
   "default": false
+ },
+ {
+  "name": "face_match",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
  }
 ]

@@ -1,0 +1,115 @@
+{
+ "schema": "replay.reel.v1",
+ "profile_id": "pr_e88d4b2aba33",
+ "items": [
+  {
+   "game_id": "g_bb1",
+   "player_id": "p4",
+   "play_id": "pl_0002",
+   "sport": "basketball",
+   "t_start": 13.8,
+   "t_end": 23.4,
+   "t": 21.4,
+   "points": 2,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0004"
+   ],
+   "clip_ids": [
+    "c_0002"
+   ],
+   "game_title": "Synthetic basketball_half_s7_gt",
+   "url": "http://testserver/media/games/g_bb1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bb1",
+   "player_id": "p4",
+   "play_id": "pl_0008",
+   "sport": "basketball",
+   "t_start": 62.2,
+   "t_end": 72.2,
+   "t": 70.2,
+   "points": 2,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0021"
+   ],
+   "clip_ids": [],
+   "game_title": "Synthetic basketball_half_s7_gt",
+   "url": "http://testserver/media/games/g_bb1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bb1",
+   "player_id": "p4",
+   "play_id": "pl_0010",
+   "sport": "basketball",
+   "t_start": 79.8,
+   "t_end": 88.4,
+   "t": 86.4,
+   "points": 0,
+   "hype": 0.377,
+   "event_ids": [
+    "e_0026"
+   ],
+   "clip_ids": [],
+   "game_title": "Synthetic basketball_half_s7_gt",
+   "url": "http://testserver/media/games/g_bb1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bb2",
+   "player_id": "p8",
+   "play_id": "pl_0004",
+   "sport": "basketball",
+   "t_start": 25.8,
+   "t_end": 33.067,
+   "t": 31.07,
+   "points": 2,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0007"
+   ],
+   "clip_ids": [],
+   "game_title": "Synthetic basketball_half_s11_gt",
+   "url": "http://testserver/media/games/g_bb2/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bb2",
+   "player_id": "p8",
+   "play_id": "pl_0006",
+   "sport": "basketball",
+   "t_start": 44.8,
+   "t_end": 52.8,
+   "t": 44.8,
+   "points": 0,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0012"
+   ],
+   "clip_ids": [
+    "c_0005"
+   ],
+   "game_title": "Synthetic basketball_half_s11_gt",
+   "url": "http://testserver/media/games/g_bb2/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bb2",
+   "player_id": "p8",
+   "play_id": "pl_0010",
+   "sport": "basketball",
+   "t_start": 76.8,
+   "t_end": 83.8,
+   "t": 81.8,
+   "points": 0,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0022"
+   ],
+   "clip_ids": [
+    "c_0008"
+   ],
+   "game_title": "Synthetic basketball_half_s11_gt",
+   "url": "http://testserver/media/games/g_bb2/media/wide.mp4"
+  }
+ ],
+ "duration_s": 50.47
+}

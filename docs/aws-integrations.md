@@ -21,7 +21,8 @@ selected kinds under `provider_kinds`.
 | tts | `tts.LocalTTS` → `NotConfiguredError` | **Polly** SynthesizeSpeech (neural) | `aws.PollyTTS` | voice choice; PCM→WAV; the local model is a later milestone (M7) |
 | llm | `llm.LocalLLM` → `NotConfiguredError` | **Bedrock Converse** with a Nova text model | `aws.BedrockLLM` | model id via env; JSON-schema-as-forced-tool; grounding check stays local |
 | embeddings | `embeddings.LocalEmbeddings` → `NotConfiguredError` | **Bedrock** multimodal embeddings | `aws.BedrockEmbeddings` | model id + dimension; vectors per play under `embeddings/` (M11) |
-| face | `face.LocalFace` → `NotConfiguredError` | **Rekognition** face collections (opt-in enrolled profiles only) | `aws.RekognitionFace` | collection per household; consent flow; `forget` on withdrawal (M10) |
+| face | `face.LocalFace` — OpenCV YuNet + SFace, opt-in (`REPLAY_FACE_DIR`, `REPLAY_FACE_MODELS`), one mean embedding per enrolled profile | **Rekognition** face collections (opt-in enrolled profiles only) | `aws.RekognitionFace` | collection per household; consent flow; `forget` on withdrawal (M10) |
+| profiles | `profiles.LocalProfiles` — SQLite `data/profiles.sqlite` (profiles + links tables) | **DynamoDB** `Profiles` + `Links` tables | `aws.DynamoProfiles` | conditional PutItem keeps one profile per game player; delete as a transaction over the profile and its links (M10) |
 | speaker | `speaker.LocalSpeaker` → `NotConfiguredError` | **SageMaker endpoint** hosting the local speaker model (no managed AWS speaker-ID service is used) | `aws.SageMakerSpeaker` | endpoint + model container; enrollment vectors in `Profiles` (M5) |
 
 All paths are under `services/api/replay_api/providers/`. Tests:

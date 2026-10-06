@@ -14,6 +14,7 @@ MODULES = [
     "replay_worker.stages.narrate",
     "replay_worker.stages.virtual",
     "replay_worker.stages.discovery",
+    "replay_worker.stages.faces",
 ]
 
 

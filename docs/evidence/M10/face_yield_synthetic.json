@@ -1,0 +1,42 @@
+{
+ "g_bb1/media/wide.mp4": {
+  "frames": 45,
+  "people": 224,
+  "face_detected": 78,
+  "face_usable": 0,
+  "usable_share": 0.0,
+  "detected_share": 0.348,
+  "person_height_px_p10_p50_p90": [
+   37.4,
+   51.9,
+   73.6
+  ],
+  "face_width_px_p10_p50_p90": [
+   4.3,
+   6.8,
+   8.0
+  ],
+  "sample_every_s": 2.0,
+  "min_face_px": 24
+ },
+ "g_bd1/media/wide.mp4": {
+  "frames": 45,
+  "people": 224,
+  "face_detected": 14,
+  "face_usable": 0,
+  "usable_share": 0.0,
+  "detected_share": 0.062,
+  "person_height_px_p10_p50_p90": [
+   88.2,
+   97.3,
+   146.8
+  ],
+  "face_width_px_p10_p50_p90": [
+   9.9,
+   10.6,
+   11.5
+  ],
+  "sample_every_s": 2.0,
+  "min_face_px": 24
+ }
+}

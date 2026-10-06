@@ -1,0 +1,72 @@
+{
+ "Alex": {
+  "links": 2,
+  "sports": [
+   "basketball"
+  ],
+  "title": "Alex scores 6 in 2 games",
+  "title_source": "llm",
+  "template_ok": true,
+  "llm": {
+   "accepted": true,
+   "error": null,
+   "raw": [
+    "Alex scores 6 in 2 games"
+   ],
+   "violations": []
+  },
+  "card_json_deterministic": true,
+  "reel_items": 6,
+  "suggestions": 0,
+  "user_edited_fields": [
+   "positions",
+   "stats_by_sport.basketball.rebounds"
+  ],
+  "wall_s": 1.58
+ },
+ "Sam": {
+  "links": 2,
+  "sports": [
+   "badminton"
+  ],
+  "title": "Sam: 14 rallies in 2 games",
+  "title_source": "llm",
+  "template_ok": true,
+  "llm": {
+   "accepted": true,
+   "error": null,
+   "raw": [
+    "Sam: 14 rallies in 2 games"
+   ],
+   "violations": []
+  },
+  "card_json_deterministic": true,
+  "reel_items": 14,
+  "suggestions": 0,
+  "user_edited_fields": [],
+  "wall_s": 0.99
+ },
+ "Jordan": {
+  "links": 2,
+  "sports": [
+   "badminton",
+   "basketball"
+  ],
+  "title": "Jordan: 3 rallies in 1 game",
+  "title_source": "llm",
+  "template_ok": true,
+  "llm": {
+   "accepted": true,
+   "error": null,
+   "raw": [
+    "Jordan: 3 rallies in 1 game"
+   ],
+   "violations": []
+  },
+  "card_json_deterministic": true,
+  "reel_items": 4,
+  "suggestions": 1,
+  "user_edited_fields": [],
+  "wall_s": 1.29
+ }
+}

@@ -113,3 +113,27 @@ Full table, paths and call snippets: `docs/models.md`. What was learned that cha
 - **courtcam is MIT but requires AGPL ultralytics**: a licensing flag, see `docs/licenses.md`.
 - Creative-Commons footage search result (details in `docs/test-data.md`): 5 CC BY clips accepted on the box (1 basketball wide cam,
   2 pickleball, 2 badminton with stated limits), none for volleyball; Internet Archive and Wikimedia yielded nothing usable.
+
+## 2026-10-06 (M10) — Local face model for opt-in enrollment
+
+Need: a detector + embedding model whose weights may ship as an opt-in, off-by-default extra (vision §21: never match
+unenrolled people). Checked, 2026-10-06:
+
+- **insightface** (buffalo_l, antelopev2): MIT code, **non-commercial research weights**. Rejected.
+- **OpenCV Zoo YuNet** (`face_detection_yunet_2023mar.onnx`, 232 KB): MIT (LICENSE in the model directory,
+  github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet). **Chosen** detector.
+- **OpenCV Zoo SFace** (`face_recognition_sface_2021dec.onnx`, 38 MB, MobileFaceNet + SFace loss, 128-d): **Apache-2.0** on the
+  weights (LICENSE in github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface). The checkpoint's training set is not
+  documented; the SFace paper uses CASIA-WebFace / VGGFace2 / MS1MV2 (research-only datasets), and opencv_zoo issues #313 / #318 ask
+  exactly this without an answer. **Chosen**, with that flag recorded in docs/licenses.md (same treatment as MotionBERT).
+- Both run through OpenCV's own `cv2.FaceDetectorYN` / `cv2.FaceRecognizerSF` (cv2 5.0.0 in the shared venv), so no new
+  Python package and no new venv. Downloaded with curl into `/workspace/wt/replay-env/models/face/` (INSTALLS.md entry).
+- Operating point: OpenCV publishes cosine 0.363 for SFace (samples/dnn/face_match, photo pairs). On CC court footage that
+  matched 18-22 % of an unenrolled player's faces, so the default is 0.45 plus a per-player majority rule (≥ 2 votes and
+  ≥ half of the player's usable samples); numbers in docs/evidence/M10/README.md. Faces under 24 px wide in source pixels are
+  not embedded.
+- Commercial path stays Rekognition (`aws.RekognitionFace`, collection of enrolled profiles only).
+
+Findings on court footage are in `docs/evidence/M10/README.md`: synthetic mannequins have no faces (0 usable), and on the CC clips
+only a few percent of person detections carry a face wide enough to embed, so face linking is a suggestion source for
+near-camera players, never the default linking path (manual links and same-name suggestions are).

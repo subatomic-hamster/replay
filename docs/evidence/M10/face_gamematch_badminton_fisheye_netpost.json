@@ -1,0 +1,45 @@
+{
+ "video": "badminton_fisheye_netpost_240s.mp4",
+ "segment_s": [
+  0,
+  60.0
+ ],
+ "enroll_s": 10.0,
+ "enrolled_track": "t1",
+ "enrollment": {
+  "profile_id": "pr_cc_enrolled",
+  "photos": 9,
+  "faces": 8,
+  "face_enrolled": true,
+  "model": "opencv_zoo/sface_2021dec+yunet_2023mar"
+ },
+ "players_after_enroll": 48,
+ "faces_json": {
+  "schema": "replay.faces.v1",
+  "game_id": "g_cc",
+  "enrolled_profiles": 1,
+  "threshold": 0.45,
+  "min_face_px": 24,
+  "players_checked": 48,
+  "samples": 208,
+  "faces_detected": 60,
+  "samples_with_face": 48,
+  "matches": [
+   {
+    "player_id": "t1",
+    "profile_id": "pr_cc_enrolled",
+    "votes": 10,
+    "usable": 12,
+    "similarity": 0.704
+   },
+   {
+    "player_id": "t68",
+    "profile_id": "pr_cc_enrolled",
+    "votes": 10,
+    "usable": 12,
+    "similarity": 0.747
+   }
+  ],
+  "match_s": 11.3
+ }
+}

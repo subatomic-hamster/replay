@@ -1,0 +1,196 @@
+{
+ "video": "badminton_usnationals2012_240s.mp4",
+ "segment_s": [
+  0.0,
+  120.0
+ ],
+ "stride": 2,
+ "tracks_seen": 247,
+ "track_and_embed_s": 151.9,
+ "tracks_with_usable_face": 36,
+ "usable_faces": 249,
+ "labels": "pseudo-identities = ByteTrack track ids (an id switch or fragment counts as an error)",
+ "people": 36,
+ "eligible_people": 9,
+ "folds": [
+  {
+   "enrolled": [
+    "194",
+    "315",
+    "4",
+    "473",
+    "57"
+   ],
+   "unenrolled_people": 31,
+   "genuine_probes": 124,
+   "unenrolled_probes": 95,
+   "genuine_similarity_p10_p50_p90": [
+    0.113,
+    0.45,
+    0.633
+   ],
+   "unenrolled_best_similarity_p50_p90_p99": [
+    0.366,
+    0.492,
+    0.603
+   ],
+   "sweep": {
+    "0.3": {
+     "genuine_correct": 0.677,
+     "genuine_wrong_profile": 0.234,
+     "unenrolled_face_matched": 0.716,
+     "genuine_windows": 7,
+     "genuine_windows_suggested": 7,
+     "genuine_windows_suggested_right": 6,
+     "unenrolled_windows": 3,
+     "unenrolled_windows_suggested": 2,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.363": {
+     "genuine_correct": 0.629,
+     "genuine_wrong_profile": 0.161,
+     "unenrolled_face_matched": 0.505,
+     "genuine_windows": 7,
+     "genuine_windows_suggested": 7,
+     "genuine_windows_suggested_right": 6,
+     "unenrolled_windows": 3,
+     "unenrolled_windows_suggested": 2,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.4": {
+     "genuine_correct": 0.589,
+     "genuine_wrong_profile": 0.129,
+     "unenrolled_face_matched": 0.316,
+     "genuine_windows": 7,
+     "genuine_windows_suggested": 7,
+     "genuine_windows_suggested_right": 6,
+     "unenrolled_windows": 3,
+     "unenrolled_windows_suggested": 1,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.45": {
+     "genuine_correct": 0.5,
+     "genuine_wrong_profile": 0.081,
+     "unenrolled_face_matched": 0.211,
+     "genuine_windows": 7,
+     "genuine_windows_suggested": 5,
+     "genuine_windows_suggested_right": 5,
+     "unenrolled_windows": 3,
+     "unenrolled_windows_suggested": 1,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.5": {
+     "genuine_correct": 0.395,
+     "genuine_wrong_profile": 0.056,
+     "unenrolled_face_matched": 0.095,
+     "genuine_windows": 7,
+     "genuine_windows_suggested": 5,
+     "genuine_windows_suggested_right": 5,
+     "unenrolled_windows": 3,
+     "unenrolled_windows_suggested": 0,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.6": {
+     "genuine_correct": 0.185,
+     "genuine_wrong_profile": 0.008,
+     "unenrolled_face_matched": 0.011,
+     "genuine_windows": 7,
+     "genuine_windows_suggested": 2,
+     "genuine_windows_suggested_right": 2,
+     "unenrolled_windows": 3,
+     "unenrolled_windows_suggested": 0,
+     "unenrolled_windows_suggested_right": 0
+    }
+   }
+  },
+  {
+   "enrolled": [
+    "3",
+    "321",
+    "431",
+    "510"
+   ],
+   "unenrolled_people": 32,
+   "genuine_probes": 33,
+   "unenrolled_probes": 198,
+   "genuine_similarity_p10_p50_p90": [
+    0.066,
+    0.167,
+    0.426
+   ],
+   "unenrolled_best_similarity_p50_p90_p99": [
+    0.339,
+    0.473,
+    0.573
+   ],
+   "sweep": {
+    "0.3": {
+     "genuine_correct": 0.121,
+     "genuine_wrong_profile": 0.576,
+     "unenrolled_face_matched": 0.611,
+     "genuine_windows": 2,
+     "genuine_windows_suggested": 1,
+     "genuine_windows_suggested_right": 0,
+     "unenrolled_windows": 10,
+     "unenrolled_windows_suggested": 8,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.363": {
+     "genuine_correct": 0.121,
+     "genuine_wrong_profile": 0.273,
+     "unenrolled_face_matched": 0.419,
+     "genuine_windows": 2,
+     "genuine_windows_suggested": 0,
+     "genuine_windows_suggested_right": 0,
+     "unenrolled_windows": 10,
+     "unenrolled_windows_suggested": 5,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.4": {
+     "genuine_correct": 0.121,
+     "genuine_wrong_profile": 0.091,
+     "unenrolled_face_matched": 0.263,
+     "genuine_windows": 2,
+     "genuine_windows_suggested": 0,
+     "genuine_windows_suggested_right": 0,
+     "unenrolled_windows": 10,
+     "unenrolled_windows_suggested": 4,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.45": {
+     "genuine_correct": 0.061,
+     "genuine_wrong_profile": 0.03,
+     "unenrolled_face_matched": 0.152,
+     "genuine_windows": 2,
+     "genuine_windows_suggested": 0,
+     "genuine_windows_suggested_right": 0,
+     "unenrolled_windows": 10,
+     "unenrolled_windows_suggested": 2,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.5": {
+     "genuine_correct": 0.0,
+     "genuine_wrong_profile": 0.0,
+     "unenrolled_face_matched": 0.051,
+     "genuine_windows": 2,
+     "genuine_windows_suggested": 0,
+     "genuine_windows_suggested_right": 0,
+     "unenrolled_windows": 10,
+     "unenrolled_windows_suggested": 0,
+     "unenrolled_windows_suggested_right": 0
+    },
+    "0.6": {
+     "genuine_correct": 0.0,
+     "genuine_wrong_profile": 0.0,
+     "unenrolled_face_matched": 0.01,
+     "genuine_windows": 2,
+     "genuine_windows_suggested": 0,
+     "genuine_windows_suggested_right": 0,
+     "unenrolled_windows": 10,
+     "unenrolled_windows_suggested": 0,
+     "unenrolled_windows_suggested_right": 0
+    }
+   }
+  }
+ ]
+}

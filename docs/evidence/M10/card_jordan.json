@@ -1,0 +1,74 @@
+{
+ "schema": "replay.card.v1",
+ "profile_id": "pr_4e7b76d56aea",
+ "name": "Jordan",
+ "sport": "badminton",
+ "sports": [
+  "badminton",
+  "basketball"
+ ],
+ "positions": [],
+ "games": 1,
+ "title": "Jordan the rally machine: 3 rallies in 1 game",
+ "title_source": "template",
+ "title_template": "Jordan the rally machine: 3 rallies in 1 game",
+ "grounding": {
+  "template_ok": true,
+  "tried": [
+   {
+    "template": "{name} the rally machine: {n} rallies in {g}",
+    "ok": true,
+    "violations": []
+   }
+  ]
+ },
+ "stats": [
+  {
+   "key": "rallies",
+   "label": "RALLIES",
+   "value": 3,
+   "edited": false
+  },
+  {
+   "key": "contacts",
+   "label": "CONTACTS",
+   "value": 8,
+   "edited": false
+  },
+  {
+   "key": "serves",
+   "label": "SERVES",
+   "value": 1,
+   "edited": false
+  },
+  {
+   "key": "distance_m",
+   "label": "METRES",
+   "value": 49,
+   "edited": false
+  }
+ ],
+ "user_edited": false,
+ "label": "auto-detected",
+ "best_moment": {
+  "game_id": "g_bd1",
+  "player_id": "p2",
+  "play_id": "pl_0007",
+  "sport": "badminton",
+  "t_start": 80.1,
+  "t_end": 86.6,
+  "t": 84.84,
+  "points": 0,
+  "hype": 0.807,
+  "event_ids": [
+   "e_0062",
+   "e_0063",
+   "e_0064"
+  ],
+  "clip_ids": []
+ },
+ "photo_url": null,
+ "face_enrolled": false,
+ "png": "/media/profiles/pr_4e7b76d56aea/card.png",
+ "thumb": "/media/profiles/pr_4e7b76d56aea/thumb.jpg"
+}

@@ -1,0 +1,103 @@
+{
+ "schema": "replay.profile.v1",
+ "profile_id": "pr_e88d4b2aba33",
+ "name": "Alex",
+ "photo_url": null,
+ "sports": [
+  "basketball"
+ ],
+ "positions": [
+  "guard"
+ ],
+ "user_edited_fields": [
+  "positions",
+  "stats_by_sport.basketball.rebounds"
+ ],
+ "face_enrolled": false,
+ "voice_enrolled": false,
+ "linked": [
+  {
+   "game_id": "g_bb1",
+   "player_id": "p4"
+  },
+  {
+   "game_id": "g_bb2",
+   "player_id": "p8"
+  }
+ ],
+ "stats_by_sport": {
+  "basketball": {
+   "auto": {
+    "games": 2,
+    "plays": 6,
+    "distance_m": 139.0,
+    "points": 6,
+    "shots_made": 3,
+    "shots_attempted": 6,
+    "twos_made": 3,
+    "twos_attempted": 5,
+    "threes_made": 0,
+    "threes_attempted": 1,
+    "rebounds": 0,
+    "steals": 0,
+    "blocks": 0
+   },
+   "games": [
+    {
+     "game_id": "g_bb1",
+     "player_id": "p4",
+     "games": 1,
+     "plays": 3,
+     "distance_m": 67.6,
+     "points": 4,
+     "shots_made": 2,
+     "shots_attempted": 3,
+     "twos_made": 2,
+     "twos_attempted": 2,
+     "threes_made": 0,
+     "threes_attempted": 1,
+     "rebounds": 0,
+     "steals": 0,
+     "blocks": 0
+    },
+    {
+     "game_id": "g_bb2",
+     "player_id": "p8",
+     "games": 1,
+     "plays": 3,
+     "distance_m": 71.4,
+     "points": 2,
+     "shots_made": 1,
+     "shots_attempted": 3,
+     "twos_made": 1,
+     "twos_attempted": 3,
+     "threes_made": 0,
+     "threes_attempted": 0,
+     "rebounds": 0,
+     "steals": 0,
+     "blocks": 0
+    }
+   ],
+   "stats": {
+    "games": 2,
+    "plays": 6,
+    "distance_m": 139.0,
+    "points": 6,
+    "shots_made": 3,
+    "shots_attempted": 6,
+    "twos_made": 3,
+    "twos_attempted": 5,
+    "threes_made": 0,
+    "threes_attempted": 1,
+    "rebounds": 4,
+    "steals": 0,
+    "blocks": 0
+   },
+   "edited": [
+    "rebounds"
+   ],
+   "label": "auto-detected"
+  }
+ },
+ "missing_links": []
+}

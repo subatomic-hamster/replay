@@ -1,0 +1,75 @@
+{
+ "schema": "replay.card.v1",
+ "profile_id": "pr_f907ce72a1e4",
+ "name": "Sam",
+ "sport": "badminton",
+ "sports": [
+  "badminton"
+ ],
+ "positions": [],
+ "games": 2,
+ "title": "Sam the rally machine: 14 rallies in 2 games",
+ "title_source": "template",
+ "title_template": "Sam the rally machine: 14 rallies in 2 games",
+ "grounding": {
+  "template_ok": true,
+  "tried": [
+   {
+    "template": "{name} the rally machine: {n} rallies in {g}",
+    "ok": true,
+    "violations": []
+   }
+  ]
+ },
+ "stats": [
+  {
+   "key": "rallies",
+   "label": "RALLIES",
+   "value": 14,
+   "edited": false
+  },
+  {
+   "key": "contacts",
+   "label": "CONTACTS",
+   "value": 26,
+   "edited": false
+  },
+  {
+   "key": "serves",
+   "label": "SERVES",
+   "value": 2,
+   "edited": false
+  },
+  {
+   "key": "distance_m",
+   "label": "METRES",
+   "value": 142,
+   "edited": false
+  }
+ ],
+ "user_edited": false,
+ "label": "auto-detected",
+ "best_moment": {
+  "game_id": "g_bd2",
+  "player_id": "p3",
+  "play_id": "pl_0005",
+  "sport": "badminton",
+  "t_start": 51.2,
+  "t_end": 56.3,
+  "t": 51.79,
+  "points": 0,
+  "hype": 0.834,
+  "event_ids": [
+   "e_0046",
+   "e_0050",
+   "e_0051"
+  ],
+  "clip_ids": [
+   "c_0004"
+  ]
+ },
+ "photo_url": null,
+ "face_enrolled": false,
+ "png": "/media/profiles/pr_f907ce72a1e4/card.png",
+ "thumb": "/media/profiles/pr_f907ce72a1e4/thumb.jpg"
+}

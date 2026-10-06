@@ -155,18 +155,54 @@ class RekognitionFace:
     """Target: Amazon Rekognition face collections — opt-in enrolled profiles only.
 
     TODO: `enroll` → IndexFaces into a per-household collection with ExternalImageId =
-    profile_id; `identify` → SearchFacesByImage over that collection only; `forget` →
-    DeleteFaces (consent withdrawal).
+    profile_id; `identify` → SearchFacesByImage over that collection only, with
+    FaceMatchThreshold = min_similarity × 100 (None → 80); `forget` → DeleteFaces
+    (consent withdrawal). Face crops of unenrolled players are never indexed.
     """
 
     def enroll(self, profile_id: str, images: list[Path]) -> dict:
         raise _todo("Rekognition", "enroll")
 
-    def identify(self, image: Path, *, min_similarity: float = 0.8) -> list[dict]:
+    def identify(self, image: Path, *, min_similarity: float | None = None) -> list[dict]:
         raise _todo("Rekognition", "identify")
 
     def forget(self, profile_id: str) -> None:
         raise _todo("Rekognition", "forget")
+
+
+class DynamoProfiles:
+    """Target: Amazon DynamoDB `profiles` table (partition key `profile_id`) plus a `links`
+    table (partition key `game_id`, sort key `player_id`, GSI on `profile_id`).
+
+    TODO: `create`/`save` → PutItem (`save` with a condition that the item exists);
+    `list` → Query a household GSI rather than Scan; `link` → PutItem with
+    `attribute_not_exists(player_id)` so one game player has at most one profile
+    (conflict → LinkConflict); `delete` → TransactWriteItems over the profile and its links.
+    """
+
+    def create(self, doc: dict) -> dict:
+        raise _todo("DynamoDB", "create")
+
+    def get(self, profile_id: str) -> dict | None:
+        raise _todo("DynamoDB", "get")
+
+    def list(self) -> list[dict]:
+        raise _todo("DynamoDB", "list")
+
+    def save(self, doc: dict) -> None:
+        raise _todo("DynamoDB", "save")
+
+    def delete(self, profile_id: str) -> bool:
+        raise _todo("DynamoDB", "delete")
+
+    def link(self, profile_id: str, game_id: str, player_id: str) -> None:
+        raise _todo("DynamoDB", "link")
+
+    def unlink(self, profile_id: str, game_id: str, player_id: str) -> bool:
+        raise _todo("DynamoDB", "unlink")
+
+    def owner(self, game_id: str, player_id: str) -> str | None:
+        raise _todo("DynamoDB", "owner")
 
 
 class SageMakerSpeaker:

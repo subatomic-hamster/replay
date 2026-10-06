@@ -1,0 +1,287 @@
+{
+ "schema": "replay.reel.v1",
+ "profile_id": "pr_f907ce72a1e4",
+ "items": [
+  {
+   "game_id": "g_bd1",
+   "player_id": "p4",
+   "play_id": "pl_0001",
+   "sport": "badminton",
+   "t_start": 1.1,
+   "t_end": 8.5,
+   "t": 7.93,
+   "points": 0,
+   "hype": 0.794,
+   "event_ids": [
+    "e_0008",
+    "e_0009"
+   ],
+   "clip_ids": [
+    "c_0001"
+   ],
+   "game_title": "Synthetic badminton_doubles_s7_gt",
+   "url": "http://testserver/media/games/g_bd1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd1",
+   "player_id": "p4",
+   "play_id": "pl_0002",
+   "sport": "badminton",
+   "t_start": 14.4,
+   "t_end": 19.3,
+   "t": 16.51,
+   "points": 0,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0014"
+   ],
+   "clip_ids": [
+    "c_0002"
+   ],
+   "game_title": "Synthetic badminton_doubles_s7_gt",
+   "url": "http://testserver/media/games/g_bd1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd1",
+   "player_id": "p4",
+   "play_id": "pl_0003",
+   "sport": "badminton",
+   "t_start": 24.2,
+   "t_end": 28.9,
+   "t": 27.7,
+   "points": 0,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0024",
+    "e_0025",
+    "e_0026"
+   ],
+   "clip_ids": [
+    "c_0003"
+   ],
+   "game_title": "Synthetic badminton_doubles_s7_gt",
+   "url": "http://testserver/media/games/g_bd1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd1",
+   "player_id": "p4",
+   "play_id": "pl_0004",
+   "sport": "badminton",
+   "t_start": 33.7,
+   "t_end": 38.6,
+   "t": 37.19,
+   "points": 0,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0032",
+    "e_0033",
+    "e_0034"
+   ],
+   "clip_ids": [],
+   "game_title": "Synthetic badminton_doubles_s7_gt",
+   "url": "http://testserver/media/games/g_bd1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd1",
+   "player_id": "p4",
+   "play_id": "pl_0005",
+   "sport": "badminton",
+   "t_start": 43.6,
+   "t_end": 50.9,
+   "t": 48.26,
+   "points": 0,
+   "hype": 0.78,
+   "event_ids": [
+    "e_0041",
+    "e_0043"
+   ],
+   "clip_ids": [
+    "c_0004"
+   ],
+   "game_title": "Synthetic badminton_doubles_s7_gt",
+   "url": "http://testserver/media/games/g_bd1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd1",
+   "player_id": "p4",
+   "play_id": "pl_0006",
+   "sport": "badminton",
+   "t_start": 63.3,
+   "t_end": 67.9,
+   "t": 66.06,
+   "points": 0,
+   "hype": 0.27,
+   "event_ids": [
+    "e_0051",
+    "e_0053",
+    "e_0054"
+   ],
+   "clip_ids": [
+    "c_0006"
+   ],
+   "game_title": "Synthetic badminton_doubles_s7_gt",
+   "url": "http://testserver/media/games/g_bd1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd1",
+   "player_id": "p4",
+   "play_id": "pl_0007",
+   "sport": "badminton",
+   "t_start": 80.1,
+   "t_end": 86.6,
+   "t": 83.74,
+   "points": 0,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0061"
+   ],
+   "clip_ids": [],
+   "game_title": "Synthetic badminton_doubles_s7_gt",
+   "url": "http://testserver/media/games/g_bd1/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd2",
+   "player_id": "p3",
+   "play_id": "pl_0001",
+   "sport": "badminton",
+   "t_start": 1.3,
+   "t_end": 10.4,
+   "t": 3.53,
+   "points": 0,
+   "hype": 0.802,
+   "event_ids": [
+    "e_0003",
+    "e_0004",
+    "e_0009",
+    "e_0010",
+    "e_0011"
+   ],
+   "clip_ids": [
+    "c_0001"
+   ],
+   "game_title": "Synthetic badminton_doubles_s11_gt",
+   "url": "http://testserver/media/games/g_bd2/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd2",
+   "player_id": "p3",
+   "play_id": "pl_0002",
+   "sport": "badminton",
+   "t_start": 15.2,
+   "t_end": 19.4,
+   "t": 17.31,
+   "points": 0,
+   "hype": 0.797,
+   "event_ids": [
+    "e_0016"
+   ],
+   "clip_ids": [
+    "c_0002"
+   ],
+   "game_title": "Synthetic badminton_doubles_s11_gt",
+   "url": "http://testserver/media/games/g_bd2/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd2",
+   "player_id": "p3",
+   "play_id": "pl_0003",
+   "sport": "badminton",
+   "t_start": 24.5,
+   "t_end": 33.3,
+   "t": 26.26,
+   "points": 0,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0023",
+    "e_0024",
+    "e_0030",
+    "e_0031"
+   ],
+   "clip_ids": [
+    "c_0003"
+   ],
+   "game_title": "Synthetic badminton_doubles_s11_gt",
+   "url": "http://testserver/media/games/g_bd2/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd2",
+   "player_id": "p3",
+   "play_id": "pl_0004",
+   "sport": "badminton",
+   "t_start": 38.3,
+   "t_end": 46.0,
+   "t": 41.65,
+   "points": 0,
+   "hype": 0.807,
+   "event_ids": [
+    "e_0037",
+    "e_0038",
+    "e_0041",
+    "e_0042"
+   ],
+   "clip_ids": [],
+   "game_title": "Synthetic badminton_doubles_s11_gt",
+   "url": "http://testserver/media/games/g_bd2/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd2",
+   "player_id": "p3",
+   "play_id": "pl_0005",
+   "sport": "badminton",
+   "t_start": 51.2,
+   "t_end": 56.3,
+   "t": 51.79,
+   "points": 0,
+   "hype": 0.834,
+   "event_ids": [
+    "e_0046",
+    "e_0050",
+    "e_0051"
+   ],
+   "clip_ids": [
+    "c_0004"
+   ],
+   "game_title": "Synthetic badminton_doubles_s11_gt",
+   "url": "http://testserver/media/games/g_bd2/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd2",
+   "player_id": "p3",
+   "play_id": "pl_0006",
+   "sport": "badminton",
+   "t_start": 60.4,
+   "t_end": 64.3,
+   "t": 64.12,
+   "points": 0,
+   "hype": 0.762,
+   "event_ids": [
+    "e_0057",
+    "e_0058"
+   ],
+   "clip_ids": [
+    "c_0005"
+   ],
+   "game_title": "Synthetic badminton_doubles_s11_gt",
+   "url": "http://testserver/media/games/g_bd2/media/wide.mp4"
+  },
+  {
+   "game_id": "g_bd2",
+   "player_id": "p3",
+   "play_id": "pl_0008",
+   "sport": "badminton",
+   "t_start": 82.8,
+   "t_end": 86.5,
+   "t": 85.44,
+   "points": 0,
+   "hype": 0.685,
+   "event_ids": [
+    "e_0074",
+    "e_0075"
+   ],
+   "clip_ids": [],
+   "game_title": "Synthetic badminton_doubles_s11_gt",
+   "url": "http://testserver/media/games/g_bd2/media/wide.mp4"
+  }
+ ],
+ "duration_s": 82.8
+}

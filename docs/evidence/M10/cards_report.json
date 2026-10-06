@@ -1,0 +1,51 @@
+{
+ "Alex": {
+  "links": 2,
+  "sports": [
+   "basketball"
+  ],
+  "title": "Alex the scorer: 6 points in 2 games",
+  "title_source": "template",
+  "template_ok": true,
+  "llm": null,
+  "card_json_deterministic": true,
+  "reel_items": 6,
+  "suggestions": 0,
+  "user_edited_fields": [
+   "positions",
+   "stats_by_sport.basketball.rebounds"
+  ],
+  "wall_s": 1.08
+ },
+ "Sam": {
+  "links": 2,
+  "sports": [
+   "badminton"
+  ],
+  "title": "Sam the rally machine: 14 rallies in 2 games",
+  "title_source": "template",
+  "template_ok": true,
+  "llm": null,
+  "card_json_deterministic": true,
+  "reel_items": 14,
+  "suggestions": 0,
+  "user_edited_fields": [],
+  "wall_s": 0.58
+ },
+ "Jordan": {
+  "links": 2,
+  "sports": [
+   "badminton",
+   "basketball"
+  ],
+  "title": "Jordan the rally machine: 3 rallies in 1 game",
+  "title_source": "template",
+  "template_ok": true,
+  "llm": null,
+  "card_json_deterministic": true,
+  "reel_items": 4,
+  "suggestions": 1,
+  "user_edited_fields": [],
+  "wall_s": 1.02
+ }
+}

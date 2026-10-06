@@ -1,0 +1,112 @@
+{
+ "schema": "replay.profile.v1",
+ "profile_id": "pr_4e7b76d56aea",
+ "name": "Jordan",
+ "photo_url": null,
+ "sports": [
+  "badminton",
+  "basketball"
+ ],
+ "positions": [],
+ "user_edited_fields": [],
+ "face_enrolled": false,
+ "voice_enrolled": false,
+ "linked": [
+  {
+   "game_id": "g_bb1",
+   "player_id": "p2"
+  },
+  {
+   "game_id": "g_bd1",
+   "player_id": "p2"
+  }
+ ],
+ "stats_by_sport": {
+  "badminton": {
+   "auto": {
+    "games": 1,
+    "plays": 3,
+    "distance_m": 49.4,
+    "rallies": 3,
+    "contacts": 8,
+    "serves": 1
+   },
+   "games": [
+    {
+     "game_id": "g_bd1",
+     "player_id": "p2",
+     "games": 1,
+     "plays": 3,
+     "distance_m": 49.4,
+     "rallies": 3,
+     "contacts": 8,
+     "serves": 1
+    }
+   ],
+   "stats": {
+    "games": 1,
+    "plays": 3,
+    "distance_m": 49.4,
+    "rallies": 3,
+    "contacts": 8,
+    "serves": 1
+   },
+   "edited": [],
+   "label": "auto-detected"
+  },
+  "basketball": {
+   "auto": {
+    "games": 1,
+    "plays": 1,
+    "distance_m": 59.7,
+    "points": 0,
+    "shots_made": 0,
+    "shots_attempted": 2,
+    "twos_made": 0,
+    "twos_attempted": 2,
+    "threes_made": 0,
+    "threes_attempted": 0,
+    "rebounds": 0,
+    "steals": 0,
+    "blocks": 0
+   },
+   "games": [
+    {
+     "game_id": "g_bb1",
+     "player_id": "p2",
+     "games": 1,
+     "plays": 1,
+     "distance_m": 59.7,
+     "points": 0,
+     "shots_made": 0,
+     "shots_attempted": 2,
+     "twos_made": 0,
+     "twos_attempted": 2,
+     "threes_made": 0,
+     "threes_attempted": 0,
+     "rebounds": 0,
+     "steals": 0,
+     "blocks": 0
+    }
+   ],
+   "stats": {
+    "games": 1,
+    "plays": 1,
+    "distance_m": 59.7,
+    "points": 0,
+    "shots_made": 0,
+    "shots_attempted": 2,
+    "twos_made": 0,
+    "twos_attempted": 2,
+    "threes_made": 0,
+    "threes_attempted": 0,
+    "rebounds": 0,
+    "steals": 0,
+    "blocks": 0
+   },
+   "edited": [],
+   "label": "auto-detected"
+  }
+ },
+ "missing_links": []
+}

@@ -110,3 +110,12 @@ Template:
 - Evidence: docs/evidence/M13-ui/ (tv-synthetic-live/ via the real API, tv-mock/; synthetic only)
 - Decisions: D-60.
 - Left / known issues: `GET /games` 500s when `recorded_at` is null (worker-made synthetic games); a deleted export with a "done" job returns `url: null`; clips have no `edited` flag; Watch menu (16 items) wraps to two rows over the video; worker-made games have no search index by default; commentary TTS needs `REPLAY_MODEL_VENVS`; profile screens not built.
+
+## Accuracy pass (M1 / M4 / M5 follow-up) (2026-10-06)
+
+- Works: shots on the default YOLO pose path, net-sport point winners, X gesture with the opt-in ViTPose backend; zero false gesture triggers on real footage kept.
+- Verified on hfbox (staged snapshot, `scripts/box-test.sh` ALL GREEN): courtcam 182, api 211 + 1 skipped, worker 22, render 49, web Playwright 86 passed. Synthetic (9 clips): shots 5/27 → 21/27 at P 1.00 (YOLO pose; ViTPose 19/27); `winner_side` right on 27/33 points with known winner; X gesture 0/22 → 9/22 with `--pose vit` (P 1.00, R 0.41), still 0/22 with YOLO pose. Real 480 s: 0 false gesture triggers. Kennesaw shots: precision 0.5 → 1.0 (3 found, all real), but recall 3 of 6 known shots (was 5 of 6). Pose time with ViTPose fp16: Kennesaw 38 s vs YOLO 88 s.
+- Tracking unchanged: synthetic basketball players IDF1 0.31 / 0.31 / 0.25 with 122–157 ID switches; Kennesaw 150–210 s ≈ 38 visible ID changes across 19 ids. ReID on, tighter BoT-SORT, 1280 px detection and gated merging all failed to help (details in samples/real/RESULTS.md).
+- Evidence: docs/evidence/M4/accuracy_timeline_yolo_*.png, docs/evidence/M5/accuracy_*_on_synthetic_x_holds.png · docs/evidence/local/{M1,M4,M5}/accuracy_* (Kennesaw)
+- Decisions: D-61.
+- Left / known issues: gesture recall 0.41 vs the 0.8 target (misses are players ≤ 56 px tall); ViTPose not default yet (deps + lock); tracking needs tracklet-level association (real ReID or a stronger small-player detector); real shot recall dropped; contact `side_ok` near chance; pickleball doubles second-server rule.

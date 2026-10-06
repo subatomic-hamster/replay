@@ -385,8 +385,8 @@ docs/aws-integrations.md:60-67. The HLS/MediaConvert ladder is not built (perf.m
     only.
   - The speechbrain ECAPA weights carry a VoxCeleb data flag.
   - Kokoro's espeak-ng G2P is GPL-3.0, loaded as a shared library (licenses.md:52).
-- **apps/tv is not covered by `scripts/box-test.sh` or `.github/workflows/ci.yml`.** Its tsc,
-  eslint and Playwright runs are manual.
+- apps/tv tsc, eslint and Playwright now run in `scripts/box-test.sh` and
+  `.github/workflows/ci.yml` (50c0cdf).
 - **Native TV config:** the API base is hardcoded in apps/tv/app.json, and the release APK is
   signed with the debug keystore. The react-native-video patch must be dropped when upgrading
   (D-64).

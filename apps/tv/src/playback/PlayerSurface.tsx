@@ -8,6 +8,8 @@ import { createClock, type Clock } from "../../../../packages/tv-core/src/clock"
 import { cropRectAt, cropTransform } from "../../../../packages/tv-core/src/follow";
 import type { CropPath } from "../../../../packages/tv-core/src/types";
 import { Media } from "../platform/Media";
+import { color, font, px } from "../theme";
+import { T } from "../ui";
 import type { MediaHandle } from "./media";
 
 export interface PlayerHandle {
@@ -18,6 +20,8 @@ export interface PlayerHandle {
   currentTime(): number;
   duration(): number;
   paused(): boolean;
+  /** Why the current source failed, or null; pollers waiting on duration() can stop. */
+  error(): string | null;
   clock: Clock | null;
 }
 
@@ -39,6 +43,9 @@ export function PlayerSurface({ src, crop, muted, loop, aspect, children, ref }:
   const media = useRef<MediaHandle>(null);
   const [clock, setClock] = useState<Clock | null>(null);
   const size = useRef({ w: 0, h: 0 });
+  // Keyed by src, so a swap to another source clears it without an effect.
+  const [failed, setFailed] = useState<{ src: string; message: string } | null>(null);
+  const error = failed?.src === src ? failed.message : null;
   const [anim] = useState(() => ({
     tx: new Animated.Value(0),
     ty: new Animated.Value(0),
@@ -70,9 +77,10 @@ export function PlayerSurface({ src, crop, muted, loop, aspect, children, ref }:
       currentTime: () => media.current?.currentTime() ?? 0,
       duration: () => media.current?.duration() ?? 0,
       paused: () => media.current?.paused() ?? true,
+      error: () => error,
       clock,
     }),
-    [clock],
+    [clock, error],
   );
 
   // Follow-cam: recompute the transform every animation frame from the crop rect at the
@@ -128,11 +136,25 @@ export function PlayerSurface({ src, crop, muted, loop, aspect, children, ref }:
           },
         ]}
       >
-        <Media ref={media} src={src} muted={muted} loop={loop} />
+        <Media
+          ref={media}
+          src={src}
+          muted={muted}
+          loop={loop}
+          onError={(message) => setFailed({ src, message })}
+        />
       </Animated.View>
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {children}
       </View>
+      {error ? (
+        <View style={[StyleSheet.absoluteFill, styles.error]} pointerEvents="none" testID="player-error">
+          <T style={{ fontSize: font.h2 }}>Video unavailable</T>
+          <T style={{ color: color.dim }} numberOfLines={2}>
+            {error}
+          </T>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -156,5 +178,11 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 9,
     overflow: "hidden",
     backgroundColor: "#000",
+  },
+  error: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: px(48),
+    backgroundColor: color.scrim,
   },
 });

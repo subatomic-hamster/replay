@@ -48,16 +48,55 @@ export async function openWatch(page: Page, id = GAME_ID) {
     .toBeGreaterThanOrEqual(2);
 }
 
-/** Watch's top row: ArrowUp opens it at Library, then Right until `id` has focus. */
+/** Watch's action menu: ArrowUp opens it at Library; Right along the top row, and when
+ *  `id` lives in a group (its `data-group`), Right to the group, Enter to open it, then
+ *  Right along the group's row. D-pad only. */
 export async function menuTo(page: Page, id: string) {
   await page.keyboard.press("ArrowUp");
   await expect(page.getByTestId("nav-library")).toHaveAttribute("data-focused", "true");
   await expect(page.getByTestId(id)).toBeAttached();
-  for (let i = 0; i < 16; i++) {
+  const group = await page.getByTestId(id).getAttribute("data-group");
+  if (group) {
+    await walkTo(page, group);
+    await page.keyboard.press("Enter");
+  }
+  await walkTo(page, id);
+}
+
+async function walkTo(page: Page, id: string) {
+  for (let i = 0; i < 12; i++) {
     if ((await page.getByTestId(id).getAttribute("data-focused")) === "true") break;
     await page.keyboard.press("ArrowRight");
   }
   await expect(page.getByTestId(id)).toHaveAttribute("data-focused", "true");
+}
+
+/** Every Watch menu row (top + each group) fits in one line at 1080p: all its visible
+ *  items share a top edge and the bar stays above the picture's top fifth. */
+export async function menuRowsOneLine(
+  page: Page,
+): Promise<{ spread: number; bottom: number; height: number; n: number }> {
+  return page.evaluate(() => {
+    const rects = [...document.querySelectorAll<HTMLElement>('[data-testid^="nav-"], [data-testid^="action-"], [data-testid^="menu-"]')]
+      .filter((el) => el.offsetParent !== null && !el.getAttribute("data-testid")?.startsWith("menu-row"))
+      .map((el) => el.getBoundingClientRect());
+    const tops = rects.map((r) => r.top);
+    return {
+      spread: Math.max(...tops) - Math.min(...tops),
+      bottom: Math.max(...rects.map((r) => r.bottom)),
+      height: Math.min(...rects.map((r) => r.height)),
+      n: rects.length,
+    };
+  });
+}
+
+export async function focusedMenuItem(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const el = document.querySelector(
+      '[data-testid^="nav-"][data-focused="true"], [data-testid^="action-"][data-focused="true"], [data-testid^="menu-"][data-focused="true"]',
+    );
+    return el?.getAttribute("data-testid") ?? null;
+  });
 }
 
 /** No rendered text below 24 px at 1080p (NF-01). */

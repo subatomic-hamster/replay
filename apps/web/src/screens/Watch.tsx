@@ -17,6 +17,13 @@ import { FollowFrame, cropRectAt, mapBB } from "../components/FollowFrame";
 import { SeekBarEvents } from "../components/SeekBarEvents";
 import { SelectOverlay } from "../components/SelectOverlay";
 import { TagDialog } from "../components/TagDialog";
+import { ProfilePicker } from "../components/ProfilePicker";
+import {
+  menuStep,
+  watchMenu,
+  type MenuAction,
+  type MenuFocus,
+} from "../../../../packages/tv-core/src/menu";
 import { navigate, setQuery, useLocation } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
 import { storedSession, useSessionMessages, type SessionMessage } from "../session";
@@ -35,22 +42,8 @@ const SCRUB_STEP_S = 5;
 const HYPE_BARS = 96;
 const TOAST_MS = 3000;
 
-type Toggle = "broadcast" | "captions" | "hype-peak";
-const NAV: { id: string; label: string; to?: (id: string) => string; toggle?: Toggle }[] = [
-  { id: "nav-library", label: "Library", to: () => "/tv" },
-  { id: "nav-highlights", label: "Highlights", to: (id) => `/tv/${id}/highlights` },
-  { id: "nav-review", label: "Review", to: (id) => `/tv/${id}/review` },
-  // M8: only when the game has rendered replays (filtered in Watch).
-  { id: "nav-replays", label: "Replays", to: (id) => `/tv/${id}/replays` },
-  // M13 — each data-driven item shows only when the game has that data (no sport branch).
-  { id: "action-broadcast", label: "Broadcast", toggle: "broadcast" },
-  { id: "action-captions", label: "Commentary", toggle: "captions" },
-  { id: "action-hype-peak", label: "Hype peak", toggle: "hype-peak" },
-  { id: "nav-clips", label: "Clips", to: (id) => `/tv/${id}/clips` },
-  { id: "nav-rallies", label: "Rallies", to: (id) => `/tv/${id}/rallies` },
-  { id: "nav-search", label: "Search", to: (id) => `/tv/${id}/search` },
-  { id: "nav-advice", label: "Advice", to: (id) => `/tv/${id}/advice` },
-];
+/** Menu actions that open a per-game screen at /tv/:id/<action>. */
+const GAME_ROUTES: MenuAction[] = ["highlights", "review", "replays", "clips", "rallies", "search", "advice"];
 
 export function Watch({ gameId }: { gameId: string }) {
   const { params } = useLocation();
@@ -64,13 +57,13 @@ export function Watch({ gameId }: { gameId: string }) {
   const lines = useMemo(() => commentaryLines(commentary), [commentary]);
   const hypeMeter = useMemo(() => (hype ? hypeBars(hype.values, HYPE_BARS) : null), [hype]);
   const nav = useMemo(() => {
-    const hidden = new Set<string>();
-    if (!replays?.length) hidden.add("nav-replays");
-    if (!broadcast) hidden.add("action-broadcast");
-    if (!lines.length) hidden.add("action-captions");
-    if (!hype?.candidates.length) hidden.add("action-hype-peak");
-    if (!rallies?.n) hidden.add("nav-rallies");
-    return NAV.filter((n) => !hidden.has(n.id));
+    const hidden = new Set<MenuAction>();
+    if (!replays?.length) hidden.add("replays");
+    if (!broadcast) hidden.add("broadcast");
+    if (!lines.length) hidden.add("captions");
+    if (!hype?.candidates.length) hidden.add("hype-peak");
+    if (!rallies?.n) hidden.add("rallies");
+    return watchMenu(hidden);
   }, [replays, broadcast, lines, hype, rallies]);
   const [broadcastOn, setBroadcastOn] = useState(false);
   const [captionsOn, setCaptionsOn] = useState(false);
@@ -84,7 +77,8 @@ export function Watch({ gameId }: { gameId: string }) {
   const [crop, setCrop] = useState<CropPath | null>(null);
   const [spotlight, setSpotlight] = useState(false);
   const [tagging, setTagging] = useState<string | null>(null);
-  const [navFocus, setNavFocus] = useState<number | null>(null);
+  const [linking, setLinking] = useState<string | null>(null);
+  const [navFocus, setNavFocus] = useState<MenuFocus | null>(null);
   const [rendering, setRendering] = useState(false);
   const renderAsked = useRef<string | null>(null);
   const [version, bump] = useState(0);
@@ -195,30 +189,52 @@ export function Watch({ gameId }: { gameId: string }) {
   const [chrome, setChrome] = useState(true);
 
   const onAction = useCallback(
-    (a: DpadAction) => {
+    (key: DpadAction) => {
       setChrome(true);
       if (!handle || !game) return;
-      // Top nav row: reachable with ArrowUp, so every screen is D-pad reachable (NF-03).
+      let a = key;
+      // The action menu, reachable with ArrowUp so every screen is D-pad reachable (NF-03):
+      // one row; a group (▸) opens its own row in place of it.
       if (navFocus !== null) {
-        if (a === "left") setNavFocus((i) => Math.max(0, (i ?? 0) - 1));
-        else if (a === "right") setNavFocus((i) => Math.min(nav.length - 1, (i ?? 0) + 1));
-        else if (a === "down" || a === "back") setNavFocus(null);
-        else if (a === "select") {
-          const item = nav[navFocus];
-          if (item.to) navigate(item.to(game.id));
-          else if (item.toggle === "broadcast") {
-            // D-42: rendition time = source time, so the swap keeps the playback position;
-            // track boxes describe the wide frame, so select/follow sit broadcast out.
-            setBroadcastOn((on) => !on);
-            setMode("wide");
-            setQuery({ mode: null });
-          } else if (item.toggle === "captions") setCaptionsOn((on) => !on);
-          else if (item.toggle === "hype-peak") {
-            const to = nextPeak(hype?.candidates ?? [], handle.currentTime());
-            if (to !== null) handle.seek(to);
-          }
-        } else if (a === "playpause") handle.toggle();
-        return;
+        if (a === "playpause") {
+          handle.toggle();
+          return;
+        }
+        if (a !== "left" && a !== "right" && a !== "select" && a !== "back" && a !== "down" && a !== "up") return;
+        const step = menuStep(nav, navFocus, a);
+        setNavFocus(step.focus);
+        const item = step.run?.action;
+        if (!item) return;
+        if (item === "library") return navigate("/tv");
+        if (item === "players") return navigate(`/tv/players?from=${game.id}`);
+        if (GAME_ROUTES.includes(item)) return navigate(`/tv/${game.id}/${item}`);
+        if (item === "broadcast") {
+          // D-42: rendition time = source time, so the swap keeps the playback position;
+          // track boxes describe the wide frame, so select/follow sit broadcast out.
+          setBroadcastOn((on) => !on);
+          setMode("wide");
+          setQuery({ mode: null });
+          return;
+        }
+        if (item === "captions") return setCaptionsOn((on) => !on);
+        if (item === "hype-peak") {
+          const to = nextPeak(hype?.candidates ?? [], handle.currentTime());
+          if (to !== null) handle.seek(to);
+          return;
+        }
+        setNavFocus(null);
+        if (item === "link-profile") {
+          const target = mode === "follow" ? pid : (focusId ?? pid);
+          if (target) setLinking(target);
+          else setToast("Pause and pick a player first");
+          return;
+        }
+        if (item === "tag") {
+          const target = mode === "follow" ? pid : (focusId ?? pid);
+          if (target) setTagging(target);
+          return;
+        }
+        a = item as DpadAction; // the remaining items are the remote's own actions
       }
 
       switch (a) {
@@ -271,7 +287,7 @@ export function Watch({ gameId }: { gameId: string }) {
             }));
             setFocusId(nextFocus(targets, focusId ?? targets[0]?.id ?? null, a as Direction));
           } else if (a === "up") {
-            setNavFocus(0);
+            setNavFocus({ group: null, i: 0 });
           } else if (a !== "down") {
             // W2/S-15: in wide playback the seek bar is the focused control.
             handle.seek(handle.currentTime() + (a === "right" ? SCRUB_STEP_S : -SCRUB_STEP_S));
@@ -307,7 +323,7 @@ export function Watch({ gameId }: { gameId: string }) {
     },
     [handle, game, mode, focusId, pid, players, jumpEvent, navFocus, nav, hype, broadcastOn],
   );
-  useDpad(onAction, !tagging);
+  useDpad(onAction, !tagging && !linking);
 
   // Paired phone: tell it what is on screen once a second (its "Clip that" posts a tap at
   // this media time), play the search hits it sends, and confirm the clips its taps cut.
@@ -451,19 +467,35 @@ export function Watch({ gameId }: { gameId: string }) {
         </PlayerSurface>
 
         <div className="watch-chrome" data-hidden={chrome ? "false" : "true"}>
-          <nav className="topnav">
-            {nav.map((n, i) => {
-              const on =
-                n.toggle === "broadcast" ? onBroadcast : n.toggle === "captions" ? captionsOn : null;
+          <nav className="topnav" data-testid="menu-row" data-group={navFocus?.group ?? ""}>
+            {/* One row at a time: the top entries, or the open group's items. Every item
+                stays in the DOM (hidden rows display:none), so an item's presence still
+                says whether the game has that data. */}
+            {[null, ...nav.filter((n) => n.items).map((n) => n.id)].map((group) => {
+              const open = (navFocus?.group ?? null) === group;
+              const entries = group === null ? nav : (nav.find((n) => n.id === group)?.items ?? []);
               return (
-                <span
-                  key={n.id}
-                  className={`navitem${navFocus === i ? " focused" : ""}${on ? " on" : ""}`}
-                  data-testid={n.id}
-                  data-focused={navFocus === i ? "true" : "false"}
-                  data-on={on === null ? undefined : on ? "true" : "false"}
-                >
-                  {n.label}
+                <span key={group ?? "top"} className="navrow" hidden={!open}>
+                  {group ? (
+                    <span className="crumb">{nav.find((n) => n.id === group)?.label.replace(" ▸", "")} ›</span>
+                  ) : null}
+                  {entries.map((n, i) => {
+                    const on =
+                      n.action === "broadcast" ? onBroadcast : n.action === "captions" ? captionsOn : null;
+                    const focused = open && navFocus?.i === i;
+                    return (
+                      <span
+                        key={n.id}
+                        className={`navitem${focused ? " focused" : ""}${on ? " on" : ""}`}
+                        data-testid={n.id}
+                        data-group={group ?? ""}
+                        data-focused={focused ? "true" : "false"}
+                        data-on={on === null ? undefined : on ? "true" : "false"}
+                      >
+                        {n.label}
+                      </span>
+                    );
+                  })}
                 </span>
               );
             })}
@@ -529,6 +561,25 @@ export function Watch({ gameId }: { gameId: string }) {
               .patchPlayer(game.id, target, { name })
               .then((p) => setRoster((prev) => prev.map((r) => (r.id === p.id ? p : r))))
               .catch(() => {});
+          }}
+        />
+      ) : null}
+
+      {linking ? (
+        <ProfilePicker
+          gameId={game.id}
+          playerId={linking}
+          playerLabel={roster.find((p) => p.id === linking)?.name ?? `#${linking}`}
+          onCancel={() => setLinking(null)}
+          onLinked={(p) => {
+            const target = linking;
+            setLinking(null);
+            setRoster((prev) =>
+              prev.map((r) =>
+                r.id === target ? { ...r, name: p.name, tagged: true, profile_id: p.profile_id } : r,
+              ),
+            );
+            setToast(`Linked to ${p.name}`);
           }}
         />
       ) : null}

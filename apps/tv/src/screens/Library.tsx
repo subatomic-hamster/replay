@@ -7,20 +7,21 @@ import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
 import { color, focusRing, font, px } from "../theme";
-import { ApiErrorBanner, Hint, T, styles as ui, useAsync } from "../ui";
+import { ApiErrorBanner, Hint, Pill, T, styles as ui, useAsync } from "../ui";
 
 export function Library() {
   const { data, error, reload } = useAsync(() => api.listGames(), []);
   const [focus, setFocus] = useState(0);
   const games = useMemo(() => data ?? [], [data]);
 
+  // focus -1 is the "Players" pill above the cards (Up/Left from the first card).
   const onAction = useCallback(
     (a: DpadAction) => {
       if (a === "back") return false;
-      if (games.length === 0) return;
-      if (a === "right" || a === "down") setFocus((i) => Math.min(games.length - 1, i + 1));
-      else if (a === "left" || a === "up") setFocus((i) => Math.max(0, i - 1));
-      else if (a === "select") {
+      if (a === "select" && focus === -1) navigate({ name: "players" });
+      else if (a === "right" || a === "down") setFocus((i) => Math.min(games.length - 1, i + 1));
+      else if (a === "left" || a === "up") setFocus((i) => Math.max(-1, i - 1));
+      else if (a === "select" && games[focus]) {
         const g = games[focus];
         // E-02: a game still processing is not watchable yet; the phone shows its status.
         if (g.status === "ready") navigate({ name: "watch", gameId: g.id });
@@ -34,7 +35,10 @@ export function Library() {
 
   return (
     <View style={ui.screen}>
-      <T style={ui.h1}>Replay</T>
+      <View style={styles.head}>
+        <T style={[ui.h1, { marginBottom: 0, marginRight: px(32) }]}>Replay</T>
+        <Pill label="Players" focused={focus === -1} testID="library-players" />
+      </View>
       {data && games.length === 0 ? (
         <T testID="library-empty">No games yet. Upload one from your phone at /upload.</T>
       ) : null}
@@ -68,12 +72,13 @@ export function Library() {
           );
         })}
       </View>
-      <Hint>Arrows move · Select opens a game · Back exits</Hint>
+      <Hint>Arrows move · Select opens a game · Up reaches Players · Back exits</Hint>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  head: { flexDirection: "row", alignItems: "center", marginBottom: px(24) },
   cards: { flexDirection: "row", flexWrap: "wrap" },
   card: {
     width: px(420),

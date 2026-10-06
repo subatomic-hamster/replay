@@ -14,6 +14,7 @@ import { navigate } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
 import {
   attributionText,
+  clipEdited,
   exportPending,
   fmtClock,
   listWindow,
@@ -265,9 +266,7 @@ export function Clips({ gameId }: { gameId: string }) {
                   </div>
                   <div className="dim">
                     {fmtClock(c.t_start)}–{fmtClock(c.t_end)} · {(c.t_end - c.t_start).toFixed(1)} s
-                    {/* ponytail: a tap clip is user-sourced from birth, so "edited" can only
-                        be told for gesture/voice clips; add an `edited` field if it matters */}
-                    {c.source === "user" && tr?.type !== "tap" ? " · edited" : ""}
+                    {clipEdited(c) ? " · edited" : ""}
                   </div>
                   {tr?.transcript ? <div className="dim">“{tr.transcript}”</div> : null}
                 </li>
@@ -321,7 +320,9 @@ function ExportPanel({ exp }: { exp: VerticalExport }) {
           <p data-testid="export-status">
             {exp.status === "failed" || exp.status === "error"
               ? `Export failed${exp.error ? `: ${exp.error}` : ""}`
-              : "Rendering the vertical cut…"}
+              : exp.status === "none" || exp.status === "missing"
+                ? "The exported file is gone. Escape, then Enter to render it again."
+                : "Rendering the vertical cut…"}
           </p>
         )}
         <p className="hint">

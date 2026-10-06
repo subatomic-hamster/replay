@@ -12,12 +12,13 @@ export function Library() {
   const [focus, setFocus] = useState(0);
   const games = useMemo(() => data ?? [], [data]);
 
+  // focus -1 is the "Players" button above the cards (↑/← from the first card).
   const onAction = useCallback(
     (a: string) => {
-      if (games.length === 0) return;
-      if (a === "right" || a === "down") setFocus((i) => Math.min(games.length - 1, i + 1));
-      else if (a === "left" || a === "up") setFocus((i) => Math.max(0, i - 1));
-      else if (a === "select") {
+      if (a === "select" && focus === -1) navigate("/tv/players");
+      else if (a === "right" || a === "down") setFocus((i) => Math.min(games.length - 1, i + 1));
+      else if (a === "left" || a === "up") setFocus((i) => Math.max(-1, i - 1));
+      else if (a === "select" && games[focus]) {
         const g = games[focus];
         // E-02: a game still processing opens its status view, not the watch surface.
         navigate(g.status === "ready" ? `/tv/${g.id}` : `/upload/${g.id}/status`);
@@ -32,7 +33,16 @@ export function Library() {
 
   return (
     <div className="screen library">
-      <h1>Replay</h1>
+      <div className="library-head">
+        <h1>Replay</h1>
+        <span
+          className={`btn${focus === -1 ? " focused" : ""}`}
+          data-testid="library-players"
+          data-focused={focus === -1 ? "true" : "false"}
+        >
+          Players
+        </span>
+      </div>
       {data && games.length === 0 ? (
         <p data-testid="library-empty">No games yet. Upload one from your phone at /upload.</p>
       ) : null}
@@ -61,7 +71,7 @@ export function Library() {
         ))}
       </div>
       <p className="hint">
-        <b>Arrows</b> move · <b>Enter</b> opens a game
+        <b>Arrows</b> move · <b>Enter</b> opens a game · <b>↑</b> reaches Players
       </p>
     </div>
   );

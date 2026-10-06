@@ -35,6 +35,13 @@ import type {
   VerticalExport,
   VerticalRequest,
 } from "./discovery";
+import type {
+  CareerReel,
+  PlayerCard,
+  Profile,
+  ProfileInput,
+  ProfileSuggestion,
+} from "./profiles";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -108,6 +115,27 @@ export interface ReplayApi {
    *  embeddings index yet (409) or no embeddings model (503). */
   search(gameId: string, text: string): Promise<SearchResult>;
   getAdvice(gameId: string, playerId: string): Promise<Advice>;
+
+  // ---- M10 profiles (D-58) ----
+  listProfiles(): Promise<Profile[]>;
+  getProfile(id: string): Promise<Profile>;
+  createProfile(body: ProfileInput & { name: string }): Promise<Profile>;
+  patchProfile(id: string, body: ProfileInput): Promise<Profile>;
+  /** Names the roster player after the profile (409 when another profile owns it). */
+  linkProfile(id: string, gameId: string, playerId: string): Promise<Profile>;
+  unlinkProfile(id: string, gameId: string, playerId: string): Promise<Profile>;
+  getSuggestions(id: string): Promise<ProfileSuggestion[]>;
+  getCard(id: string): Promise<PlayerCard>;
+  /** Renders card.png (and the best-moment thumbnail) and answers with the card JSON. */
+  renderCard(id: string): Promise<PlayerCard>;
+  getReel(id: string): Promise<CareerReel>;
+  uploadProfilePhoto(id: string, photo: Blob): Promise<Profile>;
+  /** Opt-in face enrollment. `consent` is the person's own explicit yes; the API refuses
+   *  without it. 1–10 photos; they are embedded and deleted server-side. */
+  enrollFace(id: string, photos: Blob[], consent: boolean): Promise<Profile>;
+  deleteFace(id: string): Promise<Profile>;
+  /** Absolute URL for a `/media/profiles/...` path from a profile or card. */
+  profileMediaUrl(path: string): string;
 }
 
 /** The review body with the keyboard text filled into `text_field`. */
@@ -327,5 +355,36 @@ export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
         },
       ),
     getAdvice: (gameId, pid) => req<Advice>(`/games/${gameId}/players/${pid}/advice`),
+
+    listProfiles: () => req<{ profiles: Profile[] }>("/profiles").then((r) => r.profiles),
+    getProfile: (id) => req<Profile>(`/profiles/${id}`),
+    createProfile: (body) => req<Profile>("/profiles", { method: "POST", json: body }),
+    patchProfile: (id, body) => req<Profile>(`/profiles/${id}`, { method: "PATCH", json: body }),
+    linkProfile: (id, game_id, player_id) =>
+      req<Profile>(`/profiles/${id}/links`, { method: "POST", json: { game_id, player_id } }),
+    unlinkProfile: (id, gameId, playerId) =>
+      req<Profile>(
+        `/profiles/${id}/links/${encodeURIComponent(gameId)}/${encodeURIComponent(playerId)}`,
+        { method: "DELETE" },
+      ),
+    getSuggestions: (id) =>
+      req<{ suggestions: ProfileSuggestion[] }>(`/profiles/${id}/suggestions`).then((r) => r.suggestions),
+    getCard: (id) => req<PlayerCard>(`/profiles/${id}/card`),
+    renderCard: (id) => req<PlayerCard>(`/profiles/${id}/card`, { method: "POST" }),
+    getReel: (id) => req<CareerReel>(`/profiles/${id}/reel`),
+    uploadProfilePhoto: (id, photo) =>
+      req<Profile>(`/profiles/${id}/photo`, {
+        method: "PUT",
+        body: photo,
+        headers: { "Content-Type": photo.type || "application/octet-stream" },
+      }),
+    enrollFace(id, photos, consent) {
+      const form = new FormData();
+      form.append("consent", consent ? "true" : "false");
+      photos.forEach((p, i) => form.append("photos", p, (p as File).name ?? `photo${i}.jpg`));
+      return req<Profile>(`/profiles/${id}/face`, { method: "POST", body: form });
+    },
+    deleteFace: (id) => req<Profile>(`/profiles/${id}/face`, { method: "DELETE" }),
+    profileMediaUrl: (path) => (/^(https?:)?\/\//.test(path) ? path : `${base}/${path.replace(/^\//, "")}`),
   };
 }

@@ -11,6 +11,9 @@ import { Clips } from "./screens/Clips";
 import { Rallies } from "./screens/Rallies";
 import { Search } from "./screens/Search";
 import { Advice } from "./screens/Advice";
+import { Players } from "./screens/Players";
+import { Profile } from "./screens/Profile";
+import { ProfileEdit, ProfilesPhone } from "./screens/PhoneProfiles";
 import { Calibrate, UploadCreate, UploadFile, UploadStatus } from "./screens/Upload";
 
 export function App() {
@@ -22,7 +25,7 @@ export function App() {
   }, [seg.length]);
 
   const tv = seg[0] === "tv";
-  const isPhone = seg[0] === "upload" || seg[0] === "companion";
+  const isPhone = seg[0] === "upload" || seg[0] === "companion" || seg[0] === "profiles";
 
   return (
     <div
@@ -39,6 +42,10 @@ function route(seg: string[], tv: boolean) {
   if (tv) {
     if (seg.length === 1) return <Library />;
     if (seg[1] === "pair") return <Pair />;
+    // M10: /tv/players and /tv/players/:profileId
+    if (seg[1] === "players") {
+      return seg[2] ? <Profile key={seg[2]} profileId={decodeURIComponent(seg[2])} /> : <Players />;
+    }
     const id = seg[1];
     if (seg[2] === "highlights") return <Highlights key={id} gameId={id} />;
     if (seg[2] === "review") return <Review key={id} gameId={id} />;
@@ -59,6 +66,10 @@ function route(seg: string[], tv: boolean) {
   }
   // H4: the phone companion, paired by the 4-digit code the TV shows.
   if (seg[0] === "companion") return <Companion key={seg[1]} code={seg[1]} />;
+  // M10 phone: profiles, photo upload, opt-in face enrollment.
+  if (seg[0] === "profiles") {
+    return seg[1] ? <ProfileEdit key={seg[1]} profileId={decodeURIComponent(seg[1])} /> : <ProfilesPhone />;
+  }
   if (seg[0] === "upload") {
     if (seg.length === 1) return <UploadCreate />;
     const id = seg[1];

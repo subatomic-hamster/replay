@@ -87,7 +87,13 @@ export interface PlayClip {
   };
   participants: string[];
   source: "auto" | "user";
+  /** Newer APIs: a person changed the window. Older ones only had `source`. */
+  edited?: boolean;
 }
+
+/** Whether a person trimmed this clip: the API's `edited` (absent on older clips = false).
+ *  `source` cannot tell it: a phone-tap clip is user-sourced from birth. */
+export const clipEdited = (c: PlayClip): boolean => c.edited === true;
 
 /** POST /games/{id}/triggers → the tap and the clip it cut (null: no play just ended). */
 export interface TapResult {
@@ -205,7 +211,8 @@ export interface Rally {
 }
 
 export interface JobStatus {
-  status: "none" | "queued" | "running" | "done" | "failed" | "error";
+  /** "missing": it was done but the file is gone; the UI offers to render again, as "none" */
+  status: "none" | "missing" | "queued" | "running" | "done" | "failed" | "error";
   url: string | null;
   job_id?: string | null;
   error?: string | null;

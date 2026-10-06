@@ -3,7 +3,7 @@
 // every angle as /mock/wide.mp4?angle=<id>, so each cut is a real src swap + reload.
 import { expect, test, type Page } from "@playwright/test";
 import { cycleAngle, tierBadge } from "../../../packages/tv-core/src/replays";
-import { GAME_ID, openWatch } from "./helpers";
+import { GAME_ID, menuTo, openWatch } from "./helpers";
 
 const REPLAY = `/tv/${GAME_ID}/replays/play_0001`;
 
@@ -57,9 +57,7 @@ test("TV-09 Watch → Replays list → replay → Back → list → Watch", asyn
   await expect(page.getByTestId("nav-replays")).toHaveCount(0);
 
   await openWatch(page);
-  await page.keyboard.press("ArrowUp");
-  for (let i = 0; i < 9; i++) await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("nav-replays")).toHaveAttribute("data-focused", "true");
+  await menuTo(page, "nav-replays");
   await page.keyboard.press("Enter");
 
   const cards = page.getByTestId("replay-card");

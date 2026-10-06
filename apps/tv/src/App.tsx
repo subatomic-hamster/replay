@@ -12,6 +12,8 @@ import { Rallies } from "./screens/Rallies";
 import { Search } from "./screens/Search";
 import { Library } from "./screens/Library";
 import { Pair } from "./screens/Pair";
+import { Players } from "./screens/Players";
+import { Profile } from "./screens/Profile";
 import { Replay, ReplayList } from "./screens/Replay";
 import { Review } from "./screens/Review";
 import { Watch } from "./screens/Watch";
@@ -55,6 +57,10 @@ function screen(r: Route) {
       return <Advice key={r.gameId} gameId={r.gameId} />;
     case "pair":
       return <Pair gameId={r.gameId} />;
+    case "players":
+      return <Players from={r.from} />;
+    case "profile":
+      return <Profile key={r.profileId} profileId={r.profileId} from={r.from} />;
   }
 }
 

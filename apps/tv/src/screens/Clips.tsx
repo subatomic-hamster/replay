@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import {
   attributionText,
+  clipEdited,
   exportPending,
   fmtClock,
   listWindow,
@@ -238,9 +239,7 @@ export function Clips({ gameId }: { gameId: string }) {
                   </View>
                   <T style={styles.meta}>
                     {fmtClock(c.t_start)}–{fmtClock(c.t_end)} · {(c.t_end - c.t_start).toFixed(1)} s
-                    {/* ponytail: a tap clip is user-sourced from birth, so "edited" can only
-                        be told for gesture/voice clips; add an `edited` field if it matters */}
-                    {c.source === "user" && tr?.type !== "tap" ? " · edited" : ""}
+                    {clipEdited(c) ? " · edited" : ""}
                   </T>
                   {tr?.transcript ? <T style={styles.meta}>“{tr.transcript}”</T> : null}
                 </View>
@@ -286,7 +285,9 @@ function ExportPanel({ exp }: { exp: VerticalExport }) {
           <T testID="export-status">
             {exp.status === "failed" || exp.status === "error"
               ? `Export failed${exp.error ? `: ${exp.error}` : ""}`
-              : "Rendering the vertical cut…"}
+              : exp.status === "none" || exp.status === "missing"
+                ? "The exported file is gone. Back, then Select to render it again."
+                : "Rendering the vertical cut…"}
           </T>
         )}
         <Hint>Back closes</Hint>

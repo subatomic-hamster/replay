@@ -55,11 +55,43 @@ export async function focusedBoxId(page: Page): Promise<string | null> {
   });
 }
 
-/** Open the Watch action row (Up) and walk Right until `id` has focus. */
+/** Open the Watch action menu (Up) and reach `id` with the D-pad only: Right along the top
+ *  row, and when the item lives in a group (its `data-group`), Right to the group, Select
+ *  to open it, then Right along the group's row. */
 export async function menuTo(page: Page, id: string) {
   await page.keyboard.press("ArrowUp");
   await expect(page.getByTestId("nav-library")).toHaveAttribute("data-focused", "true");
-  for (let i = 0; i < 24 && (await focusedMenuItem(page)) !== id; i++) {
+  await expect(page.getByTestId(id)).toBeAttached();
+  const group = await page.getByTestId(id).getAttribute("data-group");
+  if (group) {
+    await walkTo(page, group);
+    await page.keyboard.press("Enter");
+  }
+  await walkTo(page, id);
+}
+
+/** The visible Watch menu items: `spread` between their top edges (one line: a few px of
+ *  sub-pixel/border jitter; a wrap: a whole item height), the lowest bottom edge and the
+ *  smallest item height, in CSS px at 1920x1080. */
+export async function menuRowsOneLine(
+  page: Page,
+): Promise<{ spread: number; bottom: number; height: number; n: number }> {
+  return page.evaluate(() => {
+    const rects = [...document.querySelectorAll<HTMLElement>('[data-testid^="nav-"], [data-testid^="action-"], [data-testid^="menu-"]')]
+      .filter((el) => el.offsetParent !== null && !el.getAttribute("data-testid")?.startsWith("menu-row"))
+      .map((el) => el.getBoundingClientRect());
+    const tops = rects.map((r) => r.top);
+    return {
+      spread: Math.max(...tops) - Math.min(...tops),
+      bottom: Math.max(...rects.map((r) => r.bottom)),
+      height: Math.min(...rects.map((r) => r.height)),
+      n: rects.length,
+    };
+  });
+}
+
+async function walkTo(page: Page, id: string) {
+  for (let i = 0; i < 12 && (await focusedMenuItem(page)) !== id; i++) {
     await page.keyboard.press("ArrowRight");
   }
   await expect(page.getByTestId(id)).toHaveAttribute("data-focused", "true");
@@ -78,7 +110,7 @@ export async function smallText(page: Page) {
 export async function focusedMenuItem(page: Page): Promise<string | null> {
   return page.evaluate(() => {
     const el = document.querySelector(
-      '[data-testid^="nav-"][data-focused="true"], [data-testid^="action-"][data-focused="true"]',
+      '[data-testid^="nav-"][data-focused="true"], [data-testid^="action-"][data-focused="true"], [data-testid^="menu-"][data-focused="true"]',
     );
     return el?.getAttribute("data-testid") ?? null;
   });

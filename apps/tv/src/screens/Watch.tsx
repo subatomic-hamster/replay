@@ -26,7 +26,9 @@ import { CourtInset } from "../components/CourtInset";
 import { FollowFrame } from "../components/FollowFrame";
 import { SeekBar } from "../components/SeekBar";
 import { SelectOverlay } from "../components/SelectOverlay";
+import { ProfilePicker } from "../components/ProfilePicker";
 import { TextEntryDialog } from "../components/TextEntryDialog";
+import { menuStep, watchMenu, type MenuAction, type MenuFocus } from "../../../../packages/tv-core/src/menu";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
 import { FOLLOWCAM_MODE } from "../platform/config";
@@ -39,34 +41,13 @@ type Mode = "wide" | "select" | "follow";
 const SEEK_STEP_S = 10;
 const SCRUB_STEP_S = 5;
 const HYPE_BARS = 96;
+/** Badges and toasts sit just under the one-row action bar. */
+const BELOW_BAR = px(176);
 const TOAST_MS = 3000;
 
-type Nav = "library" | "highlights" | "review" | "replays" | "clips" | "rallies" | "search" | "advice";
-type Toggle = "broadcast" | "captions" | "hype-peak";
-const NAV_ROUTES: Nav[] = ["highlights", "review", "replays", "clips", "rallies", "search", "advice"];
-
-const MENU: { id: string; label: string; action: DpadAction | Nav | Toggle }[] = [
-  { id: "nav-library", label: "Library", action: "library" },
-  { id: "nav-highlights", label: "Highlights", action: "highlights" },
-  { id: "nav-review", label: "Review", action: "review" },
-  { id: "nav-pair", label: "Pair phone", action: "pair" },
-  { id: "action-prev-event", label: "◀ Event", action: "prev-event" },
-  { id: "action-next-event", label: "Event ▶", action: "next-event" },
-  { id: "action-bookmark", label: "Bookmark", action: "bookmark" },
-  { id: "action-spotlight", label: "Spotlight", action: "spotlight" },
-  { id: "action-tag", label: "Tag player", action: "tag" },
-  // M8: only when the game has rendered replays (filtered below). Last, so the indices
-  // of the items above stay put.
-  { id: "nav-replays", label: "Replays", action: "replays" },
-  // M13 — each data-driven item shows only when the game has that data (no sport branch).
-  { id: "action-broadcast", label: "Broadcast", action: "broadcast" },
-  { id: "action-captions", label: "Commentary", action: "captions" },
-  { id: "action-hype-peak", label: "Hype peak", action: "hype-peak" },
-  { id: "nav-clips", label: "Clips", action: "clips" },
-  { id: "nav-rallies", label: "Rallies", action: "rallies" },
-  { id: "nav-search", label: "Search", action: "search" },
-  { id: "nav-advice", label: "Advice", action: "advice" },
-];
+/** Menu actions that open a per-game screen. */
+const GAME_ROUTES = ["highlights", "review", "replays", "clips", "rallies", "search", "advice"] as const;
+type GameRoute = (typeof GAME_ROUTES)[number];
 
 // ponytail: a hardcoded list beats a contacts import for a demo (same as apps/web).
 const PRESET_NAMES = ["Marcus", "Jordan", "Alex", "Sam", "Chris", "Taylor", "Zoe", "Riley"];
@@ -93,13 +74,13 @@ export function Watch({
   const lines = useMemo(() => commentaryLines(commentary), [commentary]);
   const hypeBarsMemo = useMemo(() => (hype ? hypeBars(hype.values, HYPE_BARS) : null), [hype]);
   const menuItems = useMemo(() => {
-    const hidden = new Set<string>();
+    const hidden = new Set<MenuAction>();
     if (!replays?.length) hidden.add("replays");
     if (!broadcast) hidden.add("broadcast");
     if (!lines.length) hidden.add("captions");
     if (!hype?.candidates.length) hidden.add("hype-peak");
     if (!rallies?.n) hidden.add("rallies");
-    return MENU.filter((m) => !hidden.has(m.action));
+    return watchMenu(hidden);
   }, [replays, broadcast, lines, hype, rallies]);
   const [broadcastOn, setBroadcastOn] = useState(false);
   const [captionsOn, setCaptionsOn] = useState(false);
@@ -115,7 +96,8 @@ export function Watch({
   const [crop, setCrop] = useState<CropPath | null>(null);
   const [spotlight, setSpotlight] = useState(false);
   const [tagging, setTagging] = useState<string | null>(null);
-  const [menu, setMenu] = useState<number | null>(null);
+  const [linking, setLinking] = useState<string | null>(null);
+  const [menu, setMenu] = useState<MenuFocus | null>(null);
   const [chrome, setChrome] = useState(true);
   const [rendering, setRendering] = useState(false);
   const renderAsked = useRef<string | null>(null);
@@ -247,16 +229,18 @@ export function Watch({
       setChrome(true);
       if (!handle || !game) return;
 
-      // The action row: Left/Right move, Select runs, Down/Back close it.
+      // The action menu (one row; a group opens its own row): Left/Right move, Select runs
+      // or opens, Back/Down close the group, then the menu.
       if (menu !== null) {
-        if (a === "left") setMenu(Math.max(0, menu - 1));
-        else if (a === "right") setMenu(Math.min(menuItems.length - 1, menu + 1));
-        else if (a === "down" || a === "back") setMenu(null);
-        else if (a === "select") {
-          const item = menuItems[menu].action;
+        if (a === "left" || a === "right" || a === "select" || a === "back" || a === "down" || a === "up") {
+          const step = menuStep(menuItems, menu, a);
+          setMenu(step.focus);
+          const item = step.run?.action;
+          if (!item) return;
           if (item === "library") navigate({ name: "library" });
-          else if ((NAV_ROUTES as string[]).includes(item)) {
-            navigate({ name: item as Exclude<Nav, "library">, gameId: game.id });
+          else if (item === "players") navigate({ name: "players", from: game.id });
+          else if ((GAME_ROUTES as readonly string[]).includes(item)) {
+            navigate({ name: item as GameRoute, gameId: game.id });
           } else if (item === "broadcast") {
             // D-42: rendition time = source time, so the swap keeps the playback position;
             // track boxes describe the wide frame, so select/follow sit broadcast out.
@@ -266,6 +250,10 @@ export function Watch({
           else if (item === "hype-peak") {
             const to = nextPeak(hype?.candidates ?? [], handle.currentTime());
             if (to !== null) handle.seek(to);
+          } else if (item === "link-profile") {
+            setMenu(null);
+            if (tagTarget) setLinking(tagTarget);
+            else setToast("Pause and pick a player first");
           } else {
             setMenu(null);
             run(item as DpadAction);
@@ -276,7 +264,7 @@ export function Watch({
 
       switch (a) {
         case "menu":
-          setMenu(0);
+          setMenu({ group: null, i: 0 });
           break;
         case "up":
         case "down":
@@ -293,10 +281,10 @@ export function Watch({
             const from = focusId ?? targets[0]?.id ?? null;
             const next = nextFocus(targets, from, a as Direction);
             // Up against the top edge leaves the boxes for the action row.
-            if (a === "up" && next === from) setMenu(0);
+            if (a === "up" && next === from) setMenu({ group: null, i: 0 });
             else setFocusId(next);
           } else if (a === "up") {
-            setMenu(0);
+            setMenu({ group: null, i: 0 });
           } else if (a !== "down") {
             // W2/S-15: in playback the seek bar is the focused control.
             handle.seek(handle.currentTime() + (a === "right" ? SCRUB_STEP_S : -SCRUB_STEP_S));
@@ -323,9 +311,9 @@ export function Watch({
           run(a);
       }
     },
-    [handle, game, mode, focusId, players, menu, menuItems, run, hype],
+    [handle, game, mode, focusId, players, menu, menuItems, run, hype, tagTarget],
   );
-  useDpad(onAction, !tagging);
+  useDpad(onAction, !tagging && !linking);
 
   // Paired phone: tell it what is on screen once a second (its "Clip that" posts a tap at
   // this media time), play the search hits it sends, and confirm the clips its taps cut.
@@ -414,7 +402,7 @@ export function Watch({
                 <T style={styles.badgeText}>FOLLOW • {followName?.name ?? pid}</T>
               </View>
               {rendering ? (
-                <View style={[styles.followBadge, { top: px(96) }]} testID="rendering-badge">
+                <View style={[styles.followBadge, { top: BELOW_BAR + px(64) }]} testID="rendering-badge">
                   <T style={styles.badgeText}>rendering…</T>
                 </View>
               ) : null}
@@ -451,22 +439,38 @@ export function Watch({
           dataSet={{ hidden: shown ? "false" : "true" }}
         >
           <View style={styles.top}>
-            <View style={styles.menuRow}>
-              {menuItems.map((m, i) => (
-                <Pill
-                  key={m.id}
-                  testID={m.id}
-                  label={m.label}
-                  focused={menu === i}
-                  active={(m.action === "broadcast" && onBroadcast) || (m.action === "captions" && captionsOn)}
-                  dataSet={
-                    m.action === "broadcast" || m.action === "captions"
-                      ? { on: (m.action === "broadcast" ? onBroadcast : captionsOn) ? "true" : "false" }
-                      : undefined
-                  }
-                />
-              ))}
-            </View>
+            {/* One row at a time: the top entries, or the open group's items. Every item
+                is in the tree (hidden rows display:none) so an item's presence still says
+                whether the game has that data. */}
+            {[null, ...menuItems.filter((m) => m.items).map((m) => m.id)].map((group) => {
+              const open = (menu?.group ?? null) === group;
+              const entries = group === null ? menuItems : (menuItems.find((m) => m.id === group)?.items ?? []);
+              return (
+                <View
+                  key={group ?? "top"}
+                  style={[styles.menuRow, !open && { display: "none" }]}
+                  testID={group ? `menu-row-${group}` : "menu-row"}
+                  dataSet={{ open: open ? "true" : "false" }}
+                >
+                  {group ? (
+                    <T style={styles.crumb}>{menuItems.find((m) => m.id === group)?.label.replace(" ▸", "")} ›</T>
+                  ) : null}
+                  {entries.map((m, i) => {
+                    const on = m.action === "broadcast" ? onBroadcast : m.action === "captions" ? captionsOn : null;
+                    return (
+                      <Pill
+                        key={m.id}
+                        testID={m.id}
+                        label={m.label}
+                        focused={open && menu?.i === i}
+                        active={!!on}
+                        dataSet={{ group: group ?? "", ...(on === null ? {} : { on: on ? "true" : "false" }) }}
+                      />
+                    );
+                  })}
+                </View>
+              );
+            })}
             <T style={styles.title} numberOfLines={1}>
               {game.title}
             </T>
@@ -506,7 +510,9 @@ export function Watch({
             />
             <Hint>
               {menu !== null
-                ? "Left/Right pick an action · Select runs it · Down or Back closes"
+                ? menu.group
+                  ? "Left/Right pick an action · Select runs it · Back returns to the menu"
+                  : "Left/Right pick · Select runs or opens a group (▸) · Down or Back closes"
                 : mode === "select"
                   ? "Arrows pick a player · Select follows · Up at the top opens actions · Back exits"
                   : mode === "follow"
@@ -538,6 +544,23 @@ export function Watch({
           }}
         />
       ) : null}
+
+      {linking ? (
+        <ProfilePicker
+          gameId={game.id}
+          playerId={linking}
+          playerLabel={roster.find((p) => p.id === linking)?.name ?? `#${linking}`}
+          onCancel={() => setLinking(null)}
+          onLinked={(p) => {
+            const target = linking;
+            setLinking(null);
+            setRoster((prev) =>
+              prev.map((r) => (r.id === target ? { ...r, name: p.name, tagged: true, profile_id: p.profile_id } : r)),
+            );
+            setToast(`Linked to ${p.name}`);
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -554,12 +577,14 @@ const styles = StyleSheet.create({
     paddingBottom: px(12),
     backgroundColor: "rgba(5, 7, 10, 0.78)",
   },
-  menuRow: { flexDirection: "row", flexWrap: "wrap" },
+  // never wraps: the menu is one row at 1080p (groups open in place of it)
+  menuRow: { flexDirection: "row", alignItems: "center" },
+  crumb: { color: color.accent, fontSize: font.body, fontWeight: "700", marginRight: px(16), marginBottom: px(12) },
   title: { color: color.dim, fontSize: font.body },
   modePill: {
     position: "absolute",
     right: px(48),
-    top: px(250), // below the two-row action bar
+    top: BELOW_BAR,
     backgroundColor: color.scrim,
     paddingHorizontal: px(18),
     paddingVertical: px(4),
@@ -586,7 +611,7 @@ const styles = StyleSheet.create({
   followBadge: {
     position: "absolute",
     left: px(48),
-    top: px(250), // below the two-row action bar
+    top: BELOW_BAR,
     backgroundColor: color.accent,
     paddingHorizontal: px(18),
     paddingVertical: px(4),
@@ -611,7 +636,7 @@ const styles = StyleSheet.create({
   toast: {
     position: "absolute",
     alignSelf: "center",
-    top: px(250), // below the two-row action bar
+    top: BELOW_BAR,
     backgroundColor: color.accent,
     paddingHorizontal: px(24),
     paddingVertical: px(8),

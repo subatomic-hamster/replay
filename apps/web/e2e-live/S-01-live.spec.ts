@@ -4,6 +4,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { menuTo } from "../e2e/helpers";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(here, "../../..");
@@ -174,9 +175,7 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   await expect(page.getByTestId("followcam-active")).toHaveCount(0);
 
   // --- highlights (reached with the D-pad, not a URL) ---------------------
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("nav-highlights")).toHaveAttribute("data-focused", "true");
+  await menuTo(page, "nav-highlights");
   await page.keyboard.press("Enter");
   await page.waitForURL(new RegExp(`/tv/${gameId}/highlights`));
 
@@ -354,4 +353,127 @@ test("S-31/AC-13 an unpaired code reports a closed session instead of hanging", 
   await expect(page.getByTestId("companion-status")).toHaveAttribute("data-state", "closed");
   await expect(page.getByTestId("companion-error")).toBeVisible();
   await expect(page.getByTestId("companion-send")).toBeDisabled();
+});
+
+// M10 against the real profiles routes (D-58), on the game S-01 uploaded. The profile is
+// made through the API in this run's temp data dir and named after a roster player, so the
+// TV offers it as a same-name suggestion; the photo is a synthetic 1x1 PNG. The fake
+// pipeline has no face model, so enrollment answers 503/422 and the page must say so.
+const PNG_1PX = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+async function profileTab(page: Page, name: "stats" | "card" | "reel" | "links") {
+  await expect(page.getByTestId("profile")).toHaveAttribute("data-zone", "tabs");
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowLeft");
+  for (let i = 0; i < ["stats", "card", "reel", "links"].indexOf(name); i++) await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("profile")).toHaveAttribute("data-tab", name);
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("profile")).toHaveAttribute("data-zone", "body");
+}
+
+test("S-53 live profiles: suggestion → link, stat correction, card PNG, reel, phone photo, face consent", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  expect(gameId).not.toBe("");
+  const game = await (await page.request.get(`${API}/games/${gameId}`)).json();
+  const player = (game.players as { id: string; name: string | null }[]).find((p) => p.name);
+  if (!player?.name) throw new Error("the fixture roster has no named player");
+  const created = await page.request.post(`${API}/profiles`, { data: { name: player.name } });
+  expect(created.status()).toBe(201);
+  const id: string = (await created.json()).profile_id;
+  expect(id).toMatch(/^pr_[0-9a-f]{12}$/);
+
+  // Players → profile → Links: the same-name suggestion, accepted with the D-pad
+  await page.goto("/tv/players");
+  await expect(page.locator(`[data-testid="profile-card"][data-profile-id="${id}"]`)).toBeVisible();
+  await page.goto(`/tv/players/${id}`);
+  await profileTab(page, "links");
+  const sug = page.locator(`[data-testid="suggestion-row"][data-game-id="${gameId}"][data-player-id="${player.id}"]`);
+  await expect(sug).toHaveAttribute("data-face", "false");
+  await expect(sug.getByTestId("suggestion-reason")).toContainText("Same name tag");
+  await expect(page.locator('[data-testid="suggestion-row"][data-face="true"]')).toHaveCount(0);
+  for (let i = 0; i < 8 && (await sug.getAttribute("data-focused")) !== "true"; i++) await page.keyboard.press("ArrowDown");
+  await expect(sug.getByTestId("suggestion-accept")).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(`[data-testid="link-row"][data-game-id="${gameId}"]`)).toBeVisible();
+  let doc = await (await page.request.get(`${API}/profiles/${id}`)).json();
+  expect(doc.linked).toEqual([{ game_id: gameId, player_id: player.id }]);
+
+  // Stats: the second row (the first is `games`), one step up, saved as an edit
+  await page.keyboard.press("Escape");
+  await profileTab(page, "stats");
+  const sport = await page.getByTestId("stats-tab").getAttribute("data-sport");
+  const rows = page.getByTestId("stat-row");
+  await expect(rows.first()).toHaveAttribute("data-key", "games");
+  const row = rows.nth(1);
+  for (let i = 0; i < 3 && (await row.getAttribute("data-focused")) !== "true"; i++) {
+    await page.keyboard.press("ArrowDown"); // (past the sport pills when there are several)
+  }
+  await expect(row).toHaveAttribute("data-focused", "true");
+  const key = (await row.getAttribute("data-key")) ?? "";
+  const before = Number(await row.getAttribute("data-value"));
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(row).toHaveAttribute("data-edited", "true");
+  await expect(row).toHaveAttribute("data-value", String(Math.round(before) + 1));
+  await expect(row.getByTestId("stat-edited")).toContainText(`auto ${before}`);
+  doc = await (await page.request.get(`${API}/profiles/${id}`)).json();
+  expect(doc.stats_by_sport[sport ?? ""].edited).toContain(key);
+  expect(doc.stats_by_sport[sport ?? ""].stats[key]).toBe(Math.round(before) + 1);
+
+  // Card: Enter renders the PNG on the server; the JSON fields come with it
+  await page.keyboard.press("Escape");
+  await profileTab(page, "card");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("card-tab")).toHaveAttribute("data-rendered", "true", { timeout: 30_000 });
+  await expect(page.getByTestId("card-png")).toHaveAttribute("src", new RegExp(`/media/profiles/${id}/card\\.png\\?v=`));
+  await expect
+    .poll(() => page.getByTestId("card-png").evaluate((el) => (el as HTMLImageElement).naturalWidth), { timeout: 15_000 })
+    .toBeGreaterThan(0);
+  await expect(page.getByTestId("card-title")).toContainText(player.name);
+
+  // Reel: whatever plays the fake pipeline gave this player, playable in order
+  await page.keyboard.press("Escape");
+  await profileTab(page, "reel");
+  await expect(page.locator('[data-testid="reel-item"], [data-testid="reel-empty"], [data-testid="reel-note"]').first()).toBeVisible();
+  await expect(page.getByTestId("reel-note")).toHaveCount(0); // GET /reel answered
+  if (await page.getByTestId("reel-item").count()) {
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("reel-counter")).toHaveAttribute("data-index", "1");
+    await expect(page.getByTestId("reel-counter")).toHaveAttribute("data-game-id", gameId);
+    await waitForVideo(page);
+  } else {
+    await expect(page.getByTestId("reel-empty")).toBeVisible();
+  }
+
+  // Phone: photo upload (re-encoded by the API) and the consent-gated face enrollment
+  await page.goto(`/profiles/${id}`);
+  await expect(page.getByTestId("profile-edit")).toBeVisible();
+  await page.getByTestId("profile-photo-input").setInputFiles({ name: "synthetic.png", mimeType: "image/png", buffer: PNG_1PX });
+  await expect(page.getByTestId("profile-note")).toHaveText("Photo saved");
+  await expect(page.getByTestId("avatar").first()).toHaveAttribute("data-photo", "true");
+  await expect
+    .poll(() => page.locator('[data-testid="avatar"] img').first().evaluate((el) => (el as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0);
+
+  await expect(page.getByTestId("face-enroll")).toBeDisabled();
+  await expect(page.getByTestId("face-photos")).toBeDisabled();
+  await page.getByTestId("face-consent").check();
+  await page.getByTestId("face-photos").setInputFiles({ name: "synthetic.png", mimeType: "image/png", buffer: PNG_1PX });
+  await page.getByTestId("face-enroll").click();
+  // no face model in the fake pipeline (503), or no face in a 1x1 PNG (422): never enrolled
+  await expect(page.getByTestId("face-note")).toHaveText(/^Not enrolled: /);
+  await expect(page.getByTestId("face-section")).toHaveAttribute("data-enrolled", "false");
+  // the API itself refuses without consent
+  const refused = await page.request.post(`${API}/profiles/${id}/face`, {
+    multipart: { consent: "false", photos: { name: "synthetic.png", mimeType: "image/png", buffer: PNG_1PX } },
+  });
+  expect(refused.status()).toBe(400);
+  const forgot = await page.request.delete(`${API}/profiles/${id}/face`);
+  expect(forgot.ok()).toBe(true);
+  expect((await forgot.json()).face_enrolled).toBe(false);
 });

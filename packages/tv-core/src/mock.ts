@@ -37,6 +37,7 @@ import type {
   Trigger,
   VerticalExport,
 } from "./discovery";
+import type { CareerReel, PlayerCard, Profile, ProfileSuggestion, SportStats } from "./profiles";
 
 export interface MockCall {
   method: string;
@@ -707,7 +708,7 @@ export const mockApi: ReplayApi = {
     const c = clipsOf(gameId).find((x) => x.id === clipId);
     if (!c) throw new Error(`clip ${clipId} not found`);
     if (t_end <= t_start || t_end > DURATION + 1e-6) throw new Error("need 0 <= t_start < t_end <= duration");
-    Object.assign(c, { t_start, t_end, source: "user" });
+    Object.assign(c, { t_start, t_end, source: "user", edited: true });
     return delay(structuredClone(c));
   },
 
@@ -855,6 +856,144 @@ export const mockApi: ReplayApi = {
       : [`${name} took no shots this game (mock).`];
     return delay<Advice>({ player_id: playerId, name, lines, source: "template", auto_detected: true });
   },
+
+  // ---- M10 profiles: synthetic fixtures (MOCK_PROFILES below), same rules as D-58 ----
+
+  listProfiles() {
+    log("GET", "/profiles");
+    return delay([...profileDocs.values()].map((d) => ({ ...publicDoc(d) })));
+  },
+
+  getProfile(id) {
+    log("GET", `/profiles/${id}`);
+    return delay(fullProfile(needProfile(id)));
+  },
+
+  createProfile(body) {
+    log("POST", "/profiles", body);
+    if (!body.name?.trim()) throw new Error("name is required");
+    const id = `pr_${hex12(`${body.name}|${profileDocs.size}|${Date.now()}`)}`;
+    const doc: MockProfileDoc = {
+      profile_id: id,
+      name: body.name.trim(),
+      photo_url: body.photo_url ?? null,
+      sports: body.sports ?? null,
+      positions: body.positions ?? [],
+      stats_user: {},
+      user_edited_fields: body.sports ? ["sports"] : [],
+      face_enrolled: false,
+    };
+    profileDocs.set(id, doc);
+    return delay(fullProfile(doc));
+  },
+
+  patchProfile(id, body) {
+    log("PATCH", `/profiles/${id}`, body);
+    const doc = needProfile(id);
+    const edited = new Set(doc.user_edited_fields);
+    for (const f of ["name", "photo_url", "sports", "positions"] as const) {
+      if (!(f in body)) continue;
+      Object.assign(doc, { [f]: f === "positions" ? (body.positions ?? []) : body[f] });
+      edited.add(f);
+    }
+    if ("sports" in body && body.sports == null) edited.delete("sports");
+    for (const [sport, vals] of Object.entries(body.stats ?? {})) {
+      const mine = (doc.stats_user[sport] ??= {});
+      for (const [k, v] of Object.entries(vals)) {
+        if (v === null) delete mine[k];
+        else mine[k] = v;
+      }
+      if (!Object.keys(mine).length) delete doc.stats_user[sport];
+    }
+    doc.user_edited_fields = [...edited].sort();
+    if (body.name) for (const l of linksOf(id)) setRoster(l.game_id, l.player_id, doc.name, id);
+    return delay(fullProfile(doc));
+  },
+
+  linkProfile(id, gameId, playerId) {
+    log("POST", `/profiles/${id}/links`, { game_id: gameId, player_id: playerId });
+    const doc = needProfile(id);
+    if (!needGame(gameId).players.some((p) => p.id === playerId)) throw new Error(`player ${playerId} not found`);
+    const owner = profileLinks.get(`${gameId}/${playerId}`);
+    if (owner && owner !== id) throw new Error(`${gameId}/${playerId} is linked to another profile`);
+    profileLinks.set(`${gameId}/${playerId}`, id);
+    setRoster(gameId, playerId, doc.name, id);
+    return delay(fullProfile(doc));
+  },
+
+  unlinkProfile(id, gameId, playerId) {
+    log("DELETE", `/profiles/${id}/links/${gameId}/${playerId}`);
+    const doc = needProfile(id);
+    if (profileLinks.get(`${gameId}/${playerId}`) !== id) throw new Error("no such link");
+    profileLinks.delete(`${gameId}/${playerId}`);
+    setRoster(gameId, playerId, null, null);
+    return delay(fullProfile(doc));
+  },
+
+  getSuggestions(id) {
+    log("GET", `/profiles/${id}/suggestions`);
+    const doc = needProfile(id);
+    const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+    const out: ProfileSuggestion[] = [];
+    for (const g of games.values()) {
+      for (const p of g.players) {
+        if (profileLinks.has(`${g.id}/${p.id}`)) continue;
+        const reasons: ProfileSuggestion["reasons"] = [];
+        if (norm(p.name) && norm(p.name) === norm(doc.name)) reasons.push({ kind: "same_name" });
+        // D-58: face matches exist only for enrolled profiles (deleting enrollment drops them)
+        const face = doc.face_enrolled
+          ? faceMatches.find((m) => m.profile_id === id && m.game_id === g.id && m.player_id === p.id)
+          : undefined;
+        if (face) reasons.push({ kind: "face", similarity: face.similarity, votes: face.votes });
+        if (reasons.length) out.push({ game_id: g.id, game_title: g.title, player_id: p.id, reasons });
+      }
+    }
+    return delay(out);
+  },
+
+  getCard(id) {
+    log("GET", `/profiles/${id}/card`);
+    return delay(mockCard(needProfile(id)));
+  },
+
+  renderCard(id) {
+    log("POST", `/profiles/${id}/card`);
+    renderedCards.add(id);
+    return delay(mockCard(needProfile(id)));
+  },
+
+  getReel(id) {
+    log("GET", `/profiles/${id}/reel`);
+    return delay(mockReel(needProfile(id)));
+  },
+
+  uploadProfilePhoto(id, photo) {
+    log("PUT", `/profiles/${id}/photo`, { size: photo.size, type: photo.type });
+    const doc = needProfile(id);
+    if (!photo.size) throw new Error("send one image up to 8 MB");
+    doc.photo_url = URL.createObjectURL(photo);
+    doc.user_edited_fields = [...new Set([...doc.user_edited_fields, "photo_url"])].sort();
+    return delay(fullProfile(doc));
+  },
+
+  enrollFace(id, photos, consent) {
+    log("POST", `/profiles/${id}/face`, { consent, photos: photos.length });
+    const doc = needProfile(id);
+    if (!consent) throw new Error("face enrollment needs consent=true from the person enrolled");
+    if (photos.length < 1 || photos.length > 10) throw new Error("send 1 to 10 photos");
+    doc.face_enrolled = true;
+    return delay(fullProfile(doc));
+  },
+
+  deleteFace(id) {
+    log("DELETE", `/profiles/${id}/face`);
+    const doc = needProfile(id);
+    doc.face_enrolled = false;
+    faceMatches = faceMatches.filter((m) => m.profile_id !== id);
+    return delay(fullProfile(doc));
+  },
+
+  profileMediaUrl: (path) => path,
 };
 
 // ---------------------------------------------------------------- M13 synthetic fixtures
@@ -879,6 +1018,11 @@ const MOCK_PLAYS: Record<string, MockPlay[]> = {
     { id: "pl_m2", t_start: 5.5, t_end: 9.5, event_ids: ["e_0002"], participants: ["p2"], text: "Player 2 shoots from the wing, no good (mock)." },
     { id: "pl_m3", t_start: 11, t_end: 15.5, event_ids: ["e_0003"], participants: ["p1", "p3"], text: "Steal, then Marcus scores on the break (mock)." },
     { id: "pl_m4", t_start: 15.5, t_end: 18.5, event_ids: ["e_0004"], participants: ["p3"], text: "Player 3 hits a long jumper (mock)." },
+  ],
+  // M10: a second game for Marcus, so a career reel crosses games (no events: no stats)
+  g_mock02: [
+    { id: "pl_n1", t_start: 2, t_end: 6, event_ids: [], participants: ["p1", "p2"], text: "Marcus brings it up (mock)." },
+    { id: "pl_n2", t_start: 12, t_end: 16, event_ids: [], participants: ["p1"], text: "Marcus on the break (mock)." },
   ],
 };
 
@@ -1078,3 +1222,173 @@ const MOCK_REPLAYS: Record<string, ReplayManifest[]> = {
     ]),
   ],
 };
+
+// ---------------------------------------------------------------- M10 profiles (synthetic)
+// MOCK profiles for the TV/phone tests and screenshots, not real people or pipeline output.
+// Stats are summed from the mock events like career.stats_by_sport does (shot keys only
+// for a game with shots), corrections win and stay listed, and face suggestions exist
+// only for an enrolled profile. The card image is a hand-drawn SVG labelled "mock".
+
+interface MockProfileDoc {
+  profile_id: string;
+  name: string;
+  photo_url: string | null;
+  sports: string[] | null;
+  positions: string[];
+  stats_user: Record<string, Record<string, number>>;
+  user_edited_fields: string[];
+  face_enrolled: boolean;
+}
+
+const profileDocs = new Map<string, MockProfileDoc>([
+  ["pr_00000000a001", {
+    profile_id: "pr_00000000a001", name: "Marcus", photo_url: null, sports: null, positions: ["guard"],
+    stats_user: { basketball: { rebounds: 3 } }, user_edited_fields: ["positions"], face_enrolled: false,
+  }],
+  ["pr_00000000a002", {
+    profile_id: "pr_00000000a002", name: "Jordan", photo_url: null, sports: ["basketball"], positions: [],
+    stats_user: {}, user_edited_fields: ["sports"], face_enrolled: true,
+  }],
+  ["pr_00000000a003", {
+    profile_id: "pr_00000000a003", name: "Sam", photo_url: null, sports: ["pickleball"], positions: [],
+    stats_user: {}, user_edited_fields: ["sports"], face_enrolled: false,
+  }],
+]);
+/** "game/player" → profile id (one owner per roster player, D-58). */
+const profileLinks = new Map<string, string>([
+  ["g_mock01/p1", "pr_00000000a001"],
+  ["g_pickle4/p1", "pr_00000000a001"],
+]);
+/** What a face_match job would have written for enrolled profiles (faces.json). */
+let faceMatches = [{ profile_id: "pr_00000000a002", game_id: "g_mock01", player_id: "p3", similarity: 0.58, votes: 4 }];
+const renderedCards = new Set<string>();
+for (const [key, id] of profileLinks) {
+  const [g, p] = key.split("/");
+  setRoster(g, p, profileDocs.get(id)?.name ?? null, id);
+}
+
+function needProfile(id: string): MockProfileDoc {
+  const d = profileDocs.get(id);
+  if (!d) throw new Error(`profile ${id} not found`);
+  return d;
+}
+
+function setRoster(gameId: string, playerId: string, name: string | null, profileId: string | null) {
+  const p = games.get(gameId)?.players.find((x) => x.id === playerId);
+  if (!p) return;
+  if (profileId === null) delete p.profile_id;
+  else Object.assign(p, { name, tagged: true, profile_id: profileId });
+}
+
+/** Linked roster players, oldest game first (like career.load_links). */
+function linksOf(id: string): { game_id: string; player_id: string }[] {
+  return [...profileLinks]
+    .filter(([, owner]) => owner === id)
+    .map(([key]) => ({ game_id: key.split("/")[0], player_id: key.split("/")[1] }))
+    .sort((a, b) => a.game_id.localeCompare(b.game_id) || a.player_id.localeCompare(b.player_id));
+}
+
+function mockGameStats(gameId: string, pid: string): Record<string, number> {
+  const evs = (events.get(gameId) ?? []).filter((e) => !e.dismissed);
+  const out: Record<string, number> = {
+    games: 1,
+    plays: (MOCK_PLAYS[gameId] ?? []).filter((p) => p.participants.includes(pid)).length,
+    distance_m: distanceFor(pid),
+  };
+  if (evs.some((e) => e.type === "shot")) {
+    const mine = evs.filter((e) => e.type === "shot" && e.player_id === pid);
+    const made = mine.filter((e) => e.made).length;
+    Object.assign(out, { points: 2 * made, shots_made: made, shots_attempted: mine.length, rebounds: 0, steals: 0 });
+  }
+  return out;
+}
+
+function statsBySport(doc: MockProfileDoc): Record<string, SportStats> {
+  const out: Record<string, SportStats> = {};
+  for (const l of linksOf(doc.profile_id)) {
+    const g = games.get(l.game_id);
+    if (!g) continue;
+    const s = (out[g.sport] ??= { stats: {}, auto: {}, edited: [], games: [] });
+    const row = mockGameStats(l.game_id, l.player_id);
+    s.games = [...(s.games ?? []), { ...l, ...row }];
+    for (const [k, v] of Object.entries(row)) s.auto[k] = Number(((s.auto[k] ?? 0) + v).toFixed(1));
+  }
+  for (const sport of Object.keys(doc.stats_user)) out[sport] ??= { stats: {}, auto: {}, edited: [], games: [] };
+  for (const [sport, s] of Object.entries(out)) {
+    const user = doc.stats_user[sport] ?? {};
+    s.stats = { ...s.auto, ...user };
+    s.edited = Object.keys(user).sort();
+    s.label = "auto-detected";
+  }
+  return out;
+}
+
+function publicDoc(doc: MockProfileDoc): Profile {
+  const { stats_user, ...rest } = doc;
+  const fields = new Set(doc.user_edited_fields.filter((f) => !f.startsWith("stats_by_sport.")));
+  for (const [sport, vals] of Object.entries(stats_user)) for (const k of Object.keys(vals)) fields.add(`stats_by_sport.${sport}.${k}`);
+  return { schema: "replay.profile.v1", ...structuredClone(rest), user_edited_fields: [...fields].sort(), linked: linksOf(doc.profile_id) };
+}
+
+function fullProfile(doc: MockProfileDoc): Profile {
+  const stats = statsBySport(doc);
+  return { ...publicDoc(doc), sports: doc.sports ?? Object.keys(stats).sort(), stats_by_sport: stats, missing_links: [] };
+}
+
+function mockReel(doc: MockProfileDoc): CareerReel {
+  const items = linksOf(doc.profile_id).flatMap((l) =>
+    (MOCK_PLAYS[l.game_id] ?? [])
+      .filter((p) => p.participants.includes(l.player_id))
+      .map((p) => ({
+        ...l,
+        play_id: p.id,
+        sport: games.get(l.game_id)?.sport,
+        t_start: p.t_start,
+        t_end: p.t_end,
+        game_title: games.get(l.game_id)?.title ?? null,
+        // every game is the same 20 s fixture; the query string makes each a distinct src
+        url: `/mock/wide.mp4?game=${l.game_id}`,
+      })),
+  );
+  return { schema: "replay.reel.v1", profile_id: doc.profile_id, items, duration_s: items.reduce((s, i) => s + i.t_end - i.t_start, 0) };
+}
+
+function mockCard(doc: MockProfileDoc): PlayerCard {
+  const stats = statsBySport(doc);
+  const sport = Object.keys(stats).sort((a, b) => (stats[b].stats.games ?? 0) - (stats[a].stats.games ?? 0) || a.localeCompare(b))[0] ?? null;
+  const s = sport ? stats[sport] : undefined;
+  const n = s?.stats.games ?? 0;
+  const g = n === 1 ? "1 game" : `${n} games`;
+  const title = s?.stats.points ? `${doc.name} the scorer: ${s.stats.points} points in ${g} (mock)` : `${doc.name}: ${s?.stats.plays ?? 0} plays in ${g} (mock)`;
+  const TILES: [string, string][] = [["points", "PTS"], ["rebounds", "REB"], ["plays", "PLAYS"], ["distance_m", "METRES"]];
+  const first = mockReel(doc).items.find((i) => i.sport === sport);
+  const best: PlayerCard["best_moment"] = first
+    ? { game_id: first.game_id, player_id: first.player_id, play_id: first.play_id, sport: first.sport, t_start: first.t_start, t_end: first.t_end }
+    : null;
+  const st = s?.stats ?? {};
+  return {
+    schema: "replay.card.v1",
+    profile_id: doc.profile_id,
+    name: doc.name,
+    sport,
+    sports: doc.sports ?? Object.keys(stats).sort(),
+    positions: doc.positions,
+    games: n,
+    title,
+    title_source: "template",
+    stats: TILES.filter(([k]) => k in st).map(([key, label]) => ({
+      key,
+      label,
+      value: key === "distance_m" ? Math.round(st[key]) : st[key],
+      edited: !!s?.edited.includes(key),
+    })),
+    user_edited: !!s?.edited.length,
+    label: "auto-detected",
+    best_moment: best,
+    photo_url: doc.photo_url,
+    face_enrolled: doc.face_enrolled,
+    png: "/mock/card.svg",
+    thumb: null,
+    rendered: renderedCards.has(doc.profile_id),
+  };
+}

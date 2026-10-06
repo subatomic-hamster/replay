@@ -5,6 +5,7 @@
 // players and events there are); the screenshots are the evidence.
 import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
+import { menuTo } from "../e2e/helpers";
 
 const OUT = process.env.REPLAY_TV_EVIDENCE_DIR ?? "test-results/evidence";
 const SEEK_TO = Number(process.env.REPLAY_TV_EVIDENCE_T ?? "4");
@@ -63,9 +64,8 @@ test("M3 walkthrough", async ({ page }) => {
   await page.keyboard.press("Enter");
   await shot(page, "04-follow");
 
-  // Spotlight via the action row (Up → … → Spotlight).
-  await page.keyboard.press("ArrowUp");
-  for (let i = 0; i < 7; i++) await page.keyboard.press("ArrowRight");
+  // Spotlight via the action menu (Up → Playback ▸ → Spotlight).
+  await menuTo(page, "action-spotlight");
   await page.keyboard.press("Enter");
   await shot(page, "05-follow-spotlight");
   await page.keyboard.press("s");
@@ -81,9 +81,8 @@ test("M3 walkthrough", async ({ page }) => {
   await shot(page, "07-tag-dialog");
   await page.keyboard.press("Escape");
 
-  // Highlights and Review via the action row.
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowRight");
+  // Highlights and Review via the action menu ("Game ▸" group).
+  await menuTo(page, "nav-highlights");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("query-chip").first()).toBeVisible();
   await page.keyboard.press("Enter");
@@ -92,9 +91,7 @@ test("M3 walkthrough", async ({ page }) => {
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("video")).toBeAttached();
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("ArrowRight");
+  await menuTo(page, "nav-review");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("auto-detected-label")).toBeVisible();
   await page.waitForTimeout(1000);

@@ -1529,3 +1529,241 @@ body,
   outline: 4px solid var(--accent);
   outline-offset: 3px;
 }
+
+/* ---- Watch menu: one row; a group (▸) replaces it with its own row ---- */
+.navrow {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.navrow[hidden] {
+  display: none;
+}
+.navrow .crumb {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-right: 4px;
+}
+
+/* ---- M10 profiles (TV) ---- */
+.library-head {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+  margin-bottom: 28px;
+}
+.library-head h1 {
+  margin: 0;
+}
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--line);
+  color: var(--dim);
+  font-weight: 700;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+}
+.profile-card {
+  width: 320px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 24px 12px;
+  border-radius: 16px;
+  background: var(--panel);
+  text-align: center;
+}
+.profile-card.focused {
+  box-shadow: var(--ring);
+  background: var(--raised);
+}
+.profile-card-name {
+  font-size: 34px;
+  font-weight: 600;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-head {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.profile-head h1 {
+  margin: 0 0 4px;
+}
+.profile-head .clip-badge {
+  margin-left: auto;
+}
+.stat-list,
+.link-list,
+.picker-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.stat-row {
+  display: grid;
+  grid-template-columns: 420px 260px 380px;
+  align-items: center;
+  gap: 16px;
+  width: max-content;
+  padding: 6px 20px;
+  border-radius: 10px;
+}
+.stat-row.current {
+  background: var(--raised);
+}
+.stat-row.focused,
+.stat-stepper.focused,
+.link-row .btn.focused {
+  box-shadow: var(--ring-tight);
+}
+.stat-value {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.stat-row:has(.stat-stepper) {
+  grid-template-columns: 420px auto auto 380px;
+}
+.stat-stepper {
+  padding: 4px 16px;
+  border-radius: 8px;
+  background: var(--line);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.edited {
+  color: var(--accent);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.card-tab {
+  display: flex;
+  gap: 40px;
+}
+.card-image {
+  width: 405px;
+  height: 540px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--panel);
+  text-align: center;
+  padding: 0 24px;
+}
+.card-image img {
+  width: 405px;
+  height: 540px;
+  object-fit: contain;
+}
+.card-title {
+  margin-top: 0 !important;
+  color: var(--accent);
+}
+.card-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 40px;
+  margin: 20px 0;
+}
+.card-tile {
+  display: grid;
+}
+.card-tile b {
+  font-size: 56px;
+  line-height: 1.1;
+}
+.reel-idle {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: var(--panel);
+}
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  border-radius: 10px;
+}
+.link-row.current {
+  background: var(--raised);
+}
+.link-text {
+  flex: 1;
+}
+.suggest {
+  color: var(--accent);
+  font-size: 24px;
+}
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 8px 20px;
+  border-radius: 10px;
+}
+.picker-row.focused {
+  box-shadow: var(--ring-tight);
+  background: var(--raised);
+}
+.picker-row .dim {
+  margin-left: auto;
+}
+
+/* ---- M10 profiles (phone) ---- */
+.phone-hits li .avatar {
+  flex: none;
+}
+.phone-hits li a {
+  color: var(--fg);
+  font-weight: 600;
+}
+.profile-phone-head {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+.profile-phone-head h1 {
+  margin: 0;
+}
+.phone input[type="checkbox"] {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+.consent-text {
+  margin: 8px 0 12px;
+  padding-left: 22px;
+  color: var(--fg);
+}
+.consent-text li {
+  margin: 6px 0;
+}
+.phone input[type="file"]:disabled {
+  opacity: 0.45;
+}

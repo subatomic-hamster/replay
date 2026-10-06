@@ -90,7 +90,7 @@ export function Rallies({ gameId }: { gameId: string }) {
         if (status === "done") {
           handle?.seek(0);
           handle?.play();
-        } else if (status === "none" || status === "failed" || status === "error") {
+        } else if (status === "none" || status === "missing" || status === "failed" || status === "error") {
           api.renderCondensed(gameId).then(load, load);
         }
       } else if (a === "playpause") handle?.toggle();
@@ -130,7 +130,7 @@ export function Rallies({ gameId }: { gameId: string }) {
       </div>
       {TABS[tab] === "Condensed game" && status !== "done" ? (
         <p className="dim" data-testid="condensed-status" data-status={status}>
-          {status === "none"
+          {status === "none" || status === "missing"
             ? "Not rendered yet — Enter renders the condensed game (rallies only)."
             : status === "queued" || status === "running"
               ? "Rendering the condensed game…"

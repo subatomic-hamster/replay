@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { courtViewBox } from "../components/CourtInset";
 import { TextEntryDialog } from "../components/TextEntryDialog";
+import { ProfilePicker } from "../components/ProfilePicker";
 import { useDpad, type DpadAction } from "../platform/keys";
 import { navigate } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
@@ -83,6 +84,7 @@ export function Review({ gameId }: { gameId: string }) {
   const [focus, setFocus] = useState(0);
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState<ReviewOption | null>(null);
+  const [linking, setLinking] = useState<string | null>(null);
   // Two focusable rows: the review answers, then the heatmap's player picker.
   const [row, setRow] = useState(0);
   const [heatFocus, setHeatFocus] = useState(0);
@@ -116,23 +118,29 @@ export function Review({ gameId }: { gameId: string }) {
     [busy, load],
   );
 
+  // M10: an identity question also offers "Link to profile" (after the API's options),
+  // which names the player through POST /profiles/{id}/links instead of a review PATCH.
+  const linkable = current?.kind === "identity" && !!current.player_id;
   const onAction = useCallback(
     (a: DpadAction) => {
       const options = current?.options ?? [];
+      const last = options.length - (linkable ? 0 : 1);
       if (a === "up") setRow(0);
       else if (a === "down") setRow(heatmap.length ? 1 : 0);
       else if (a === "left" && row === 0) setFocus((f) => Math.max(0, f - 1));
       else if (a === "left") setHeatFocus((i) => Math.max(0, i - 1));
-      else if (a === "right" && row === 0) setFocus((f) => Math.min(options.length - 1, f + 1));
+      else if (a === "right" && row === 0) setFocus((f) => Math.min(last, f + 1));
       else if (a === "right") setHeatFocus((i) => Math.min(heatmap.length - 1, i + 1));
-      else if (a === "select" && row === 0 && options[focus]) {
+      else if (a === "select" && row === 0 && linkable && focus === options.length) {
+        setLinking(current?.player_id ?? null);
+      } else if (a === "select" && row === 0 && options[focus]) {
         if (options[focus].text_field) setTyping(options[focus]);
         else answer(options[focus]);
       } else if (a === "back") navigate(`/tv/${gameId}`);
     },
-    [current, focus, answer, gameId, row, heatmap.length],
+    [current, focus, answer, gameId, row, heatmap.length, linkable],
   );
-  useDpad(onAction, !typing);
+  useDpad(onAction, !typing && !linking);
 
   if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
   if (!game) return <div className="screen">Loading…</div>;
@@ -183,6 +191,15 @@ export function Review({ gameId }: { gameId: string }) {
                   {opt.label}
                 </span>
               ))}
+              {linkable ? (
+                <span
+                  className={`btn${row === 0 && focus === current.options.length ? " focused" : ""}`}
+                  data-testid="review-link-profile"
+                  data-focused={row === 0 && focus === current.options.length ? "true" : "false"}
+                >
+                  Link to profile…
+                </span>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -292,6 +309,20 @@ export function Review({ gameId }: { gameId: string }) {
             const opt = typing;
             setTyping(null);
             answer(opt, text);
+          }}
+        />
+      ) : null}
+
+      {linking ? (
+        <ProfilePicker
+          gameId={gameId}
+          playerId={linking}
+          playerLabel={`#${linking}`}
+          onCancel={() => setLinking(null)}
+          onLinked={() => {
+            setLinking(null);
+            setFocus(0);
+            load();
           }}
         />
       ) : null}

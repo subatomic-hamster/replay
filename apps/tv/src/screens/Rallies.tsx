@@ -88,7 +88,7 @@ export function Rallies({ gameId }: { gameId: string }) {
         if (status === "done") {
           handle?.seek(0);
           handle?.play();
-        } else if (status === "none" || status === "failed" || status === "error") {
+        } else if (status === "none" || status === "missing" || status === "failed" || status === "error") {
           api.renderCondensed(gameId).then(load, load);
         }
       } else if (a === "playpause") handle?.toggle();
@@ -124,7 +124,7 @@ export function Rallies({ gameId }: { gameId: string }) {
       </View>
       {TABS[tab] === "Condensed game" && status !== "done" ? (
         <T testID="condensed-status" dataSet={{ status }} style={{ color: color.dim }}>
-          {status === "none"
+          {status === "none" || status === "missing"
             ? "Not rendered yet — Select renders the condensed game (rallies only)."
             : status === "queued" || status === "running"
               ? "Rendering the condensed game…"

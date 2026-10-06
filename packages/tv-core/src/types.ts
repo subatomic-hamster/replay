@@ -43,6 +43,8 @@ export interface Player {
   team: number;
   color_hex?: string;
   tagged?: boolean;
+  /** M10: set while this roster player is linked to a profile (D-58). */
+  profile_id?: string;
 }
 
 export interface Team {
@@ -54,7 +56,7 @@ export interface Game {
   schema: "replay.game.v1";
   id: string;
   title: string;
-  recorded_at?: string;
+  recorded_at?: string | null;
   status: GameStatus;
   /** Ordered: the keys are the pipeline's own stage list, in run order (S-08). */
   stages: Record<string, StageState>;
@@ -84,7 +86,8 @@ export interface GameSummary {
   id: string;
   title: string;
   status: GameStatus;
-  recorded_at?: string;
+  /** null for a game created without a recording date */
+  recorded_at?: string | null;
   duration_s?: number | null;
   thumb_url?: string | null;
   stages?: Record<string, StageState>;

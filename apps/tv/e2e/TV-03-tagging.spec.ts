@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { GAME_ID, enterSelectMode, focusedBoxId, mockCalls, openWatch } from "./helpers";
+import { GAME_ID, enterSelectMode, focusedBoxId, menuTo, mockCalls, openWatch } from "./helpers";
 
 // W7 / S-24 / S-25 on the RN TV app: tag a player with only D-pad + Select.
 test("TV-03 tag from the action row with a preset name (S-24)", async ({ page }) => {
@@ -9,10 +9,8 @@ test("TV-03 tag from the action row with a preset name (S-24)", async ({ page })
   await expect.poll(() => focusedBoxId(page)).toBe("p2");
   await expect(page.getByTestId("player-label-p2")).toHaveText("p2");
 
-  // Up from p2 (nothing above) → action row; "Tag player" is the last item.
-  await page.keyboard.press("ArrowUp");
-  for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("action-tag")).toHaveAttribute("data-focused", "true");
+  // Up from p2 (nothing above) → action menu; "Tag player" is in the "Players ▸" group.
+  await menuTo(page, "action-tag");
   await page.keyboard.press("Enter");
 
   const dialog = page.getByTestId("tag-dialog");

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { FRAME, GAME_ID, enterSelectMode, focusedBoxId, transform, video } from "./helpers";
+import { FRAME, GAME_ID, enterSelectMode, focusedBoxId, menuTo, transform, video } from "./helpers";
 
 // The DoD path on the RN TV app's web build: library → watch → select → follow → back,
 // driven only by remote keys (Arrows, Enter = Select, Escape = Back).
@@ -74,10 +74,10 @@ test("TV-02 Up at the top of select mode opens the action row; spotlight + event
   await enterSelectMode(page);
   await page.keyboard.press("ArrowUp"); // nothing above p1 → action row
   await expect(page.getByTestId("nav-library")).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press("Escape"); // Back closes the menu; select mode is still on
 
-  // ◀ Event / Event ▶ live at indexes 4/5; Spotlight at 7.
-  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("action-next-event")).toHaveAttribute("data-focused", "true");
+  // ◀ Event / Event ▶ / Spotlight live in the "Playback ▸" group.
+  await menuTo(page, "action-next-event");
   const t0 = (await video(page))!.currentTime;
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await video(page))!.currentTime).toBeGreaterThan(t0 + 0.5);
@@ -86,9 +86,7 @@ test("TV-02 Up at the top of select mode opens the action row; spotlight + event
     return [3, 8, 14, 17].some((k) => Math.abs(t - k) < 0.05);
   }).toBe(true);
 
-  await page.keyboard.press("ArrowUp");
-  for (let i = 0; i < 7; i++) await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("action-spotlight")).toHaveAttribute("data-focused", "true");
+  await menuTo(page, "action-spotlight");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("spotlight-overlay")).toBeVisible();
 });

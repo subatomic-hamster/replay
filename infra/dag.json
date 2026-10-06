@@ -79,9 +79,53 @@
   "default": true
  },
  {
+  "name": "audio",
+  "after": [
+   "ingest"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "pose",
+  "after": [
+   "tracks"
+  ],
+  "resource": "gpu",
+  "fanout": true,
+  "cached": true,
+  "default": true
+ },
+ {
   "name": "events",
   "after": [
-   "identity"
+   "identity",
+   "audio",
+   "pose"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "triggers",
+  "after": [
+   "audio",
+   "pose"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "plays",
+  "after": [
+   "events",
+   "triggers"
   ],
   "resource": "cpu",
   "fanout": false,
@@ -99,11 +143,65 @@
    "identity",
    "tracks",
    "crops",
-   "events"
+   "audio",
+   "pose",
+   "events",
+   "triggers",
+   "plays"
   ],
   "resource": "io",
   "fanout": false,
   "cached": false,
   "default": true
+ },
+ {
+  "name": "director",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "broadcast",
+  "after": [
+   "director"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "hype",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "condensed",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "vertical",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
  }
 ]

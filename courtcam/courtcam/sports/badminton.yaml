@@ -86,8 +86,17 @@ tracking:
   merge_max_gap_s: 3.0
   merge_max_dist_m: 3.0
   smooth_window: 5
-events: [rally]
+events: [rally, hype]
 rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0]}
+# M4 play grammar (courtcam.plays): serve -> point; `last_n` adds the window of the last
+# 3 shots to long rallies.
+plays:
+  - name: rally
+    start: [serve]
+    end: [point]
+    member: [contact]
+    last_n: 3
+    roles: {serve: server, contact: hitter}
 # Measured on `badminton_auditorium_240s.mp4`: that camera stands in the plane of the net,
 # so the scale across the court is nearly uniform (person boxes 117-483 px tall, p95 324)
 # instead of pickleball's 7x run from baseline to baseline. The court fills the frame

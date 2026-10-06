@@ -44,8 +44,12 @@ def test_rallies_are_the_bursts_of_movement_not_the_walk_between():
     rng = np.random.default_rng(7)
     players = [_player(i, rng) for i in range(4)]
     for sport in ("badminton", "pickleball"):
-        found = detect_events(Path("unused.mp4"), players, load_profile(sport), {})
-        assert [e.type for e in found] == ["rally"] * len(RALLIES), found
+        events = detect_events(Path("unused.mp4"), players, load_profile(sport), {})
+        found = [e for e in events if e.type == "rally"]
+        assert len(found) == len(RALLIES), events
+        # no audio: each rally brings exactly its serve and point, no contacts
+        assert sorted({e.type for e in events}) == ["point", "rally", "serve"]
+        assert len(events) == 3 * len(RALLIES)
         for e, truth in zip(found, RALLIES, strict=True):
             assert _iou((e.t_start, e.t_end), truth) >= 0.6, (e, truth)
             assert e.t_start <= truth[0] + 0.5, "the serve before the burst is inside the clip"

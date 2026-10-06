@@ -77,12 +77,15 @@ def test_every_crop_path_validates(game: Game, pipeline_out: Path):
 
 def test_events_validate(pipeline_out: Path):
     events = read_json(pipeline_out / "events.json", Events)
+    assert {e.type for e in events.events} <= {"shot", "possession_change", "turnover", "hype"}
     for e in events.events:
-        assert e.type == "shot" and e.source == "heuristic" and e.confirmed is False
-        assert e.made is None, "the heuristic labeler cannot judge makes"
+        assert e.source == "heuristic" and e.confirmed is False
         assert 0.0 <= e.t_start <= e.t_key <= e.t_end
-        assert e.player_id is not None and e.court is not None
         assert 0.0 < e.confidence <= 1.0
+        if e.type == "shot":  # made/missed only from what follows (label_makes), else None
+            assert e.player_id is not None and e.court is not None
+        if e.type == "possession_change":
+            assert e.team in (0, 1) and e.cause in ("inbound", "defensive_rebound", "steal")
 
 
 def test_matches_the_golden_within_tolerance(game: Game, pipeline_out: Path):

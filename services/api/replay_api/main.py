@@ -22,8 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from . import discovery_routes, plays_routes, providers
 from . import pipeline_adapter as adapter
-from . import providers
 from . import stats as stats_mod
 from .config import Settings, from_env
 from .providers.index import LocalIndex
@@ -40,6 +40,9 @@ CALIB_REL = "media/calib.jpg"
 # D-23: the *proposal*, not the calibration. POST /calibration is still the commit.
 AUTOCALIB_REL = "autocalib.json"
 SOURCE_REL = "source.mp4"
+# M6: written by the worker's director / broadcast stages (replay_render)
+CUTS_REL = "cuts.json"
+BROADCAST_REL = "renditions/broadcast.mp4"
 EVENT_FIELDS = {
     "type",
     "made",
@@ -55,6 +58,10 @@ EVENT_FIELDS = {
     # D-11: "not a shot" in the review queue. Additive and optional; `replay.events.v1`
     # allows extra keys, so courtcam still reads a file the API rewrote.
     "dismissed",
+    # M4 (additive): the team, a shot's value, why a possession changed
+    "team",
+    "points",
+    "cause",
 }
 
 
@@ -146,6 +153,11 @@ def _resolve_urls(game: dict, storage: LocalStorage, base: str) -> dict:
     if rend.get("wide"):
         rend["wide"] = url(rend["wide"])
     rend["players"] = {k: url(v) for k, v in (rend.get("players") or {}).items()}
+    # M6, additive: the broadcast rendition and its cut list, advertised once on disk
+    # (the worker writes them after game.json, so presence is the source of truth)
+    broadcast = rend.get("broadcast") or BROADCAST_REL
+    rend["broadcast"] = url(broadcast) if storage.path(gid, broadcast).is_file() else None
+    g["cuts_url"] = url(CUTS_REL) if storage.path(gid, CUTS_REL).is_file() else None
     g["renditions"] = rend
     for key in ("tracks", "croppaths"):
         block = g.get(key)
@@ -290,6 +302,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     _register_routes(app)
+    plays_routes.register(app, _game_or_404, _events, live_events)  # M4/M5
+    app.include_router(discovery_routes.router)  # M11: hype, rallies, exports, review
     return app
 
 
@@ -615,6 +629,25 @@ def _register_routes(app: FastAPI) -> None:
             _track_frames(ctx.storage, game_id),
             adapter.get_profile(game.get("sport", ""), (game.get("court") or {}).get("variant")),
         )
+
+    @app.get("/games/{game_id}/renditions")
+    def renditions(request: Request, game_id: str):
+        """Every playable rendition of a game: the wide source, rendered per-player
+        follow-cams and (M6) the directed broadcast with its cut list."""
+        ctx = _ctx(request)
+        g = _resolve_urls(_game_or_404(request, game_id), ctx.storage, _base(request))
+        rend = g["renditions"]
+        out = []
+        if rend.get("wide"):
+            out.append({"id": "wide", "kind": "wide", "url": rend["wide"]})
+        for pid, u in sorted(rend["players"].items()):
+            out.append({"id": f"follow:{pid}", "kind": "follow", "player_id": pid, "url": u})
+        if rend.get("broadcast"):
+            out.append(
+                {"id": "broadcast", "kind": "broadcast", "url": rend["broadcast"],
+                 "cuts_url": g["cuts_url"]}
+            )  # fmt: skip
+        return {"game_id": game_id, "renditions": out}
 
     # ---------------------------------------------------------------- sessions
 

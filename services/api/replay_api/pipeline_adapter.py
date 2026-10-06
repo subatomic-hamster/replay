@@ -586,3 +586,45 @@ def _probe(path: Path) -> dict | None:
 def _pipeline_keys(game_json: Path) -> dict:
     data = json.loads(Path(game_json).read_text())
     return {k: data[k] for k in PIPELINE_KEYS if k in data}
+
+
+# --- M5 plays / triggers / score (courtcam.triggers, courtcam.plays) -----------------
+
+
+def resolve_trigger(
+    sport: str, trigger: dict, plays: list[dict], duration_s: float | None
+) -> tuple[str | None, dict | None]:
+    """The play a trigger at `trigger["t"]` lands on, and its clip (or None, None)."""
+    from courtcam.profiles import load_profile
+    from courtcam.schema import Play, Trigger
+    from courtcam.triggers import make_clip, resolve
+
+    play = resolve(trigger["t"], [Play.model_validate(p) for p in plays],
+                   load_profile(sport).triggers)  # fmt: skip
+    if play is None:
+        return None, None
+    clip = make_clip(Trigger.model_validate(trigger), play, duration_s)
+    return play.id, clip.model_dump(mode="json")
+
+
+def trigger_subject(sport: str, transcript: str | None, roster: dict[str, str]) -> str | None:
+    """Who "Replay, clip <name>" named, against today's roster (names come after a run)."""
+    from courtcam.profiles import load_profile
+    from courtcam.triggers import subject_from_transcript
+
+    return subject_from_transcript(transcript or "", roster, load_profile(sport).triggers)
+
+
+def score_timeline(events: list[dict], user: list[dict]) -> list[dict]:
+    """The running score from made shots / won points, with user entries applied."""
+    from courtcam.plays import score_timeline as timeline
+    from courtcam.schema import Event, ScoreEntry
+
+    evs = []
+    for e in events:
+        try:
+            evs.append(Event.model_validate(e))
+        except ValueError:  # a bookmark or another API-only event type: not scoring
+            continue
+    entries = timeline(evs, [ScoreEntry.model_validate(u) for u in user])
+    return [s.model_dump(mode="json") for s in entries]

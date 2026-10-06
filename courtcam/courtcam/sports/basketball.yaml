@@ -88,8 +88,26 @@ tracking:
   merge_max_gap_s: 5.0
   merge_max_dist_m: 7.0
   smooth_window: 5
-events: [shot]
+# Order matters: `possession` reads the shots (rebound vs steal, make vs miss).
+events: [shot, possession, hype]
+# M4 play grammar (courtcam.plays): possession start -> shot or turnover. A steal both
+# ends the old possession and starts the new one; a put-back after an offensive rebound
+# (a shot while no possession is open) is a one-shot play.
+plays:
+  - name: possession
+    start: [possession_change]
+    end: [shot, turnover]
+    same_team: true
+    orphan_end: true
+    max_s: 40
+    roles:
+      possession_change.inbound: inbounder
+      possession_change.steal: stealer
+      possession_change.defensive_rebound: rebounder
+      shot: shooter
+      turnover: turnover
 shot:
+  two_pt_zones: [three_point, three_point_far]
   rim_radius_m: 7.0
   roi_px: 96
   min_gap_s: 2.0

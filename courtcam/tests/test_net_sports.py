@@ -140,12 +140,14 @@ def test_court_positions_track_the_ground_truth(net_run):
 
 
 def test_only_rally_events_inside_the_clip(net_run):
-    """`events: [rally]` is all a net sport emits; segmentation itself is covered on
-    hand-built tracks in test_events.py (the synth players never stop moving)."""
+    """A net sport emits rallies (with their serve / point / contacts) and crowd hype;
+    segmentation itself is covered on hand-built tracks in test_events.py."""
     _, _, _, out = net_run
     for e in json.loads((out / "events.json").read_text())["events"]:
-        assert e["type"] == "rally"
-        assert 0.0 <= e["t_start"] <= e["t_key"] < e["t_end"] <= DURATION_S + 1e-6
+        assert e["type"] in ("rally", "serve", "point", "contact", "hype")
+        assert 0.0 <= e["t_start"] <= e["t_key"] <= e["t_end"] <= DURATION_S + 1e-6
+        if e["type"] in ("rally", "hype"):
+            assert e["t_key"] < e["t_end"]
 
 
 def test_badminton_is_one_court_and_singles_still_loads():

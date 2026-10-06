@@ -74,8 +74,16 @@ tracking:
   merge_max_gap_s: 3.0
   merge_max_dist_m: 3.0
   smooth_window: 5
-events: [rally]
+events: [rally, hype]
 rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.8, 3.0]}
+# M4 play grammar (courtcam.plays): serve -> point, last 3 shots as an option.
+plays:
+  - name: rally
+    start: [serve]
+    end: [point]
+    member: [contact]
+    last_n: 3
+    roles: {serve: server, contact: hitter}
 # D-20: `zoom` divides the court's *pixel* width. The camera sits at the near baseline
 # of a 13.4 m court, so a player at that end is already 600-750 px tall in the wide
 # shot: zoom 1.6 gave a 888x500 window that cut his head off for ~10 % of the clip.

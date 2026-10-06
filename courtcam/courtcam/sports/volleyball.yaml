@@ -59,7 +59,11 @@ tracking:
   merge_max_dist_m: 3.0
   smooth_window: 5
 events: [rally, block, hype]
-rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.5, 2.0]}
+# audio fusion on: twelve mostly-still players defeat the motion segmenter (synthetic
+# only, seed 7: rally recall 0.40 inside motion rallies, 0.60 with silence splits and
+# audio-only rallies; no real volleyball footage)
+rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.5, 2.0],
+        audio_fusion: true, audio_only_min_contacts: 2}
 # M4 play grammars (courtcam.plays): the rally (serve -> point), a block (front-row
 # jump at the net + contact sound) and an attack (pass -> set -> spike: three
 # consecutive same-side contacts, each credited to the nearest-moving player by pose).

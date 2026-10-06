@@ -10,6 +10,8 @@ from ..dag import Stage
 
 MODULES = [
     "replay_worker.stages.courtcam",
+    "replay_worker.stages.broadcast",
+    "replay_worker.stages.discovery",
 ]
 
 

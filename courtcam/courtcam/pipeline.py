@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import uuid
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -16,23 +17,33 @@ from typing import Any
 
 import numpy as np
 
+from . import audio as audio_mod
 from . import calibrate as calib_mod
 from . import croppath, detect, distortion, identity
 from . import events as events_mod
 from . import ingest as ingest_mod
+from . import plays as plays_mod
+from . import pose as pose_mod
+from . import triggers as triggers_mod
 from .court import on_court, polygon_px, read_court_tracks, resample, write_court_tracks
 from .profiles import Profile, load_profile
 from .schema import (
+    AudioDoc,
+    Clips,
     CourtInfo,
     CropPathsRef,
     Event,
     Events,
     Game,
+    Plays,
+    PosesChunk,
     Renditions,
+    Score,
     TrackFrame,
     TrackPoint,
     TracksChunk,
     TracksRef,
+    Triggers,
     VideoInfo,
     read_json,
     write_json,
@@ -51,9 +62,17 @@ STAGES: tuple[str, ...] = (
     "identity",
     "tracks",
     "crops",
+    "audio",
+    "pose",
     "events",
+    "triggers",
+    "plays",
 )
 WIDE_REL = "media/wide.mp4"
+AUDIO_DIR = "audio"  # always created (empty for a silent source), so it can be cached
+AUDIO_WAV_REL = "audio/16k.wav"
+AUDIO_FULL_REL = "audio/full.mka"
+POSES_TEMPLATE = "poses/{chunk:05d}.json"
 TRACKS_TEMPLATE = "tracks/{chunk:05d}.json"
 CROPS_TEMPLATE = "crops/{player_id}.json"
 
@@ -358,6 +377,97 @@ def stage_crops(
     return written
 
 
+def stage_audio(
+    input_path: Path, out_dir: Path, profile: Profile, info: VideoInfo, *, progress: Progress
+) -> AudioDoc:
+    """16 kHz mono WAV + the source's audio stream copied, and `audio.json` (onsets,
+    loudness, hype spikes). A silent source gives `has_audio: false` and no media."""
+    progress("audio", 0.0)
+    wav, full = out_dir / AUDIO_WAV_REL, out_dir / AUDIO_FULL_REL
+    (out_dir / AUDIO_DIR).mkdir(parents=True, exist_ok=True)
+    for p in (wav, full):
+        p.unlink(missing_ok=True)
+    ok = audio_mod.extract(Path(input_path), wav, full)
+    doc = audio_mod.analyse(wav if ok else None, profile.audio, info.duration_s)
+    if ok:
+        doc.wav, doc.full = AUDIO_WAV_REL, AUDIO_FULL_REL
+    write_json(out_dir / "audio.json", doc)
+    progress("audio", 1.0)
+    return doc
+
+
+def pose_kind(kind: str | None, detector_kind: str, ground_truth: Path | None) -> str:
+    """`auto`: ground-truth keypoints when detection replays ground truth, else YOLO."""
+    if kind and kind != "auto":
+        return kind
+    return "synthetic" if detector_kind == "synthetic" and ground_truth else "yolo"
+
+
+def make_poser(kind: str, profile: Profile, model: str | None, ground_truth: Path | None):
+    if kind == "yolo":
+        return pose_mod.yolo_poser(profile.pose, model or os.environ.get("COURTCAM_POSE_MODEL"))
+    if kind == "synthetic":
+        if ground_truth is None:
+            raise ValueError("pose 'synthetic' needs the clip's ground_truth.json")
+        return pose_mod.synthetic_poser(ground_truth, profile.pose)
+    return None
+
+
+def stage_pose(
+    out_dir: Path,
+    profile: Profile,
+    info: VideoInfo,
+    *,
+    kind: str,
+    model: str | None = None,
+    ground_truth: Path | None = None,
+    chunks: Sequence[int] | None = None,
+    poser=None,
+    progress: Progress,
+) -> list[Path]:
+    """`poses/{chunk}.json` for every tracks chunk (or just `chunks`). `kind` is
+    yolo | synthetic | none."""
+    progress("pose", 0.0)
+    todo = (
+        list(chunks)
+        if chunks is not None
+        else sorted(int(p.stem) for p in (out_dir / "tracks").glob("*.json"))
+    )
+    poser = poser or make_poser(kind, profile, model, ground_truth)
+    source = {"yolo": Path(model or profile.pose.model).name, "synthetic": "synthetic"}.get(
+        kind, "none"
+    )
+    written = []
+    for n, c in enumerate(todo):
+        chunk = read_json(out_dir / TRACKS_TEMPLATE.format(chunk=c), TracksChunk)
+        if poser is None:
+            doc = PosesChunk(t0=chunk.t0, rate_hz=chunk.rate_hz, frames=[])
+        else:
+            doc = pose_mod.estimate_chunk(
+                chunk,
+                (info.width, info.height),
+                info.fps,
+                poser,
+                video=out_dir / WIDE_REL if kind == "yolo" else None,
+                source=source,
+            )
+        written.append(write_json(out_dir / POSES_TEMPLATE.format(chunk=c), doc))
+        progress("pose", (n + 1) / max(1, len(todo)))
+    progress("pose", 1.0)
+    return written
+
+
+def signals(out_dir: Path, info: VideoInfo) -> events_mod.Signals:
+    """Audio + pose results for the event and trigger detectors (empty when absent)."""
+    sig = events_mod.Signals(size=(info.width, info.height))
+    if (out_dir / "audio.json").exists():
+        doc = read_json(out_dir / "audio.json", AudioDoc)
+        sig.onsets, sig.hype, sig.has_audio = doc.onsets, list(doc.hype), doc.has_audio
+    if (out_dir / "poses").is_dir():
+        sig.poses = pose_mod.read_poses(out_dir / "poses")
+    return sig
+
+
 def stage_events(
     out_dir: Path,
     profile: Profile,
@@ -370,11 +480,72 @@ def stage_events(
     progress("events", 0.0)
     players, _ = identity.read_players(out_dir / "_work" / "players.json")
     found = events_mod.detect_events(
-        out_dir / WIDE_REL, players, profile, calib, fps=info.fps, labeler=labeler
+        out_dir / WIDE_REL,
+        players,
+        profile,
+        calib,
+        fps=info.fps,
+        labeler=labeler,
+        signals=signals(out_dir, info),
     )
     write_json(out_dir / "events.json", Events(events=found), indent=1)
     progress("events", 1.0)
     return found
+
+
+def stage_triggers(
+    out_dir: Path,
+    profile: Profile,
+    info: VideoInfo,
+    *,
+    asr_model: str | None = None,
+    roster: dict[str, str] | None = None,
+    asr=None,
+    progress: Progress,
+) -> list:
+    """`triggers.json`: X gestures from the poses, voice commands from ASR over the 16 kHz
+    WAV (only when an ASR model is configured: `asr_model` or $COURTCAM_ASR_MODEL).
+    Unresolved: the plays stage maps them to plays and clips."""
+    progress("triggers", 0.0)
+    sig = signals(out_dir, info)
+    found = triggers_mod.detect_gestures(sig, profile.triggers)
+    asr_model = asr_model or os.environ.get("COURTCAM_ASR_MODEL")
+    wav = out_dir / AUDIO_WAV_REL
+    if (asr or asr_model) and wav.exists():
+        samples, sr = audio_mod.read_wav(wav)
+        segments = audio_mod.speech_segments(samples, sr, profile.audio)
+        if segments:
+            found += triggers_mod.detect_voice(
+                samples,
+                sr,
+                segments,
+                asr or triggers_mod.whisper_asr(asr_model),
+                roster or {},
+                profile.triggers,
+            )
+    progress("triggers", 0.5)
+    write_json(out_dir / "triggers.json", Triggers(triggers=triggers_mod.number(found)), indent=1)
+    progress("triggers", 1.0)
+    return found
+
+
+def stage_plays(out_dir: Path, profile: Profile, info: VideoInfo, *, progress: Progress) -> list:
+    """`plays.json` (grammars over events), `clips.json` (triggers resolved to plays) and
+    `score.json` (running score from the events)."""
+    progress("plays", 0.0)
+    found = read_json(out_dir / "events.json", Events).events
+    plays = plays_mod.build_plays(found, profile.plays, profile.id)
+    trig = (
+        read_json(out_dir / "triggers.json", Triggers).triggers
+        if (out_dir / "triggers.json").exists()
+        else []
+    )
+    clips = triggers_mod.apply(trig, plays, profile.triggers, info.duration_s)
+    write_json(out_dir / "plays.json", Plays(plays=plays), indent=1)
+    write_json(out_dir / "clips.json", Clips(clips=clips), indent=1)
+    write_json(out_dir / "score.json", Score(score=plays_mod.score_timeline(found)), indent=1)
+    progress("plays", 1.0)
+    return plays
 
 
 # --- orchestration ----------------------------------------------------------
@@ -401,6 +572,10 @@ def run(
     labeler: events_mod.Labeler | None = None,
     progress: Progress | None = None,
     show_progress: bool = True,
+    pose: str = "auto",
+    pose_model: str | None = None,
+    asr_model: str | None = None,
+    roster: dict[str, str] | None = None,
 ) -> Path:
     """Run the pipeline and return the path to `out_dir/game.json`.
 
@@ -503,9 +678,32 @@ def run(
     if "crops" in requested:
         stage_crops(out_dir, profile, info, calib_data, progress=report)
         _mark(out_dir, game, "crops")
+    if "audio" in requested:
+        stage_audio(input_path, out_dir, profile, info, progress=report)
+        _mark(out_dir, game, "audio")
+    if "pose" in requested:
+        stage_pose(
+            out_dir,
+            profile,
+            info,
+            kind=pose_kind(pose, detector, ground_truth),
+            model=pose_model,
+            ground_truth=ground_truth,
+            progress=report,
+        )
+        _mark(out_dir, game, "pose")
     if "events" in requested:
         stage_events(out_dir, profile, calib_data, info, labeler=labeler, progress=report)
         _mark(out_dir, game, "events")
+    if "triggers" in requested:
+        names = {p.name: p.id for p in game.players if p.name}
+        stage_triggers(
+            out_dir, profile, info, asr_model=asr_model, roster=roster or names, progress=report
+        )
+        _mark(out_dir, game, "triggers")
+    if "plays" in requested:
+        stage_plays(out_dir, profile, info, progress=report)
+        _mark(out_dir, game, "plays")
 
     game.status = "ready" if set(STAGES) <= set(game.stages) else "processing"
     _save_game(out_dir, game)

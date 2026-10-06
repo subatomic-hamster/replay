@@ -133,10 +133,58 @@ def run_crops(ctx: Ctx, item: str | None) -> None:
     P.stage_crops(ctx.game_dir, _profile(ctx), _info(ctx), _calib(ctx), progress=ctx.progress)
 
 
+def run_audio(ctx: Ctx, item: str | None) -> None:
+    P.stage_audio(
+        Path(ctx.cfg["source"]), ctx.game_dir, _profile(ctx), _info(ctx), progress=ctx.progress
+    )
+
+
+def _pose_kind(cfg: dict) -> str:
+    return P.pose_kind(
+        cfg.get("pose"),
+        cfg.get("detector") or "yolo",
+        Path(cfg["ground_truth"]) if cfg.get("ground_truth") else None,
+    )
+
+
+def _pose_chunks(ctx: Ctx) -> list[str]:
+    return sorted(p.stem for p in (ctx.game_dir / "tracks").glob("*.json"))
+
+
+def run_pose(ctx: Ctx, item: str | None) -> None:
+    """One tracks chunk (fan-out item = chunk stem)."""
+    c = ctx.cfg
+    P.stage_pose(
+        ctx.game_dir,
+        _profile(ctx),
+        _info(ctx),
+        kind=_pose_kind(c),
+        model=c.get("pose_model"),
+        ground_truth=Path(c["ground_truth"]) if c.get("ground_truth") else None,
+        chunks=[int(item)] if item is not None else None,
+        progress=ctx.progress,
+    )
+
+
 def run_events(ctx: Ctx, item: str | None) -> None:
     P.stage_events(
         ctx.game_dir, _profile(ctx), _calib(ctx), _info(ctx), labeler=None, progress=ctx.progress
     )
+
+
+def run_triggers(ctx: Ctx, item: str | None) -> None:
+    P.stage_triggers(
+        ctx.game_dir,
+        _profile(ctx),
+        _info(ctx),
+        asr_model=ctx.cfg.get("asr_model"),
+        roster=ctx.cfg.get("roster"),
+        progress=ctx.progress,
+    )
+
+
+def run_plays(ctx: Ctx, item: str | None) -> None:
+    P.stage_plays(ctx.game_dir, _profile(ctx), _info(ctx), progress=ctx.progress)
 
 
 def run_game(ctx: Ctx, item: str | None) -> None:
@@ -245,13 +293,53 @@ STAGES = [
         after=("identity",),
     ),
     Stage(
+        "audio",
+        VERSION,
+        run_audio,
+        inputs=("{source}", WIDE),
+        outputs=(P.AUDIO_DIR, "audio.json"),
+        params=("sport",),
+        after=("ingest",),
+    ),
+    Stage(
+        "pose",
+        VERSION,
+        run_pose,
+        inputs=("tracks/{item}.json", WIDE, "{ground_truth}"),
+        outputs=("poses/{item}.json",),
+        params=("sport", "pose", "pose_model", "detector"),
+        after=("tracks",),
+        resource=lambda cfg: "gpu" if _pose_kind(cfg) == "yolo" else "cpu",
+        fanout=_pose_chunks,
+        key_extra=lambda cfg: _device() if _pose_kind(cfg) == "yolo" else None,
+    ),
+    Stage(
         "events",
         VERSION,
         run_events,
-        inputs=(PLAYERS, "calib.json", WIDE),
+        inputs=(PLAYERS, "calib.json", WIDE, "audio.json", "poses"),
         outputs=("events.json",),
         params=("sport",),
-        after=("identity",),
+        after=("identity", "audio", "pose"),
+    ),
+    Stage(
+        "triggers",
+        VERSION,
+        run_triggers,
+        inputs=("audio.json", "poses"),
+        outputs=("triggers.json",),
+        params=("sport", "asr_model", "roster"),
+        after=("audio", "pose"),
+        resource=lambda cfg: "gpu" if cfg.get("asr_model") else "cpu",
+    ),
+    Stage(
+        "plays",
+        VERSION,
+        run_plays,
+        inputs=("events.json", "triggers.json", WIDE),
+        outputs=("plays.json", "clips.json", "score.json"),
+        params=("sport",),
+        after=("events", "triggers"),
     ),
     Stage(
         "game",

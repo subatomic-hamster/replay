@@ -1,0 +1,104 @@
+{
+ "name": "volleyball_indoor",
+ "standard": "fivb",
+ "units": "m",
+ "origin": "centre of one end line; +x toward the right sideline, +y toward the far end line",
+ "size": [
+  9.0,
+  18.0
+ ],
+ "court": [
+  [
+   -4.5,
+   0.0
+  ],
+  [
+   4.5,
+   0.0
+  ],
+  [
+   4.5,
+   18.0
+  ],
+  [
+   -4.5,
+   18.0
+  ]
+ ],
+ "net_y": 9.0,
+ "net_height_m": 2.43,
+ "landmarks": {
+  "corner_nl": [
+   -4.5,
+   0.0
+  ],
+  "corner_nr": [
+   4.5,
+   0.0
+  ],
+  "corner_fl": [
+   -4.5,
+   18.0
+  ],
+  "corner_fr": [
+   4.5,
+   18.0
+  ],
+  "net_post_l": [
+   -4.5,
+   9.0
+  ],
+  "net_post_r": [
+   4.5,
+   9.0
+  ],
+  "attack_nl": [
+   -4.5,
+   6.0
+  ],
+  "attack_nr": [
+   4.5,
+   6.0
+  ],
+  "attack_fl": [
+   -4.5,
+   12.0
+  ],
+  "attack_fr": [
+   4.5,
+   12.0
+  ]
+ },
+ "features": {
+  "net_line": [
+   [
+    -4.5,
+    9.0
+   ],
+   [
+    4.5,
+    9.0
+   ]
+  ],
+  "attack_near": [
+   [
+    -4.5,
+    6.0
+   ],
+   [
+    4.5,
+    6.0
+   ]
+  ],
+  "attack_far": [
+   [
+    -4.5,
+    12.0
+   ],
+   [
+    4.5,
+    12.0
+   ]
+  ]
+ }
+}

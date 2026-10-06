@@ -1,0 +1,172 @@
+{
+ "schema": "courtcam.synth_events.v1",
+ "synthetic": true,
+ "generator": "courtcam.synth.v2",
+ "sport": "basketball",
+ "variant": "full",
+ "fps": 30,
+ "width": 1280,
+ "height": 720,
+ "duration_s": 40.0,
+ "seed": 7,
+ "camera": {
+  "K": [
+   [
+    219.77457204572806,
+    0.0,
+    640.0
+   ],
+   [
+    0.0,
+    219.77457204572806,
+    360.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "R": [
+   [
+    0.0,
+    1.0,
+    -0.0
+   ],
+   [
+    0.5392018554096322,
+    -0.0,
+    -0.8421765605398965
+   ],
+   [
+    -0.8421765605398965,
+    0.0,
+    -0.5392018554096322
+   ]
+  ],
+  "t": [
+   -14.0,
+   -1.8217642932334313,
+   13.972962279341475
+  ],
+  "k1": 0.0,
+  "size": [
+   1280,
+   720
+  ]
+ },
+ "events": [
+  {
+   "type": "possession_change",
+   "t_start": 3.421,
+   "t_key": 3.421,
+   "t_end": 4.021,
+   "cause": "inbound",
+   "player_id": "p3",
+   "team": 0,
+   "id": "e1"
+  },
+  {
+   "type": "pass",
+   "t_start": 6.155,
+   "t_key": 6.155,
+   "t_end": 6.705,
+   "player_id": "p3",
+   "receiver_id": "p5",
+   "team": 0,
+   "id": "e2"
+  },
+  {
+   "type": "shot",
+   "t_start": 8.586,
+   "t_key": 9.186,
+   "t_end": 10.246,
+   "made": true,
+   "player_id": "p5",
+   "team": 0,
+   "court": [
+    0.615,
+    7.515
+   ],
+   "id": "e3"
+  },
+  {
+   "type": "possession_change",
+   "t_start": 17.859,
+   "t_key": 17.859,
+   "t_end": 18.459,
+   "cause": "inbound",
+   "player_id": "p6",
+   "team": 1,
+   "id": "e4"
+  },
+  {
+   "type": "pass",
+   "t_start": 20.031,
+   "t_key": 20.031,
+   "t_end": 20.581,
+   "player_id": "p6",
+   "receiver_id": "p10",
+   "team": 1,
+   "id": "e5"
+  },
+  {
+   "type": "pass",
+   "t_start": 22.519,
+   "t_key": 22.519,
+   "t_end": 23.069,
+   "player_id": "p10",
+   "receiver_id": "p4",
+   "team": 1,
+   "id": "e6"
+  },
+  {
+   "type": "pass",
+   "t_start": 24.709,
+   "t_key": 24.709,
+   "t_end": 25.259,
+   "player_id": "p4",
+   "receiver_id": "p2",
+   "team": 1,
+   "id": "e7"
+  },
+  {
+   "type": "shot",
+   "t_start": 26.629,
+   "t_key": 27.229,
+   "t_end": 28.339,
+   "made": true,
+   "player_id": "p2",
+   "team": 1,
+   "court": [
+    6.7,
+    23.226
+   ],
+   "id": "e8"
+  },
+  {
+   "type": "possession_change",
+   "t_start": 35.532,
+   "t_key": 35.532,
+   "t_end": 36.132,
+   "cause": "inbound",
+   "player_id": "p3",
+   "team": 0,
+   "id": "e9"
+  },
+  {
+   "type": "shot",
+   "t_start": 36.4,
+   "t_key": 37.0,
+   "t_end": 38.534,
+   "made": true,
+   "player_id": "p3",
+   "team": 0,
+   "court": [
+    -2.315,
+    20.987
+   ],
+   "id": "e10"
+  }
+ ]
+}

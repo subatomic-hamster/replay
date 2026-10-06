@@ -359,21 +359,70 @@ def autocalib_eval(
     )
 
 
+def _floats(value: str | None, n: int) -> tuple[float, ...] | None:
+    if not value:
+        return None
+    out = tuple(float(v) for v in value.replace("x", ",").split(","))
+    if len(out) != n:
+        raise typer.BadParameter(f"expected {n} comma-separated numbers, got {value!r}")
+    return out
+
+
+# The repo's TTS clips for the voice triggers; absent (a bare courtcam install) the
+# generator falls back to a labelled tone pattern.
+VOICE_DIR = Path(__file__).resolve().parents[2] / "samples" / "synthetic" / "voice"
+
+
 @app.command()
 def synth(
     out: Annotated[Path, typer.Option("--out", "-o", help="Directory for the clip + truth")],
     sport: str = "basketball",
     variant: str | None = None,
-    duration: float = 20.0,
+    duration: float = 40.0,
     fps: int = 30,
     seed: int = 7,
+    size: Annotated[str, typer.Option(help="WxH, e.g. 1920x1080 or 3840x2160 (4K)")] = "1280x720",
+    eye: Annotated[str | None, typer.Option(help="Camera position x,y,z in court metres")] = None,
+    target: Annotated[str | None, typer.Option(help="Camera look-at x,y,z")] = None,
+    focal: Annotated[
+        float | None, typer.Option(help="Focal length in px (default: fit court)")
+    ] = None,
+    k1: Annotated[float, typer.Option(help="Division-model lens k1 (< 0 = barrel)")] = 0.0,
+    voice_dir: Annotated[Path | None, typer.Option(help="TTS clips for voice triggers")] = None,
+    video: Annotated[bool, typer.Option(help="Encode clip.mp4 (off: truth + audio only)")] = True,
 ) -> None:
-    """Generate a synthetic clip, ground truth and landmarks for CI."""
-    from .synth import generate
+    """Generate a synthetic clip (video + audio) with full ground truth."""
+    from .synth import CameraSpec, generate
 
-    paths = generate(out, sport=sport, variant=variant, duration_s=duration, fps=fps, seed=seed)
+    w, h = (int(v) for v in _floats(size, 2))  # type: ignore[misc]
+    spec = CameraSpec(eye=_floats(eye, 3), target=_floats(target, 3), f_px=focal, k1=k1)
+    voices = voice_dir or (VOICE_DIR if VOICE_DIR.is_dir() else None)
+    t0 = time.perf_counter()
+    paths = generate(
+        out, sport=sport, variant=variant, duration_s=duration, fps=fps, seed=seed,
+        size=(w, h), camera=spec, voice_dir=voices, video=video,
+    )  # fmt: skip
     for name, path in paths.items():
         typer.echo(f"{name}: {path}")
+    typer.echo(f"generated in {time.perf_counter() - t0:.1f}s")
+
+
+@app.command("eval")
+def eval_cmd(
+    truth: Annotated[Path, typer.Option("--gt", help="Synthetic ground_truth.json")],
+    out: Annotated[Path, typer.Option("--out", "-o", help="Pipeline output directory")],
+    iou: float = 0.5,
+    json_out: Annotated[Path | None, typer.Option("--json", help="Write the metrics here")] = None,
+) -> None:
+    """MOTA / IDF1 / ID switches / detection P-R of a pipeline run against synthetic truth."""
+    from .metrics import evaluate_run
+
+    report = evaluate_run(truth, out, iou=iou)
+    text = json.dumps(report, indent=1)
+    if json_out:
+        json_out.parent.mkdir(parents=True, exist_ok=True)
+        json_out.write_text(text, encoding="utf-8")
+    typer.echo(text)
 
 
 @app.command()

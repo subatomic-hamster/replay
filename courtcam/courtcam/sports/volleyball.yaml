@@ -1,0 +1,102 @@
+id: volleyball
+display_name: Volleyball
+# Tier 1 like the other net sports (select, follow-cam, tagging, court inset, heatmap,
+# motion-based rally events). No real volleyball footage has been measured yet: every
+# number below that pickleball/badminton *measured* is copied from them, and the rest is
+# marked as a guess.
+tier: 1
+court:
+  template: volleyball_indoor.json
+  variants: [indoor]
+  landmarks: [corner_nl, corner_nr, corner_fl, corner_fr, net_post_l, net_post_r]
+  landmarks_optional: [attack_nl, attack_nr, attack_fl, attack_fr]
+  # D-23: prose for the vision model used by `courtcam autocalib`, not geometry.
+  orientation_hint: |-
+    An indoor volleyball court is a 9 m x 18 m rectangle split in half by a high net.
+    The camera is normally behind or above one end line, looking down the length of
+    the court.
+      - The NEAR end line is the one closest to the camera: LOWER and wider in the
+        picture.
+      - The FAR end line is the other one, beyond the net.
+    The net hangs high above the floor: the landmarks `net_post_l` / `net_post_r` are
+    where the CENTRE LINE under the net meets each sideline, on the floor, not the top
+    of the posts.
+    Which sideline is "l" and which is "r": `l` is further LEFT in the picture, `r`
+    further RIGHT. A whole-court left/right swap is corrected by the software as long
+    as you are consistent.
+    "NEAR = closer to the camera = lower in the picture" is also the rule
+    `templatefit.near_end_is_left` applies mechanically (a template with a `net_y` is a
+    net sport, filmed from behind a baseline), so keep the two in step if either moves.
+  landmark_descriptions:
+    corner_nl: the court corner where the NEAR end line meets the `l` sideline.
+    corner_nr: the court corner where the NEAR end line meets the `r` sideline.
+    corner_fl: the court corner where the FAR end line meets the `l` sideline.
+    corner_fr: the court corner where the FAR end line meets the `r` sideline.
+    net_post_l: >-
+      the point on the floor where the centre line (directly under the net) meets the
+      `l` sideline, halfway along the court.
+    net_post_r: the same crossing on the `r` sideline.
+    attack_nl: >-
+      where the attack line on the NEAR side (3 m in front of the net, on the camera
+      side) meets the `l` sideline.
+    attack_nr: the same NEAR attack-line end on the `r` sideline.
+    attack_fl: where the FAR attack line meets the `l` sideline.
+    attack_fr: where the FAR attack line meets the `r` sideline.
+  # Guess, not measured: a volleyball free zone is >= 3 m and servers and diggers live
+  # in it, so the 1.0 m the other net sports measured would drop real players. 2.0 m
+  # keeps a server 1.5 m behind the end line; revisit on real footage.
+  margin_m: 2.0
+# `max` is the concurrency cap (D-21): six a side.
+players: {min: 2, max: 12}
+team_rule: net_side
+teams:
+  colors: ["#2B7A3D", "#7A2B6E"]
+detection: {classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25}
+tracking:
+  oncourt_min_fraction: 0.6
+  min_lifetime_s: 1.0
+  merge_max_gap_s: 3.0
+  merge_max_dist_m: 3.0
+  smooth_window: 5
+events: [rally, block, hype]
+rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.5, 2.0]}
+# M4 play grammars (courtcam.plays): the rally (serve -> point), a block (front-row
+# jump at the net + contact sound) and an attack (pass -> set -> spike: three
+# consecutive same-side contacts, each credited to the nearest-moving player by pose).
+plays:
+  - name: rally
+    start: [serve]
+    end: [point]
+    member: [contact, block]
+    roles: {serve: server, contact: hitter, block: blocker}
+  - name: block
+    start: [block]
+    end: [block]
+    roles: {block: blocker}
+  - name: attack
+    kind: sequence
+    match: [contact]
+    count: 3
+    max_step_s: 2.5
+    roles: [passer, setter, attacker]
+# Guess: the court is wider than pickleball's, so a little more zoom than its 1.2.
+followcam: {zoom: 1.6, lead_s: 0.3, stiffness: 7.0}
+query_vocab:
+  rallies: {type: rally}
+  "longest rallies": {type: rally, sort: duration_desc, limit: 10}
+sport_ui:
+  chips: ["Rallies", "Longest rallies", "Bookmarks"]
+  review: [heatmap]
+# Synthetic clip choreography (courtcam.synth); nothing in the pipeline reads it.
+synth:
+  view: baseline
+  floor: "#D9822B"
+  apron: "#2F6DA8"
+  ball: {radius_m: 0.105, color: "#F2E9C9"}
+  serve_height_m: 2.6
+  # pass, set, attack: a side keeps the ball for up to three touches
+  touch_heights_m: [0.8, 2.6, 3.0]
+  touches_per_side: [1, 3]
+  flight_s: [0.9, 1.4]
+  shots_per_rally: [1, 3]
+  contact_sound_hz: 380

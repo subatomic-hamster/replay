@@ -1,0 +1,286 @@
+{
+ "schema": "courtcam.synth_events.v1",
+ "synthetic": true,
+ "generator": "courtcam.synth.v2",
+ "sport": "volleyball",
+ "variant": "indoor",
+ "fps": 30,
+ "width": 1280,
+ "height": 720,
+ "duration_s": 40.0,
+ "seed": 7,
+ "camera": {
+  "K": [
+   [
+    737.4944547929579,
+    0.0,
+    640.0
+   ],
+   [
+    0.0,
+    737.4944547929579,
+    360.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "R": [
+   [
+    0.9963750374213418,
+    0.08506929412907938,
+    -0.0
+   ],
+   [
+    0.03799363374244698,
+    -0.445000850535599,
+    -0.8947238271207704
+   ],
+   [
+    -0.07611352441363237,
+    0.8914804867292236,
+    -0.44661983070880507
+   ]
+  ],
+  "t": [
+   -0.184601112207702,
+   1.86552478373812,
+   9.025283359021504
+  ],
+  "k1": 0.0,
+  "size": [
+   1280,
+   720
+  ]
+ },
+ "events": [
+  {
+   "type": "contact",
+   "t_start": 2.7,
+   "t_key": 2.7,
+   "t_end": 2.7,
+   "player_id": "p1",
+   "team": 0,
+   "touch": 1,
+   "height_m": 2.6,
+   "id": "e1"
+  },
+  {
+   "type": "rally",
+   "t_start": 2.7,
+   "t_key": 2.7,
+   "t_end": 8.026,
+   "contacts": 5,
+   "winner_side": 0,
+   "id": "e2"
+  },
+  {
+   "type": "serve",
+   "t_start": 2.7,
+   "t_key": 2.7,
+   "t_end": 2.7,
+   "player_id": "p1",
+   "team": 0,
+   "id": "e3"
+  },
+  {
+   "type": "contact",
+   "t_start": 3.857,
+   "t_key": 3.857,
+   "t_end": 3.857,
+   "player_id": "p12",
+   "team": 1,
+   "touch": 1,
+   "height_m": 0.8,
+   "id": "e4"
+  },
+  {
+   "type": "contact",
+   "t_start": 4.857,
+   "t_key": 4.857,
+   "t_end": 4.857,
+   "player_id": "p8",
+   "team": 1,
+   "touch": 2,
+   "height_m": 3.0,
+   "id": "e5"
+  },
+  {
+   "type": "contact",
+   "t_start": 5.953,
+   "t_key": 5.953,
+   "t_end": 5.953,
+   "player_id": "p3",
+   "team": 0,
+   "touch": 1,
+   "height_m": 0.8,
+   "id": "e6"
+  },
+  {
+   "type": "contact",
+   "t_start": 6.953,
+   "t_key": 6.953,
+   "t_end": 6.953,
+   "player_id": "p1",
+   "team": 0,
+   "touch": 2,
+   "height_m": 3.0,
+   "id": "e7"
+  },
+  {
+   "type": "point",
+   "t_start": 8.026,
+   "t_key": 8.026,
+   "t_end": 8.026,
+   "winner_side": 0,
+   "cause": "winner",
+   "player_id": "p1",
+   "team": 0,
+   "id": "e8"
+  },
+  {
+   "type": "contact",
+   "t_start": 12.895,
+   "t_key": 12.895,
+   "t_end": 12.895,
+   "player_id": "p3",
+   "team": 0,
+   "touch": 1,
+   "height_m": 2.6,
+   "id": "e9"
+  },
+  {
+   "type": "rally",
+   "t_start": 12.895,
+   "t_key": 12.895,
+   "t_end": 16.003,
+   "contacts": 2,
+   "winner_side": 1,
+   "id": "e10"
+  },
+  {
+   "type": "serve",
+   "t_start": 12.895,
+   "t_key": 12.895,
+   "t_end": 12.895,
+   "player_id": "p3",
+   "team": 0,
+   "id": "e11"
+  },
+  {
+   "type": "contact",
+   "t_start": 13.921,
+   "t_key": 13.921,
+   "t_end": 13.921,
+   "player_id": "p10",
+   "team": 1,
+   "touch": 1,
+   "height_m": 0.8,
+   "id": "e12"
+  },
+  {
+   "type": "point",
+   "t_start": 16.003,
+   "t_key": 16.003,
+   "t_end": 16.003,
+   "winner_side": 1,
+   "cause": "winner",
+   "player_id": "p10",
+   "team": 1,
+   "id": "e13"
+  },
+  {
+   "type": "contact",
+   "t_start": 21.393,
+   "t_key": 21.393,
+   "t_end": 21.393,
+   "player_id": "p4",
+   "team": 1,
+   "touch": 1,
+   "height_m": 2.6,
+   "id": "e14"
+  },
+  {
+   "type": "rally",
+   "t_start": 21.393,
+   "t_key": 21.393,
+   "t_end": 24.447,
+   "contacts": 2,
+   "winner_side": 1,
+   "id": "e15"
+  },
+  {
+   "type": "serve",
+   "t_start": 21.393,
+   "t_key": 21.393,
+   "t_end": 21.393,
+   "player_id": "p4",
+   "team": 1,
+   "id": "e16"
+  },
+  {
+   "type": "contact",
+   "t_start": 23.448,
+   "t_key": 23.448,
+   "t_end": 23.448,
+   "player_id": "p3",
+   "team": 0,
+   "touch": 1,
+   "height_m": 0.8,
+   "id": "e17"
+  },
+  {
+   "type": "point",
+   "t_start": 24.447,
+   "t_key": 24.447,
+   "t_end": 24.447,
+   "winner_side": 1,
+   "cause": "net",
+   "player_id": "p3",
+   "team": 0,
+   "id": "e18"
+  },
+  {
+   "type": "contact",
+   "t_start": 29.886,
+   "t_key": 29.886,
+   "t_end": 29.886,
+   "player_id": "p6",
+   "team": 1,
+   "touch": 1,
+   "height_m": 2.6,
+   "id": "e19"
+  },
+  {
+   "type": "rally",
+   "t_start": 29.886,
+   "t_key": 29.886,
+   "t_end": 30.934,
+   "contacts": 1,
+   "winner_side": 0,
+   "id": "e20"
+  },
+  {
+   "type": "serve",
+   "t_start": 29.886,
+   "t_key": 29.886,
+   "t_end": 29.886,
+   "player_id": "p6",
+   "team": 1,
+   "id": "e21"
+  },
+  {
+   "type": "point",
+   "t_start": 30.934,
+   "t_key": 30.934,
+   "t_end": 30.934,
+   "winner_side": 0,
+   "cause": "out",
+   "player_id": "p6",
+   "team": 1,
+   "id": "e22"
+  }
+ ]
+}

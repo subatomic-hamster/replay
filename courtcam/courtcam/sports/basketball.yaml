@@ -111,3 +111,11 @@ query_vocab:
 sport_ui:
   chips: ["All shots", "Makes", "Misses", "Top plays"]
   review: [shot_chart, heatmap, box_score]
+# Synthetic clip choreography (courtcam.synth); nothing in the pipeline reads it.
+synth:
+  view: sideline
+  floor: "#CD9F6E"
+  apron: "#7A4A2A"
+  ball: {radius_m: 0.12, color: "#E0702A"}
+  team_colors: ["#1F4FA0", "#E8E8E8"]
+  contact_sound_hz: 160

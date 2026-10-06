@@ -101,3 +101,15 @@ query_vocab:
 sport_ui:
   chips: ["Rallies", "Longest rallies", "Bookmarks"]
   review: [heatmap]
+# Synthetic clip choreography (courtcam.synth); nothing in the pipeline reads it.
+synth:
+  view: baseline
+  floor: "#2E7D4F"
+  apron: "#5A5A60"
+  ball: {radius_m: 0.03, color: "#F5F5F5"}
+  serve_height_m: 1.0
+  contact_height_m: [1.0, 2.6]
+  touches_per_side: [1, 1]
+  flight_s: [0.7, 1.2]
+  shots_per_rally: [3, 9]
+  contact_sound_hz: 2200

@@ -1,0 +1,190 @@
+{
+ "schema": "replay.plays.v1",
+ "synthetic": true,
+ "generator": "courtcam.synth.v2",
+ "sport": "volleyball",
+ "variant": "indoor",
+ "fps": 30,
+ "width": 1280,
+ "height": 720,
+ "duration_s": 40.0,
+ "seed": 7,
+ "camera": {
+  "K": [
+   [
+    737.4944547929579,
+    0.0,
+    640.0
+   ],
+   [
+    0.0,
+    737.4944547929579,
+    360.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "R": [
+   [
+    0.9963750374213418,
+    0.08506929412907938,
+    -0.0
+   ],
+   [
+    0.03799363374244698,
+    -0.445000850535599,
+    -0.8947238271207704
+   ],
+   [
+    -0.07611352441363237,
+    0.8914804867292236,
+    -0.44661983070880507
+   ]
+  ],
+  "t": [
+   -0.184601112207702,
+   1.86552478373812,
+   9.025283359021504
+  ],
+  "k1": 0.0,
+  "size": [
+   1280,
+   720
+  ]
+ },
+ "plays": [
+  {
+   "id": "pl1",
+   "sport": "volleyball",
+   "grammar": "rally",
+   "t_start": 2.7,
+   "t_end": 8.326,
+   "event_ids": [
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e2"
+   ],
+   "participants": [
+    {
+     "player_id": "p1",
+     "role": "server"
+    },
+    {
+     "player_id": "p12",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p8",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p3",
+     "role": "hitter"
+    }
+   ],
+   "trigger": {
+    "type": "gesture",
+    "t": 11.317,
+    "by_player_id": "p1"
+   },
+   "confidence": 1.0,
+   "team": 0,
+   "winner_side": 0
+  },
+  {
+   "id": "pl2",
+   "sport": "volleyball",
+   "grammar": "rally",
+   "t_start": 12.895,
+   "t_end": 16.303,
+   "event_ids": [
+    "e11",
+    "e12",
+    "e13",
+    "e10"
+   ],
+   "participants": [
+    {
+     "player_id": "p3",
+     "role": "server"
+    },
+    {
+     "player_id": "p10",
+     "role": "hitter"
+    }
+   ],
+   "trigger": {
+    "type": "voice",
+    "t": 18.886,
+    "transcript": "Replay, clip that"
+   },
+   "confidence": 1.0,
+   "team": 0,
+   "winner_side": 1
+  },
+  {
+   "id": "pl3",
+   "sport": "volleyball",
+   "grammar": "rally",
+   "t_start": 21.393,
+   "t_end": 24.747,
+   "event_ids": [
+    "e16",
+    "e17",
+    "e18",
+    "e15"
+   ],
+   "participants": [
+    {
+     "player_id": "p4",
+     "role": "server"
+    },
+    {
+     "player_id": "p3",
+     "role": "hitter"
+    }
+   ],
+   "trigger": {
+    "type": "voice",
+    "t": 27.548,
+    "subject_player_id": "p3",
+    "transcript": "Replay, clip Jordan"
+   },
+   "confidence": 1.0,
+   "team": 1,
+   "winner_side": 1
+  },
+  {
+   "id": "pl4",
+   "sport": "volleyball",
+   "grammar": "rally",
+   "t_start": 29.886,
+   "t_end": 31.234,
+   "event_ids": [
+    "e21",
+    "e22",
+    "e20"
+   ],
+   "participants": [
+    {
+     "player_id": "p6",
+     "role": "server"
+    }
+   ],
+   "trigger": {
+    "type": "tap",
+    "t": 34.073
+   },
+   "confidence": 1.0,
+   "team": 1,
+   "winner_side": 0
+  }
+ ]
+}

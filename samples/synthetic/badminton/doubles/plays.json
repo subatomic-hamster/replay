@@ -1,0 +1,213 @@
+{
+ "schema": "replay.plays.v1",
+ "synthetic": true,
+ "generator": "courtcam.synth.v2",
+ "sport": "badminton",
+ "variant": "doubles",
+ "fps": 30,
+ "width": 1280,
+ "height": 720,
+ "duration_s": 40.0,
+ "seed": 7,
+ "camera": {
+  "K": [
+   [
+    722.5770797257636,
+    0.0,
+    640.0
+   ],
+   [
+    0.0,
+    722.5770797257636,
+    360.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "R": [
+   [
+    0.9927183734337848,
+    0.12045842040712938,
+    -0.0
+   ],
+   [
+    0.06115993855547424,
+    -0.5040294776977433,
+    -0.8615182804372934
+   ],
+   [
+    -0.10377713121334266,
+    0.8552450260391811,
+    -0.5077265528533733
+   ]
+  ],
+  "t": [
+   -0.14851756536481434,
+   1.5656806336865563,
+   7.210845074336085
+  ],
+  "k1": 0.0,
+  "size": [
+   1280,
+   720
+  ]
+ },
+ "plays": [
+  {
+   "id": "pl1",
+   "sport": "badminton",
+   "grammar": "rally",
+   "t_start": 2.7,
+   "t_end": 10.241,
+   "event_ids": [
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e11",
+    "e2"
+   ],
+   "participants": [
+    {
+     "player_id": "p1",
+     "role": "server"
+    },
+    {
+     "player_id": "p2",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p3",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p4",
+     "role": "hitter"
+    }
+   ],
+   "trigger": {
+    "type": "gesture",
+    "t": 14.065,
+    "by_player_id": "p4"
+   },
+   "confidence": 1.0,
+   "team": 0,
+   "winner_side": 0
+  },
+  {
+   "id": "pl2",
+   "sport": "badminton",
+   "grammar": "rally",
+   "t_start": 15.625,
+   "t_end": 20.609,
+   "event_ids": [
+    "e14",
+    "e15",
+    "e16",
+    "e17",
+    "e18",
+    "e19",
+    "e13"
+   ],
+   "participants": [
+    {
+     "player_id": "p3",
+     "role": "server"
+    },
+    {
+     "player_id": "p4",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p1",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p2",
+     "role": "hitter"
+    }
+   ],
+   "trigger": {
+    "type": "voice",
+    "t": 22.405,
+    "transcript": "Replay, clip that"
+   },
+   "confidence": 1.0,
+   "team": 0,
+   "winner_side": 0
+  },
+  {
+   "id": "pl3",
+   "sport": "badminton",
+   "grammar": "rally",
+   "t_start": 25.987,
+   "t_end": 30.767,
+   "event_ids": [
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e21"
+   ],
+   "participants": [
+    {
+     "player_id": "p1",
+     "role": "server"
+    },
+    {
+     "player_id": "p4",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p3",
+     "role": "hitter"
+    }
+   ],
+   "trigger": {
+    "type": "voice",
+    "t": 33.127,
+    "subject_player_id": "p3",
+    "transcript": "Replay, clip Jordan"
+   },
+   "confidence": 1.0,
+   "team": 0,
+   "winner_side": 0
+  },
+  {
+   "id": "pl4",
+   "sport": "badminton",
+   "grammar": "rally",
+   "t_start": 35.307,
+   "t_end": 37.832,
+   "event_ids": [
+    "e30",
+    "e31",
+    "e32",
+    "e29"
+   ],
+   "participants": [
+    {
+     "player_id": "p3",
+     "role": "server"
+    },
+    {
+     "player_id": "p4",
+     "role": "hitter"
+    }
+   ],
+   "trigger": null,
+   "confidence": 1.0,
+   "team": 0,
+   "winner_side": 0
+  }
+ ]
+}

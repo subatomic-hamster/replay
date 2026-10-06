@@ -1,0 +1,179 @@
+{
+ "schema": "replay.plays.v1",
+ "synthetic": true,
+ "generator": "courtcam.synth.v2",
+ "sport": "pickleball",
+ "variant": "doubles",
+ "fps": 30,
+ "width": 1280,
+ "height": 720,
+ "duration_s": 40.0,
+ "seed": 7,
+ "camera": {
+  "K": [
+   [
+    723.1890922663862,
+    0.0,
+    640.0
+   ],
+   [
+    0.0,
+    723.1890922663862,
+    360.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "R": [
+   [
+    0.9927265756734172,
+    0.1203908050962824,
+    -0.0
+   ],
+   [
+    0.061106115780397686,
+    -0.5038729080918053,
+    -0.8616136808949469
+   ],
+   [
+    -0.10373036472491404,
+    0.8553467989882092,
+    -0.5075646410996931
+   ]
+  ],
+  "t": [
+   -0.14840498200227487,
+   1.5663177901762646,
+   7.214724720423798
+  ],
+  "k1": 0.0,
+  "size": [
+   1280,
+   720
+  ]
+ },
+ "plays": [
+  {
+   "id": "pl1",
+   "sport": "pickleball",
+   "grammar": "rally",
+   "t_start": 2.7,
+   "t_end": 10.071,
+   "event_ids": [
+    "e3",
+    "e4",
+    "e5",
+    "e6",
+    "e7",
+    "e8",
+    "e9",
+    "e10",
+    "e2"
+   ],
+   "participants": [
+    {
+     "player_id": "p1",
+     "role": "server"
+    },
+    {
+     "player_id": "p2",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p3",
+     "role": "hitter"
+    }
+   ],
+   "trigger": {
+    "type": "gesture",
+    "t": 13.062,
+    "by_player_id": "p3"
+   },
+   "confidence": 1.0,
+   "team": 0,
+   "winner_side": 0
+  },
+  {
+   "id": "pl2",
+   "sport": "pickleball",
+   "grammar": "rally",
+   "t_start": 14.81,
+   "t_end": 19.148,
+   "event_ids": [
+    "e13",
+    "e14",
+    "e15",
+    "e16",
+    "e17",
+    "e12"
+   ],
+   "participants": [
+    {
+     "player_id": "p3",
+     "role": "server"
+    },
+    {
+     "player_id": "p2",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p4",
+     "role": "hitter"
+    }
+   ],
+   "trigger": {
+    "type": "voice",
+    "t": 21.731,
+    "transcript": "Replay, clip that"
+   },
+   "confidence": 1.0,
+   "team": 0,
+   "winner_side": 1
+  },
+  {
+   "id": "pl3",
+   "sport": "pickleball",
+   "grammar": "rally",
+   "t_start": 24.169,
+   "t_end": 32.277,
+   "event_ids": [
+    "e20",
+    "e21",
+    "e22",
+    "e23",
+    "e24",
+    "e25",
+    "e26",
+    "e27",
+    "e28",
+    "e19"
+   ],
+   "participants": [
+    {
+     "player_id": "p4",
+     "role": "server"
+    },
+    {
+     "player_id": "p3",
+     "role": "hitter"
+    },
+    {
+     "player_id": "p2",
+     "role": "hitter"
+    }
+   ],
+   "trigger": {
+    "type": "voice",
+    "t": 35.078,
+    "subject_player_id": "p3",
+    "transcript": "Replay, clip Jordan"
+   },
+   "confidence": 1.0,
+   "team": 1,
+   "winner_side": 0
+  }
+ ]
+}

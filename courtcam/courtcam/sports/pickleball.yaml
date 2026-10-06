@@ -90,3 +90,15 @@ sport_ui:
   # remote (services/api/tests/test_query.py::test_every_profile_chip_resolves).
   chips: ["Rallies", "Longest rallies", "Bookmarks"]
   review: [heatmap]
+# Synthetic clip choreography (courtcam.synth); nothing in the pipeline reads it.
+synth:
+  view: baseline
+  floor: "#2F6E8F"
+  apron: "#3F7F4F"
+  ball: {radius_m: 0.037, color: "#E8E03A"}
+  serve_height_m: 0.6
+  contact_height_m: [0.4, 1.2]
+  touches_per_side: [1, 1]
+  flight_s: [0.8, 1.3]
+  shots_per_rally: [3, 8]
+  contact_sound_hz: 1100

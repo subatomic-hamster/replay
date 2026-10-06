@@ -1,0 +1,87 @@
+{
+ "schema": "replay.triggers.v1",
+ "synthetic": true,
+ "generator": "courtcam.synth.v2",
+ "sport": "pickleball",
+ "variant": "doubles",
+ "fps": 30,
+ "width": 1280,
+ "height": 720,
+ "duration_s": 40.0,
+ "seed": 7,
+ "camera": {
+  "K": [
+   [
+    723.1890922663862,
+    0.0,
+    640.0
+   ],
+   [
+    0.0,
+    723.1890922663862,
+    360.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "R": [
+   [
+    0.9927265756734172,
+    0.1203908050962824,
+    -0.0
+   ],
+   [
+    0.061106115780397686,
+    -0.5038729080918053,
+    -0.8616136808949469
+   ],
+   [
+    -0.10373036472491404,
+    0.8553467989882092,
+    -0.5075646410996931
+   ]
+  ],
+  "t": [
+   -0.14840498200227487,
+   1.5663177901762646,
+   7.214724720423798
+  ],
+  "k1": 0.0,
+  "size": [
+   1280,
+   720
+  ]
+ },
+ "triggers": [
+  {
+   "id": "tr1",
+   "type": "gesture",
+   "t_start": 12.062,
+   "t": 13.062,
+   "by_player_id": "p3",
+   "play_id": "pl1"
+  },
+  {
+   "id": "tr2",
+   "type": "voice",
+   "t": 21.731,
+   "transcript": "Replay, clip that",
+   "play_id": "pl2",
+   "t_end": 23.731,
+   "voice_source": "tts"
+  },
+  {
+   "id": "tr3",
+   "type": "voice",
+   "t": 35.078,
+   "transcript": "Replay, clip Jordan",
+   "subject_player_id": "p3",
+   "play_id": "pl3",
+   "t_end": 37.128,
+   "voice_source": "tts"
+  }
+ ]
+}

@@ -1,0 +1,87 @@
+{
+ "schema": "replay.triggers.v1",
+ "synthetic": true,
+ "generator": "courtcam.synth.v2",
+ "sport": "badminton",
+ "variant": "doubles",
+ "fps": 30,
+ "width": 1280,
+ "height": 720,
+ "duration_s": 40.0,
+ "seed": 7,
+ "camera": {
+  "K": [
+   [
+    722.5770797257636,
+    0.0,
+    640.0
+   ],
+   [
+    0.0,
+    722.5770797257636,
+    360.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "R": [
+   [
+    0.9927183734337848,
+    0.12045842040712938,
+    -0.0
+   ],
+   [
+    0.06115993855547424,
+    -0.5040294776977433,
+    -0.8615182804372934
+   ],
+   [
+    -0.10377713121334266,
+    0.8552450260391811,
+    -0.5077265528533733
+   ]
+  ],
+  "t": [
+   -0.14851756536481434,
+   1.5656806336865563,
+   7.210845074336085
+  ],
+  "k1": 0.0,
+  "size": [
+   1280,
+   720
+  ]
+ },
+ "triggers": [
+  {
+   "id": "tr1",
+   "type": "gesture",
+   "t_start": 13.065,
+   "t": 14.065,
+   "by_player_id": "p4",
+   "play_id": "pl1"
+  },
+  {
+   "id": "tr2",
+   "type": "voice",
+   "t": 22.405,
+   "transcript": "Replay, clip that",
+   "play_id": "pl2",
+   "t_end": 24.405,
+   "voice_source": "tts"
+  },
+  {
+   "id": "tr3",
+   "type": "voice",
+   "t": 33.127,
+   "transcript": "Replay, clip Jordan",
+   "subject_player_id": "p3",
+   "play_id": "pl3",
+   "t_end": 35.177,
+   "voice_source": "tts"
+  }
+ ]
+}

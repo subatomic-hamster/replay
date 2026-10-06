@@ -1,0 +1,84 @@
+{
+ "engine": "kokoro 0.9.4 (hexgrad/Kokoro-82M, Apache-2.0)",
+ "note": "synthetic speech for courtcam.synth voice triggers; 16 kHz mono",
+ "clips": [
+  {
+   "file": "replay_clip_that.wav",
+   "text": "Replay, clip that",
+   "voice": "am_michael",
+   "seconds": 2.0
+  },
+  {
+   "file": "replay_clip_alex.wav",
+   "text": "Replay, clip Alex",
+   "voice": "af_heart",
+   "seconds": 2.0
+  },
+  {
+   "file": "replay_clip_sam.wav",
+   "text": "Replay, clip Sam",
+   "voice": "am_michael",
+   "seconds": 2.15
+  },
+  {
+   "file": "replay_clip_jordan.wav",
+   "text": "Replay, clip Jordan",
+   "voice": "af_heart",
+   "seconds": 2.05
+  },
+  {
+   "file": "replay_clip_riley.wav",
+   "text": "Replay, clip Riley",
+   "voice": "am_michael",
+   "seconds": 2.15
+  },
+  {
+   "file": "replay_clip_casey.wav",
+   "text": "Replay, clip Casey",
+   "voice": "af_heart",
+   "seconds": 2.075
+  },
+  {
+   "file": "replay_clip_morgan.wav",
+   "text": "Replay, clip Morgan",
+   "voice": "am_michael",
+   "seconds": 2.15
+  },
+  {
+   "file": "replay_clip_taylor.wav",
+   "text": "Replay, clip Taylor",
+   "voice": "af_heart",
+   "seconds": 2.0
+  },
+  {
+   "file": "replay_clip_jamie.wav",
+   "text": "Replay, clip Jamie",
+   "voice": "am_michael",
+   "seconds": 2.2
+  },
+  {
+   "file": "replay_clip_avery.wav",
+   "text": "Replay, clip Avery",
+   "voice": "af_heart",
+   "seconds": 2.125
+  },
+  {
+   "file": "replay_clip_quinn.wav",
+   "text": "Replay, clip Quinn",
+   "voice": "am_michael",
+   "seconds": 2.075
+  },
+  {
+   "file": "replay_clip_drew.wav",
+   "text": "Replay, clip Drew",
+   "voice": "af_heart",
+   "seconds": 1.95
+  },
+  {
+   "file": "replay_clip_blake.wav",
+   "text": "Replay, clip Blake",
+   "voice": "am_michael",
+   "seconds": 2.1
+  }
+ ]
+}

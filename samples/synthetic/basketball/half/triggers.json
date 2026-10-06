@@ -1,0 +1,87 @@
+{
+ "schema": "replay.triggers.v1",
+ "synthetic": true,
+ "generator": "courtcam.synth.v2",
+ "sport": "basketball",
+ "variant": "half",
+ "fps": 30,
+ "width": 1280,
+ "height": 720,
+ "duration_s": 40.0,
+ "seed": 7,
+ "camera": {
+  "K": [
+   [
+    407.3870115969592,
+    0.0,
+    640.0
+   ],
+   [
+    0.0,
+    407.3870115969592,
+    360.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "R": [
+   [
+    0.0,
+    1.0,
+    -0.0
+   ],
+   [
+    0.5392018554096322,
+    -0.0,
+    -0.8421765605398965
+   ],
+   [
+    -0.8421765605398965,
+    0.0,
+    -0.5392018554096322
+   ]
+  ],
+  "t": [
+   -7.0,
+   -1.8217642932334313,
+   13.972962279341475
+  ],
+  "k1": 0.0,
+  "size": [
+   1280,
+   720
+  ]
+ },
+ "triggers": [
+  {
+   "id": "tr1",
+   "type": "gesture",
+   "t_start": 13.632,
+   "t": 14.632,
+   "by_player_id": "p5",
+   "play_id": "pl1"
+  },
+  {
+   "id": "tr2",
+   "type": "voice",
+   "t": 24.206,
+   "transcript": "Replay, clip that",
+   "play_id": "pl2",
+   "t_end": 26.206,
+   "voice_source": "tts"
+  },
+  {
+   "id": "tr3",
+   "type": "voice",
+   "t": 32.535,
+   "transcript": "Replay, clip Quinn",
+   "subject_player_id": "p10",
+   "play_id": "pl3",
+   "t_end": 34.61,
+   "voice_source": "tts"
+  }
+ ]
+}

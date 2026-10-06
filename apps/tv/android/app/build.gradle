@@ -152,6 +152,9 @@ gradle.taskGraph.whenReady { graph ->
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    // The 2.5D scene view (com.replaytv.scene) decodes its atlas video with ExoPlayer. The same
+    // version react-native-video already ships (RNVideo_media3Version), so the APK gains nothing.
+    implementation("androidx.media3:media3-exoplayer:1.8.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

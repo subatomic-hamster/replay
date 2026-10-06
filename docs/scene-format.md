@@ -60,7 +60,10 @@ flips anything. Right-handed, metres, degrees in the JSON, seconds.
 `camera` is the real camera, OpenCV convention: `x_cam = R·X + t`, `pixel = K·x_cam / z`
 (x right, y down, z forward), `image_size` the source size, principal point at its centre
 (D-53), `position_m = −Rᵀt`. Pixels are pinhole pixels: the lens (k1) is already removed
-from every texture. A GL view matrix is `diag(1, −1, −1, 1) · [R | t]`.
+from every texture. A GL view matrix is `diag(1, −1, −1, 1) · [R | t]`. K uses OpenCV pixel
+centres (pixel (0,0)'s centre is at 0,0); GL's are at half-integers, so a GL client shifts its
+projection by half a pixel (`camera.viewProjection` in apps/tv/src/scene/camera.ts does).
+Without it players land 0.5 px off, which cost ~15 dB PSNR against the reference renderer.
 
 ## Plates
 
@@ -167,9 +170,13 @@ the box; roll is not user-controlled (it only moves with the `real` preset).
 `push_in` (az 0, closer, halfway down the elevation range). Interpolate between presets
 in state space (each field linearly, eased).
 
-Suggested remote mapping (the same on web and native): Left/Right = azimuth ∓ 2.5° per step
-(held: continuous, ~30°/s), Up/Down = elevation ± 2.5°, Select = next preset, Back = leave
-the scene; the play keeps running.
+Remote mapping as shipped (D-77; shared JS in apps/tv/src/scene/camera.ts, so web and native
+match): Left/Right = azimuth ∓ 2.5° per step, Up/Down = elevation ± 2.5° (or dolly by 5 % of
+the real camera's distance in zoom mode), Menu = toggle zoom mode, Rewind/Fast-forward =
+previous/next preset, Select or Play/Pause = play/pause, Back = leave the scene for the same
+angle at the scene's time. Held keys repeat at most 12 steps/s. The `camera` a renderer is given
+is a target: it eases toward it (`easeCamera`, `EASE_MS` = 140), and reports `onTime` once
+more when unmounted.
 
 ### How the limits are derived (per package, from the real camera and the floor it saw)
 

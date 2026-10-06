@@ -1,0 +1,19 @@
+{
+ "fps": [
+  31,
+  36,
+  36,
+  35,
+  36,
+  36
+ ],
+ "drawMs": [
+  0.15,
+  0.13,
+  0.15,
+  0.15,
+  0.17,
+  0.16
+ ],
+ "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+}

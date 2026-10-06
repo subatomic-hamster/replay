@@ -1,0 +1,122 @@
+{
+ "shots": [
+  {
+   "frame": 13,
+   "preset": "broadcast_high",
+   "psnr_all": 39.63,
+   "ssim_all": 0.9964,
+   "psnr_scene": 41.64,
+   "ssim_scene": 0.9955,
+   "psnr_players": 41.01,
+   "ssim_players": 0.9984,
+   "scene_fraction": 0.3
+  },
+  {
+   "frame": 13,
+   "preset": "orbit_left",
+   "psnr_all": 39.29,
+   "ssim_all": 0.9962,
+   "psnr_scene": 41.68,
+   "ssim_scene": 0.9947,
+   "psnr_players": 40.68,
+   "ssim_players": 0.9978,
+   "scene_fraction": 0.322
+  },
+  {
+   "frame": 13,
+   "preset": "orbit_right",
+   "psnr_all": 39.14,
+   "ssim_all": 0.9964,
+   "psnr_scene": 42.69,
+   "ssim_scene": 0.9956,
+   "psnr_players": 40.53,
+   "ssim_players": 0.9969,
+   "scene_fraction": 0.345
+  },
+  {
+   "frame": 13,
+   "preset": "push_in",
+   "psnr_all": 37.84,
+   "ssim_all": 0.997,
+   "psnr_scene": 43.86,
+   "ssim_scene": 0.9977,
+   "psnr_players": 40.52,
+   "ssim_players": 0.996,
+   "scene_fraction": 0.612
+  },
+  {
+   "frame": 13,
+   "preset": "real",
+   "psnr_all": 39.73,
+   "ssim_all": 0.9966,
+   "psnr_scene": 41.34,
+   "ssim_scene": 0.9951,
+   "psnr_players": 40.87,
+   "ssim_players": 0.9969,
+   "scene_fraction": 0.264
+  },
+  {
+   "frame": 33,
+   "preset": "broadcast_high",
+   "psnr_all": 39.6,
+   "ssim_all": 0.9963,
+   "psnr_scene": 41.51,
+   "ssim_scene": 0.9952,
+   "psnr_players": 40.68,
+   "ssim_players": 0.9984,
+   "scene_fraction": 0.3
+  },
+  {
+   "frame": 33,
+   "preset": "orbit_left",
+   "psnr_all": 39.21,
+   "ssim_all": 0.9961,
+   "psnr_scene": 41.24,
+   "ssim_scene": 0.9943,
+   "psnr_players": 40.26,
+   "ssim_players": 0.9974,
+   "scene_fraction": 0.322
+  },
+  {
+   "frame": 33,
+   "preset": "orbit_right",
+   "psnr_all": 39.1,
+   "ssim_all": 0.9963,
+   "psnr_scene": 42.45,
+   "ssim_scene": 0.9953,
+   "psnr_players": 40.34,
+   "ssim_players": 0.9966,
+   "scene_fraction": 0.345
+  },
+  {
+   "frame": 33,
+   "preset": "push_in",
+   "psnr_all": 37.32,
+   "ssim_all": 0.9962,
+   "psnr_scene": 41.22,
+   "ssim_scene": 0.9965,
+   "psnr_players": 39.03,
+   "ssim_players": 0.9957,
+   "scene_fraction": 0.612
+  },
+  {
+   "frame": 33,
+   "preset": "real",
+   "psnr_all": 39.67,
+   "ssim_all": 0.9965,
+   "psnr_scene": 41.03,
+   "ssim_scene": 0.9946,
+   "psnr_players": 40.3,
+   "ssim_players": 0.9971,
+   "scene_fraction": 0.264
+  }
+ ],
+ "mean": {
+  "psnr_all": 39.053,
+  "ssim_all": 0.996,
+  "psnr_scene": 41.866,
+  "ssim_scene": 0.995,
+  "psnr_players": 40.422,
+  "ssim_players": 0.997
+ }
+}

@@ -13,6 +13,7 @@ import type {
   Player,
   QueryResult,
   RenderJob,
+  SceneLayout,
   Session,
   SportProfile,
   Stats,
@@ -90,6 +91,8 @@ export interface ReplayApi {
   listReplays(gameId: string): Promise<ReplaySummary[]>;
   /** M8: one replay's manifest; angle URLs come back absolute. */
   getReplay(gameId: string, playId: string): Promise<ReplayManifest>;
+  /** One play's 2.5D scene package layout (replay.scene_package.v1); file URLs absolute. */
+  getScene(gameId: string, playId: string): Promise<SceneLayout>;
   /** Absolute URL for a media path from game.json (already-absolute passes through). */
   mediaUrl(game: Game, path: string): string;
 
@@ -315,6 +318,15 @@ export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
         ...m,
         angles: m.angles.map((a) => ({ ...a, url: resolveMedia(gameId, a.url) })),
       })),
+    getScene: (gameId, playId) =>
+      req<SceneLayout>(`/games/${gameId}/scenes/${encodeURIComponent(playId)}`).then((s) => {
+        const rel = `replays/${playId}/scene/`;
+        const abs = <T extends { file: string; url?: string }>(e: T): T => ({
+          ...e,
+          url: resolveMedia(gameId, e.url ?? rel + e.file),
+        });
+        return { ...s, plates: s.plates.map(abs), atlas: abs(s.atlas) };
+      }),
     mediaUrl: (game, path) => resolveMedia(game.id, path),
 
     listRenditions: (gameId) =>

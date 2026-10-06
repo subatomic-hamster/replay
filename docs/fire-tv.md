@@ -126,6 +126,39 @@ None of these has ever been observed on hardware. Tick each one only once you ha
 - [ ] Decode of every rendition works (wide, broadcast, replay angles, condensed, 9:16).
 - [ ] Memory stays bounded over a session.
 
+### Free view (2.5D scene, D-75): unverified on hardware
+
+The native renderer (`com.replaytv.scene.SceneView`: GLSurfaceView + OpenGL ES 3.0, ExoPlayer
+decoding `atlas.mp4` into a `GL_TEXTURE_EXTERNAL_OES` texture; docs/scene-format.md) compiles,
+registers as the Fabric component `ReplaySceneView`, and its shaders and camera maths pass
+`bash apps/tv/android/scene-check.sh` on the build box. Nothing below has been seen on a
+device. Needs a game with scene packages (the replay manifest's `scene_url` is set). Errors
+are logged under the `ReplayScene` tag (add `ReplayScene:V` to the logcat filter in section 6).
+
+- [ ] **Opens**: Replays → a play → Down. The scene (court, players) covers the picture — not
+  a black or transparent rectangle (a SurfaceView punched over the paused TextureView angle).
+  No `ReplayScene` error ("shaders: …", "atlas video: …", "plate …") in logcat.
+- [ ] **Orientation**: not upside down or mirrored, and at the `real` preset it lines up with the
+  video angle you came from (SurfaceTexture transform, v-down uv convention).
+- [ ] **Players**: cut-outs move with the play, stand on their shadows, never show another
+  player's picture for a frame (atlas frame ↔ layout frame sync through ExoPlayer's frame
+  metadata), and have clean edges with no grey box around them (mask alpha after the
+  decoder's YUV → RGB, limited range).
+- [ ] **D-pad**: Left/Right orbit, Up/Down change height (Menu switches them to zoom),
+  Rewind/Fast-forward cycle presets, Select/Play-Pause pause, Back leaves. Motion glides
+  (eased) and stops at the envelope edges with the edge bar; a held arrow keeps moving and
+  stops on release.
+- [ ] **Time lock**: entering at time t shows the same moment as the angle; Back resumes the
+  angle where the scene was (±0.1 s). Pause and resume inside the scene work; the play loops
+  without a stall.
+- [ ] **Performance**: `adb shell dumpsys gfxinfo com.replaytv` after a minute of orbiting
+  (janky frames %). Real packages have atlases up to 2048×1024: they must decode at the
+  play's frame rate (no stutter, players not lagging the shadows).
+- [ ] **Lifecycle**: Home and back to the app while in free view: the scene comes back (GL
+  context kept or rebuilt) and does not crash.
+- [ ] **Memory**: enter and leave free view 10 times; TOTAL PSS (`dumpsys meminfo`) settles
+  (the player is released and the plate textures deleted each time).
+
 ## 6. Grab the logs
 
 ```sh

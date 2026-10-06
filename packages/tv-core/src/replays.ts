@@ -30,6 +30,9 @@ export interface ReplayManifest {
   synthetic: boolean;
   angles: ReplayAngle[];
   commentary: null | { text_url: string | null; audio_url: string | null };
+  /** The 2.5D scene package's layout route (GET /games/{id}/scenes/{play_id}), or null
+   *  when the play has none (docs/scene-format.md). Older APIs omit it. */
+  scene_url?: string | null;
 }
 
 /** One row of GET /games/{id}/replays. */

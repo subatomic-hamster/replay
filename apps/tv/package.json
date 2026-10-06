@@ -13,7 +13,7 @@
   },
   "codegenConfig": {
     "name": "ReplayTvSpecs",
-    "type": "modules",
+    "type": "all",
     "jsSrcsDir": "specs",
     "android": {
       "javaPackageName": "com.replaytv.specs"

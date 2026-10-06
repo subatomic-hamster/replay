@@ -1,12 +1,29 @@
 // Web build of the RN TV app (react-native-web) — what Playwright drives and screenshots.
 // `.web.*` files win over shared ones, mirroring how Metro picks `.native.*` / `.android.*`.
-import { defineConfig, searchForWorkspaceRoot } from "vite";
+import { fileURLToPath } from "node:url";
+import { defineConfig, searchForWorkspaceRoot, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
 const extensions = [".web.tsx", ".web.ts", ".web.js", ".tsx", ".ts", ".mjs", ".js", ".jsx", ".json"];
 
+// The mock API's 2.5D scene (MOCK_SCENE_DIR in packages/tv-core/src/mock.ts) is the
+// committed SYNTHETIC fixture of services/api, served in place through Vite's /@fs/ (Range
+// requests included) instead of a copy under public/.
+const SCENE_FIXTURE = fileURLToPath(new URL("../../services/api/fixtures/scene_synth", import.meta.url));
+const mockScene: Plugin = {
+  name: "mock-scene",
+  configureServer(server) {
+    server.middlewares.use((req, _res, next) => {
+      if (req.url?.startsWith("/mock/scene_synth/")) {
+        req.url = `/@fs${SCENE_FIXTURE}/${req.url.slice("/mock/scene_synth/".length)}`;
+      }
+      next();
+    });
+  },
+};
+
 export default defineConfig(({ mode }) => ({
-  plugins: [react()],
+  plugins: [react(), mockScene],
   resolve: {
     alias: { "react-native": "react-native-web" },
     extensions,
@@ -19,6 +36,6 @@ export default defineConfig(({ mode }) => ({
   publicDir: "../web/public",
   server: {
     port: 5180,
-    fs: { allow: [searchForWorkspaceRoot(process.cwd()), "../../packages/tv-core", "../web/public"] },
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), "../../packages/tv-core", "../web/public", SCENE_FIXTURE] },
   },
 }));

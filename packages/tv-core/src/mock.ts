@@ -20,6 +20,7 @@ import type {
   Stats,
   TracksChunk,
   TrackPlayer,
+  SceneLayout,
 } from "./types";
 import { queryAsSearch, reviewBody, type CalibrationPayload, type ReplayApi } from "./api";
 import type { ReplayAngle, ReplayManifest } from "./replays";
@@ -698,6 +699,20 @@ export const mockApi: ReplayApi = {
     return delay(structuredClone(m));
   },
 
+  // The committed SYNTHETIC scene package (services/api/fixtures/scene_synth), which the
+  // apps/tv dev server serves at MOCK_SCENE_DIR; it stands in for every mock scene.
+  async getScene(gameId, playId) {
+    log("GET", `/games/${gameId}/scenes/${playId}`);
+    if (!MOCK_REPLAYS[gameId]?.find((r) => r.play_id === playId)?.scene_url) {
+      throw new Error(`no scene ${playId} for game ${gameId}`);
+    }
+    const res = await fetch(`${MOCK_SCENE_DIR}/layout.json`);
+    if (!res.ok) throw new Error(`mock scene fixture → ${res.status}`);
+    const s = (await res.json()) as SceneLayout;
+    const abs = <T extends { file: string }>(e: T): T => ({ ...e, url: `${MOCK_SCENE_DIR}/${e.file}` });
+    return { ...s, game_id: gameId, plates: s.plates.map(abs), atlas: abs(s.atlas) };
+  },
+
   mediaUrl: (_game, path) => path,
 
   // ---- M13 integration wave: synthetic fixtures below (MOCK_*), all labelled mock ----
@@ -1240,14 +1255,19 @@ function mockReplay(play_id: string, label: string, angles: ReplayAngle[]): Repl
     commentary: null,
   };
 }
+/** Where the apps/tv dev server serves services/api/fixtures/scene_synth (vite.config.ts). */
+export const MOCK_SCENE_DIR = "/mock/scene_synth";
 const MOCK_REPLAYS: Record<string, ReplayManifest[]> = {
   g_mock01: [
-    mockReplay("play_0001", "Marcus — make (mock)", [
-      mockAngle("wide", "A", "Wide"),
-      mockAngle("follow:p1", "A", "Follow · Marcus"),
-      mockAngle("broadcast_high", "B", "Broadcast high"),
-      mockAngle("orbit", "B", "Orbit"),
-    ]),
+    {
+      ...mockReplay("play_0001", "Marcus — make (mock)", [
+        mockAngle("wide", "A", "Wide"),
+        mockAngle("follow:p1", "A", "Follow · Marcus"),
+        mockAngle("broadcast_high", "B", "Broadcast high"),
+        mockAngle("orbit", "B", "Orbit"),
+      ]),
+      scene_url: "/games/g_mock01/scenes/play_0001",
+    },
     mockReplay("play_0002", "Possession 2 (mock)", [
       mockAngle("wide", "A", "Wide"),
       mockAngle("push_in", "B", "Push in"),

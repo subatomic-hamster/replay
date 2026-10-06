@@ -285,3 +285,28 @@ The accuracy pass (D-61) lowered the release arm line to −0.2 torso, which len
 
 ## D-74 (2026-10-06) — Identity: no jersey cut where another player stands over the torso
 D-70's jersey cut also fired on perfect GT-detector tracks: all 15 off-team runs on basketball half s7 / half s11 / full s7 had the torso covered by an opponent's box (mean cover 0.81–0.91 vs 0.28–0.30 over all samples), and one made a cross-team player on half s11 that cost a 2-vs-3 call. `jersey_labels` now marks a sample untrusted when another tracklet's box covers more than half its torso rectangle (`JERSEY_MAX_COVER = 0.5`), and a changed run that is mostly untrusted is not a cut. Cut position, the ≥ 1 s rule and the `JERSEY_MIN_AGREE` gate (still on all samples) are unchanged. GT-detector basketball IDF1 back to 1.000 on M1 and dev seeds; GT points right back to 23/23. YOLO identity output is byte-identical to D-70 (YOLO NMS rarely keeps both boxes of an overlap; 40/41 YOLO cuts are real swaps), so its IDF1 gain and its one-shot YOLO attribution losses both remain. Rejected after measuring: dropping covered samples, or counting only clear samples toward run length (each loses real YOLO swaps, full s7 0.263 → 0.235); a colour-margin rule (margins overlap).
+
+## D-75 (2026-10-06) — Navigable 2.5D replays: a scene package rendered live on the client
+The user asked to navigate real-footage replays from different angles and to optimise for the eventual native Fire TV app. Pre-rendering an angle grid was rejected: every angle cut reloads a video source, which perf.md already flags as the slow path on Fire TV, and movement would be discrete jumps. A `scene` worker stage (one task per play, cached, opt-in, after `segment` + `plate`) writes `replays/{play}/scene/` as `replay.scene_package.v1` (docs/scene-format.md; `replay.scene.v1` is Tier C's, D-59):
+- the Tier B floor and backdrop as RGBA PNGs with world quads; alpha marks what the real camera saw;
+- one H.264 yuv420p atlas video per highlight holding every visible player's SAM cutout, rectified onto its billboard plane and packed into a fixed cell grid, colour left and mask-as-luma right, ≤ 2048×1024, 1 s GOP. On Fire TV this is one hardware decoder feeding a GL external texture; on the web, a VideoTexture;
+- layout.json: the frame→cell map, foot points, billboard rects, hoop/net/modelled ball, the real camera, and an orbit envelope with presets.
+
+Billboards face the real camera: exact at the real view, and within 0.03 silhouette IoU of viewer-facing inside ±30° on synthetic ground truth.
+
+The envelope is derived per package so the viewer never sees the unseen side:
+- visible players turn ≤ 30° in azimuth and ≤ 20° in elevation;
+- plate coverage stays ≥ 0.85 of the real view;
+- magnification stays ≤ 2×.
+On the real corner and courtside rigs this is small: about ±6–12° of azimuth and +4–15° of elevation.
+
+A CPU reference renderer (`replay_render.virtual.scene`) is ground truth for both clients. From the real camera it reproduces players at 28 dB / SSIM 0.90 on Kennesaw.
+
+Served by `GET /games/{id}/scenes[/{play}]`, files through /media with Range; the replay manifest carries `scene_url`.
+
+Ceilings:
+- one backdrop wall, so side halls are void;
+- static objects are baked flat into the floor;
+- hoop heights are off on panoramic rigs (D-53);
+- no tracked ball;
+- the envelope is a sampled box, not proven inside.

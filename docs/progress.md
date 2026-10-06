@@ -279,6 +279,38 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - The YOLO rows D-70 costs one shot each remain: points right 14 → 13/21, shooter 8 → 7, team 19 → 18, made 10/12 → 10/13. They come from D-70's real YOLO cuts and links.
   - Kennesaw not re-run (the gate input is unchanged).
   - One "before" clip was briefly run with an intermediate file and redone; noted in the README.
+
+## Scene packages for navigable 2.5D replays (2026-10-06)
+
+- Works:
+  - worker `scene` stage producing `replay.scene_package.v1` (plates, an atlas video of SAM cutouts, layout.json with the camera envelope and presets)
+  - docs/scene-format.md
+  - a CPU reference renderer
+  - `GET /games/{id}/scenes[/{play}]`
+  - tv-core types
+  - a synthetic fixture `services/api/fixtures/scene_synth/` (45 frames, 0.7 MB)
+- Verified on hfbox:
+  - box-test ALL GREEN on the committed snapshot, with the DAG regenerated: courtcam 192, api 225 + 1 skipped, worker 25, render 54, web Playwright 102, tv 50 + 1 skipped.
+  - Real footage, local only:
+    - Kennesaw: 3 plays through the full worker pipeline.
+    - Powell gym: 2 plays.
+    - Per play: SAM 105–150 s on the GPU, scene stage 3–28 s; packages 1.3–4.9 MB.
+  - Real-camera reproduction, players: 21.5–28.3 dB PSNR, SSIM 0.78–0.92.
+  - Real-camera reproduction, plates: 24.6–29.4 dB.
+  - Novel views against synthetic ground truth: silhouette IoU 0.685 at the real camera, ≥ 0.95 of that up to a ~13° billboard turn, 0.80–0.91 at 36–40°.
+- Evidence:
+  - docs/evidence/scene/ (synthetic: eval_synth.json and reference stills of the fixture)
+  - docs/evidence/local/scene/ (real stills, local only, D-7)
+- Decisions: D-75.
+- Left / known issues:
+  - The navigable envelope is small on real rigs: Kennesaw ±7.5–12.5° azimuth, +4–7.5° elevation.
+  - Large void beside the single backdrop wall.
+  - Scorer's table and bleachers are laid flat on the floor.
+  - Hoops misplaced on the panoramic rig.
+  - Push-in is blurry, and one SAM mask carries a neighbour's head.
+  - The caption text on the reference stills overlaps.
+  - Fire TV decoder limits are unchecked for the 1920×768 atlas.
+  - Viewers (web, native) not built yet.
 - Left / known issues:
   - No audio in the recording, so the Kokoro narration is not heard.
   - The demo games use the synthetic detector.

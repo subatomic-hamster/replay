@@ -39,3 +39,34 @@ Template:
 - Evidence: docs/evidence/M3/tv-synthetic/01..09.png (synthetic game) · docs/evidence/local/M3/tv-real-kennesaw/ (real footage, not committed)
 - Decisions: D-37.
 - Left / known issues: never run on a device or emulator (no KVM, no Fire TV attached) — playback, key codes and performance on Fire OS unverified; API base hardcoded in apps/tv/app.json; release signed with the debug keystore; Highlights reel plays wide only.
+
+## M4 — Events + plays (2026-10-06)
+
+- Works: pose stage (YOLO11m-pose on upscaled track crops, GPU, per chunk, cached), audio stage (16 kHz WAV + full-quality copy, onsets, loudness, hype), pose-based basketball shots with 2/3 points and make/miss, possession changes with cause, turnovers, net-sport rallies with serve/point/contacts, volleyball blocks (no GT), play grammars → plays.json, score.json with API corrections (`GET/POST /games/{id}/score`, `GET /games/{id}/plays`).
+- Verified on hfbox (staged snapshot): courtcam 171, api 123, worker 15, render 20 passed, ruff clean. 9 synthetic clips (synthetic detector + GT poses): shots P 0.96 / R 0.85 (2 vs 3 pts 23/23), possession P 0.83 / R 0.80, plays P 0.83 / R 0.79, contacts P 0.91 / R 0.89. With YOLO detect + YOLO pose on synthetic video: shots R 0.19, rallies P 0.97 / R 0.88. Real: badminton 240 s rallies P 1.00 / R 0.86 (motion-only); Kennesaw shot precision ≈ 0.4–0.6 on a hand check of 10.
+- Evidence: docs/evidence/M4/timeline_synthetic_*.png · docs/evidence/local/M4/ (real timelines + hand-check crops)
+- Decisions: D-49, D-50, D-51.
+- Left / known issues: YOLO-pose shot recall on small players; possession causes unreliable on real footage (identity fragments); contact hitter/side attribution weak (volleyball attack P 0.30); net-sport auto score needs point `winner_side`.
+
+## M5 — "Replay, clip that" (backend) (2026-10-06)
+
+- Works: gesture (X overhead held ≥ 0.8 s), voice ("Replay, clip that / clip <name>", whisper-small) and tap (`POST /games/{id}/triggers`) triggers resolve to the play that just ended and produce attributed clips; `GET /games/{id}/clips`, `PATCH /games/{id}/clips/{id}` trims (source user).
+- Verified on hfbox: synthetic with GT poses — gesture 22/22 (who 22/22, clip right 16/22), voice 37/37 (named subject 18/18, clip right 31/37), tap clip right 10/14; resolution rule exact on GT plays 73/73. Real footage: 0 false triggers in 480 s.
+- Evidence: docs/evidence/M5/trigger_{gesture,voice,tap}_synthetic_basketball_half_s7.mp4, timeline_synthetic_badminton_doubles_s7.png
+- Left / known issues: no staged real gesture/voice footage (synthetic only); gesture via YOLO-pose 0/14 on far synthetic players; TV trim UI pending the integration wave.
+
+## M6 — Broadcast mode (2026-10-06)
+
+- Works: auto-director (cuts.json) + compositor render one H.264 broadcast rendition: score bug, LIVE/REPLAY bugs, lower thirds, sting, 0.5× replays with telestrator (ring, trail, shot arc to the 3.05 m rim), game audio under graphics with procedural stings and a narration ducking hook. Worker stages director → broadcast cached; `GET /games/{id}/renditions`.
+- Verified on hfbox: render 12 + worker cache tests (2nd run 0 miss). Jitter (rms px/frame², raw → smoothed) on Kennesaw: wide 14.5 → 0.072, tight 51.3 → 0.42, courtcam follow-cam 2.12 → 0.64. ~100 fps render at 1080p on CPU.
+- Evidence: docs/evidence/M6/broadcast_synthetic_basketball_90s.mp4 (events from synthetic ground truth, labelled on screen), stills, jitter plots · docs/evidence/local/M6/ (Kennesaw)
+- Decisions: D-42, D-43, D-44.
+- Left / known issues: real-footage makes not detected reliably yet, so real scores stay provisional; no shot arcs on panoramic footage (no pinhole fit); slow motion repeats frames.
+
+## M11 — Discovery (backend) (2026-10-06)
+
+- Works: hype meter (`replay.hype.v1`), condensed game + rally browser, longest rallies, vertical 9:16 exports with deterministic captions, shot chart, auto-detected box score, distance covered, review queue; API routes + worker stages. Semantic search is part of M7.
+- Verified on hfbox: render 20, api discovery 6 + worker discovery 2 passed. Hype vs synthetic GT: basketball P 0.86 / R 1.0, pickleball 1.0 / 1.0, badminton 1.0 / 0.89. Distance covered median error 0.7–4.9 %. Condensed real badminton 240 s → 87.5 s in 10.6 s; vertical exports ~300 fps.
+- Evidence: docs/evidence/M11/ (synthetic) · docs/evidence/local/M11/ (Kennesaw, badminton)
+- Decisions: D-45..D-48.
+- Left / known issues: backend only — hype scrubber, rally browser, review screen and export button await the TV/web integration wave; hype untested on real crowd noise.

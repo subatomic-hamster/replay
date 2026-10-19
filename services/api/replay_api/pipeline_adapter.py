@@ -32,6 +32,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -554,6 +555,51 @@ def grab_frame(src: Path, dst: Path, at_s: float = 1.0) -> bool:
             continue
         if dst.is_file() and dst.stat().st_size:
             return True
+    return False
+
+
+def is_isobmff(head: bytes) -> bool:
+    """An MP4 / MOV file starts with an `ftyp` box (bytes 4-8)."""
+    return len(head) >= 8 and head[4:8] == b"ftyp"
+
+
+def grab_frame_url(url: str, dst: Path, at_s: float = 5.0) -> bool:
+    """`grab_frame` for a video behind a URL (D-80: a presigned S3 GET), through OpenCV's
+    own FFmpeg: Lambda has no ffmpeg binary and must not download the whole upload.
+
+    The bytes are the uploader's, so FFmpeg gets the mov/mp4 demuxer only (no HLS / concat
+    playlist that could name file:// or another host) and only the URL's own protocol.
+    Callers check `is_isobmff` first."""
+    try:
+        import cv2  # type: ignore
+    except ImportError as exc:
+        log.warning("OpenCV unavailable (%s); no calibration frame", exc)
+        return False
+    scheme = url.split(":", 1)[0]
+    if scheme not in ("https", "http"):
+        return False
+    # OpenCV reads its FFmpeg options from the environment when the capture opens.
+    # ponytail: process-wide env; Lambda opens one capture at a time
+    key = "OPENCV_FFMPEG_CAPTURE_OPTIONS"
+    prev = os.environ.get(key)
+    os.environ[key] = f"input_format;mov|protocol_whitelist;{scheme},tls,tcp"
+    try:
+        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+    finally:
+        if prev is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = prev
+    try:
+        for seek in (at_s, 0.0):
+            cap.set(cv2.CAP_PROP_POS_MSEC, seek * 1000.0)
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                return bool(cv2.imwrite(str(dst), frame))
+    finally:
+        cap.release()
+    log.warning("no frame readable from the uploaded video")
     return False
 
 

@@ -20,10 +20,11 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
-from . import discovery_routes, edits, plays_routes, providers
+from . import auth, cloud_routes, discovery_routes, edits, plays_routes, providers
 from . import pipeline_adapter as adapter
 from . import stats as stats_mod
 from .config import Settings, from_env
@@ -285,29 +286,65 @@ def _summary(game: dict, storage: LocalStorage, base: str) -> dict:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     s = settings or from_env()
-    if s.storage != "local" or s.jobs != "local":
-        raise ValueError("Phase 1 supports REPLAY_STORAGE=local and REPLAY_JOBS=local only")
+    if (s.storage, s.jobs) not in (("local", "local"), ("s3", "s3")):
+        raise ValueError("REPLAY_STORAGE and REPLAY_JOBS must both be local or both be s3")
+    cloud = None
+    if s.cloud:  # D-80; boto3 is imported only here
+        from . import cloud
+
+        s = cloud.load_secrets(s)
     s.data_dir.mkdir(parents=True, exist_ok=True)
 
     app = FastAPI(title="Replay API", version="1.0")
     app.state.settings = s
-    # REPLAY_PROVIDER_<NAME>=local|aws picks each implementation (providers/__init__.py)
-    app.state.storage = providers.create("storage", games_dir=s.games_dir)
-    app.state.index = providers.create("index", storage=app.state.storage)
-    app.state.jobs = providers.create("jobs", state_path=s.jobs_state_path)
+    if cloud is not None:
+        app.state.storage = cloud.S3Storage(s.s3_bucket, s.games_dir)
+        app.state.index = cloud.S3Index(app.state.storage)
+        app.state.jobs = cloud.S3Jobs(app.state.storage)
+        for name in ("tts", "llm", "embeddings", "face", "speaker"):
+            setattr(app.state, name, cloud.Unavailable(name))
+
+        @app.exception_handler(providers.NotConfiguredError)
+        async def not_configured(request: Request, exc: Exception):
+            return JSONResponse({"detail": str(exc)}, 503)
+    else:
+        # REPLAY_PROVIDER_<NAME>=local|aws picks each implementation (providers/__init__.py)
+        app.state.storage = providers.create("storage", games_dir=s.games_dir)
+        app.state.index = providers.create("index", storage=app.state.storage)
+        app.state.jobs = providers.create("jobs", state_path=s.jobs_state_path)
+        for name in ("tts", "llm", "embeddings", "face", "speaker"):
+            setattr(app.state, name, providers.create(name))
     app.state.labeler = get_labeler(s.labeler)
     app.state.query = get_query_engine(s.query)
-    for name in ("tts", "llm", "embeddings", "face", "speaker"):
-        setattr(app.state, name, providers.create(name))
     app.state.sessions: dict[str, dict] = {}
+    # local mode without a configured secret: tokens last as long as the process
+    app.state.token_secret = s.upload_token_secret or secrets.token_urlsafe(32)
 
     @app.middleware("http")
     async def require_key(request: Request, call_next):
         path = request.url.path
-        open_route = path.startswith("/media/") or path == "/healthz"
-        if s.api_key and not open_route and request.headers.get("x-replay-key") != s.api_key:
+        h = request.headers
+        if path.startswith("/worker/"):
+            if not auth.same(h.get("x-replay-worker-key"), s.worker_key):
+                return JSONResponse({"detail": "missing or invalid X-Replay-Worker-Key"}, 401)
+        elif (
+            s.api_key
+            and not (path.startswith("/media/") or path == "/healthz")
+            and not auth.same(h.get("x-replay-key"), s.api_key)
+            and not auth.token_allows(
+                app.state.token_secret, h.get("x-replay-upload-token"), request.method, path
+            )
+        ):
             return JSONResponse({"detail": "missing or invalid X-Replay-Key"}, 401)
-        return await call_next(request)
+        if cloud is None:
+            return await call_next(request)
+        # cloud: the request's S3 mirror scope; what it changed is written back at the end
+        scope = cloud.begin()
+        try:
+            return await call_next(request)
+        finally:
+            await run_in_threadpool(cloud.end, app.state.storage)
+            cloud.reset(scope)
 
     # added last => outermost, so preflight works even when auth would reject
     app.add_middleware(
@@ -320,6 +357,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     _register_routes(app)
+    cloud_routes.register(app, _game_or_404, _resolve_urls)  # D-80: multipart, /worker
     plays_routes.register(app, _game_or_404, _events, live_events)  # M4/M5
     app.include_router(narrate_routes.router)  # M7: commentary, advice, search
     app.include_router(discovery_routes.router)  # M11: hype, rallies, exports, review
@@ -354,8 +392,22 @@ def _register_routes(app: FastAPI) -> None:
     def create_game(request: Request, body: GameCreate):
         if adapter.get_profile(body.sport) is None:
             raise HTTPException(400, f"unknown sport {body.sport!r}")
-        game = _ctx(request).index.create(body.title, body.sport)
-        return {"id": game["id"], "upload_url": f"{_base(request)}/games/{game['id']}/upload"}
+        ctx = _ctx(request)
+        game = ctx.index.create(body.title, body.sport)
+        gid = game["id"]
+        out = {"id": gid, "upload_url": f"{_base(request)}/games/{gid}/upload"}
+        # D-80: the TV's QR code. The token rides in the fragment, so it never reaches
+        # CloudFront or S3 access logs.
+        out["upload_token"] = auth.make_token(ctx.token_secret, gid)
+        if ctx.settings.public_web_base:
+            web = ctx.settings.public_web_base.rstrip("/")
+            out["upload_page_url"] = f"{web}/u/{gid}#t={out['upload_token']}"
+        out["upload"] = (
+            {"mode": "multipart"}
+            if ctx.settings.cloud
+            else {"mode": "put", "url": out["upload_url"]}
+        )
+        return out
 
     @app.get("/games")
     def list_games(request: Request):
@@ -371,8 +423,20 @@ def _register_routes(app: FastAPI) -> None:
         game = _game_or_404(request, game_id)
         return _with_job_progress(_resolve_urls(game, ctx.storage, _base(request)), ctx.jobs)
 
+    @app.get("/games/{game_id}/jobs")
+    def game_jobs(request: Request, game_id: str):
+        """D-80: every job of this game, oldest first (the phone page's status view)."""
+        _game_or_404(request, game_id)
+        jobs = _ctx(request).jobs.for_game(game_id)
+        return sorted(jobs, key=lambda j: j.get("created_at") or 0.0)
+
+    def _local_upload_or_409(request: Request) -> None:
+        if _ctx(request).settings.cloud:  # D-80: Lambda caps a request body at 6 MB
+            raise HTTPException(409, "cloud mode uploads go through /upload/multipart")
+
     @app.put("/games/{game_id}/upload")
     async def upload_put(request: Request, game_id: str):
+        _local_upload_or_409(request)
         game = _game_or_404(request, game_id)
         dest = _ctx(request).storage.path(game_id, SOURCE_REL)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -390,6 +454,7 @@ def _register_routes(app: FastAPI) -> None:
         game_id: str,
         file: UploadFile = File(...),  # noqa: B008
     ):
+        _local_upload_or_409(request)
         game = _game_or_404(request, game_id)
         dest = _ctx(request).storage.path(game_id, SOURCE_REL)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -500,17 +565,17 @@ def _register_routes(app: FastAPI) -> None:
         if live is not None and live["status"] in ("queued", "running"):
             return {"job_id": live["id"], "status": live["status"], "game_id": game_id}
         ctx.storage.path(game_id, AUTOCALIB_REL).unlink(missing_ok=True)
+        params = {
+            "sport": body.sport,
+            "variant": body.variant,
+            "backend": _autocalib_backend(ctx.settings, body.backend),
+        }
         job = ctx.jobs.submit(
             "autocalib",
             game_id,
-            _autocalib_task(
-                ctx.settings,
-                ctx.storage,
-                game_id,
-                body.sport,
-                body.variant,
-                _autocalib_backend(ctx.settings, body.backend),
-            ),
+            _autocalib_task(ctx.settings, ctx.storage, game_id, **params),
+            # D-80: the remote runner rebuilds the task from these
+            params=params,
         )
         return {"job_id": job["id"], "status": job["status"], "game_id": game_id}
 
@@ -798,6 +863,8 @@ def _register_routes(app: FastAPI) -> None:
 
     @app.post("/sessions", status_code=201)
     def create_session(request: Request):
+        if _ctx(request).settings.cloud:  # D-80: Lambda URLs have no WebSockets
+            raise HTTPException(501, "sessions are not available in cloud mode")
         sid = "s_" + secrets.token_hex(4)
         code = f"{secrets.randbelow(10000):04d}"
         _ctx(request).sessions[sid] = {"code": code, "clients": set()}
@@ -834,6 +901,14 @@ def _register_routes(app: FastAPI) -> None:
         storage: LocalStorage = _ctx(request).storage
         if not game_id.replace("_", "").isalnum():
             raise HTTPException(404, "not found")
+        if _ctx(request).settings.cloud:  # D-80: S3 serves the bytes (and the Range)
+            from .cloud import safe_rel
+
+            rel = safe_rel(rel_path)
+            # /media is open; the raw upload is private (players watch media/wide.mp4)
+            if rel is None or rel == SOURCE_REL:
+                raise HTTPException(404, "not found")
+            return RedirectResponse(storage.presign_get(game_id, rel), 302)
         target = storage.resolve_inside(game_id, rel_path)
         if target is None or not target.is_file():
             raise HTTPException(404, "not found")

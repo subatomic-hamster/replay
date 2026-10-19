@@ -30,6 +30,17 @@ class Settings:
     # REPLAY_WORKER_STAGES="replays,scene": opt-in worker stages (default=False in the
     # worker, D-56/D-75) run on every upload after the default ones; worker pipeline only.
     worker_stages: tuple[str, ...] = ()
+    # D-80 cloud mode (REPLAY_STORAGE=s3 + REPLAY_JOBS=s3, docs/aws-migration.md). The
+    # three secrets come from SSM under `ssm_prefix` when it is set, else from env.
+    s3_bucket: str | None = None
+    ssm_prefix: str | None = None
+    public_web_base: str | None = None
+    worker_key: str | None = None
+    upload_token_secret: str | None = None
+
+    @property
+    def cloud(self) -> bool:
+        return self.storage == "s3"
 
     @property
     def games_dir(self) -> Path:
@@ -42,13 +53,16 @@ class Settings:
 
 def from_env(**overrides) -> Settings:
     env = os.environ.get
+    storage = env("REPLAY_STORAGE", "local")
+    # cloud mode's data dir is only a scratch mirror; Lambda can write nowhere but /tmp
+    default_data = Path("/tmp/replay") if storage == "s3" else REPO_ROOT / "data"
     s = Settings(
         api_key=env("REPLAY_API_KEY") or None,
-        storage=env("REPLAY_STORAGE", "local"),
+        storage=storage,
         jobs=env("REPLAY_JOBS", "local"),
         labeler=env("REPLAY_LABELER", "heuristic"),
         query=env("REPLAY_QUERY", "rules"),
-        data_dir=Path(env("REPLAY_DATA_DIR") or REPO_ROOT / "data").expanduser(),
+        data_dir=Path(env("REPLAY_DATA_DIR") or default_data).expanduser(),
         cors_origins=[o.strip() for o in env("REPLAY_CORS_ORIGINS", "*").split(",") if o.strip()],
         pipeline=env("REPLAY_PIPELINE", "courtcam"),
         fake_pipeline_dir=Path(
@@ -60,5 +74,10 @@ def from_env(**overrides) -> Settings:
         worker_stages=tuple(
             s.strip() for s in env("REPLAY_WORKER_STAGES", "").split(",") if s.strip()
         ),
+        s3_bucket=env("REPLAY_S3_BUCKET") or None,
+        ssm_prefix=env("REPLAY_SSM_PREFIX") or None,
+        public_web_base=env("REPLAY_PUBLIC_WEB_BASE") or None,
+        worker_key=env("REPLAY_WORKER_KEY") or None,
+        upload_token_secret=env("REPLAY_UPLOAD_TOKEN_SECRET") or None,
     )
     return s if not overrides else Settings(**{**s.__dict__, **overrides})

@@ -74,7 +74,9 @@ class StepFunctionsJobs:
     table (GSI on `game_id`); `progress` → UpdateItem from the stage containers.
     """
 
-    def submit(self, kind: str, game_id: str, fn: Callable[[str], None]) -> dict:
+    def submit(
+        self, kind: str, game_id: str, fn: Callable[[str], None], params: dict | None = None
+    ) -> dict:
         raise _todo("Step Functions", "submit")
 
     def get(self, job_id: str) -> dict | None:

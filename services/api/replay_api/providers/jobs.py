@@ -16,7 +16,12 @@ log = logging.getLogger(__name__)
 
 
 class Jobs(Protocol):
-    def submit(self, kind: str, game_id: str, fn: Callable[[str], None]) -> dict: ...
+    def submit(
+        self, kind: str, game_id: str, fn: Callable[[str], None], params: dict | None = None
+    ) -> dict:
+        """`params`: what a runner outside this process needs to rebuild `fn` (D-80)."""
+        ...
+
     def get(self, job_id: str) -> dict | None: ...
     def for_game(self, game_id: str) -> list[dict]: ...
     def progress(self, job_id: str, stage: str, fraction: float) -> None: ...
@@ -59,7 +64,10 @@ class LocalJobs:
             self.state.setdefault(job_id, {}).update(fields)
             self._flush()
 
-    def submit(self, kind: str, game_id: str, fn: Callable[[str], None]) -> dict:
+    def submit(
+        self, kind: str, game_id: str, fn: Callable[[str], None], params: dict | None = None
+    ) -> dict:
+        del params  # `fn` already closes over them
         job_id = "j_" + secrets.token_hex(6)
         job = {
             "id": job_id,

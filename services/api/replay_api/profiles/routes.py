@@ -75,7 +75,11 @@ class LinkIn(BaseModel):
 
 def store(request: Request):
     st = request.app.state
-    if getattr(st, "profiles", None) is None:
+    if getattr(st, "profiles", None) is None and st.settings.cloud:
+        from ..cloud import S3Profiles  # D-80: the SQLite file, mirrored to S3
+
+        st.profiles = S3Profiles(st.settings.data_dir / "profiles.sqlite", st.storage)
+    elif getattr(st, "profiles", None) is None:
         st.profiles = providers.create("profiles", path=st.settings.data_dir / "profiles.sqlite")
     return st.profiles
 

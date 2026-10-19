@@ -2,10 +2,11 @@
   "name": "@replay/infra",
   "private": true,
   "version": "0.1.0",
-  "description": "AWS CDK skeleton for Replay. Synth-only until AWS credentials exist; see docs/aws-integrations.md.",
+  "description": "AWS CDK for Replay: ReplayCloud (deployed, docs/aws-deploy.md) plus synth-only skeletons (docs/aws-integrations.md).",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "synth": "cdk synth --quiet"
+    "synth": "cdk synth --quiet -c stubBuilds=true -c skeletons=true",
+    "test": "tsx --test test/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

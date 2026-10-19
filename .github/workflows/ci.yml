@@ -113,5 +113,7 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
       - run: npx tsc --noEmit
-      # env-agnostic stacks: synth needs no AWS credentials
-      - run: npx cdk synth --quiet
+      # env-agnostic stacks: synth needs no AWS credentials; stubBuilds stands in for the
+      # Lambda zip and web builds (docs/aws-deploy.md), skeletons adds ReplayData/ReplayPipeline
+      - run: npx cdk synth --quiet -c stubBuilds=true -c skeletons=true
+      - run: npm test

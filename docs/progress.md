@@ -126,7 +126,7 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Works: shots on the default YOLO pose path, net-sport point winners, X gesture with the opt-in ViTPose backend; zero false gesture triggers on real footage kept.
 - Verified on hfbox (staged snapshot, `scripts/box-test.sh` ALL GREEN): courtcam 182, api 211 + 1 skipped, worker 22, render 49, web Playwright 86 passed. Synthetic (9 clips): shots 5/27 → 21/27 at P 1.00 (YOLO pose; ViTPose 19/27); `winner_side` right on 27/33 points with known winner; X gesture 0/22 → 9/22 with `--pose vit` (P 1.00, R 0.41), still 0/22 with YOLO pose. Real 480 s: 0 false gesture triggers. Kennesaw shots: precision 0.5 → 1.0 (3 found, all real), but recall 3 of 6 known shots (was 5 of 6). Pose time with ViTPose fp16: Kennesaw 38 s vs YOLO 88 s.
 - Tracking unchanged: synthetic basketball players IDF1 0.31 / 0.31 / 0.25 with 122–157 ID switches; Kennesaw 150–210 s ≈ 38 visible ID changes across 19 ids. ReID on, tighter BoT-SORT, 1280 px detection and gated merging all failed to help (details in samples/real/RESULTS.md).
-- Evidence: docs/evidence/{M4,M5}/metrics.json "accuracy pass" sections (re-measured 2026-10-06: shots 21/27 at P 1.00, ViTPose 19/27, winner_side 27/33, X gesture vit 9/22 at P 1.00, YOLO pose 0/22 — all match; the "before" values are history), docs/evidence/M4/accuracy_timeline_yolo_*.png, docs/evidence/M5/accuracy_*_on_synthetic_x_holds.png · docs/evidence/local/{M1,M4,M5}/accuracy_* (Kennesaw)
+- Evidence: docs/evidence/{M4,M5}/metrics.json "accuracy pass" sections (re-measured 2026-10-06: shots 21/27 at P 1.00, ViTPose 19/27, winner_side 27/33, X gesture vit 9/22 at P 1.00, YOLO pose 0/22 — all match; the "before" values are history), docs/evidence/M4/accuracy_timeline_yolo__.png, docs/evidence/M5/accuracy___on_synthetic_x_holds.png · docs/evidence/local/{M1,M4,M5}/accuracy_* (Kennesaw)
 - Decisions: D-61.
 - Left / known issues: the relaxed X-gesture rule regressed the GT-pose gesture test to P 0.38 / R 0.73 (fixed afterwards by D-68, see "Gesture fix" below); gesture recall 0.41 vs the 0.8 target on far players (misses are players ≤ 56 px tall); ViTPose not default yet (deps + lock); tracking needs tracklet-level association (real ReID or a stronger small-player detector); real shot recall dropped; contact `side_ok` near chance; pickleball doubles second-server rule.
 
@@ -387,3 +387,21 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - Not a Fire TV.
   - Auto-calibration scored 0.83 (< 0.90) even on the clean synthetic half-court clip.
   - On the replay-angle screen, the "TIER C 3D" stage label overlaps the "REPLAY Shot" header (top left).
+
+## AWS migration: QR upload, cloud API, ReplayCloud stack (2026-10-19)
+
+- Works (D-80, design in docs/aws-migration.md, runbook in docs/aws-deploy.md):
+  - TV "Add game": pick a sport, then a QR code of the phone upload page (grid of Views, native and web). The screen shows `host/u/<id>` without the token, then live status until ready.
+  - Phone page `/u/{id}#t=<token>`: multipart upload straight to S3 (3 parts in flight, per-part retry), calibration, process, status. No phone app.
+  - API cloud mode (`REPLAY_STORAGE=s3`, `REPLAY_JOBS=s3`): S3-mirrored storage, S3 job queue with conditional-write claims, per-game HMAC upload tokens (24 h), `/media` as presigned 302, Lambda via Mangum. Secrets from SSM.
+  - hfbox remote runner (`python -m replay_api.remote_runner`) pulls jobs over HTTPS with the worker key, so hfbox holds no AWS credentials.
+  - TV Settings has an API key (masked; Gradle `REPLAY_API_KEY` build default from env).
+  - `ReplayCloud` CDK stack: Lambda Function URL (python3.12 arm64), private media bucket, CloudFront + OAC for apps/web at `/` and apps/tv web at `/tvapp/`, runtime `config.json`. CDK assertion tests. Estimated about $0.50–1/month.
+  - Security review: no critical/high. Fixed: uploads must be ISO-BMFF before OpenCV/FFmpeg decodes them, with a protocol whitelist; `/media` refuses `source.mp4` in cloud mode; the single-request upload returns 409 in cloud mode.
+- AWS account (profile `replay`): free plan, $160 credit after the Budgets, Lambda and EC2 activities (placeholders torn down). Budget `replay-monthly-10usd`. SSM SecureStrings `/replay/{api-key,worker-key,upload-token-secret}` created.
+- Verified on hfbox: box-test ALL GREEN per commit; api 240 + 1 skipped, worker 25, render 54, web Playwright 105, tv 55 + 3 skipped, infra synth + 5 CDK tests. Lambda zip 169 MiB unzipped. Web builds contain only the committed synthetic mock media.
+- Left / known issues:
+  - Not deployed yet: `cdk bootstrap`/`deploy` was blocked by the permission classifier and needs the user.
+  - Bedrock-playground and RDS credit activities not done (console-only / blocked).
+  - Cloud mode: `/sessions` 501, profile photos not in S3, only `process`/`autocalib` jobs, a dead runner leaves its job `running`, last write wins on edits.
+  - The TV on-screen keyboard types lowercase only (fine for hex keys).

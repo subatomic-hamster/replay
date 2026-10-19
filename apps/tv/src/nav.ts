@@ -16,7 +16,9 @@ export type Route =
   | { name: "players"; from?: string }
   | { name: "profile"; profileId: string; from?: string }
   /** The API base (first run opens here when the build has no default) */
-  | { name: "settings" };
+  | { name: "settings" }
+  /** D-80: pick a sport, show the phone-upload QR, follow the game until it is ready */
+  | { name: "add" };
 
 /** M13 screens that take only a game id: `/tv/:id/<name>`. */
 const GAME_SCREENS = ["clips", "rallies", "search", "advice"] as const;
@@ -39,7 +41,7 @@ export function useRoute(): Route {
   );
 }
 
-/** `/tv`, `/tv/settings`, `/tv/pair?game=`, `/tv/:id[?mode=&pid=&t=]`, `/tv/:id/highlights[?q=]`, `/tv/:id/review`,
+/** `/tv`, `/tv/settings`, `/tv/add`, `/tv/pair?game=`, `/tv/:id[?mode=&pid=&t=]`, `/tv/:id/highlights[?q=]`, `/tv/:id/review`,
  *  `/tv/:id/replays[/:playId]`, `/tv/:id/{clips,rallies,search,advice}`,
  *  `/tv/players[/:profileId][?from=<game>]`. */
 export function routeFromPath(path: string): Route {
@@ -49,6 +51,7 @@ export function routeFromPath(path: string): Route {
   if (seg[0] === "tv") seg.shift();
   if (seg.length === 0) return { name: "library" };
   if (seg[0] === "settings") return { name: "settings" };
+  if (seg[0] === "add") return { name: "add" };
   if (seg[0] === "pair") return { name: "pair", gameId: params.get("game") ?? undefined };
   if (seg[0] === "players") {
     const from = params.get("from") ?? undefined;

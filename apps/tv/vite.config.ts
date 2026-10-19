@@ -23,6 +23,8 @@ const mockScene: Plugin = {
 };
 
 export default defineConfig(({ mode }) => ({
+  // D-80: the deployed TV web build sits under /tvapp/ next to apps/web at /.
+  base: process.env.VITE_BASE || "/",
   plugins: [react(), mockScene],
   resolve: {
     alias: { "react-native": "react-native-web" },

@@ -200,7 +200,7 @@ test("Replay end to end: phone upload → worker pipeline → TV demo beats", as
     await page.waitForTimeout(800);
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("settings-api-base")).toHaveText(API);
-    await expect(page.getByTestId("settings-item-1")).toHaveAttribute("data-focused", "true");
+    await expect(page.getByTestId("settings-item-2")).toHaveAttribute("data-focused", "true");
     await page.waitForTimeout(1000);
     await page.keyboard.press("Enter"); // Test connection
     await expect(page.getByTestId("settings-check")).toHaveAttribute("data-state", "ok", { timeout: 10_000 });

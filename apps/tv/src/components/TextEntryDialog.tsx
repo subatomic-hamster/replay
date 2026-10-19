@@ -13,6 +13,8 @@ interface Props {
   initial?: string | null;
   presets?: string[];
   format?: (value: string) => string;
+  /** What the value box shows (default `format`), e.g. a masked secret. */
+  display?: (value: string) => string;
   onSubmit: (value: string) => void;
   onCancel: () => void;
   dataSet?: Record<string, string>;
@@ -30,6 +32,7 @@ export function TextEntryDialog({
   initial,
   presets = [],
   format = (v) => v,
+  display = format,
   onSubmit,
   onCancel,
   dataSet,
@@ -107,7 +110,7 @@ export function TextEntryDialog({
   );
   useDpad(onAction, true, true);
 
-  const shown = format(value);
+  const shown = display(value);
 
   return (
     <View style={styles.backdrop}>

@@ -8,7 +8,7 @@ import com.facebook.react.module.model.ReactModuleInfo
 import com.facebook.react.module.model.ReactModuleInfoProvider
 import com.replaytv.specs.NativeReplaySettingsSpec
 
-/** specs/NativeReplaySettings.ts: the API base the user set on the Settings screen. */
+/** specs/NativeReplaySettings.ts: the API base and key the user set on the Settings screen. */
 class ReplaySettingsModule(context: ReactApplicationContext) : NativeReplaySettingsSpec(context) {
   private val prefs = context.getSharedPreferences("replay", Context.MODE_PRIVATE)
 
@@ -22,6 +22,14 @@ class ReplaySettingsModule(context: ReactApplicationContext) : NativeReplaySetti
   }
 
   override fun getBuildApiBase(): String = BuildConfig.REPLAY_API_BASE
+
+  override fun getApiKey(): String = prefs.getString("apiKey", null) ?: ""
+
+  override fun setApiKey(value: String) {
+    prefs.edit().putString("apiKey", value).commit()
+  }
+
+  override fun getBuildApiKey(): String = BuildConfig.REPLAY_API_KEY
 
   companion object {
     const val NAME = "ReplaySettings"

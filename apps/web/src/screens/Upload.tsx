@@ -1,7 +1,7 @@
 // Phone uploader (I1, I2, I3, I5, W7-from-phone). Touch/mouse, not D-pad — these pages
 // never run on the TV.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { api } from "../api/client";
+import { api, type ReplayApi } from "../api/client";
 import { API_BASE } from "../config";
 import { navigate, useLocation } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
@@ -230,9 +230,18 @@ function Roster({ game, onChange }: { game: Game; onChange: () => void }) {
  * the fit far worse than leaving it out (~20 px vs 0.3 px on the Kennesaw clip), so any
  * single point can be skipped — the API only needs 4 points the template knows (D-19).
  */
-export function Calibrate({ gameId }: { gameId: string }) {
+export function Calibrate({
+  gameId,
+  client = api,
+  statusPath = `/upload/${gameId}/status`,
+}: {
+  gameId: string;
+  /** D-80: the phone page's upload-token client. */
+  client?: ReplayApi;
+  statusPath?: string;
+}) {
   const { data, error, reload } = useAsync(
-    () => Promise.all([api.getGame(gameId), api.listSports()]),
+    () => Promise.all([client.getGame(gameId), client.listSports()]),
     [gameId],
   );
   // Bug 1: this used to be `useState("half")`, which is basketball's. A profile whose
@@ -298,7 +307,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
         setResult(null);
         return;
       }
-      api
+      client
         .calibrate(game.id, {
           sport: profile.id,
           court_variant: variantRef.current,
@@ -314,7 +323,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
         )
         .catch((e: Error) => setResult({ ok: false, msg: e.message }));
     },
-    [game, profile],
+    [game, profile, client],
   );
 
   // Re-validate when the variant changes, once the required walk is behind us.
@@ -332,7 +341,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
     let live = true;
     let timer = 0;
     const poll = () =>
-      api.getAutoCalibration(gid).then(
+      client.getAutoCalibration(gid).then(
         (r) => {
           if (!live) return;
           setAuto(r);
@@ -340,7 +349,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
         },
         () => live && setAuto({ status: "failed", ok: false }),
       );
-    api
+    client
       .startAutoCalibration(gid, sportId, variantRef.current)
       .then(() => live && void poll())
       .catch(() => live && setAuto({ status: "failed", ok: false }));
@@ -348,7 +357,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
       live = false;
       window.clearTimeout(timer);
     };
-  }, [gid, sportId]);
+  }, [gid, sportId, client]);
 
   /** Image-space pixel for a pointer position, clamped to the frame (E-07). */
   const pointAt = useCallback((clientX: number, clientY: number): [number, number] | null => {
@@ -577,7 +586,7 @@ export function Calibrate({ gameId }: { gameId: string }) {
       <div className="calib-frame">
         <img
           ref={imgRef}
-          src={api.mediaUrl(game, game.calib_url ?? "calib.jpg")}
+          src={client.mediaUrl(game, game.calib_url ?? "calib.jpg")}
           alt="Calibration frame"
           data-testid="calib-image"
           onClick={(e) => tapFrame(e.clientX, e.clientY)}
@@ -751,9 +760,9 @@ export function Calibrate({ gameId }: { gameId: string }) {
         data-testid="start-processing"
         disabled={!valid}
         onClick={() =>
-          api
+          client
             .startProcessing(game.id)
-            .then(() => navigate(`/upload/${game.id}/status`))
+            .then(() => navigate(statusPath))
             .catch(() => {})
         }
       >
@@ -765,7 +774,16 @@ export function Calibrate({ gameId }: { gameId: string }) {
 
 
 /** `/upload/:id/status` — I3 (S-07, S-08). */
-export function UploadStatus({ gameId }: { gameId: string }) {
+export function UploadStatus({
+  gameId,
+  client = api,
+  readyNote,
+}: {
+  gameId: string;
+  client?: ReplayApi;
+  /** D-80 phone page: what to say when ready, instead of the roster link. */
+  readyNote?: string;
+}) {
   const [game, setGame] = useState<Game | null>(null);
   const [failure, setFailure] = useState<Error | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -773,7 +791,7 @@ export function UploadStatus({ gameId }: { gameId: string }) {
   useEffect(() => {
     let live = true;
     const poll = () =>
-      api.getGame(gameId).then(
+      client.getGame(gameId).then(
         (g) => live && setGame(g),
         (e: Error) => live && setFailure(e),
       );
@@ -783,7 +801,7 @@ export function UploadStatus({ gameId }: { gameId: string }) {
       live = false;
       clearInterval(timer);
     };
-  }, [gameId, nonce]);
+  }, [gameId, nonce, client]);
 
   if (failure) return <ApiErrorBanner error={failure} onRetry={() => setNonce((n) => n + 1)} />;
 
@@ -817,9 +835,13 @@ export function UploadStatus({ gameId }: { gameId: string }) {
         })}
       </ol>
       {game?.status === "ready" ? (
-        <button type="button" onClick={() => navigate(`/upload/${gameId}`)}>
-          Name the players
-        </button>
+        readyNote ? (
+          <p data-testid="ready-note">{readyNote}</p>
+        ) : (
+          <button type="button" onClick={() => navigate(`/upload/${gameId}`)}>
+            Name the players
+          </button>
+        )
       ) : null}
     </div>
   );

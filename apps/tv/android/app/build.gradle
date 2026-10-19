@@ -85,6 +85,13 @@ if (!(replayApiBase ==~ /^(https?:\/\/[A-Za-z0-9.\-]+(:\d+)?(\/[A-Za-z0-9._\-\/]
     throw new GradleException("REPLAY_API_BASE must look like http://192.168.1.20:8000, got: ${replayApiBase}")
 }
 
+// D-80: default X-Replay-Key (cloud mode needs it for POST /games), from the build
+// environment only, never committed; the Settings screen overrides it. Empty = no key.
+def replayApiKey = setting("REPLAY_API_KEY") ?: ""
+if (!(replayApiKey ==~ /^[A-Za-z0-9._~+\/=\-]*$/)) {
+    throw new GradleException("REPLAY_API_KEY may only contain letters, digits and ._~+/=- (value not shown)")
+}
+
 // Release signing from outside the repo (docs/fire-tv.md). Without all four, the release
 // APK is signed with the debug key, which is fine for side-loading but not for a store.
 def releaseStore = setting("REPLAY_RELEASE_STORE_FILE")
@@ -111,6 +118,7 @@ android {
         versionCode 1
         versionName "1.0"
         buildConfigField "String", "REPLAY_API_BASE", "\"${replayApiBase}\""
+        buildConfigField "String", "REPLAY_API_KEY", "\"${replayApiKey}\""
     }
     signingConfigs {
         debug {

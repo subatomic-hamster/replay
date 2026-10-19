@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// The API address on the TV: reached from the library with the D-pad, typed on the
+// The API address and key on the TV: reached from the library with the D-pad, typed on the
 // on-screen keyboard, normalized, tested against the API (GET /games) and kept on the device.
+// The key (D-80 X-Replay-Key) is sent on the test and never shown beyond its last 4 characters.
 const BASE = "http://10.0.0.5:8000";
+const KEY = "c0ffee42beef";
 
 /** Walk the on-screen keyboard to each key label with the arrows, and Select it. */
 async function typeKeys(page: Page, prefix: string, labels: string[]) {
@@ -24,10 +26,18 @@ async function clear(page: Page) {
   await expect(page.getByTestId("api-base-value")).toHaveText("type here…");
 }
 
-test("TV-16 settings: set the API address with the D-pad, test it, keep it", async ({ page }) => {
-  await page.route(`${BASE}/games`, (route) =>
-    route.fulfill({ json: [{ id: "g1" }, { id: "g2" }], headers: { "access-control-allow-origin": "*" } }),
-  );
+test("TV-16 settings: set the API address and key with the D-pad, test it, keep it", async ({ page }) => {
+  const sentKeys: (string | undefined)[] = [];
+  await page.route(`${BASE}/games`, (route) => {
+    const cors = {
+      "access-control-allow-origin": "*",
+      "access-control-allow-headers": "*",
+      "access-control-allow-methods": "GET, OPTIONS",
+    };
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+    sentKeys.push(route.request().headers()["x-replay-key"]);
+    return route.fulfill({ json: [{ id: "g1" }, { id: "g2" }], headers: cors });
+  });
   await page.goto("/");
   await expect(page.getByTestId("game-card").first()).toHaveAttribute("data-focused", "true");
   await page.keyboard.press("ArrowUp");
@@ -37,8 +47,11 @@ test("TV-16 settings: set the API address with the D-pad, test it, keep it", asy
   await expect(page.getByTestId("settings")).toBeVisible();
   const shown = page.getByTestId("settings-api-base");
   await expect(shown).not.toHaveText("not set"); // the build default
+  await expect(page.getByTestId("settings-api-key")).toHaveText("none");
+  await expect(page.getByTestId("settings-item-2")).toHaveAttribute("data-focused", "true"); // Test connection
 
   // Change address: a bad one is refused and leaves the saved address alone.
+  await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("settings-item-0")).toHaveAttribute("data-focused", "true");
   await page.keyboard.press("Enter");
@@ -59,13 +72,32 @@ test("TV-16 settings: set the API address with the D-pad, test it, keep it", asy
   await expect(shown).toHaveText(BASE);
   await expect(page.getByTestId("settings-check")).toHaveText("Connected · 2 games");
   await expect(page.getByTestId("settings-check")).toHaveAttribute("data-state", "ok");
+  expect(sentKeys.at(-1)).toBeUndefined();
 
-  // Kept across a restart; Done returns to the library.
+  // API key: typed masked (last 4 only), saved, sent on the next test.
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByTestId("settings-item-1")).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("api-key-dialog")).toBeVisible();
+  await typeKeys(page, "api-key", [...KEY.toUpperCase()]);
+  await expect(page.getByTestId("api-key-value")).toHaveText("••••beef");
+  await typeKeys(page, "api-key", ["SAVE"]);
+  await expect(page.getByTestId("api-key-dialog")).toHaveCount(0);
+  await expect(page.getByTestId("settings-api-key")).toHaveText("••••beef");
+  await expect(page.getByTestId("settings-check")).toHaveText("Connected · 2 games");
+  expect(sentKeys.at(-1)).toBe(KEY);
+  await expect(page.locator("body")).not.toContainText(KEY);
+
+  // Both kept across a restart (the key wins over the build's, which is empty here); Done
+  // returns to the library.
   await page.goto("/tv/settings");
   await expect(shown).toHaveText(BASE);
+  await expect(page.getByTestId("settings-api-key")).toHaveText("••••beef");
   await expect(page.getByTestId("settings-check")).toHaveAttribute("data-state", "ok");
+  expect(sentKeys.at(-1)).toBe(KEY);
+  expect(await page.evaluate(() => localStorage.getItem("replay.apiKey"))).toBe(KEY);
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("settings-item-2")).toHaveAttribute("data-focused", "true");
+  await expect(page.getByTestId("settings-item-3")).toHaveAttribute("data-focused", "true");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("game-card").first()).toBeVisible();
 });

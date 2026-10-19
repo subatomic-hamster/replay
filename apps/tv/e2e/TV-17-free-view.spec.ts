@@ -127,6 +127,8 @@ async function pushTo(page: Page, key: string, edge: string, max = 30) {
 }
 
 test("TV-17 Free view: enter at the angle's time, clamp at every edge, presets, play/pause, Back", async ({ page }) => {
+  // ~28 s alone, so the default 30 s ran out with 4 workers (box-test runs the suite in parallel).
+  test.slow();
   const lay = fixture();
   const env = lay.envelope;
   await enterFree(page);

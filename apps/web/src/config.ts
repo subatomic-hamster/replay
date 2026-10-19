@@ -1,5 +1,15 @@
+/** D-80: a production build with no build-time base reads `config.json` next to itself
+ *  ({"apiBase"}, written by the infra stack). Top-level await, so every module importing this
+ *  sees it; missing or not JSON = the default. Dev servers and mock builds never ask. */
+const runtime: { apiBase?: string } | null =
+  import.meta.env.PROD && !import.meta.env.VITE_REPLAY_API_BASE && import.meta.env.VITE_MOCK_API !== "1"
+    ? await fetch(`${import.meta.env.BASE_URL}config.json`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+    : null;
+
 export const API_BASE = (
-  import.meta.env.VITE_REPLAY_API_BASE ?? "http://localhost:8000"
+  import.meta.env.VITE_REPLAY_API_BASE || runtime?.apiBase || "http://localhost:8000"
 ).replace(/\/$/, "");
 
 /** §4.6: shared demo key, only sent when configured. */

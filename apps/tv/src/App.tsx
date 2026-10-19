@@ -6,6 +6,7 @@ import { StatusBar, StyleSheet, View } from "react-native";
 import { apiBase } from "./api";
 import { navigate, useRoute, type Route } from "./nav";
 import { usePlatformKeys } from "./platform/keys";
+import { AddGame } from "./screens/AddGame";
 import { Advice } from "./screens/Advice";
 import { Clips } from "./screens/Clips";
 import { Highlights } from "./screens/Highlights";
@@ -66,6 +67,8 @@ function screen(r: Route) {
       return <Profile key={r.profileId} profileId={r.profileId} from={r.from} />;
     case "settings":
       return <Settings />;
+    case "add":
+      return <AddGame />;
   }
 }
 

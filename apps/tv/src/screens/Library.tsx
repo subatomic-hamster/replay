@@ -15,14 +15,16 @@ export function Library() {
   const games = useMemo(() => data ?? [], [data]);
 
   // The top row above the cards (Up/Left from the first card): focus -1 is "Players",
-  // -2 "Settings" to its right.
+  // -2 "Settings" and -3 "Add game" to its right. An empty library (first run) starts on
+  // "Add game".
+  const at = data && !games.length && focus >= 0 ? -3 : focus;
   const onAction = useCallback(
     (a: DpadAction) => {
       if (a === "back") return false;
-      if (focus < 0) {
-        if (a === "select") navigate({ name: focus === -1 ? "players" : "settings" });
-        else if (a === "right") setFocus(-2);
-        else if (a === "left") setFocus(-1);
+      if (at < 0) {
+        if (a === "select") navigate({ name: at === -1 ? "players" : at === -2 ? "settings" : "add" });
+        else if (a === "right") setFocus(Math.max(-3, at - 1));
+        else if (a === "left") setFocus(Math.min(-1, at + 1));
         else if (a === "down" && games.length) setFocus(0);
         return;
       }
@@ -34,7 +36,7 @@ export function Library() {
         if (g.status === "ready") navigate({ name: "watch", gameId: g.id });
       }
     },
-    [games, focus],
+    [games, focus, at],
   );
   useDpad(onAction);
 
@@ -44,11 +46,12 @@ export function Library() {
     <View style={ui.screen}>
       <View style={styles.head}>
         <T style={[ui.h1, { marginBottom: 0, marginRight: px(32) }]}>Replay</T>
-        <Pill label="Players" focused={focus === -1} testID="library-players" />
-        <Pill label="Settings" focused={focus === -2} testID="library-settings" />
+        <Pill label="Players" focused={at === -1} testID="library-players" />
+        <Pill label="Settings" focused={at === -2} testID="library-settings" />
+        <Pill label="Add game" focused={at === -3} testID="library-add" />
       </View>
       {data && games.length === 0 ? (
-        <T testID="library-empty">No games yet. Upload one from your phone at /upload.</T>
+        <T testID="library-empty">No games yet. Select Add game to upload one from your phone.</T>
       ) : null}
       <View style={styles.cards}>
         {games.map((g, i) => {
@@ -80,7 +83,7 @@ export function Library() {
           );
         })}
       </View>
-      <Hint>Arrows move · Select opens a game · Up reaches Players and Settings · Back exits</Hint>
+      <Hint>Arrows move · Select opens a game · Up reaches Players, Settings and Add game · Back exits</Hint>
     </View>
   );
 }

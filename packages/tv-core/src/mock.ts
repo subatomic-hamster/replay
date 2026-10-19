@@ -22,7 +22,7 @@ import type {
   TrackPlayer,
   SceneLayout,
 } from "./types";
-import { queryAsSearch, reviewBody, type CalibrationPayload, type ReplayApi } from "./api";
+import { ApiError, queryAsSearch, reviewBody, type CalibrationPayload, type ReplayApi } from "./api";
 import type { ReplayAngle, ReplayManifest } from "./replays";
 import { REVIEW_CONFIDENCE_THRESHOLD } from "./display";
 import type {
@@ -316,7 +316,11 @@ function seed() {
   g4.sport = "pickleball";
   g4.sport_ui = PICKLEBALL.sport_ui;
   g4.court = { ...g4.court, variant: "doubles" };
-  for (const g of [g1, g2, g3, g4]) games.set(g.id, g);
+  // D-80: what the TV just created, for the phone page (`/u/g_qr05#t=…`) to upload into.
+  const g5 = baseGame("g_qr05", "Saturday run", "created");
+  g5.stages = {};
+  delete g5.progress;
+  for (const g of [g1, g2, g3, g4, g5]) games.set(g.id, g);
   events.set("g_mock01", [
     ev("e_0001", 3.0, "p1", true, 0.82, [4.0, 5.0]),
     ev("e_0002", 8.0, "p2", false, 0.74, [9.0, 6.5]),
@@ -326,8 +330,16 @@ function seed() {
   events.set("g_mock02", []);
   events.set("g_proc03", []);
   events.set("g_pickle4", []);
+  events.set("g_qr05", []);
 }
 seed();
+
+/** A token about as long as the real base64url(id.exp.hmac), so the QR is real-sized. */
+const mockToken = (id: string) =>
+  btoa(`${id}.${Math.floor(Date.now() / 1000) + 86400}.${"5a".repeat(32)}`)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 
 /** Finish one stage per poll (the next one shows as half done) so the status screen
  *  runs through courtcam's nine stages in ~20 s. */
@@ -380,7 +392,39 @@ export const mockApi: ReplayApi = {
     g.players = [];
     games.set(id, g);
     events.set(id, []);
-    return delay<CreateGameResult>({ id, upload_url: `/__mock_upload/${id}` });
+    const token = mockToken(id);
+    return delay<CreateGameResult>({
+      id,
+      upload_url: `/__mock_upload/${id}`,
+      upload_token: token,
+      upload_page_url: `${globalThis.location?.origin ?? "http://localhost:5177"}/u/${id}#t=${token}`,
+      upload: { mode: "multipart" },
+    });
+  },
+
+  // D-80. Parts are a quarter of the file, so a test buffer still splits into several;
+  // their URLs are not served by anything — specs answer them with page.route.
+  initMultipart(gameId, size, content_type) {
+    log("POST", `/games/${gameId}/upload/multipart`, { size, content_type });
+    needGame(gameId);
+    const part_size = Math.max(1, Math.ceil(size / 4));
+    const parts = Array.from({ length: Math.ceil(size / part_size) }, (_, i) => ({
+      n: i + 1,
+      url: `/__mock_s3/games/${gameId}/source.mp4?partNumber=${i + 1}`,
+    }));
+    return delay({ upload_id: `mpu_${gameId}`, part_size, parts });
+  },
+
+  completeMultipart(gameId, upload_id, parts) {
+    log("POST", `/games/${gameId}/upload/complete`, { upload_id, parts });
+    const g = needGame(gameId);
+    g.status = "uploaded";
+    return delay(structuredClone(g));
+  },
+
+  abortMultipart(gameId, upload_id) {
+    log("POST", `/games/${gameId}/upload/abort`, { upload_id });
+    return delay(undefined);
   },
 
   upload(uploadUrl, file, onProgress) {
@@ -1043,6 +1087,20 @@ export const mockApi: ReplayApi = {
 
   profileMediaUrl: (path) => path,
 };
+
+/** D-80: the TV specs play the phone's part (status changes, startProcessing) through this. */
+(globalThis as { __replayMock?: unknown }).__replayMock = { api: mockApi, games };
+
+/** D-80 phone page client. The token "expired" stands in for a stale QR: every call 401s. */
+export function mockUploadApi(token: string): ReplayApi {
+  if (token !== "expired") return mockApi;
+  return new Proxy(mockApi, {
+    get: (target, key) =>
+      typeof target[key as keyof ReplayApi] === "function"
+        ? () => Promise.reject(new ApiError(401, "upload token expired"))
+        : target[key as keyof ReplayApi],
+  });
+}
 
 // ---------------------------------------------------------------- M13 synthetic fixtures
 // Everything below is MOCK data for the TV clients' tests and screenshots, not pipeline

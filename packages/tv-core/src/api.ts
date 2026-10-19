@@ -10,6 +10,7 @@ import type {
   Game,
   GameEvent,
   GameSummary,
+  MultipartInit,
   Player,
   QueryResult,
   RenderJob,
@@ -64,6 +65,10 @@ export interface ReplayApi {
   listSports(): Promise<SportProfile[]>;
   createGame(title: string, sport: string): Promise<CreateGameResult>;
   upload(uploadUrl: string, file: File, onProgress: (pct: number) => void): Promise<void>;
+  /** D-80 phone upload: presigned part URLs (409 in local mode — use `upload`). */
+  initMultipart(gameId: string, size: number, contentType: string): Promise<MultipartInit>;
+  completeMultipart(gameId: string, uploadId: string, parts: { n: number; etag: string }[]): Promise<Game>;
+  abortMultipart(gameId: string, uploadId: string): Promise<void>;
   calibrate(gameId: string, payload: CalibrationPayload): Promise<CalibrationResult>;
   /** D-23: queue a landmark proposal for this game's calibration frame. */
   startAutoCalibration(gameId: string, sport: string, variant: string): Promise<AutoCalibrationJob>;
@@ -173,7 +178,108 @@ export function sessionWsUrl(base: string, idOrCode: string): string {
   return `${base.replace(/^http/, "ws")}/sessions/${encodeURIComponent(idOrCode)}`;
 }
 
-export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
+/** D-80 tuning: parts in flight, and retries per part (backoff 0.5, 1, 2, 4 s). */
+const PART_CONCURRENCY = 3;
+const PART_RETRIES = 4;
+
+/** PUT one part straight to its presigned URL; resolves with the part's ETag (the bucket's
+ *  CORS has to expose it). */
+function putPart(url: string, body: Blob, onLoaded: (bytes: number) => void, signal: AbortSignal): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(new ApiError(0, "upload cancelled"));
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    signal.addEventListener("abort", abort, { once: true });
+    const settle = () => signal.removeEventListener("abort", abort);
+    xhr.open("PUT", url);
+    xhr.upload.onprogress = (e) => onLoaded(e.loaded);
+    xhr.onload = () => {
+      settle();
+      const etag = xhr.getResponseHeader("ETag");
+      if (xhr.status >= 200 && xhr.status < 300 && etag) resolve(etag);
+      else reject(new ApiError(xhr.status, etag || xhr.status >= 300 ? `part upload → ${xhr.status}` : "part upload: no ETag"));
+    };
+    xhr.onerror = () => {
+      settle();
+      reject(new ApiError(0, "part upload failed (network)"));
+    };
+    xhr.onabort = () => {
+      settle();
+      reject(new ApiError(0, "upload cancelled"));
+    };
+    xhr.send(body);
+  });
+}
+
+const wait = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => (clearTimeout(t), resolve()), { once: true });
+  });
+
+/** D-80 phone upload: init, PUT the parts (3 in flight, each retried with backoff), complete
+ *  with the ETags. Local mode answers the init with 409; then the file goes through the
+ *  existing PUT route at `putUrl`. Cancelling (`signal`) or a part out of retries aborts the
+ *  multipart upload server-side. */
+export async function uploadVideo(
+  api: ReplayApi,
+  gameId: string,
+  file: File,
+  putUrl: string,
+  onProgress: (pct: number) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  let init: MultipartInit;
+  try {
+    init = await api.initMultipart(gameId, file.size, file.type || "video/mp4");
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) return api.upload(putUrl, file, onProgress);
+    throw e;
+  }
+  const stop = new AbortController();
+  const onCancel = () => stop.abort();
+  signal.addEventListener("abort", onCancel, { once: true });
+  const loaded = new Map<number, number>();
+  const report = () =>
+    onProgress(Math.min(99, Math.round(([...loaded.values()].reduce((a, b) => a + b, 0) / file.size) * 100)));
+  const queue = [...init.parts];
+  const etags: { n: number; etag: string }[] = [];
+
+  const worker = async () => {
+    for (let p = queue.shift(); p; p = queue.shift()) {
+      const part = p;
+      const body = file.slice((part.n - 1) * init.part_size, part.n * init.part_size);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const etag = await putPart(part.url, body, (b) => (loaded.set(part.n, b), report()), stop.signal);
+          etags.push({ n: part.n, etag });
+          break;
+        } catch (e) {
+          if (stop.signal.aborted || attempt >= PART_RETRIES) throw e;
+          loaded.set(part.n, 0);
+          report();
+          await wait(500 * 2 ** attempt, stop.signal);
+        }
+      }
+    }
+  };
+
+  try {
+    await Promise.all(Array.from({ length: PART_CONCURRENCY }, worker));
+    if (stop.signal.aborted) throw new ApiError(0, "upload cancelled");
+    await api.completeMultipart(gameId, init.upload_id, etags.sort((a, b) => a.n - b.n));
+    onProgress(100);
+  } catch (e) {
+    stop.abort(); // the other workers' parts too
+    api.abortMultipart(gameId, init.upload_id).catch(() => {});
+    throw e;
+  } finally {
+    signal.removeEventListener("abort", onCancel);
+  }
+}
+
+/** `uploadToken`: the phone page's per-game capability (D-80), sent instead of a key. */
+export function createHttpApi(apiBase: string, apiKey = "", uploadToken = ""): ReplayApi {
   const base = apiBase.replace(/\/$/, "");
 
   /** §4.6: game.json media URLs "resolved to absolute" — but tolerate relative ones. */
@@ -188,6 +294,7 @@ export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
     const h: Record<string, string> = {};
     if (json) h["Content-Type"] = "application/json";
     if (apiKey) h["X-Replay-Key"] = apiKey;
+    if (uploadToken) h["X-Replay-Upload-Token"] = uploadToken;
     return h;
   }
 
@@ -236,7 +343,7 @@ export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadUrl);
-        if (apiKey) xhr.setRequestHeader("X-Replay-Key", apiKey);
+        for (const [k, v] of Object.entries(headers(false))) xhr.setRequestHeader(k, v);
         xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
@@ -253,6 +360,12 @@ export function createHttpApi(apiBase: string, apiKey = ""): ReplayApi {
         xhr.send(file);
       });
     },
+    initMultipart: (gameId, size, content_type) =>
+      req<MultipartInit>(`/games/${gameId}/upload/multipart`, { method: "POST", json: { size, content_type } }),
+    completeMultipart: (gameId, upload_id, parts) =>
+      req<Game>(`/games/${gameId}/upload/complete`, { method: "POST", json: { upload_id, parts } }),
+    abortMultipart: (gameId, upload_id) =>
+      req<void>(`/games/${gameId}/upload/abort`, { method: "POST", json: { upload_id } }),
 
     // The API takes `variant` and answers 200 `{court, reprojection_error_px}` /
     // 400 `{detail}`; the screens want a flat ok/error result.

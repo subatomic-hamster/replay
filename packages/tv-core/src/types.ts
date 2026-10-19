@@ -3,7 +3,14 @@
 // Source of truth is the plan; if the backend diverges, fix this file, not the callers.
 
 export type StageState = "pending" | "running" | "done" | "partial" | "error";
-export type GameStatus = "created" | "uploading" | "processing" | "ready" | "error";
+export type GameStatus =
+  | "created"
+  | "uploading"
+  | "uploaded"
+  | "calibrated"
+  | "processing"
+  | "ready"
+  | "error";
 
 export interface SportUi {
   /** Preset query chips shown on the Highlights screen (H3). */
@@ -210,6 +217,20 @@ export interface Stats {
 export interface CreateGameResult {
   id: string;
   upload_url: string;
+  /** D-80: per-game capability for the phone page (sent as X-Replay-Upload-Token). */
+  upload_token?: string;
+  /** D-80: `${public web base}/u/{id}#t={token}` — what the TV's QR encodes. Absent when
+   *  the API has no public web base. */
+  upload_page_url?: string;
+  /** D-80: `put` = the existing PUT route (local mode); `multipart` = presigned S3 parts. */
+  upload?: { mode: "put" | "multipart"; url?: string };
+}
+
+/** D-80: POST /games/{id}/upload/multipart. Part `n` covers bytes [(n-1)*part_size, n*part_size). */
+export interface MultipartInit {
+  upload_id: string;
+  part_size: number;
+  parts: { n: number; url: string }[];
 }
 
 /** D-23: what the vision model thinks the landmarks are. Not a calibration yet — the

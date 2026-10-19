@@ -15,6 +15,7 @@ import { Players } from "./screens/Players";
 import { Profile } from "./screens/Profile";
 import { ProfileEdit, ProfilesPhone } from "./screens/PhoneProfiles";
 import { Calibrate, UploadCreate, UploadFile, UploadStatus } from "./screens/Upload";
+import { QrUpload } from "./screens/QrUpload";
 
 export function App() {
   const { pathname } = useLocation();
@@ -25,7 +26,8 @@ export function App() {
   }, [seg.length]);
 
   const tv = seg[0] === "tv";
-  const isPhone = seg[0] === "upload" || seg[0] === "companion" || seg[0] === "profiles";
+  const isPhone =
+    seg[0] === "upload" || seg[0] === "companion" || seg[0] === "profiles" || seg[0] === "u";
 
   return (
     <div
@@ -77,5 +79,7 @@ function route(seg: string[], tv: boolean) {
     if (seg[2] === "status") return <UploadStatus key={id} gameId={id} />;
     return <UploadFile key={id} gameId={id} />;
   }
+  // D-80: the page the TV's QR code opens, `/u/:id[/calibrate|/status]#t=<token>`.
+  if (seg[0] === "u" && seg[1]) return <QrUpload key={seg[1]} gameId={seg[1]} step={seg[2]} />;
   return <div className="screen">Loading…</div>;
 }

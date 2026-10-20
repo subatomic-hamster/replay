@@ -8,11 +8,7 @@
 #   make demo-stop    stop the demo servers on the box
 #   make record-e2e   sync, record the automated end-to-end run on the box
 #                     (scripts/record-e2e.sh), copy the MP4 to docs/evidence/E2E/
-#   make record-e2e-real SPORT=basketball|volleyball
-#                     the same run on a REAL clip, with Free view; LOCAL ONLY (D-7/D-76):
-#                     MP4, beats and key frames to docs/evidence/local/E2E-real/<sport>/
 BOX ?= hfbox
-SPORT ?= basketball
 BOX_DIR ?= /workspace/wt/replay-dev
 DEMO_API_PORT ?= 8090
 DEMO_TV_PORT ?= 5190
@@ -29,7 +25,7 @@ DEMO_TMUX ?= replay-demo
 DEMO_ENV := DEMO_API_PORT=$(DEMO_API_PORT) DEMO_TV_PORT=$(DEMO_TV_PORT) \
 	DEMO_WEB_PORT=$(DEMO_WEB_PORT) DEMO_TMUX=$(DEMO_TMUX)
 
-.PHONY: sync test demo demo-tunnel demo-stop record-e2e record-e2e-real
+.PHONY: sync test demo demo-tunnel demo-stop record-e2e
 
 sync:
 	$(RSYNC) --delete $(SYNC_EXCLUDES) ./ $(BOX):$(BOX_DIR)/
@@ -65,11 +61,3 @@ demo-stop:
 record-e2e: sync
 	$(SSH) 'bash $(BOX_DIR)/scripts/record-e2e.sh $(BOX_DIR)'; \
 	$(RSYNC) $(BOX):$(BOX_DIR)/out/replay-e2e.mp4 docs/evidence/E2E/
-
-# REAL footage (samples/real is local-test only, D-7; the volleyball clip shows minors, D-76):
-# nothing it writes is committed; docs/evidence/local/ is gitignored.
-record-e2e-real: sync
-	$(SSH) 'REC_REAL=$(SPORT) bash $(BOX_DIR)/scripts/record-e2e.sh $(BOX_DIR)'; \
-	o=$(BOX_DIR)/out-real-$(SPORT); mkdir -p docs/evidence/local/E2E-real/$(SPORT) && \
-	$(RSYNC) $(BOX):$$o/replay-e2e.mp4 :$$o/beats.json :$$o/beats.md :$$o/frames \
-		docs/evidence/local/E2E-real/$(SPORT)/

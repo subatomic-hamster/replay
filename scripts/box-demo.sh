@@ -78,7 +78,9 @@ build() {
 
   phase "basketball: pipeline, commentary, hype, Tier A/B/C replays$([ $search = 1 ] && echo ', search')"
   t=$(date +%s)
-  local stages=commentary,hype,director,tierc_manifest
+  # --stages names targets (their upstream runs too), so the redesigned TV's seek previews,
+  # moment thumbs and hero art (storyboard, moments) are named explicitly.
+  local stages=commentary,hype,director,tierc_manifest,storyboard,moments
   [ $search = 1 ] && stages+=,search_index
   worker "$DEMO/src/bb/clip.mp4" \
     --out "$DEMO/games/$BB" --game-id $BB --title "SYNTHETIC basketball (demo)" \
@@ -100,7 +102,7 @@ build() {
   t=$(date +%s)
   worker "$DEMO/src/pb/clip.mp4" \
     --out "$DEMO/games/$PB" --game-id $PB --title "SYNTHETIC pickleball doubles (demo)" \
-    --sport pickleball --variant doubles --stages hype,condensed "${sets[@]}"
+    --sport pickleball --variant doubles --stages hype,condensed,storyboard,moments "${sets[@]}"
   echo "pickleball $(secs $t)"
 
   phase "summary"
@@ -127,8 +129,11 @@ serve() {
   # Each window sources env.sh itself: the server's global PATH has neither the venv's python
   # (the API ran on /opt/venv's) nor the env's pnpm (corepack then prompts to download one).
   local sh="source /workspace/wt/replay-env/env.sh &&"
+  # The phone pages the TV's QR codes open (Add game's /u/<id>, On your phone's /p/<id>)
+  # are on the phone companion server; override for a phone that cannot reach 127.0.0.1.
+  local web=${REPLAY_PUBLIC_WEB_BASE:-http://127.0.0.1:$WEB_PORT}
   tmux new-session -d -s "$TMUX_NAME" "${keep[@]}" -n api \
-    "$sh cd $d && REPLAY_PIPELINE=worker python -m uvicorn replay_api.main:app --host 127.0.0.1 --port $API_PORT 2>&1 | tee $DEMO/api.log"
+    "$sh cd $d && REPLAY_PIPELINE=worker REPLAY_PUBLIC_WEB_BASE=$web python -m uvicorn replay_api.main:app --host 127.0.0.1 --port $API_PORT 2>&1 | tee $DEMO/api.log"
   tmux new-window -t "$TMUX_NAME" -n tv \
     "$sh cd $d/apps/tv && VITE_REPLAY_API_BASE=$base pnpm exec vite --host 127.0.0.1 --port $TV_PORT --strictPort 2>&1 | tee $DEMO/tv.log"
   tmux new-window -t "$TMUX_NAME" -n phone \

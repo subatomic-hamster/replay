@@ -346,7 +346,7 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 ## Real-footage E2E recordings with Free view (2026-10-06)
 
 - Works:
-  - `make record-e2e-real SPORT=basketball|volleyball` runs the real API and worker pipeline on a 90 s real cut.
+  - `make record-e2e-real SPORT=basketball|volleyball` runs the real API and worker pipeline on a 90 s real cut. (Removed 2026-10-20 with the redesign recording; its beats targeted the old UI.)
   - Calibration: the D-72 refusal, then hand-placed landmarks.
   - Then: watch, follow, replay angles, six Free view beats, highlights, review/heatmap, and volleyball rallies/condensed.
   - `REPLAY_WORKER_STAGES` lets uploads get replays and scene packages (D-79).
@@ -416,6 +416,8 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - Phone handoff that works on AWS: `POST /games/{id}/phone-link` mints a 24 h per-game phone token (a separate HMAC kind from the upload token; neither opens the other's routes) and the phone URL `{web_base}/p/{id}?job=..&t=..#k=<token>`. The token opens one allowlist (`auth.PHONE_ROUTES`): reading the game, clips and the 9:16 export, tagging players to name-only profiles, review answers and search; never uploads, processing, other games or biometrics. The phone page `/p/{id}` has Clip, Tag, Review and Search tabs, no WebSocket. The TV QR encodes the API's URL and never shows the token. `GET /config` exposes the public web base.
   - Fire TV resume positions persist in SharedPreferences (generic string get/set on the ReplaySettings module), written at most every 5 s and on pause or leave, 50 games kept.
   - The hfbox runner no longer logs presigned S3 URLs (httpx at WARNING, paths only, redacted error messages).
+  - Re-recorded E2E video for the redesign (`make record-e2e`): docs/evidence/E2E/replay-e2e.mp4, 4:06, 6.4 MB, 20/20 beats passed against the real API and worker on synthetic footage. The phone context opens only links decoded from the TV's QR codes. Covers Add game by QR, upload, calibration, processing (19 s), the player (seek tiers, previews, FF, Moments, Highlights, Condensed), Do more (follow, 11 angles, stats, commentary), the phone Clip/Tag/Review pages with the edits showing on the TV, and Resume. The demo games now build with the `storyboard` and `moments` stages. No Free view beat: `box-demo.sh build` doesn't run the opt-in scene stage.
+  - Fixed: opening a game watched to within 5 s of the end resumed there instead of starting over (the player now uses Home's resume rule).
   - Wave 3: the Do more layer inside the player. Tiles scroll within the safe zone (Follow player, Angles, Free view, Watch, Stats, Commentary, On your phone, Bookmark); follow chips with a "Following" chip; angles and Free view play in the player and return at the same time; a Stats side panel over playing video (box score, shot chart, review, tips); a phone QR panel for Clip, Tag, Review and Search; resume position saved every second, and Home offers "Resume m:ss" and "Start over". The Replay screen is gone (`/replays` links open the player).
 - Verified on hfbox: box-test ALL GREEN per commit; api 246 + 1 skipped, worker 28, render 54, web Playwright 107, tv 79 + 3 skipped (new TV-19 to TV-29). TV specs also ran 3–4 times over with no failures after fixing several player startup races (a key pressed before the opening seek or a source swap landed was undone).
 - Left / known issues:

@@ -29,23 +29,33 @@ CAVEAT = (
     "SYNTHETIC footage only  ·  TV = react-native-web build of apps/tv in Chrome, NOT a Fire TV"
     "  ·  real services/api + worker pipeline on hfbox, no mocks"
 )
-FONT_DIR = Path("/usr/share/fonts/truetype/freefont")
+# The first that exists (the box has only DejaVu); Pillow's default font lacks → and ×.
+FONTS = [
+    (
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    ),
+    (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ),
+]
 
 
 def font(size: int, bold: bool = False):
-    try:
-        return ImageFont.truetype(
-            str(FONT_DIR / ("FreeSansBold.ttf" if bold else "FreeSans.ttf")), size
-        )
-    except OSError:
-        return ImageFont.load_default(size)
+    for pair in FONTS:
+        try:
+            return ImageFont.truetype(pair[bold], size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size)
 
 
 def background(path: Path, caveat: str = CAVEAT) -> None:
     im = Image.new("RGB", (W, H), (12, 14, 18))
     d = ImageDraw.Draw(im)
     d.text((TV[0], BAND_Y), "TV (1920×1080, D-pad = keyboard)", font=font(22), fill=(150, 160, 175))
-    d.text((PHONE[0], BAND_Y), "Phone companion (390×844)", font=font(22), fill=(150, 160, 175))
+    d.text((PHONE[0], BAND_Y), "Phone browser (390×844)", font=font(22), fill=(150, 160, 175))
     d.text((TV[0], H - 40), caveat, font=font(22), fill=(240, 190, 80))
     im.save(path)
 
@@ -53,17 +63,33 @@ def background(path: Path, caveat: str = CAVEAT) -> None:
 def caption(path: Path, text: str, status: str | None, sub: str = "") -> None:
     im = Image.new("RGBA", (W, 120), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    d.text((TV[0], 6), text, font=font(42, bold=True), fill=(255, 255, 255))
+    room = W - 2 * TV[0]
+    t, f = fit(d, text, 42, True, room)
+    d.text((TV[0], 6), t, font=f, fill=(255, 255, 255))
     x = TV[0]
-    if status:  # line 2, left: the beat's assertions (FreeSans has no check-mark glyphs)
+    if status:  # line 2, left: the beat's assertions, then what it found
         ok = status == "PASS"
         label = "asserted: PASS" if ok else "asserted: FAIL"
         f = font(28, bold=True)
         d.text((x, 62), label, font=f, fill=(90, 210, 120) if ok else (240, 90, 90))
         x += int(d.textlength(label, font=f)) + 24
     if sub:
-        d.text((x, 64), sub[:150], font=font(24), fill=(200, 205, 215))
+        t, f = fit(d, sub, 27, False, W - TV[0] - x)
+        d.text((x, 64), t, font=f, fill=(200, 205, 215))
     im.save(path)
+
+
+def fit(d: ImageDraw.ImageDraw, text: str, size: int, bold: bool, width: int):
+    """Shrink to at most 9/14 of `size` to fit `width`, then cut with an ellipsis."""
+    floor = size * 9 // 14
+    while size > floor and d.textlength(text, font=font(size, bold)) > width:
+        size -= 1
+    f = font(size, bold)
+    if d.textlength(text, font=f) > width:
+        while text and d.textlength(text + "…", font=f) > width:
+            text = text[:-1]
+        text += "…"
+    return text, f
 
 
 def out_time(t: float, cuts: list[dict]) -> float:
@@ -109,11 +135,11 @@ def main() -> int:
         background(tmp / "bg.png", a.caveat)
         overlays: list[tuple[Path, float, float]] = []
         first = beats[0]["start"] if beats else tv_dur
-        caption(tmp / "c_intro.png", a.title, None, "opening the TV library")
+        caption(tmp / "c_intro.png", a.title, None, "opening Home")
         overlays.append((tmp / "c_intro.png", 0, first))
         for i, b in enumerate(beats):
             p = tmp / f"c_{i}.png"
-            sub = "" if b["ok"] else f"failed: {b.get('error', '')}"
+            sub = b.get("detail", "") if b["ok"] else f"failed: {b.get('error', '')}"
             caption(p, f"{i + 1}/{len(beats)}  {b['caption']}", "PASS" if b["ok"] else "FAIL", sub)
             end = beats[i + 1]["start"] if i + 1 < len(beats) else tv_dur
             overlays.append((p, b["start"], end))
@@ -212,12 +238,11 @@ def main() -> int:
         print(f"{a.small} is {size_mb:.1f} MB > {a.max_mb} MB", file=sys.stderr)
         return 1
 
-    print("| # | beat | video time | result |\n|---|---|---|---|")
+    print("| # | beat | video time | result | what it found |\n|---|---|---|---|---|")
     for i, b in enumerate(beats):
         res = "PASS" if b["ok"] else f"FAIL: {b.get('error', '')}"
-        print(
-            f"| {i + 1} | {b['name']} | {mmss(out_time(b['start'], cuts))}–{mmss(out_time(b['end'], cuts))} | {res} |"
-        )
+        span = f"{mmss(out_time(b['start'], cuts))}–{mmss(out_time(b['end'], cuts))}"
+        print(f"| {i + 1} | {b['name']} | {span} | {res} | {b.get('detail', '')} |")
     for c in cuts:
         print(
             f"\ncut: {mmss(c['from'])}–{mmss(c['to'])} of the raw run ({c['note']}) at {mmss(out_time(c['to'], cuts))}"

@@ -86,7 +86,7 @@ import {
   REPEAT_FLOOR_MS,
   snapTo,
 } from "../playback/seek";
-import { rememberSpot, resumeSpot } from "../resume";
+import { rememberSpot, resumeAt, resumeSpot } from "../resume";
 import {
   storedSession,
   useSessionMessages,
@@ -251,7 +251,10 @@ export function Watch({
       const play = initialMode !== "select";
       if (initialT !== undefined) return { t: initialT, play };
       const spot =
-        (initialWay ?? "full") === "full" && !q && !initialPlay
+        (initialWay ?? "full") === "full" &&
+        !q &&
+        !initialPlay &&
+        resumeAt(gameId) !== null // the same rule as Home's "Resume" (not near either end)
           ? resumeSpot(gameId)
           : null;
       return spot

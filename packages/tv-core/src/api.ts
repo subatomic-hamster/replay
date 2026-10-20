@@ -13,7 +13,10 @@ import type {
   Moment,
   MultipartInit,
   MultipartParts,
+  PhoneJob,
+  PhoneLink,
   Player,
+  PublicConfig,
   QueryResult,
   RenderJob,
   SceneLayout,
@@ -126,6 +129,14 @@ export interface ReplayApi {
   getTracksChunk(game: Game, index: number): Promise<TracksChunk>;
   getCropPath(game: Game, playerId: string): Promise<CropPath>;
   createSession(): Promise<Session>;
+  /** Public: where apps/web's phone pages live. */
+  getConfig(): Promise<PublicConfig>;
+  /** A phone page link for one job at game time `t`, with its own short-lived token. */
+  phoneLink(
+    gameId: string,
+    job: PhoneJob,
+    t: number | null,
+  ): Promise<PhoneLink>;
   /** Plan task 12: queue the follow-cam rendition for one player (fire-and-forget). */
   renderPlayer(gameId: string, playerId: string): Promise<RenderJob>;
   /** M8: the game's rendered multi-angle replays ([] when none). */
@@ -722,6 +733,12 @@ export function createHttpApi(
         ),
       ),
     createSession: () => req<Session>("/sessions", { method: "POST" }),
+    getConfig: () => req<PublicConfig>("/config"),
+    phoneLink: (gameId, job, t) =>
+      req<PhoneLink>(`/games/${gameId}/phone-link`, {
+        method: "POST",
+        json: { job, t },
+      }),
     renderPlayer: (gameId, playerId) =>
       req<RenderJob>(`/games/${gameId}/players/${playerId}/render`, {
         method: "POST",

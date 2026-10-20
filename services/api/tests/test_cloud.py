@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import dataclasses
 import json
+import logging
 import time
 
 import httpx
@@ -281,10 +282,14 @@ def test_secrets_come_from_ssm(cloud_settings, aws):
         assert c.get("/games", headers={"X-Replay-Key": "from-ssm"}).status_code == 200
 
 
-def test_remote_runner_end_to_end(cloud, cloud_settings, tmp_path, aws):
+def test_remote_runner_end_to_end(cloud, cloud_settings, tmp_path, aws, caplog):
     """Phone upload -> calibrate -> process (queued in S3) -> runner on a separate mirror
-    -> files back in S3 -> the API serves a ready game; then an autocalib job."""
+    -> files back in S3 -> the API serves a ready game; then an autocalib job. The log
+    never holds a presigned query (security token)."""
     from replay_api import remote_runner as rr
+
+    rr.quiet_http_logs()
+    caplog.set_level(logging.DEBUG)
 
     gid = _game(cloud)["id"]
     _upload(cloud, gid)
@@ -322,6 +327,50 @@ def test_remote_runner_end_to_end(cloud, cloud_settings, tmp_path, aws):
         assert rr.run_once(api, runner_settings) is True
         auto = cloud.get(f"/games/{gid}/calibration/auto").json()
         assert auto["status"] == "done" and auto["ok"], auto
+    # what runner.log gets: the runner's own lines and the HTTP clients' (the in-process
+    # API's botocore/moto lines are not the runner's)
+    logged = [r.getMessage() for r in caplog.records if r.name == "replay_api.remote_runner"
+              or r.name.split(".")[0] in ("httpx", "httpcore")]  # fmt: skip
+    assert any(m.startswith("GET /") and f"games/{gid}/" in m for m in logged)  # mirror
+    assert any(m.startswith("PUT /") and m.endswith(f"games/{gid}/events.json") for m in logged)
+    assert not any("X-Amz" in m or "Signature" in m or "?" in m for m in logged)
+
+
+def test_runner_errors_redact_presigned_urls():
+    from replay_api import remote_runner as rr
+
+    url = "https://b.s3.amazonaws.com/games/g_1/x.mp4?X-Amz-Security-Token=SECRET&X-Amz-Signature=s"
+    r = httpx.Response(403, request=httpx.Request("PUT", url))
+    with pytest.raises(httpx.HTTPStatusError) as exc:
+        rr._checked(r)
+    assert str(exc.value) == "HTTP 403 for PUT /games/g_1/x.mp4"
+
+
+def test_phone_token_in_cloud_mode(cloud, aws):
+    """The phone-link token opens its game's tag/clip routes on Lambda + S3 (profiles in
+    the S3-mirrored SQLite), and no upload route."""
+    a, b = _game(cloud), _game(cloud)
+    gid = a["id"]
+    _upload(cloud, gid)
+    link = cloud.post(f"/games/{gid}/phone-link", json={"job": "tag", "t": 4}).json()
+    assert link["url"] == f"https://replay.example/p/{gid}?job=tag&t=4#k={link['token']}"
+    assert TestClient(cloud.app).get("/config").json() == {"web_base": "https://replay.example"}
+    anon = TestClient(cloud.app, headers={"X-Replay-Phone-Token": link["token"]})
+    assert anon.get(f"/games/{gid}").json()["id"] == gid
+    assert anon.get(f"/games/{gid}/clips").status_code == 200
+    prof = anon.post("/profiles", json={"name": "Riley"})
+    assert prof.status_code == 201, prof.text
+    pid = prof.json()["profile_id"]
+    assert any(p["profile_id"] == pid for p in anon.get("/profiles").json()["profiles"])
+    assert anon.post(f"/profiles/{pid}/links",
+                     json={"game_id": b["id"], "player_id": "p1"}).status_code == 403  # fmt: skip
+    assert anon.get(f"/games/{b['id']}").status_code == 401
+    for path in ("upload/multipart", "upload/complete", "calibration", "process"):
+        assert anon.post(f"/games/{gid}/{path}", json={}).status_code == 401, path
+    # and the upload token does not open the phone routes
+    up = TestClient(cloud.app, headers={"X-Replay-Upload-Token": a["upload_token"]})
+    assert up.get(f"/games/{gid}/clips").status_code == 401
+    assert up.get("/profiles").status_code == 401
 
 
 def test_list_parts_resumes_a_dropped_upload(cloud, aws):

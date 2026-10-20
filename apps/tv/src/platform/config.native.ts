@@ -18,13 +18,8 @@ export const saveApiKey = (value: string) =>
   NativeReplaySettings?.setApiKey(value);
 export const MOCK_API = false;
 export const FOLLOWCAM_MODE: "client" | "rendition" = "client";
-// ponytail: the API does not tell the TV where apps/web's phone pages live yet, so the
-// QR handoff says so on Fire TV; read it from the API (or BuildConfig) when it does.
-export const WEB_BASE: string = "";
-// ponytail: watch positions live in app memory on Fire TV (lost when the app is killed);
-// add a getString/setString pair to ReplaySettings if they must survive a restart.
-let resume = "";
-export const loadResume = () => resume;
-export const saveResume = (value: string) => {
-  resume = value;
-};
+/** Watch positions (resume.ts), as JSON, in SharedPreferences. */
+export const loadResume = (): string =>
+  NativeReplaySettings?.getString("resume") ?? "";
+export const saveResume = (value: string) =>
+  NativeReplaySettings?.setString("resume", value);

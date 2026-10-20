@@ -78,7 +78,13 @@ export function QrUpload({ gameId, step }: { gameId: string; step?: string }) {
   );
 }
 
-function Problem({ text, onRetry }: { text: string; onRetry?: () => void }) {
+export function Problem({
+  text,
+  onRetry,
+}: {
+  text: string;
+  onRetry?: () => void;
+}) {
   return (
     <div className="screen phone">
       <h1>Replay</h1>

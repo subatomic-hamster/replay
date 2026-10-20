@@ -7,10 +7,6 @@ export const BUILD_API_KEY: string = import.meta.env.VITE_REPLAY_API_KEY ?? "";
 export const MOCK_API = import.meta.env.VITE_MOCK_API === "1";
 export const FOLLOWCAM_MODE: "client" | "rendition" =
   import.meta.env.VITE_FOLLOWCAM_MODE === "rendition" ? "rendition" : "client";
-/** Where apps/web's phone pages live (the QR handoff). The deployed TV web build is served
- *  from the same origin as apps/web (/tvapp/), so its own origin is the default. */
-export const WEB_BASE: string =
-  import.meta.env.VITE_REPLAY_WEB_BASE || globalThis.location?.origin || "";
 
 // try/catch: storage can be blocked (private mode); then the setting lasts for the page.
 function load(key: string): string {

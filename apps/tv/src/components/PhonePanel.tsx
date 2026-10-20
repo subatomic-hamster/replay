@@ -1,28 +1,26 @@
 // The player's "On your phone" layer (docs/ux/redesign.md principle 4 and "Do more"):
 // typing and fine edits go to the phone. One QR per job, the same code card as Add game,
-// to the apps/web page for it: Clip and Search open the companion paired to this TV
-// (its "Clip that" cuts the play on screen, "Play on TV" jumps here), Review and Tag open
-// this game's review page and its player at this moment. Left/Right pick the job, Back
-// closes. Replaces the old Clips, Search, Advice and Pair screens as the way in.
+// to apps/web's phone page for this game, job and moment. The API mints the link
+// (POST /games/{id}/phone-link) with its own short-lived token in the `#k=` fragment,
+// which only the QR carries. Left/Right pick the job, Back closes.
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import type { Session } from "../../../../packages/tv-core/src/types";
+import type {
+  PhoneJob,
+  PhoneLink,
+} from "../../../../packages/tv-core/src/types";
 import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
-import { WEB_BASE } from "../platform/config";
-import { storeSession, storedSession } from "../session";
 import { color, px, safe, sp, type } from "../theme";
 import { Chip, Hint, SlideIn, T } from "../ui";
 import { QrCode } from "./QrCode";
-
-export type PhoneJob = "clip" | "tag" | "review" | "search";
 
 const JOBS: { id: PhoneJob; label: string; title: string; body: string }[] = [
   {
     id: "clip",
     label: "Clip",
     title: "Clip this play",
-    body: "Your phone pairs with this TV. Tap Clip that to save the play on screen, then trim and share it there.",
+    body: "Opens this moment on your phone, to trim the clip and share it.",
   },
   {
     id: "tag",
@@ -40,24 +38,36 @@ const JOBS: { id: PhoneJob; label: string; title: string; body: string }[] = [
     id: "search",
     label: "Search",
     title: "Find a play",
-    body: "Type or say what you want to see. Play on TV jumps here.",
+    body: "Type or say what you want to see in this game.",
   },
 ];
 
-/** The apps/web page for a job, or null while the pairing code is still coming. */
-export function phoneUrl(
-  web: string,
-  job: PhoneJob,
-  gameId: string,
-  t: number,
-  session: Session | null,
-): string | null {
-  const base = web.replace(/\/+$/, "");
-  if (job === "review") return `${base}/tv/${gameId}/review`;
-  if (job === "tag")
-    return `${base}/tv/${gameId}?mode=select&t=${Math.floor(t)}`;
-  return session ? `${base}/companion/${session.code}` : null;
+/** Re-mint this long before the token runs out (a scan takes a moment). */
+const MARGIN_MS = 60_000;
+/** Minted links by game, job and second (t is fixed while the panel is open), so moving
+ *  between jobs or reopening at the same moment does not mint again. A failure is not kept. */
+const links = new Map<string, { p: Promise<PhoneLink>; until: number }>();
+
+function phoneLink(gameId: string, job: PhoneJob, t: number) {
+  const key = `${gameId}|${job}|${t}`;
+  const hit = links.get(key);
+  if (hit && hit.until > Date.now()) return hit.p;
+  const p = api.phoneLink(gameId, job, t);
+  links.set(key, { p, until: Infinity });
+  p.then(
+    (l) => {
+      // epoch seconds per the contract; tolerate milliseconds
+      const ms = l.expires_at < 1e11 ? l.expires_at * 1000 : l.expires_at;
+      links.set(key, { p, until: ms - MARGIN_MS });
+    },
+    () => links.delete(key),
+  );
+  return p;
 }
+
+/** "https://host/p/g1?job=clip&t=12#k=…" → "host/p/g1": readable, and never the token. */
+export const shortUrl = (url: string) =>
+  url.replace(/^https?:\/\//, "").split(/[?#]/)[0];
 
 export function PhonePanel({
   gameId,
@@ -72,25 +82,22 @@ export function PhonePanel({
   onPlayPause: () => void;
 }) {
   const [k, setK] = useState(0);
-  const [session, setSession] = useState<Session | null>(storedSession);
   const job = JOBS[k];
-  const needsCode = job.id === "clip" || job.id === "search";
+  const sec = Math.floor(t);
+  /** undefined while minting; null = no link (API error, or the server has no web base) */
+  const [link, setLink] = useState<{ key: string; url: string | null }>();
+  const key = `${job.id}|${sec}`;
 
-  // The companion pairs by the session code; reuse the one this TV already has.
   useEffect(() => {
-    if (!needsCode || session) return;
     let on = true;
-    api.createSession().then(
-      (s) => {
-        storeSession(s);
-        if (on) setSession(s);
-      },
-      () => {},
+    phoneLink(gameId, job.id, sec).then(
+      (l) => on && setLink({ key, url: l.url }),
+      () => on && setLink({ key, url: null }),
     );
     return () => {
       on = false;
     };
-  }, [needsCode, session]);
+  }, [gameId, job.id, sec, key]);
 
   const onAction = useCallback(
     (a: DpadAction) => {
@@ -103,7 +110,7 @@ export function PhonePanel({
   );
   useDpad(onAction);
 
-  const url = WEB_BASE ? phoneUrl(WEB_BASE, job.id, gameId, t, session) : null;
+  const url = link?.key === key ? link.url : undefined;
   return (
     <View style={styles.scrim} pointerEvents="none">
       <SlideIn
@@ -129,24 +136,26 @@ export function PhonePanel({
               <View testID="phone-qr" dataSet={{ url }}>
                 <QrCode text={url} size={440} />
               </View>
-            ) : !WEB_BASE ? (
+            ) : url === null ? (
               <T style={[type.body, styles.dim]} testID="phone-no-qr">
-                This TV doesn't know the address of Replay's phone pages yet.
+                Phone handoff needs the web address set on the server
               </T>
             ) : (
-              <T style={[type.body, styles.dim]}>Getting a code…</T>
+              <View style={styles.placeholder} testID="phone-loading" />
             )}
           </View>
           <View style={styles.side}>
             <T style={type.title}>{job.title}</T>
             <T style={[type.body, styles.dim, styles.gap]}>{job.body}</T>
-            <T style={[type.body, styles.gap]}>
-              Scan with your phone's camera.
-            </T>
             {url ? (
-              <T style={[type.figures, styles.url]} testID="phone-url">
-                {url.replace(/^https?:\/\//, "")}
-              </T>
+              <>
+                <T style={[type.body, styles.gap]}>
+                  Scan with your phone's camera.
+                </T>
+                <T style={[type.figures, styles.url]} testID="phone-url">
+                  {shortUrl(url)}
+                </T>
+              </>
             ) : null}
             <Hint k="Back">The game</Hint>
           </View>
@@ -171,6 +180,13 @@ const styles = StyleSheet.create({
   chips: { flexDirection: "row", marginTop: sp(2) },
   body: { flexDirection: "row", alignItems: "center", marginTop: sp(4) },
   qrBox: { width: px(440), minHeight: px(440), justifyContent: "center" },
+  // the QR's footprint, quiet, while the link is minted
+  placeholder: {
+    width: px(440),
+    height: px(440),
+    borderRadius: px(12),
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+  },
   side: { flex: 1, marginLeft: sp(8) },
   gap: { marginTop: sp(2) },
   url: { color: color.chalk, marginTop: sp(3) },

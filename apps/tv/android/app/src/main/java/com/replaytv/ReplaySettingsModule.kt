@@ -31,6 +31,14 @@ class ReplaySettingsModule(context: ReactApplicationContext) : NativeReplaySetti
 
   override fun getBuildApiKey(): String = BuildConfig.REPLAY_API_KEY
 
+  // Generic app values, kept apart from the settings above ("s." prefix).
+  override fun getString(key: String): String = prefs.getString("s.$key", null) ?: ""
+
+  // apply, not commit: resume.ts writes every few seconds; a kill can lose the last one.
+  override fun setString(key: String, value: String) {
+    prefs.edit().putString("s.$key", value).apply()
+  }
+
   companion object {
     const val NAME = "ReplaySettings"
   }

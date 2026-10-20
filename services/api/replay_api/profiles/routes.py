@@ -38,7 +38,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .. import edits, providers
+from .. import auth, edits, providers
 from ..providers import NotConfiguredError
 from ..providers.profiles import LinkConflict, blank
 from . import card as K
@@ -135,6 +135,8 @@ def list_profiles(request: Request):
 
 @router.post("/profiles", status_code=201)
 def create_profile(request: Request, body: ProfileIn):
+    if auth.phone_game(request) and body.photo_url:  # a phone tags by name, no media
+        raise HTTPException(403, "a phone link creates a profile by name only")
     doc = blank(body.name)
     doc.update(photo_url=body.photo_url, positions=body.positions)
     if body.sports is not None:
@@ -196,6 +198,9 @@ def _need_player(request: Request, body: LinkIn) -> None:
 
 @router.post("/profiles/{pid}/links")
 def link(request: Request, pid: str, body: LinkIn):
+    phone = auth.phone_game(request)
+    if phone and body.game_id != phone:
+        raise HTTPException(403, "a phone link only tags players of its own game")
     doc = _doc(request, pid)
     _need_player(request, body)
     try:

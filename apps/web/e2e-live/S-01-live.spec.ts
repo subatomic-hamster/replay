@@ -30,14 +30,17 @@ let gameId = "";
 async function landmarkOrder(page: Page, sport: string): Promise<string[]> {
   const names = await page.evaluate(
     async ([api, id]) => {
-      const sports: { id: string; landmarks?: string[] }[] = await fetch(`${api}/sports`).then(
-        (r) => r.json(),
-      );
+      const sports: { id: string; landmarks?: string[] }[] = await fetch(
+        `${api}/sports`,
+      ).then((r) => r.json());
       return (sports.find((s) => s.id === id) ?? sports[0])?.landmarks ?? [];
     },
     [API, sport] as const,
   );
-  expect(names.length, "GET /sports carries the landmark click order").toBeGreaterThanOrEqual(4);
+  expect(
+    names.length,
+    "GET /sports carries the landmark click order",
+  ).toBeGreaterThanOrEqual(4);
   return names;
 }
 
@@ -46,7 +49,13 @@ test.describe.configure({ mode: "serial" });
 async function video(page: Page) {
   return page.evaluate(() => {
     const v = document.querySelector<HTMLVideoElement>('[data-testid="video"]');
-    return v && { currentTime: v.currentTime, paused: v.paused, readyState: v.readyState };
+    return (
+      v && {
+        currentTime: v.currentTime,
+        paused: v.paused,
+        readyState: v.readyState,
+      }
+    );
   });
 }
 
@@ -79,8 +88,13 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   // --- upload (XHR PUT with the file's own Content-Type) ------------------
   await page.getByTestId("file-input").setInputFiles(FIXTURE);
   await expect(page.getByTestId("upload-progress")).toBeVisible();
-  await expect(page.getByTestId("upload-done")).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByTestId("upload-progress")).toHaveJSProperty("value", 100);
+  await expect(page.getByTestId("upload-done")).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId("upload-progress")).toHaveJSProperty(
+    "value",
+    100,
+  );
   await page.getByTestId("go-calibrate").click();
 
   // --- calibrate ---------------------------------------------------------
@@ -96,12 +110,20 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   const order = await landmarkOrder(page, "basketball");
   for (const [i, name] of order.entries()) {
     const [x, y] = LANDMARKS[name] ?? [];
-    expect(x, `this spec has a pixel for every landmark the profile asks for (${name})`).toBeDefined();
-    await expect(page.getByTestId("calib-prompt")).toContainText(name.replace(/_/g, " "));
+    expect(
+      x,
+      `this spec has a pixel for every landmark the profile asks for (${name})`,
+    ).toBeDefined();
+    await expect(page.getByTestId("calib-prompt")).toContainText(
+      name.replace(/_/g, " "),
+    );
     await expect(page.getByTestId("calib-prompt")).toContainText(
       `point ${i + 1} of ${order.length}`,
     );
-    await page.mouse.click(box.x + (x / frame.w) * box.width, box.y + (y / frame.h) * box.height);
+    await page.mouse.click(
+      box.x + (x / frame.w) * box.width,
+      box.y + (y / frame.h) * box.height,
+    );
     await expect(page.getByTestId(`landmark-${name}`)).toBeVisible();
   }
 
@@ -120,8 +142,12 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
     .poll(
       () =>
         page.evaluate(() => {
-          const status = document.querySelector('[data-testid="game-status"]')?.textContent;
-          const states = [...document.querySelectorAll('[data-testid^="stage-"]')]
+          const status = document.querySelector(
+            '[data-testid="game-status"]',
+          )?.textContent;
+          const states = [
+            ...document.querySelectorAll('[data-testid^="stage-"]'),
+          ]
             .map((el) => el.getAttribute("data-state"))
             .join(",");
           return `${status} ${states}`;
@@ -131,15 +157,21 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
     // exactly one running stage, everything before it done, everything after pending
     .toMatch(/^processing (done,)*running(,pending)*$/);
   for (const stage of ["ingest", "detect", "track", "render", "label"]) {
-    await expect(page.getByTestId(`stage-${stage}`)).toHaveAttribute("data-state", /done|partial/, {
-      timeout: 240_000,
-    });
+    await expect(page.getByTestId(`stage-${stage}`)).toHaveAttribute(
+      "data-state",
+      /done|partial/,
+      {
+        timeout: 240_000,
+      },
+    );
   }
   await expect(page.getByTestId("game-status")).toHaveText("ready");
 
   // --- library -----------------------------------------------------------
   await page.goto("/tv");
-  const card = page.locator(`[data-testid=game-card][data-game-id="${gameId}"]`);
+  const card = page.locator(
+    `[data-testid=game-card][data-game-id="${gameId}"]`,
+  );
   await expect(card).toBeVisible();
   await expect(card.getByTestId("game-status")).toHaveText("ready");
   await page.keyboard.press("Enter");
@@ -149,7 +181,9 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   await waitForVideo(page);
   await page.keyboard.press("Space");
   await expect.poll(async () => (await video(page))?.paused).toBe(false);
-  await expect.poll(async () => (await video(page))?.currentTime ?? 0).toBeGreaterThan(0.3);
+  await expect
+    .poll(async () => (await video(page))?.currentTime ?? 0)
+    .toBeGreaterThan(0.3);
   await page.keyboard.press("Space");
   await expect.poll(async () => (await video(page))?.paused).toBe(true);
 
@@ -166,7 +200,9 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
     .poll(() =>
       page.evaluate(
         () =>
-          getComputedStyle(document.querySelector('[data-testid="player-transform"]')!).transform,
+          getComputedStyle(
+            document.querySelector('[data-testid="player-transform"]')!,
+          ).transform,
       ),
     )
     .not.toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
@@ -186,7 +222,10 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
     els.map((e) => e.getAttribute("data-chip") ?? ""),
   );
   const target = labels.findIndex((l) => /all shots/i.test(l));
-  expect(target, `no "all shots" chip in ${JSON.stringify(labels)}`).toBeGreaterThanOrEqual(0);
+  expect(
+    target,
+    `no "all shots" chip in ${JSON.stringify(labels)}`,
+  ).toBeGreaterThanOrEqual(0);
   for (let i = 0; i < target; i++) await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
 
@@ -202,12 +241,19 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await video(page))?.paused).toBe(false);
-  expect(Math.abs(((await video(page))?.currentTime ?? 0) - tStart)).toBeLessThan(1.5);
+  expect(
+    Math.abs(((await video(page))?.currentTime ?? 0) - tStart),
+  ).toBeLessThan(1.5);
 
   // --- review: answer the first GET /review/queue question (D-48) ----------
-  const queue = await (await page.request.get(`${API}/games/${gameId}/review/queue`)).json();
+  const queue = await (
+    await page.request.get(`${API}/games/${gameId}/review/queue`)
+  ).json();
   const first = queue.questions[0];
-  expect(first?.event_id, "the fake game queues an event question first").toBeTruthy();
+  expect(
+    first?.event_id,
+    "the fake game queues an event question first",
+  ).toBeTruthy();
   await page.goto(`/tv/${gameId}/review`);
   const item = page.getByTestId("review-item");
   await expect(item).toHaveAttribute("data-event-id", first.event_id);
@@ -218,8 +264,12 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   );
 
   // PATCH actually persisted: re-read events.json off the API
-  const events = await (await page.request.get(`${API}/media/games/${gameId}/events.json`)).json();
-  const patched = events.events.find((e: { id: string }) => e.id === first.event_id);
+  const events = await (
+    await page.request.get(`${API}/media/games/${gameId}/events.json`)
+  ).json();
+  const patched = events.events.find(
+    (e: { id: string }) => e.id === first.event_id,
+  );
   expect(patched).toMatchObject(first.options[0].body);
 
   // --- bookmark ----------------------------------------------------------
@@ -228,11 +278,17 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
   const before = await page.getByTestId("event-marker").count();
   await page.keyboard.press("b");
   await expect(page.getByTestId("event-marker")).toHaveCount(before + 1);
-  const after = await (await page.request.get(`${API}/media/games/${gameId}/events.json`)).json();
-  expect(after.events.filter((e: { type: string }) => e.type === "bookmark")).toHaveLength(2);
+  const after = await (
+    await page.request.get(`${API}/media/games/${gameId}/events.json`)
+  ).json();
+  expect(
+    after.events.filter((e: { type: string }) => e.type === "bookmark"),
+  ).toHaveLength(2);
 });
 
-test("E-22 an unreachable API shows the error banner, not a white page", async ({ page }) => {
+test("E-22 an unreachable API shows the error banner, not a white page", async ({
+  page,
+}) => {
   await page.route(`${API}/games`, (route) => route.abort("connectionrefused"));
   await page.goto("/tv");
   await expect(page.getByTestId("api-error")).toBeVisible();
@@ -245,14 +301,18 @@ test("D-3 the wide MP4 is range-seekable and the player settles on the target", 
   expect(gameId, "S-01 must have run first").not.toBe("");
 
   const wide = `${API}/media/games/${gameId}/media/wide.mp4`;
-  const ranged = await page.request.get(wide, { headers: { Range: "bytes=0-99" } });
+  const ranged = await page.request.get(wide, {
+    headers: { Range: "bytes=0-99" },
+  });
   expect(ranged.status()).toBe(206);
   expect((await ranged.body()).length).toBe(100);
 
   await page.goto(`/tv/${gameId}`);
   await waitForVideo(page);
   await page.evaluate(() => {
-    document.querySelector<HTMLVideoElement>('[data-testid="video"]')!.currentTime = 10;
+    document.querySelector<HTMLVideoElement>(
+      '[data-testid="video"]',
+    )!.currentTime = 10;
   });
   await expect
     .poll(async () => {
@@ -265,7 +325,10 @@ test("D-3 the wide MP4 is range-seekable and the player settles on the target", 
 // S-31 / H4 — phone companion over the session WebSocket. Two pages in one context
 // (separate tabs, so separate sessionStorage); the WS fan-out is in-process, so the mock
 // cannot stand in for it. Lives here because the live project runs one file serially.
-test("S-31 a phone query moves the TV to the matching highlights", async ({ page, context }) => {
+test("S-31 a phone query moves the TV to the matching highlights", async ({
+  page,
+  context,
+}) => {
   expect(gameId, "S-01 must have run first").not.toBe("");
 
   // --- TV: reach the pairing code with the remote only (`p` on Highlights) ---------
@@ -282,24 +345,34 @@ test("S-31 a phone query moves the TV to the matching highlights", async ({ page
   await phone.getByTestId("companion-code-input").fill(code);
   await phone.getByTestId("companion-connect").click();
   await phone.waitForURL(new RegExp(`/companion/${code}`));
-  await expect(phone.getByTestId("companion-status")).toHaveAttribute("data-state", "open");
+  await expect(phone.getByTestId("companion-status")).toHaveAttribute(
+    "data-state",
+    "open",
+  );
 
   await phone.getByTestId("companion-query").fill("Marcus — all shots");
   await phone.getByTestId("companion-send").click();
   await expect(phone.getByTestId("companion-sent")).toContainText("Marcus");
 
   // --- TV: jumps to the results with no remote input (within 2 s per S-31) ---------
-  await page.waitForURL(new RegExp(`/tv/${gameId}/highlights\\?q=`), { timeout: 5000 });
+  await page.waitForURL(new RegExp(`/tv/${gameId}/highlights\\?q=`), {
+    timeout: 5000,
+  });
   await expect(page.getByTestId("query-interpretation")).toBeVisible();
-  await expect(page.getByTestId("query-interpretation")).toContainText("Marcus");
+  await expect(page.getByTestId("query-interpretation")).toContainText(
+    "Marcus",
+  );
   await expect(page.getByTestId("reel-clip").first()).toBeVisible();
 
   // --- a second query lands on the Highlights screen itself, still no remote --------
   await phone.getByTestId("companion-query").fill("misses");
   await phone.getByTestId("companion-send").click();
-  await expect(page.getByTestId("query-interpretation")).toContainText("missed shots", {
-    timeout: 5000,
-  });
+  await expect(page.getByTestId("query-interpretation")).toContainText(
+    "missed shots",
+    {
+      timeout: 5000,
+    },
+  );
   await phone.close();
 });
 
@@ -314,21 +387,34 @@ test("S-48 live: the phone clips at the TV's media time and sends a search hit t
   expect(gameId, "S-01 must have run first").not.toBe("");
   await page.goto(`/tv/pair?game=${gameId}`);
   await expect(page.getByTestId("pair-code")).toHaveText(/^\d{4}$/);
-  const code = (await page.getByTestId("pair-code").textContent())?.trim() ?? "";
+  const code =
+    (await page.getByTestId("pair-code").textContent())?.trim() ?? "";
   await page.goto(`/tv/${gameId}?t=4`); // same tab: the session survives in sessionStorage
   await waitForVideo(page);
 
   const phone = await context.newPage();
   await phone.goto(`/companion/${code}`);
-  await expect(phone.getByTestId("companion-status")).toHaveAttribute("data-state", "open");
-  await expect(phone.getByTestId("companion-now")).toHaveAttribute("data-game-id", gameId, {
-    timeout: 5000,
-  });
+  await expect(phone.getByTestId("companion-status")).toHaveAttribute(
+    "data-state",
+    "open",
+  );
+  await expect(phone.getByTestId("companion-now")).toHaveAttribute(
+    "data-game-id",
+    gameId,
+    {
+      timeout: 5000,
+    },
+  );
   await phone.getByTestId("companion-clip").click();
-  await expect(phone.getByTestId("companion-clip-result")).toHaveText(/^(Clip|Tap) saved/);
-  const label = (await phone.getByTestId("companion-clip-result").textContent()) ?? "";
+  await expect(phone.getByTestId("companion-clip-result")).toHaveText(
+    /^(Clip|Tap) saved/,
+  );
+  const label =
+    (await phone.getByTestId("companion-clip-result").textContent()) ?? "";
   await expect(page.getByTestId("toast")).toHaveText(label);
-  const triggers = await (await page.request.get(`${API}/games/${gameId}/triggers`)).json();
+  const triggers = await (
+    await page.request.get(`${API}/games/${gameId}/triggers`)
+  ).json();
   const tap = triggers.triggers.find((t: { type: string }) => t.type === "tap");
   expect(tap).toMatchObject({ type: "tap", source: "user" });
   expect(tap.t).toBeGreaterThanOrEqual(3);
@@ -350,7 +436,10 @@ test("S-31/AC-13 an unpaired code reports a closed session instead of hanging", 
 }) => {
   // Pairing codes are always four digits, so this one can never resolve (D-16).
   await page.goto("/companion/s_nope");
-  await expect(page.getByTestId("companion-status")).toHaveAttribute("data-state", "closed");
+  await expect(page.getByTestId("companion-status")).toHaveAttribute(
+    "data-state",
+    "closed",
+  );
   await expect(page.getByTestId("companion-error")).toBeVisible();
   await expect(page.getByTestId("companion-send")).toBeDisabled();
 });
@@ -364,13 +453,23 @@ const PNG_1PX = Buffer.from(
   "base64",
 );
 
-async function profileTab(page: Page, name: "stats" | "card" | "reel" | "links") {
-  await expect(page.getByTestId("profile")).toHaveAttribute("data-zone", "tabs");
+async function profileTab(
+  page: Page,
+  name: "stats" | "card" | "reel" | "links",
+) {
+  await expect(page.getByTestId("profile")).toHaveAttribute(
+    "data-zone",
+    "tabs",
+  );
   for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowLeft");
-  for (let i = 0; i < ["stats", "card", "reel", "links"].indexOf(name); i++) await page.keyboard.press("ArrowRight");
+  for (let i = 0; i < ["stats", "card", "reel", "links"].indexOf(name); i++)
+    await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("profile")).toHaveAttribute("data-tab", name);
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByTestId("profile")).toHaveAttribute("data-zone", "body");
+  await expect(page.getByTestId("profile")).toHaveAttribute(
+    "data-zone",
+    "body",
+  );
 }
 
 test("S-53 live profiles: suggestion → link, stat correction, card PNG, reel, phone photo, face consent", async ({
@@ -379,26 +478,48 @@ test("S-53 live profiles: suggestion → link, stat correction, card PNG, reel, 
   test.setTimeout(120_000);
   expect(gameId).not.toBe("");
   const game = await (await page.request.get(`${API}/games/${gameId}`)).json();
-  const player = (game.players as { id: string; name: string | null }[]).find((p) => p.name);
+  const player = (game.players as { id: string; name: string | null }[]).find(
+    (p) => p.name,
+  );
   if (!player?.name) throw new Error("the fixture roster has no named player");
-  const created = await page.request.post(`${API}/profiles`, { data: { name: player.name } });
+  const created = await page.request.post(`${API}/profiles`, {
+    data: { name: player.name },
+  });
   expect(created.status()).toBe(201);
   const id: string = (await created.json()).profile_id;
   expect(id).toMatch(/^pr_[0-9a-f]{12}$/);
 
   // Players → profile → Links: the same-name suggestion, accepted with the D-pad
   await page.goto("/tv/players");
-  await expect(page.locator(`[data-testid="profile-card"][data-profile-id="${id}"]`)).toBeVisible();
+  await expect(
+    page.locator(`[data-testid="profile-card"][data-profile-id="${id}"]`),
+  ).toBeVisible();
   await page.goto(`/tv/players/${id}`);
   await profileTab(page, "links");
-  const sug = page.locator(`[data-testid="suggestion-row"][data-game-id="${gameId}"][data-player-id="${player.id}"]`);
+  const sug = page.locator(
+    `[data-testid="suggestion-row"][data-game-id="${gameId}"][data-player-id="${player.id}"]`,
+  );
   await expect(sug).toHaveAttribute("data-face", "false");
-  await expect(sug.getByTestId("suggestion-reason")).toContainText("Same name tag");
-  await expect(page.locator('[data-testid="suggestion-row"][data-face="true"]')).toHaveCount(0);
-  for (let i = 0; i < 8 && (await sug.getAttribute("data-focused")) !== "true"; i++) await page.keyboard.press("ArrowDown");
-  await expect(sug.getByTestId("suggestion-accept")).toHaveAttribute("data-focused", "true");
+  await expect(sug.getByTestId("suggestion-reason")).toContainText(
+    "Same name tag",
+  );
+  await expect(
+    page.locator('[data-testid="suggestion-row"][data-face="true"]'),
+  ).toHaveCount(0);
+  for (
+    let i = 0;
+    i < 8 && (await sug.getAttribute("data-focused")) !== "true";
+    i++
+  )
+    await page.keyboard.press("ArrowDown");
+  await expect(sug.getByTestId("suggestion-accept")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
   await page.keyboard.press("Enter");
-  await expect(page.locator(`[data-testid="link-row"][data-game-id="${gameId}"]`)).toBeVisible();
+  await expect(
+    page.locator(`[data-testid="link-row"][data-game-id="${gameId}"]`),
+  ).toBeVisible();
   let doc = await (await page.request.get(`${API}/profiles/${id}`)).json();
   expect(doc.linked).toEqual([{ game_id: gameId, player_id: player.id }]);
 
@@ -409,7 +530,11 @@ test("S-53 live profiles: suggestion → link, stat correction, card PNG, reel, 
   const rows = page.getByTestId("stat-row");
   await expect(rows.first()).toHaveAttribute("data-key", "games");
   const row = rows.nth(1);
-  for (let i = 0; i < 3 && (await row.getAttribute("data-focused")) !== "true"; i++) {
+  for (
+    let i = 0;
+    i < 3 && (await row.getAttribute("data-focused")) !== "true";
+    i++
+  ) {
     await page.keyboard.press("ArrowDown"); // (past the sport pills when there are several)
   }
   await expect(row).toHaveAttribute("data-focused", "true");
@@ -419,32 +544,62 @@ test("S-53 live profiles: suggestion → link, stat correction, card PNG, reel, 
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
   await expect(row).toHaveAttribute("data-edited", "true");
-  await expect(row).toHaveAttribute("data-value", String(Math.round(before) + 1));
+  await expect(row).toHaveAttribute(
+    "data-value",
+    String(Math.round(before) + 1),
+  );
   await expect(row.getByTestId("stat-edited")).toContainText(`auto ${before}`);
   doc = await (await page.request.get(`${API}/profiles/${id}`)).json();
   expect(doc.stats_by_sport[sport ?? ""].edited).toContain(key);
-  expect(doc.stats_by_sport[sport ?? ""].stats[key]).toBe(Math.round(before) + 1);
+  expect(doc.stats_by_sport[sport ?? ""].stats[key]).toBe(
+    Math.round(before) + 1,
+  );
 
   // Card: Enter renders the PNG on the server; the JSON fields come with it
   await page.keyboard.press("Escape");
   await profileTab(page, "card");
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("card-tab")).toHaveAttribute("data-rendered", "true", { timeout: 30_000 });
-  await expect(page.getByTestId("card-png")).toHaveAttribute("src", new RegExp(`/media/profiles/${id}/card\\.png\\?v=`));
+  await expect(page.getByTestId("card-tab")).toHaveAttribute(
+    "data-rendered",
+    "true",
+    { timeout: 30_000 },
+  );
+  await expect(page.getByTestId("card-png")).toHaveAttribute(
+    "src",
+    new RegExp(`/media/profiles/${id}/card\\.png\\?v=`),
+  );
   await expect
-    .poll(() => page.getByTestId("card-png").evaluate((el) => (el as HTMLImageElement).naturalWidth), { timeout: 15_000 })
+    .poll(
+      () =>
+        page
+          .getByTestId("card-png")
+          .evaluate((el) => (el as HTMLImageElement).naturalWidth),
+      { timeout: 15_000 },
+    )
     .toBeGreaterThan(0);
   await expect(page.getByTestId("card-title")).toContainText(player.name);
 
   // Reel: whatever plays the fake pipeline gave this player, playable in order
   await page.keyboard.press("Escape");
   await profileTab(page, "reel");
-  await expect(page.locator('[data-testid="reel-item"], [data-testid="reel-empty"], [data-testid="reel-note"]').first()).toBeVisible();
+  await expect(
+    page
+      .locator(
+        '[data-testid="reel-item"], [data-testid="reel-empty"], [data-testid="reel-note"]',
+      )
+      .first(),
+  ).toBeVisible();
   await expect(page.getByTestId("reel-note")).toHaveCount(0); // GET /reel answered
   if (await page.getByTestId("reel-item").count()) {
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("reel-counter")).toHaveAttribute("data-index", "1");
-    await expect(page.getByTestId("reel-counter")).toHaveAttribute("data-game-id", gameId);
+    await expect(page.getByTestId("reel-counter")).toHaveAttribute(
+      "data-index",
+      "1",
+    );
+    await expect(page.getByTestId("reel-counter")).toHaveAttribute(
+      "data-game-id",
+      gameId,
+    );
     await waitForVideo(page);
   } else {
     await expect(page.getByTestId("reel-empty")).toBeVisible();
@@ -453,27 +608,126 @@ test("S-53 live profiles: suggestion → link, stat correction, card PNG, reel, 
   // Phone: photo upload (re-encoded by the API) and the consent-gated face enrollment
   await page.goto(`/profiles/${id}`);
   await expect(page.getByTestId("profile-edit")).toBeVisible();
-  await page.getByTestId("profile-photo-input").setInputFiles({ name: "synthetic.png", mimeType: "image/png", buffer: PNG_1PX });
+  await page
+    .getByTestId("profile-photo-input")
+    .setInputFiles({
+      name: "synthetic.png",
+      mimeType: "image/png",
+      buffer: PNG_1PX,
+    });
   await expect(page.getByTestId("profile-note")).toHaveText("Photo saved");
-  await expect(page.getByTestId("avatar").first()).toHaveAttribute("data-photo", "true");
+  await expect(page.getByTestId("avatar").first()).toHaveAttribute(
+    "data-photo",
+    "true",
+  );
   await expect
-    .poll(() => page.locator('[data-testid="avatar"] img').first().evaluate((el) => (el as HTMLImageElement).naturalWidth))
+    .poll(() =>
+      page
+        .locator('[data-testid="avatar"] img')
+        .first()
+        .evaluate((el) => (el as HTMLImageElement).naturalWidth),
+    )
     .toBeGreaterThan(0);
 
   await expect(page.getByTestId("face-enroll")).toBeDisabled();
   await expect(page.getByTestId("face-photos")).toBeDisabled();
   await page.getByTestId("face-consent").check();
-  await page.getByTestId("face-photos").setInputFiles({ name: "synthetic.png", mimeType: "image/png", buffer: PNG_1PX });
+  await page
+    .getByTestId("face-photos")
+    .setInputFiles({
+      name: "synthetic.png",
+      mimeType: "image/png",
+      buffer: PNG_1PX,
+    });
   await page.getByTestId("face-enroll").click();
   // no face model in the fake pipeline (503), or no face in a 1x1 PNG (422): never enrolled
   await expect(page.getByTestId("face-note")).toHaveText(/^Not enrolled: /);
-  await expect(page.getByTestId("face-section")).toHaveAttribute("data-enrolled", "false");
+  await expect(page.getByTestId("face-section")).toHaveAttribute(
+    "data-enrolled",
+    "false",
+  );
   // the API itself refuses without consent
   const refused = await page.request.post(`${API}/profiles/${id}/face`, {
-    multipart: { consent: "false", photos: { name: "synthetic.png", mimeType: "image/png", buffer: PNG_1PX } },
+    multipart: {
+      consent: "false",
+      photos: { name: "synthetic.png", mimeType: "image/png", buffer: PNG_1PX },
+    },
   });
   expect(refused.status()).toBe(400);
   const forgot = await page.request.delete(`${API}/profiles/${id}/face`);
   expect(forgot.ok()).toBe(true);
   expect((await forgot.json()).face_enrolled).toBe(false);
+});
+
+// The TV's "On your phone" QR against the real API: a phone token minted by
+// POST /games/{id}/phone-link opens /p/:id, and every API call it makes carries that token
+// as X-Replay-Phone-Token (never X-Replay-Key). This API runs without a key, so the 401
+// path is services/api's own tests; here it is the page against the real routes.
+test("S-55 live phone page: a minted phone token drives clip, tag, review and search", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  expect(gameId).not.toBe("");
+  const minted = await page.request.post(`${API}/games/${gameId}/phone-link`, {
+    data: { job: "clip", t: 2 },
+  });
+  test.skip(
+    minted.status() === 404 || minted.status() === 405,
+    "POST /games/{id}/phone-link is not in services/api yet",
+  );
+  expect(minted.status()).toBe(200);
+  const link: { token: string; url: string | null } = await minted.json();
+  expect(link.token.length).toBeGreaterThan(20);
+  if (link.url)
+    expect(link.url).toContain(`/p/${gameId}?job=clip&t=2#k=${link.token}`);
+
+  const sent: { url: string; token?: string; key?: string }[] = [];
+  page.on("request", (r) => {
+    const u = new URL(r.url());
+    if (
+      u.origin === API &&
+      !u.pathname.startsWith("/media/") &&
+      r.method() !== "OPTIONS"
+    )
+      sent.push({
+        url: `${r.method()} ${u.pathname}`,
+        token: r.headers()["x-replay-phone-token"],
+        key: r.headers()["x-replay-key"],
+      });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/p/${gameId}?job=clip&t=2#k=${link.token}`);
+  await expect(page.getByTestId("phone-title")).toHaveText("Live run");
+  expect(new URL(page.url()).hash).toBe("");
+
+  await expect(page.getByTestId("clip-video")).toHaveAttribute(
+    "src",
+    /\/media\/games\//,
+  );
+  await page.getByTestId("clip-save").click();
+  await expect(page.getByTestId("clip-note")).toHaveText(
+    /^(Clip saved\.|No play ends here)/,
+  );
+
+  await page.getByTestId("phone-tab-tag").click();
+  await expect(page.getByTestId("tag-player").first()).toBeVisible();
+
+  await page.getByTestId("phone-tab-review").click();
+  await expect(
+    page
+      .getByTestId("review-card")
+      .first()
+      .or(page.getByTestId("review-empty")),
+  ).toBeVisible();
+
+  await page.getByTestId("phone-tab-search").click();
+  await page.getByTestId("phone-search-input").fill("shot");
+  await page.getByTestId("phone-search-go").click();
+  await expect(page.getByTestId("phone-search-interpretation")).toBeVisible();
+
+  expect(sent.length).toBeGreaterThanOrEqual(6);
+  for (const s of sent) {
+    expect(s.token, s.url).toBe(link.token);
+    expect(s.key, s.url).toBeUndefined();
+  }
 });

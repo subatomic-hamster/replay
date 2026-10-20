@@ -14,7 +14,9 @@ import type {
   GameEvent,
   GameSummary,
   Moment,
+  PhoneLink,
   Player,
+  PublicConfig,
   QueryResult,
   RenderJob,
   Session,
@@ -413,6 +415,9 @@ function advance(g: Game) {
   g.players = baseGame(g.id, g.title, "ready").players;
 }
 
+const mockWebBase = () =>
+  globalThis.location?.origin ?? "http://localhost:5177";
+
 function needGame(id: string): Game {
   const g = games.get(id);
   if (!g) throw new Error(`unknown game ${id}`);
@@ -614,7 +619,7 @@ export const mockApi: ReplayApi = {
       id,
       upload_url: `/__mock_upload/${id}`,
       upload_token: token,
-      upload_page_url: `${globalThis.location?.origin ?? "http://localhost:5177"}/u/${id}#t=${token}`,
+      upload_page_url: `${mockWebBase()}/u/${id}#t=${token}`,
       upload: { mode: "multipart" },
     });
   },
@@ -1016,6 +1021,24 @@ export const mockApi: ReplayApi = {
   createSession() {
     log("POST", "/sessions");
     return delay<Session>({ id: "s_mock", code: "4821" });
+  },
+
+  // The mock's phone pages are this origin's (apps/web serves /p/:id next to the TV build).
+  getConfig() {
+    log("GET", "/config");
+    return delay<PublicConfig>({ web_base: mockWebBase() });
+  },
+
+  async phoneLink(gameId, job, t) {
+    log("POST", `/games/${gameId}/phone-link`, { job, t });
+    needGame(gameId);
+    const token = `MOCK-phone-token.${gameId}.${job}`; // MOCK: not a real capability
+    const q = t === null ? `job=${job}` : `job=${job}&t=${t}`;
+    return delay<PhoneLink>({
+      url: `${mockWebBase()}/p/${gameId}?${q}#k=${token}`,
+      token,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+    });
   },
 
   renderPlayer(gameId, playerId) {

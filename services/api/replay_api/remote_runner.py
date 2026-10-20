@@ -52,10 +52,18 @@ def retry(what: str, fn: Callable, tries: int = 8, backoff_s: float = 2.0):
     return None
 
 
+def _redact(url: httpx.URL | str) -> str:
+    """A URL's path only: a presigned URL's query carries X-Amz-Security-Token and the
+    signature, which must never reach runner.log or a job's error."""
+    return httpx.URL(str(url)).path
+
+
 def _checked(r: httpx.Response) -> httpx.Response:
     if r.status_code >= 500 or r.status_code == 429:
         raise Transient(f"HTTP {r.status_code}: {r.text[:200]}")
-    r.raise_for_status()
+    if r.is_error:  # not raise_for_status(): its message holds the full URL
+        msg = f"HTTP {r.status_code} for {r.request.method} {_redact(r.request.url)}"
+        raise httpx.HTTPStatusError(msg, request=r.request, response=r)
     return r
 
 
@@ -86,6 +94,7 @@ class Api:
                         fh.write(chunk)
             tmp.replace(dest)
 
+        log.info("GET %s", _redact(url))
         dest.parent.mkdir(parents=True, exist_ok=True)
         retry(f"GET {dest.name}", call, self.tries, self.backoff_s)
 
@@ -96,6 +105,7 @@ class Api:
                 _checked(self.http.put(url, content=fh,
                                        headers={"Content-Length": str(src.stat().st_size)}))  # fmt: skip
 
+        log.info("PUT %s", _redact(url))
         retry(f"PUT {src.name}", call, self.tries, self.backoff_s)
 
 
@@ -251,6 +261,13 @@ def run_once(api: Api, settings: Settings) -> bool:
     return True
 
 
+def quiet_http_logs() -> None:
+    """httpx logs every request URL at INFO, presigned query (security token) included;
+    the runner logs redacted paths itself (Api.download/upload)."""
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
 def main_cli(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--api", required=True, help="the API base URL (Lambda Function URL)")
@@ -258,6 +275,7 @@ def main_cli(argv: list[str] | None = None) -> int:
     ap.add_argument("--interval", type=float, default=30.0, help="seconds between polls")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    quiet_http_logs()
     key = os.environ.get("REPLAY_WORKER_KEY")
     if not key:
         ap.error("set REPLAY_WORKER_KEY")

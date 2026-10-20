@@ -19,8 +19,9 @@
 // a player is picked), Angles and Free view of the nearest play (AngleView replaces the
 // game video until Back, which resumes the game where it was), Watch (the ways), Stats
 // (StatsPanel, the right third), Commentary, On your phone (PhonePanel's QR handoff) and
-// Bookmark. Where the game was is remembered (resume.ts) every second and before leaving,
-// so a sub-screen's Back or Home's Resume comes back to the same time and play state.
+// Bookmark. Where the game was is remembered (resume.ts) every second and before leaving
+// (stored every 5 s, and at once on leaving), so a sub-screen's Back or Home's Resume
+// comes back to the same time and play state, also after an app restart.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, View, useWindowDimensions } from "react-native";
 import {
@@ -380,19 +381,23 @@ export function Watch({
   /** Note where the game is (resume.ts): a queued start while one is pending, a seek's
    *  target while seeking. Game time only (not the condensed rendition's clock). */
   const gameLength = info?.video.duration_s ?? 0;
-  const remember = useCallback(() => {
-    if (!handle || condensedSrc || handle.error()) return;
-    const p = pending.current;
-    const s = seekRef.current;
-    const spot = p
-      ? p.t === null
-        ? null
-        : { t: p.t, playing: p.play }
-      : s
-        ? { t: s.target, playing: s.wasPlaying }
-        : { t: handle.currentTime(), playing: !handle.paused() };
-    if (spot) rememberSpot(gameId, { ...spot, duration: gameLength });
-  }, [handle, condensedSrc, gameId, gameLength]);
+  const remember = useCallback(
+    /** `now`: persist at once (leaving), not on resume.ts's save cadence */
+    (now = false) => {
+      if (!handle || condensedSrc || handle.error()) return;
+      const p = pending.current;
+      const s = seekRef.current;
+      const spot = p
+        ? p.t === null
+          ? null
+          : { t: p.t, playing: p.play }
+        : s
+          ? { t: s.target, playing: s.wasPlaying }
+          : { t: handle.currentTime(), playing: !handle.paused() };
+      if (spot) rememberSpot(gameId, { ...spot, duration: gameLength }, now);
+    },
+    [handle, condensedSrc, gameId, gameLength],
+  );
 
   // ---------------------------------------------------------------- follow-cam
   const rendition = pid ? game?.renditions?.players?.[pid] : undefined;
@@ -751,7 +756,7 @@ export function Watch({
     (playId: string, start: number | "free") => {
       if (handle) {
         const queued = settle(handle);
-        remember();
+        remember(true);
         angleReturn.current = {
           t: handle.currentTime(),
           play: queued || !handle.paused(),
@@ -789,7 +794,7 @@ export function Watch({
 
   const leave = useCallback(
     (to: StatsExit | "library") => {
-      remember();
+      remember(true);
       navigate(to === "library" ? { name: to } : { name: to, gameId });
     },
     [remember, gameId],
@@ -918,7 +923,7 @@ export function Watch({
           if (tagTarget) setTagging(tagTarget);
           break;
         case "pair":
-          remember();
+          remember(true);
           navigate({ name: "pair", gameId: game.id });
           break;
         default:

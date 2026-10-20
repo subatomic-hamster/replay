@@ -8,8 +8,9 @@ import json
 import logging
 import math
 import secrets
+import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import (
     Body,
@@ -129,6 +130,14 @@ class BookmarkCreate(BaseModel):
 
 class QueryIn(BaseModel):
     text: str = Field(min_length=1, max_length=500)
+
+
+PhoneJob = Literal["clip", "tag", "review", "search"]
+
+
+class PhoneLinkIn(BaseModel):
+    job: PhoneJob
+    t: float | None = Field(default=None, ge=0)
 
 
 # --------------------------------------------------------------------------- helpers
@@ -375,13 +384,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return JSONResponse({"detail": "missing or invalid X-Replay-Worker-Key"}, 401)
         elif (
             s.api_key
-            and not (path.startswith("/media/") or path == "/healthz")
+            and not (path.startswith("/media/") or path in ("/healthz", "/config"))
             and not auth.same(h.get("x-replay-key"), s.api_key)
-            and not auth.token_allows(
-                app.state.token_secret, h.get("x-replay-upload-token"), request.method, path
-            )
         ):
-            return JSONResponse({"detail": "missing or invalid X-Replay-Key"}, 401)
+            secret, method = app.state.token_secret, request.method
+            phone = auth.phone_allows(secret, h.get("x-replay-phone-token"), method, path)
+            if phone:
+                request.scope[auth.PHONE_SCOPE_KEY] = phone
+            elif not auth.token_allows(secret, h.get("x-replay-upload-token"), method, path):
+                return JSONResponse({"detail": "missing or invalid X-Replay-Key"}, 401)
         if cloud is None:
             return await call_next(request)
         # cloud: the request's S3 mirror scope; what it changed is written back at the end
@@ -428,6 +439,12 @@ def _register_routes(app: FastAPI) -> None:
             "auth": bool(s.api_key),
         }
 
+    @app.get("/config")
+    def config(request: Request):
+        """Public client config (no key): where the phone pages live."""
+        web = _ctx(request).settings.public_web_base
+        return {"web_base": web.rstrip("/") if web else None}
+
     @app.get("/sports")
     def sports():
         return adapter.list_sports()
@@ -454,6 +471,22 @@ def _register_routes(app: FastAPI) -> None:
             else {"mode": "put", "url": out["upload_url"]}
         )
         return out
+
+    @app.post("/games/{game_id}/phone-link")
+    def phone_link(request: Request, game_id: str, body: PhoneLinkIn):
+        """The TV's "do it on your phone" QR: a phone token for this game (auth.PHONE_ROUTES)
+        and the page URL, token in the fragment (never in a server log)."""
+        ctx = _ctx(request)
+        _game_or_404(request, game_id)
+        now = time.time()
+        token = auth.make_token(ctx.token_secret, game_id, now=now, kind=auth.PHONE)
+        url = None
+        if ctx.settings.public_web_base:
+            url = f"{ctx.settings.public_web_base.rstrip('/')}/p/{game_id}?job={body.job}"
+            if body.t is not None:
+                url += "&t=" + f"{body.t:.3f}".rstrip("0").rstrip(".")
+            url += f"#k={token}"
+        return {"url": url, "token": token, "expires_at": int(now + auth.TTL_S)}
 
     @app.get("/games")
     def list_games(request: Request):

@@ -1,7 +1,7 @@
 // Codegen spec (package.json codegenConfig) for the app-local Turbo Module in
 // android/app/src/main/java/com/replaytv/ReplaySettingsModule.kt: the API base and API key
 // persisted in SharedPreferences, and their build-time defaults (REPLAY_API_BASE and
-// REPLAY_API_KEY, baked into BuildConfig).
+// REPLAY_API_KEY, baked into BuildConfig), plus generic string values (watch positions).
 // Synchronous on purpose: config.native.ts reads it once before the first render.
 import type { TurboModule } from "react-native";
 import { TurboModuleRegistry } from "react-native";
@@ -17,6 +17,9 @@ export interface Spec extends TurboModule {
   setApiKey(value: string): void;
   /** REPLAY_API_KEY at build time, or "". */
   getBuildApiKey(): string;
+  /** A saved app value (e.g. "resume": watch positions as JSON), or "". */
+  getString(key: string): string;
+  setString(key: string, value: string): void;
 }
 
 // `get`, not `getEnforcing`: a build without the module falls back to the build default.

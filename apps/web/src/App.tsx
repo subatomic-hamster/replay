@@ -14,8 +14,14 @@ import { Advice } from "./screens/Advice";
 import { Players } from "./screens/Players";
 import { Profile } from "./screens/Profile";
 import { ProfileEdit, ProfilesPhone } from "./screens/PhoneProfiles";
-import { Calibrate, UploadCreate, UploadFile, UploadStatus } from "./screens/Upload";
+import {
+  Calibrate,
+  UploadCreate,
+  UploadFile,
+  UploadStatus,
+} from "./screens/Upload";
 import { QrUpload } from "./screens/QrUpload";
+import { PhonePage } from "./screens/Phone";
 
 export function App() {
   const { pathname } = useLocation();
@@ -27,7 +33,11 @@ export function App() {
 
   const tv = seg[0] === "tv";
   const isPhone =
-    seg[0] === "upload" || seg[0] === "companion" || seg[0] === "profiles" || seg[0] === "u";
+    seg[0] === "upload" ||
+    seg[0] === "companion" ||
+    seg[0] === "profiles" ||
+    seg[0] === "u" ||
+    seg[0] === "p";
 
   return (
     <div
@@ -46,7 +56,11 @@ function route(seg: string[], tv: boolean) {
     if (seg[1] === "pair") return <Pair />;
     // M10: /tv/players and /tv/players/:profileId
     if (seg[1] === "players") {
-      return seg[2] ? <Profile key={seg[2]} profileId={decodeURIComponent(seg[2])} /> : <Players />;
+      return seg[2] ? (
+        <Profile key={seg[2]} profileId={decodeURIComponent(seg[2])} />
+      ) : (
+        <Players />
+      );
     }
     const id = seg[1];
     if (seg[2] === "highlights") return <Highlights key={id} gameId={id} />;
@@ -59,7 +73,11 @@ function route(seg: string[], tv: boolean) {
     // M8: /tv/:id/replays (list) and /tv/:id/replays/:playId (angle view).
     if (seg[2] === "replays") {
       return seg[3] ? (
-        <Replay key={`${id}/${seg[3]}`} gameId={id} playId={decodeURIComponent(seg[3])} />
+        <Replay
+          key={`${id}/${seg[3]}`}
+          gameId={id}
+          playId={decodeURIComponent(seg[3])}
+        />
       ) : (
         <ReplayList key={id} gameId={id} />
       );
@@ -70,7 +88,11 @@ function route(seg: string[], tv: boolean) {
   if (seg[0] === "companion") return <Companion key={seg[1]} code={seg[1]} />;
   // M10 phone: profiles, photo upload, opt-in face enrollment.
   if (seg[0] === "profiles") {
-    return seg[1] ? <ProfileEdit key={seg[1]} profileId={decodeURIComponent(seg[1])} /> : <ProfilesPhone />;
+    return seg[1] ? (
+      <ProfileEdit key={seg[1]} profileId={decodeURIComponent(seg[1])} />
+    ) : (
+      <ProfilesPhone />
+    );
   }
   if (seg[0] === "upload") {
     if (seg.length === 1) return <UploadCreate />;
@@ -80,6 +102,10 @@ function route(seg: string[], tv: boolean) {
     return <UploadFile key={id} gameId={id} />;
   }
   // D-80: the page the TV's QR code opens, `/u/:id[/calibrate|/status]#t=<token>`.
-  if (seg[0] === "u" && seg[1]) return <QrUpload key={seg[1]} gameId={seg[1]} step={seg[2]} />;
+  if (seg[0] === "u" && seg[1])
+    return <QrUpload key={seg[1]} gameId={seg[1]} step={seg[2]} />;
+  // The TV's "On your phone" QR: `/p/:id?job=clip|tag|review|search[&t=<s>]#k=<token>`.
+  if (seg[0] === "p" && seg[1])
+    return <PhonePage key={seg[1]} gameId={seg[1]} />;
   return <div className="screen">Loading…</div>;
 }

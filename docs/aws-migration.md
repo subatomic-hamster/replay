@@ -48,12 +48,35 @@ every existing route and test. Cloud mode is `REPLAY_STORAGE=s3` + `REPLAY_JOBS=
 ### Auth
 
 - `X-Replay-Key`: the existing shared key (`REPLAY_API_KEY`). Required for everything in
-  cloud mode except `/healthz`, `/media/...`, routes accepting an upload token, and `/worker/...`.
+  cloud mode except `/healthz`, `/config`, `/media/...`, routes accepting an upload or phone
+  token, and `/worker/...`.
 - `X-Replay-Upload-Token`: per-game capability for the phone page. Token =
   `base64url(game_id "." exp "." HMAC-SHA256(secret, game_id "." exp))`, exp = now + 24 h.
   Accepted (instead of the key) only on routes for that same game: `GET /games/{id}`,
   `GET /games/{id}/jobs` / status, upload init/complete, calibration GET/PUT,
   autocalibrate, process, upload parts (resume). Not `/moments` or `/storyboard`.
+- `X-Replay-Phone-Token`: per-game capability for the "do it on your phone" pages (clip,
+  tag, review, search). Token = `base64url("phone." game_id "." exp "." HMAC-SHA256(secret,
+"phone." game_id "." exp))`, exp = now + 24 h, same `upload-token-secret`. The kind is
+  inside the signed body, so a phone token never passes as an upload token or the other
+  way round. Accepted (instead of the key) only on this allowlist (`auth.PHONE_ROUTES`;
+  `{g}` must be the token's game):
+  - `GET /sports`, `GET /profiles`, `POST /profiles` (name only: a `photo_url` is 403)
+  - `POST /profiles/{pid}/links` (body `game_id` must be the token's game, else 403),
+    `DELETE /profiles/{pid}/links/{g}/{player_id}`
+  - `GET /games/{g}` and its `/moments`, `/storyboard`, `/plays`, `/triggers`, `/clips`,
+    `/score`, `/stats`, `/renditions`, `/review/queue`, `/exports/vertical`,
+    `/exports/vertical/{vid}`
+  - `POST /games/{g}/triggers` (make a clip), `PATCH /games/{g}/clips/{cid}` (trim),
+    `POST /games/{g}/exports/vertical` (9:16 aspect)
+  - `PATCH /games/{g}/players/{player_id}` (name, merge), `PATCH /games/{g}/events/{eid}`
+    (review answers)
+  - `POST /games/{g}/search`, `POST /games/{g}/query` (search's fallback)
+
+  Never: uploads, calibration, process, bookmarks, `GET /games`, other games, phone-link,
+  `GET/PATCH/DELETE /profiles/{pid}`, profile photo/face/card, `/worker`, `/sessions`.
+  Events come from the game's `events_url` (under `/media`, open as before).
+
 - `X-Replay-Worker-Key`: hfbox runner key (`REPLAY_WORKER_KEY`), only on `/worker/...`.
 - Secret values come from SSM: `REPLAY_SSM_PREFIX` (e.g. `/replay/`) + `api-key`,
   `worker-key`, `upload-token-secret`, read once per cold start. Local mode reads the
@@ -70,6 +93,17 @@ every existing route and test. Cloud mode is `REPLAY_STORAGE=s3` + `REPLAY_JOBS=
   `REPLAY_PUBLIC_WEB_BASE` is unset.
 - `upload`: `{"mode": "put", "url": ...}` in local mode (existing PUT route) or
   `{"mode": "multipart"}` in cloud mode.
+
+### Phone pages (TV "do it on your phone")
+
+- `GET /config` (public, no key, local and cloud): `{"web_base": str | null}` from
+  `REPLAY_PUBLIC_WEB_BASE`, trailing slash stripped. Nothing secret.
+- `POST /games/{id}/phone-link` (X-Replay-Key) `{"job": "clip"|"tag"|"review"|"search",
+"t": number|null}` -> `{"url", "token", "expires_at"}`. `url` =
+  `{web_base}/p/{id}?job={job}[&t={t}]#k={token}` (t without trailing zeros), null when
+  `REPLAY_PUBLIC_WEB_BASE` is unset; `expires_at` is unix seconds. 404 unknown game, 422
+  bad job or negative t. The phone sends the token as `X-Replay-Phone-Token`. Plain HTTP
+  only (no WebSocket), so it works on Lambda.
 
 ### Multipart upload (phone, cloud mode; also allowed in local mode returning 409)
 
@@ -117,7 +151,9 @@ the game folder, runs the job with the same local code paths (`pipeline_adapter`
 autocalib task), uploads new or changed files, and finishes the job. While a process job
 runs, files under `media/` and `storyboard/` go up after every stage (background thread),
 so the TV can play the mezzanine (`watchable`) and scrub before the run ends. It runs in a named
-tmux session and takes the GPU lock through the worker as today.
+tmux session and takes the GPU lock through the worker as today. Its log never holds a
+presigned query (security token, signature): `httpx`/`httpcore` log at WARNING, the runner
+logs `GET`/`PUT` with the URL path only, and HTTP errors name the path only.
 
 ### Cloud-mode gaps (documented, not hidden)
 

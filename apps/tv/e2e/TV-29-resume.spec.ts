@@ -82,7 +82,47 @@ test("TV-29 a sub-screen's Back resumes at the same time and play state; Home of
   expect((await media(page)).t).toBeGreaterThanOrEqual(t1 - 0.1);
   expect((await media(page)).t).toBeLessThan(t1 + 3);
 
-  // The position survives a reload (settings storage).
+  // The position survives a reload (settings storage): pause, leave (stored at once,
+  // not on the 5 s cadence), reload.
+  await page.keyboard.press("Space");
+  await expect.poll(async () => (await media(page)).paused).toBe(true);
+  const t2 = (await media(page)).t;
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("home")).toBeVisible();
   await page.goto("/");
-  await expect(page.getByTestId("hero-play")).toHaveText(/^Resume 0:\d\d$/);
+  await expect(card).toHaveAttribute("data-focused", "true");
+  await expect(play).toHaveText(
+    `Resume 0:${String(Math.floor(t2)).padStart(2, "0")}`,
+  );
+  expect(
+    Math.abs(Number(await play.getAttribute("data-resume")) - t2),
+  ).toBeLessThan(0.1);
+});
+
+test("TV-29 stored positions keep the 50 most recent games", async ({
+  page,
+}) => {
+  // 60 old games, oldest first; watching one more drops the 11 oldest.
+  await page.addInitScript(() => {
+    if (localStorage.getItem("replay.resume")) return; // only before the first load
+    const old: Record<string, object> = {};
+    for (let i = 0; i < 60; i++)
+      old[`g_old${i}`] = { t: 30, playing: false, duration: 100 };
+    localStorage.setItem("replay.resume", JSON.stringify(old));
+  });
+  await openWatch(page, GAME_ID, "?t=6");
+  const ids = async () =>
+    Object.keys(
+      await page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("replay.resume") ?? "{}") as object,
+      ),
+    );
+  await expect.poll(async () => (await ids()).at(-1)).toBe(GAME_ID);
+  const kept = await ids();
+  expect(kept).toHaveLength(50);
+  expect(kept.slice(0, 49)).toEqual(
+    Array.from({ length: 49 }, (_, i) => `g_old${i + 11}`),
+  );
 });

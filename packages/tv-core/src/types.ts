@@ -375,6 +375,22 @@ export interface Session {
   code: string;
 }
 
+/** GET /config (public). `web_base`: where apps/web's phone pages live, or null. */
+export interface PublicConfig {
+  web_base: string | null;
+}
+
+/** What a phone page (apps/web `/p/:id`) is opened for. */
+export type PhoneJob = "clip" | "tag" | "review" | "search";
+
+/** POST /games/{id}/phone-link: `url` = `{web_base}/p/{id}?job=..&t=..#k=<token>`, null
+ *  when the server has no web base. `expires_at`: epoch seconds. */
+export interface PhoneLink {
+  url: string | null;
+  token: string;
+  expires_at: number;
+}
+
 /** POST /games/{id}/players/{pid}/render — 202 with the queued job. */
 export interface RenderJob {
   job_id: string;

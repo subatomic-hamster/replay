@@ -27,7 +27,7 @@ export function Pair({ gameId }: { gameId?: string }) {
     useCallback(
       (msg) => {
         if (msg.type === "query" && msg.text && gameId) {
-          navigate({ name: "highlights", gameId, q: msg.text });
+          navigate({ name: "watch", gameId, q: msg.text });
         }
       },
       [gameId],
@@ -37,7 +37,8 @@ export function Pair({ gameId }: { gameId?: string }) {
   useDpad(
     useCallback(
       (a) => {
-        if (a === "back") navigate(gameId ? { name: "watch", gameId } : { name: "library" });
+        if (a === "back")
+          navigate(gameId ? { name: "watch", gameId } : { name: "library" });
       },
       [gameId],
     ),
@@ -51,7 +52,13 @@ export function Pair({ gameId }: { gameId?: string }) {
       <T>Open /companion on your phone and enter this code:</T>
       <T
         testID="pair-code"
-        style={{ fontSize: px(160), fontWeight: "800", letterSpacing: px(24), color: color.accent, marginVertical: px(32) }}
+        style={{
+          fontSize: px(160),
+          fontWeight: "800",
+          letterSpacing: px(24),
+          color: color.accent,
+          marginVertical: px(32),
+        }}
       >
         {session?.code ?? "…"}
       </T>

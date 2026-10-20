@@ -22,7 +22,8 @@ export function Media({ src, muted, loop, onEnded, onError, ref }: MediaProps) {
         wantPlay.current = false;
         return;
       }
-      if (v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) setTimeout(tryPlay, 100);
+      if (v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA)
+        setTimeout(tryPlay, 100);
     });
   }, []);
   const requestPlay = useCallback(() => {
@@ -74,19 +75,31 @@ export function Media({ src, muted, loop, onEnded, onError, ref }: MediaProps) {
 
   useImperativeHandle(
     ref,
+    // While a swap's resume is still waiting on metadata, the handle speaks for it: a
+    // seek or play/pause retargets it instead of being overwritten when it lands (the
+    // element has reset to 0 meanwhile), the way Media.native holds its pendingSeek.
     (): MediaHandle => ({
-      play: requestPlay,
+      play: () => {
+        if (resumeAt.current) resumeAt.current.playing = true;
+        else requestPlay();
+      },
       pause: () => {
+        if (resumeAt.current) resumeAt.current.playing = false;
         wantPlay.current = false;
         video.current?.pause();
       },
       seek: (t) => {
         const v = video.current;
-        if (v) v.currentTime = clamp(t, 0, v.duration || Number.MAX_SAFE_INTEGER);
+        if (resumeAt.current) resumeAt.current.t = Math.max(0, t);
+        else if (v)
+          v.currentTime = clamp(t, 0, v.duration || Number.MAX_SAFE_INTEGER);
       },
-      currentTime: () => video.current?.currentTime ?? 0,
+      currentTime: () => resumeAt.current?.t ?? video.current?.currentTime ?? 0,
       duration: () => video.current?.duration || 0,
-      paused: () => (video.current?.paused ?? true) && !wantPlay.current,
+      paused: () =>
+        resumeAt.current
+          ? !resumeAt.current.playing
+          : (video.current?.paused ?? true) && !wantPlay.current,
     }),
     [requestPlay],
   );
@@ -104,10 +117,17 @@ export function Media({ src, muted, loop, onEnded, onError, ref }: MediaProps) {
         timeRef.current = e.currentTarget.currentTime;
       }}
       onEnded={onEnded}
-      onError={(e) => onError?.(e.currentTarget.error?.message || "Playback failed")}
+      onError={(e) =>
+        onError?.(e.currentTarget.error?.message || "Playback failed")
+      }
       // The surface is 16:9; "fill" keeps the rendered rect equal to it, which is what
       // makes the normalized box math exact.
-      style={{ display: "block", width: "100%", height: "100%", objectFit: "fill" }}
+      style={{
+        display: "block",
+        width: "100%",
+        height: "100%",
+        objectFit: "fill",
+      }}
     />
   );
 }

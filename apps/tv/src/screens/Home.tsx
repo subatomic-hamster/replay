@@ -70,14 +70,14 @@ function actionsFor(g: GameLike): Action[] {
     out.push({
       id: "highlights",
       label: "Highlights",
-      to: { name: "highlights", gameId: g.id },
+      to: { name: "watch", gameId: g.id, way: "highlights" },
     });
   // Condensed (rallies) exists only for some games, so only when the API says it is ready.
   if (hasFeature(g, "condensed", false))
     out.push({
       id: "condensed",
       label: "Condensed",
-      to: { name: "rallies", gameId: g.id },
+      to: { name: "watch", gameId: g.id, way: "condensed" },
     });
   return out;
 }

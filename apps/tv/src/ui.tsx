@@ -122,6 +122,56 @@ function useFocusScale(on: boolean) {
   return v;
 }
 
+/** A player layer (Moments, Do more) arriving: fades in while sliding 24 px from `from`
+ *  ("below" rises, "above" drops), 150 ms ease-out. */
+export function SlideIn({
+  from,
+  children,
+  style,
+  testID,
+  dataSet,
+}: {
+  from: "below" | "above";
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
+  dataSet?: DataSet;
+}) {
+  const [v] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    Animated.timing(v, {
+      toValue: 1,
+      duration: FOCUS_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: NATIVE_DRIVER,
+    }).start();
+  }, [v]);
+  const dy = from === "below" ? px(24) : -px(24);
+  return (
+    <Animated.View
+      testID={testID}
+      dataSet={dataSet}
+      pointerEvents="none"
+      style={[
+        style,
+        {
+          opacity: v,
+          transform: [
+            {
+              translateY: v.interpolate({
+                inputRange: [0, 1],
+                outputRange: [dy, 0],
+              }),
+            },
+          ],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 const RING = px(4);
 const GAP = px(4);
 
@@ -338,7 +388,16 @@ const FADE_OPACITY = Array.from({ length: FADE_STEPS }, (_, k) => {
   return 1 - x * x * (3 - 2 * x);
 });
 
-function Fade({ side, length }: { side: "left" | "bottom"; length: number }) {
+export function Fade({
+  side,
+  length,
+  strength = 1,
+}: {
+  side: "left" | "bottom" | "top";
+  length: number;
+  /** Opacity at the edge (the player's scrims keep the video showing through). */
+  strength?: number;
+}) {
   const at = (k: number) =>
     PixelRatio.roundToNearestPixel((length * k) / FADE_STEPS);
   return (
@@ -352,11 +411,13 @@ function Fade({ side, length }: { side: "left" | "bottom"; length: number }) {
               {
                 position: "absolute",
                 backgroundColor: color.floor,
-                opacity: a,
+                opacity: a * strength,
               },
               side === "left"
                 ? { left: from, top: 0, bottom: 0, width: size }
-                : { bottom: from, left: 0, right: 0, height: size },
+                : side === "top"
+                  ? { top: from, left: 0, right: 0, height: size }
+                  : { bottom: from, left: 0, right: 0, height: size },
             ]}
           />
         );

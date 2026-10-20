@@ -55,25 +55,37 @@ const stop = () => {
 export function usePlatformKeys() {
   useTVEventHandler((evt) => {
     if (!evt) return;
-    // Any key event ends a repeat; a long arrow's UP is exactly that and nothing more.
+    // Any key event ends a repeat; a long arrow's UP is exactly that plus the release.
     stop();
     // Typed string in CoreEventTypes, number in TVEventHandler; Android sends an int.
     const down = Number(evt.eventKeyAction) === KEY_DOWN;
     const held = REPEAT[evt.eventType];
     if (held) {
-      if (!down) return;
+      if (!down) {
+        if (held === "left" || held === "right") dispatch("release");
+        return;
+      }
       dispatch(held);
       repeat = setInterval(() => dispatch(held), REPEAT_MS);
       return;
     }
     const action = MAP[evt.eventType];
-    if (action && !down) dispatch(action);
+    if (action && !down) {
+      dispatch(action);
+      // A short press is one UP: press and release at once (the player's seek resumes).
+      if (action === "left" || action === "right") dispatch("release");
+    }
   });
 
   useEffect(() => {
-    const back = BackHandler.addEventListener("hardwareBackPress", () => dispatch("back"));
+    const back = BackHandler.addEventListener("hardwareBackPress", () =>
+      dispatch("back"),
+    );
     // A key released while the app is backgrounded (Home mid-hold) never sends its UP.
-    const app = AppState.addEventListener("change", (s) => s !== "active" && stop());
+    const app = AppState.addEventListener(
+      "change",
+      (s) => s !== "active" && stop(),
+    );
     return () => {
       back.remove();
       app.remove();

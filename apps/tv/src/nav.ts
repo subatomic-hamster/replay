@@ -5,12 +5,21 @@ import { useSyncExternalStore } from "react";
 
 export type Route =
   | { name: "library" }
-  | { name: "watch"; gameId: string; mode?: string; pid?: string; t?: number }
-  | { name: "highlights"; gameId: string; q?: string }
+  /** The player. `way`: a way to watch (Highlights, Condensed); `q`: a highlight query
+   *  played as a reel (the paired phone's push). */
+  | {
+      name: "watch";
+      gameId: string;
+      mode?: string;
+      pid?: string;
+      t?: number;
+      way?: Way;
+      q?: string;
+    }
   | { name: "review"; gameId: string }
   | { name: "replays"; gameId: string }
   | { name: "replay"; gameId: string; playId: string }
-  | { name: "clips" | "rallies" | "search" | "advice"; gameId: string }
+  | { name: "clips" | "search" | "advice"; gameId: string }
   | { name: "pair"; gameId?: string }
   /** M10: profiles; `from` is the game to return to on Back (when opened from Watch) */
   | { name: "players"; from?: string }
@@ -20,8 +29,10 @@ export type Route =
   /** D-80: pick a sport, show the phone-upload QR, follow the game until it is ready */
   | { name: "add" };
 
+export type Way = "full" | "highlights" | "condensed";
+
 /** M13 screens that take only a game id: `/tv/:id/<name>`. */
-const GAME_SCREENS = ["clips", "rallies", "search", "advice"] as const;
+const GAME_SCREENS = ["clips", "search", "advice"] as const;
 
 let current: Route = { name: "library" };
 const subs = new Set<() => void>();
@@ -41,8 +52,9 @@ export function useRoute(): Route {
   );
 }
 
-/** `/tv`, `/tv/settings`, `/tv/add`, `/tv/pair?game=`, `/tv/:id[?mode=&pid=&t=]`, `/tv/:id/highlights[?q=]`, `/tv/:id/review`,
- *  `/tv/:id/replays[/:playId]`, `/tv/:id/{clips,rallies,search,advice}`,
+/** `/tv`, `/tv/settings`, `/tv/add`, `/tv/pair?game=`, `/tv/:id[?mode=&pid=&t=&way=&q=]`,
+ *  `/tv/:id/highlights[?q=]` and `/tv/:id/{rallies,condensed}` (the player in that way),
+ *  `/tv/:id/review`, `/tv/:id/replays[/:playId]`, `/tv/:id/{clips,search,advice}`,
  *  `/tv/players[/:profileId][?from=<game>]`. */
 export function routeFromPath(path: string): Route {
   const [pathname, search = ""] = path.split("?");
@@ -52,13 +64,15 @@ export function routeFromPath(path: string): Route {
   if (seg.length === 0) return { name: "library" };
   if (seg[0] === "settings") return { name: "settings" };
   if (seg[0] === "add") return { name: "add" };
-  if (seg[0] === "pair") return { name: "pair", gameId: params.get("game") ?? undefined };
+  if (seg[0] === "pair")
+    return { name: "pair", gameId: params.get("game") ?? undefined };
   if (seg[0] === "players") {
     const from = params.get("from") ?? undefined;
-    return seg[1] ? { name: "profile", profileId: decodeURIComponent(seg[1]), from } : { name: "players", from };
+    return seg[1]
+      ? { name: "profile", profileId: decodeURIComponent(seg[1]), from }
+      : { name: "players", from };
   }
   const gameId = seg[0];
-  if (seg[1] === "highlights") return { name: "highlights", gameId, q: params.get("q") ?? undefined };
   if (seg[1] === "review") return { name: "review", gameId };
   const screen = GAME_SCREENS.find((s) => s === seg[1]);
   if (screen) return { name: screen, gameId };
@@ -68,11 +82,22 @@ export function routeFromPath(path: string): Route {
       ? { name: "replay", gameId, playId: decodeURIComponent(seg[2]) }
       : { name: "replays", gameId };
   }
+  // The old Highlights and Rallies screens are ways to watch in the player now.
+  const way =
+    seg[1] === "highlights"
+      ? "highlights"
+      : seg[1] === "rallies" || seg[1] === "condensed"
+        ? "condensed"
+        : WAYS.find((w) => w === params.get("way"));
   return {
     name: "watch",
     gameId,
     mode: params.get("mode") ?? undefined,
     pid: params.get("pid") ?? undefined,
     t: Number(params.get("t")) || undefined,
+    way,
+    q: params.get("q") ?? undefined,
   };
 }
+
+const WAYS: Way[] = ["full", "highlights", "condensed"];

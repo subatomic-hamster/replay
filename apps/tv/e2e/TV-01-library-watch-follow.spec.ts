@@ -11,9 +11,10 @@ import {
   video,
 } from "./helpers";
 
-// The DoD path on the RN TV app's web build: library → watch → select → follow → back,
-// driven only by remote keys (Arrows, Enter = Select, Escape = Back).
-test("TV-01 library → watch → select → follow → back → library", async ({
+// The DoD path on the RN TV app's web build: Home → player → Do more → Follow player →
+// pick → follow → Back → Home, driven only by remote keys (Arrows, Enter = Select,
+// Escape = Back, m = Menu).
+test("TV-01 Home → player → follow a player → Back → Home", async ({
   page,
 }) => {
   await page.goto("/");
@@ -29,16 +30,23 @@ test("TV-01 library → watch → select → follow → back → library", async
   await page.keyboard.press("ArrowLeft");
   await expect(card(GAME_ID)).toHaveAttribute("data-focused", "true");
 
+  // The player opens playing, with the moments cut into the court line.
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("video")).toBeAttached();
   await expect
     .poll(async () => (await video(page))?.readyState ?? 0, { timeout: 15_000 })
     .toBeGreaterThanOrEqual(2);
-  await expect(page.getByTestId("event-marker")).toHaveCount(4);
-  await expect(page.getByTestId("court-inset")).toBeVisible();
+  await expect.poll(async () => (await video(page))?.paused).toBe(false);
+  await expect(page.getByTestId("moment-notch")).toHaveCount(4);
+  await expect(page.getByTestId("court-inset")).toHaveCount(0); // the old chrome is gone
+  await expect(page.getByTestId("mode-pill")).toHaveCount(0);
 
-  // W3: Select pauses the wide shot and opens select mode on the leftmost box.
+  // Do more → Follow player pauses on the leftmost box.
   await enterSelectMode(page);
+  await expect(page.getByTestId("watch")).toHaveAttribute(
+    "data-mode",
+    "select",
+  );
   await expect.poll(() => focusedBoxId(page)).toBe("p1");
   await page.keyboard.press("ArrowRight");
   await expect.poll(() => focusedBoxId(page)).toBe("p2");
@@ -57,7 +65,8 @@ test("TV-01 library → watch → select → follow → back → library", async
   );
   expect(Math.abs(box.width / surface.width - 0.06)).toBeLessThan(0.005);
 
-  // W4: Select follows at the same timestamp; the crop transform scales by 1/0.5.
+  // W4: Select follows at the same timestamp; the crop transform scales by 1/0.5. The
+  // player's chip takes the title's place top-left.
   const before = (await video(page))!.currentTime;
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("followcam-active")).toBeVisible();
@@ -65,6 +74,7 @@ test("TV-01 library → watch → select → follow → back → library", async
     "data-player-id",
     "p3",
   );
+  await expect(page.getByTestId("watch-title")).toHaveCount(0);
   await expect(page.locator('[data-testid^="select-box-"]')).toHaveCount(0);
   await expect
     .poll(async () => (await transform(page))[0], { timeout: 5_000 })
@@ -81,7 +91,16 @@ test("TV-01 library → watch → select → follow → back → library", async
     "p3",
   );
 
-  // Back: wide shot at the same time, identity transform, the frame stays on p3 (W4).
+  // Do more now says who is followed.
+  await menuTo(page, "action-follow");
+  await expect(page.getByTestId("action-follow")).toContainText(
+    "Following Player 3",
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("domore")).toHaveCount(0);
+
+  // Back stops following: wide shot at the same time, identity transform, the frame stays
+  // on p3 (W4).
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("followcam-active")).toHaveCount(0);
   await expect.poll(async () => (await transform(page))[0]).toBeCloseTo(1, 3);
@@ -92,43 +111,48 @@ test("TV-01 library → watch → select → follow → back → library", async
     "data-pid",
     "p3",
   );
-  await expect(page.getByTestId("mode-pill")).toHaveText("WIDE");
+  await expect(page.getByTestId("watch-title")).toBeAttached();
 
+  // Back hides the transport, then Back on bare video goes Home.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("transport")).toHaveAttribute(
+    "data-hidden",
+    "true",
+  );
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("game-card").first()).toBeVisible();
 });
 
-test("TV-02 Up at the top of select mode opens the action row; spotlight + event jump by D-pad", async ({
+test("TV-02 Prev/Next jump moments; Spotlight on the picked player from Do more", async ({
   page,
 }) => {
-  await page.goto(`/tv/${GAME_ID}`);
+  await page.goto(`/tv/${GAME_ID}?t=0.5`);
   await expect
     .poll(async () => (await video(page))?.readyState ?? 0, { timeout: 15_000 })
     .toBeGreaterThanOrEqual(2);
-  await enterSelectMode(page);
-  await page.keyboard.press("ArrowUp"); // nothing above p1 → action row
-  await expect(page.getByTestId("nav-library")).toHaveAttribute(
-    "data-focused",
-    "true",
-  );
-  await page.keyboard.press("Escape"); // Back closes the menu; select mode is still on
-
-  // ◀ Event / Event ▶ / Spotlight live in the "Playback ▸" group.
-  await menuTo(page, "action-next-event");
-  const t0 = (await video(page))!.currentTime;
-  await page.keyboard.press("Enter");
+  // `]` / `[` are the remote's Next / Previous: to each moment's start (t_key - 1.5 s).
+  await page.keyboard.press("Space"); // pause, so the jumps are exact
+  await expect.poll(async () => (await video(page))?.paused).toBe(true);
+  await page.keyboard.press("]");
   await expect
     .poll(async () => (await video(page))!.currentTime)
-    .toBeGreaterThan(t0 + 0.5);
+    .toBeCloseTo(1.5, 1);
+  await page.keyboard.press("]");
   await expect
-    .poll(async () => {
-      const t = (await video(page))!.currentTime;
-      return [3, 8, 14, 17].some((k) => Math.abs(t - k) < 0.05);
-    })
-    .toBe(true);
+    .poll(async () => (await video(page))!.currentTime)
+    .toBeCloseTo(6.5, 1);
+  await page.keyboard.press("[");
+  await expect
+    .poll(async () => (await video(page))!.currentTime)
+    .toBeCloseTo(1.5, 1);
 
+  await enterSelectMode(page);
   await menuTo(page, "action-spotlight");
   await page.keyboard.press("Enter");
+  await expect(page.getByTestId("action-spotlight")).toHaveAttribute(
+    "data-on",
+    "true",
+  );
   await expect(page.getByTestId("spotlight-overlay")).toBeVisible();
 });
 

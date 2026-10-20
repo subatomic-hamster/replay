@@ -27,10 +27,19 @@ export function usePlatformKeys() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const action = e.key === "Backspace" && wantsDelete() ? "delete" : MAP[e.key];
+      const action =
+        e.key === "Backspace" && wantsDelete() ? "delete" : MAP[e.key];
       if (action && dispatch(action)) e.preventDefault();
     };
+    // Held arrows arrive as repeated keydowns; the keyup ends a seek.
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") dispatch("release");
+    };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   }, []);
 }

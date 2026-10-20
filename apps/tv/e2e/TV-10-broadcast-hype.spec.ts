@@ -1,8 +1,9 @@
-// M13 Watch: broadcast mode (M6 rendition, with sound, same media time), commentary
-// captions synced to media time (M7), the hype meter on the scrubber and jump-to-peak
-// (D-45). Mock fixture: g_mock01 has a broadcast rendition (wide.mp4?rendition=broadcast),
-// a commentary script and hype peaks at 3.5 s and 14.5 s; g_pickle4 has no broadcast.
-import { expect, test, type Page } from "@playwright/test";
+// M13 in the player: Commentary (Do more) turns on the broadcast rendition (M6, with sound,
+// same media time) and the commentary captions synced to media time (M7). Mock fixture:
+// g_mock01 has a broadcast rendition (wide.mp4?rendition=broadcast) and a commentary
+// script; g_pickle4 has neither. The hype meter left the court line in the redesign; hype
+// peaks are the Highlights way to watch now (TV-22).
+import { expect, test } from "@playwright/test";
 import {
   captionAt,
   fmtClock,
@@ -15,21 +16,15 @@ import {
   type RallyDoc,
 } from "../../../packages/tv-core/src/discovery";
 import { boxColumns } from "../../../packages/tv-core/src/display";
-import { GAME_ID, menuTo, openWatch } from "./helpers";
-
-async function media(page: Page) {
-  return page.evaluate(() => {
-    const v = document.querySelector<HTMLVideoElement>('[data-testid="video"]');
-    return v
-      ? { t: v.currentTime, paused: v.paused, src: v.currentSrc, ready: v.readyState, muted: v.muted }
-      : { t: -1, paused: true, src: "", ready: 0, muted: true };
-  });
-}
+import { GAME_ID, media, menuTo, openWatch } from "./helpers";
 
 test("TV-10 pure helpers: hype bars, peaks, captions, trim, rallies, windows, box columns", () => {
   expect(hypeBars([0, 0.2, 0.9, 0.1, 0, 0.5], 3)).toEqual([0.2, 0.9, 0.5]); // max-pooled
   expect(hypeBars([], 4)).toEqual([]);
-  const cands = [{ t: 14.5, score: 0.95 }, { t: 3.5, score: 0.8 }];
+  const cands = [
+    { t: 14.5, score: 0.95 },
+    { t: 3.5, score: 0.8 },
+  ];
   expect(nextPeak(cands, 0)).toBe(0.5);
   expect(nextPeak(cands, 0.5)).toBe(11.5);
   expect(nextPeak(cands, 11.5)).toBe(0.5); // wraps
@@ -45,53 +40,125 @@ test("TV-10 pure helpers: hype bars, peaks, captions, trim, rallies, windows, bo
   expect(captionAt(lines, 5.5)?.text).toBe("b"); // no audio: CAPTION_S = 3
   expect(captionAt(lines, 6.1)).toBeNull();
 
-  expect(nudgeTrim({ t_start: 4, t_end: 10 }, "start", -0.5, 20)).toEqual({ t_start: 3.5, t_end: 10 });
-  expect(nudgeTrim({ t_start: 0.2, t_end: 10 }, "start", -0.5, 20)).toEqual({ t_start: 0, t_end: 10 });
-  expect(nudgeTrim({ t_start: 4, t_end: 5 }, "start", 0.5, 20)).toEqual({ t_start: 4, t_end: 5 }); // ≥ 1 s
-  expect(nudgeTrim({ t_start: 4, t_end: 19.8 }, "end", 0.5, 20)).toEqual({ t_start: 4, t_end: 20 });
-  expect(nudgeTrim({ t_start: 4, t_end: 5 }, "end", -0.5, 20)).toEqual({ t_start: 4, t_end: 5 });
+  expect(nudgeTrim({ t_start: 4, t_end: 10 }, "start", -0.5, 20)).toEqual({
+    t_start: 3.5,
+    t_end: 10,
+  });
+  expect(nudgeTrim({ t_start: 0.2, t_end: 10 }, "start", -0.5, 20)).toEqual({
+    t_start: 0,
+    t_end: 10,
+  });
+  expect(nudgeTrim({ t_start: 4, t_end: 5 }, "start", 0.5, 20)).toEqual({
+    t_start: 4,
+    t_end: 5,
+  }); // ≥ 1 s
+  expect(nudgeTrim({ t_start: 4, t_end: 19.8 }, "end", 0.5, 20)).toEqual({
+    t_start: 4,
+    t_end: 20,
+  });
+  expect(nudgeTrim({ t_start: 4, t_end: 5 }, "end", -0.5, 20)).toEqual({
+    t_start: 4,
+    t_end: 5,
+  });
 
   const doc: RallyDoc = {
     n: 3,
     longest: ["r2", "r1"],
     condensed: { status: "done", url: "x" },
     rallies: [
-      { id: "r1", n: 1, event_id: "a", t_start: 1, t_end: 6, duration_s: 5, shots: 6, condensed_t: 0 },
-      { id: "r3", n: 3, event_id: "c", t_start: 17, t_end: 19, duration_s: 2, shots: 0, condensed_t: 12 },
-      { id: "r2", n: 2, event_id: "b", t_start: 8, t_end: 16, duration_s: 8, shots: 9, condensed_t: 5.5 },
+      {
+        id: "r1",
+        n: 1,
+        event_id: "a",
+        t_start: 1,
+        t_end: 6,
+        duration_s: 5,
+        shots: 6,
+        condensed_t: 0,
+      },
+      {
+        id: "r3",
+        n: 3,
+        event_id: "c",
+        t_start: 17,
+        t_end: 19,
+        duration_s: 2,
+        shots: 0,
+        condensed_t: 12,
+      },
+      {
+        id: "r2",
+        n: 2,
+        event_id: "b",
+        t_start: 8,
+        t_end: 16,
+        duration_s: 8,
+        shots: 9,
+        condensed_t: 5.5,
+      },
     ],
   };
   expect(rallyOrder(doc, "time").map((r) => r.id)).toEqual(["r1", "r2", "r3"]);
-  expect(rallyOrder(doc, "longest").map((r) => r.id)).toEqual(["r2", "r1", "r3"]);
+  expect(rallyOrder(doc, "longest").map((r) => r.id)).toEqual([
+    "r2",
+    "r1",
+    "r3",
+  ]);
   expect(rallyAtCondensed(doc.rallies, 0)?.id).toBe("r1");
   expect(rallyAtCondensed(doc.rallies, 6)?.id).toBe("r2");
   expect(rallyAtCondensed(doc.rallies, 13)?.id).toBe("r3");
 
   expect(fmtClock(3.5)).toBe("0:03.5");
   expect(fmtClock(59.96)).toBe("1:00.0");
-  expect([listWindow(0, 10, 5), listWindow(5, 10, 5), listWindow(9, 10, 5), listWindow(2, 3, 5)]).toEqual([0, 3, 5, 0]);
+  expect([
+    listWindow(0, 10, 5),
+    listWindow(5, 10, 5),
+    listWindow(9, 10, 5),
+    listWindow(2, 3, 5),
+  ]).toEqual([0, 3, 5, 0]);
 
   const cols = (available: string[], extra: object) =>
     boxColumns({
       available,
-      box_score: [{ player_id: "p1", name: null, attempts: 1, makes: 1, ...extra }],
+      box_score: [
+        { player_id: "p1", name: null, attempts: 1, makes: 1, ...extra },
+      ],
       shots: [],
     }).map((c) => c.label);
   expect(cols([], {})).toEqual(["Att", "Made", "Conf"]);
-  expect(cols(["shots", "steals"], { points: 2, distance_m: 120 })).toEqual(["Att", "Made", "Pts", "Stl", "Dist m", "Conf"]);
+  expect(cols(["shots", "steals"], { points: 2, distance_m: 120 })).toEqual([
+    "Att",
+    "Made",
+    "Pts",
+    "Stl",
+    "Dist m",
+    "Conf",
+  ]);
 });
 
-test("TV-10 Broadcast swaps to the broadcast rendition at the same media time, with sound", async ({ page }) => {
+test("TV-10 Commentary on: the broadcast rendition at the same media time, with sound", async ({
+  page,
+}) => {
   await openWatch(page);
-  await page.keyboard.press("Enter"); // play
-  await expect.poll(async () => (await media(page)).t, { timeout: 10_000 }).toBeGreaterThan(1.5);
+  await expect
+    .poll(async () => (await media(page)).t, { timeout: 10_000 })
+    .toBeGreaterThan(1.5);
 
-  await menuTo(page, "action-broadcast");
+  await menuTo(page, "action-captions");
+  await expect(page.getByTestId("action-captions")).toHaveAttribute(
+    "data-on",
+    "false",
+  );
   const before = (await media(page)).t;
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("watch")).toHaveAttribute("data-broadcast", "true");
-  await expect(page.getByTestId("action-broadcast")).toHaveAttribute("data-on", "true");
-  await expect(page.getByTestId("mode-pill")).toHaveText("BROADCAST");
+  await expect(page.getByTestId("watch")).toHaveAttribute(
+    "data-broadcast",
+    "true",
+  );
+  await expect(page.getByTestId("action-captions")).toHaveAttribute(
+    "data-on",
+    "true",
+  );
   await expect
     .poll(async () => {
       const m = await media(page);
@@ -104,63 +171,58 @@ test("TV-10 Broadcast swaps to the broadcast rendition at the same media time, w
   expect(after.muted).toBe(false); // the broadcast mix plays with sound
   await expect.poll(async () => (await media(page)).paused).toBe(false);
 
-  // Broadcast off: back to the muted wide shot, still at the same place.
+  // Off: back to the muted wide shot, still at the same place.
   const t1 = (await media(page)).t;
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("watch")).toHaveAttribute("data-broadcast", "false");
-  await expect.poll(async () => (await media(page)).src).toMatch(/\/mock\/wide\.mp4$/);
-  await expect.poll(async () => (await media(page)).ready).toBeGreaterThanOrEqual(2);
+  await expect(page.getByTestId("watch")).toHaveAttribute(
+    "data-broadcast",
+    "false",
+  );
+  await expect
+    .poll(async () => (await media(page)).src)
+    .toMatch(/\/mock\/wide\.mp4$/);
+  await expect
+    .poll(async () => (await media(page)).ready)
+    .toBeGreaterThanOrEqual(2);
   expect((await media(page)).t).toBeGreaterThan(t1 - 0.1);
   expect((await media(page)).muted).toBe(true);
 });
 
-test("TV-10 no broadcast rendition: no Broadcast item, the game plays wide", async ({ page }) => {
+test("TV-10 a game with no commentary or broadcast has no Commentary tile", async ({
+  page,
+}) => {
   await openWatch(page, "g_pickle4");
-  await page.keyboard.press("ArrowUp");
-  await expect(page.getByTestId("nav-library")).toHaveAttribute("data-focused", "true");
-  await expect(page.getByTestId("action-broadcast")).toHaveCount(0);
-  await expect(page.getByTestId("watch")).toHaveAttribute("data-broadcast", "false");
+  await page.keyboard.press("ArrowUp"); // Up from the transport opens Do more
+  await expect(page.getByTestId("domore")).toBeVisible();
+  await expect(page.getByTestId("action-bookmark")).toBeAttached();
+  await expect(page.getByTestId("action-captions")).toHaveCount(0);
+  await expect(page.getByTestId("watch")).toHaveAttribute(
+    "data-broadcast",
+    "false",
+  );
   expect((await media(page)).src).toMatch(/\/mock\/wide\.mp4$/);
 });
 
 test("TV-10 Commentary captions follow media time", async ({ page }) => {
   await page.goto(`/tv/${GAME_ID}?t=3.2`);
-  await expect.poll(async () => (await media(page)).t, { timeout: 15_000 }).toBeGreaterThan(3.1);
+  await expect
+    .poll(async () => (await media(page)).t, { timeout: 15_000 })
+    .toBeGreaterThan(3.1);
+  await page.keyboard.press("Space"); // pause inside "Marcus scores two." (3–4.5 s)
+  await expect.poll(async () => (await media(page)).paused).toBe(true);
   await expect(page.getByTestId("caption")).toHaveCount(0); // off by default
 
   await menuTo(page, "action-captions");
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("action-captions")).toHaveAttribute("data-on", "true");
+  await page.keyboard.press("Escape"); // close Do more: captions hide while a layer is open
   await expect(page.getByTestId("caption")).toHaveText("Marcus scores two.");
 
-  await page.keyboard.press("ArrowDown"); // close the action row
-  await page.keyboard.press("ArrowRight"); // scrub +5 s → 8.2 s
-  await expect.poll(async () => (await media(page)).t).toBeGreaterThan(8);
-  await expect(page.getByTestId("caption")).toHaveText("Player 2 shoots, no good.");
-  await page.keyboard.press("ArrowRight"); // 13.2 s: between lines
+  await page.keyboard.press("]"); // the next moment's start, 6.5 s: between lines
+  await expect.poll(async () => (await media(page)).t).toBeCloseTo(6.5, 1);
   await expect(page.getByTestId("caption")).toHaveCount(0);
-});
-
-test("TV-10 hype meter on the scrubber; Hype peak jumps to each peak's lead-in", async ({ page }) => {
-  await openWatch(page);
-  const meter = page.getByTestId("hype-meter");
-  await expect(meter).toHaveAttribute("data-bars", "96");
-  const values = await page
-    .getByTestId("hype-bar")
-    .evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-value"))));
-  const peak = values.indexOf(Math.max(...values));
-  expect(Math.abs(((peak + 0.5) / values.length) * 20 - 14.5)).toBeLessThan(0.5); // the 14.5 s peak
-
-  await menuTo(page, "action-hype-peak");
-  await page.keyboard.press("Enter");
-  await expect.poll(async () => (await media(page)).t).toBeCloseTo(0.5, 1);
-  await page.keyboard.press("Enter");
-  await expect.poll(async () => (await media(page)).t).toBeCloseTo(11.5, 1);
-  await page.keyboard.press("Enter");
-  await expect.poll(async () => (await media(page)).t).toBeCloseTo(0.5, 1); // wraps
-
-  // A game with no candidates hides the item.
-  await openWatch(page, "g_mock02");
-  await page.keyboard.press("ArrowUp");
-  await expect(page.getByTestId("action-hype-peak")).toHaveCount(0);
+  await page.keyboard.press("Space"); // play into the 8 s line
+  await expect(page.getByTestId("caption")).toHaveText(
+    "Player 2 shoots, no good.",
+    { timeout: 8_000 },
+  );
 });

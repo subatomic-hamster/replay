@@ -22,7 +22,9 @@ export type DpadAction =
   /** Opens the Watch action row (remote Menu key; everything there is also D-pad reachable). */
   | "menu"
   /** Backspace on a keyboard, only for a handler that opted into splitting it from "back". */
-  | "delete";
+  | "delete"
+  /** Left/Right let go (after a tap or a hold): the player's seek resumes playback. */
+  | "release";
 
 /** Return `false` to leave an action unhandled (Back on the library lets the app exit). */
 export type DpadHandler = (action: DpadAction) => boolean | void;

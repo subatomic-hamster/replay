@@ -405,3 +405,18 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - Bedrock-playground and RDS credit activities not done (console-only / blocked).
   - Cloud mode: `/sessions` 501, profile photos not in S3, only `process`/`autocalib` jobs, a dead runner leaves its job `running`, last write wins on edits.
   - The TV on-screen keyboard types lowercase only (fine for hex keys).
+
+## Deployed, and the TV redesign waves 1–2 (2026-10-20)
+
+- Deployed: `ReplayCloud` is live (user ran CDK). The hfbox runner forces IPv4 (hfbox IPv6 is blackholed) and runs the worker pipeline; `scripts/cloud-smoke.py` passed end to end on a synthetic `courtcam synth` clip.
+- Redesign (D-81), spec and mockups in docs/ux:
+  - Wave 1: tokens and Barlow type, focus primitives (`ui.tsx`), immersive Home replacing the library grid, restyled Add game, Settings, Players and Profile.
+  - Data: `storyboard` and `moments` worker stages, readiness and ETA fields, hero art, `/moments`, `/storyboard`, resumable phone uploads, early media push from the runner.
+  - Wave 2: the player. Court-line timeline with moment notches, tap and hold-to-seek tiers with sprite previews and moment snap, Rew/FF scrub, Moments row with filters, Highlights and Condensed as ways to watch (the Highlights and Rallies screens are gone), layered Back, 5 s auto-hide, a placeholder Do more row, 10 s polling while processing.
+- Verified on hfbox: box-test ALL GREEN per commit; api 246 + 1 skipped, worker 28, render 54, web Playwright 107, tv 71 + 3 skipped (new TV-19 to TV-23).
+- Left / known issues:
+  - Lambda redeploy with the new API fields and web builds is built (`infra/build`, `infra/cdk.out`) and waits on the user.
+  - Do more is a placeholder: the tile row runs off the right edge; follow, angles, free view, stats panel and phone handoff are the next wave.
+  - Returning from Stats, Angles or Clips restarts the player at 0:00; the hero says "Play", not "Resume".
+  - The courtcam-direct fallback makes no storyboard or moments; older games need a re-run for thumbs and hero art.
+  - Mock media is SMPTE colour bars; not yet tried on a real Fire TV.

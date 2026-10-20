@@ -432,17 +432,15 @@ test("TV-15 face suggestions only for the face-enrolled profile, labelled as sug
   await expect(page.getByTestId("reel-empty")).toBeVisible();
 });
 
-test("TV-15 Watch: Link profile on the picked player; without a pick it says so", async ({
+test("TV-15 Watch: Link profile on the picked player; without a pick there is no tile", async ({
   page,
 }) => {
   await openWatch(page);
-  // no player picked yet
-  await menuTo(page, "action-link-profile");
-  await page.keyboard.press("Enter");
-  await expect(page.getByTestId("toast")).toHaveText(
-    "Pause and pick a player first",
-  );
-  await expect(page.getByTestId("profile-picker")).toHaveCount(0);
+  // no player picked yet: Do more has no Link profile tile (only actions that exist now)
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByTestId("action-follow")).toBeAttached();
+  await expect(page.getByTestId("action-link-profile")).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
   await enterSelectMode(page);
   await page.keyboard.press("ArrowRight"); // p2

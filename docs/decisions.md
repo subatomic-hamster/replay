@@ -452,3 +452,14 @@ Goal: no phone app, and the backend and frontends on AWS within the free-plan cr
 - **Frontends:** S3 + CloudFront (OAC). A runtime `config.json` carries the API base, so builds bake neither the base nor the key.
 - **GPU:** an AWS GPU would spend the credit in days, so hfbox runs `replay_api.remote_runner`. It claims jobs over HTTPS with a worker key, mirrors the game folder, runs the same local code paths and uploads the outputs. It holds no AWS credentials.
 - **Tradeoffs accepted:** the `/sessions` WebSocket is off in cloud mode (Lambda URLs have no WebSockets; the QR page replaces the companion upload). A single runner is assumed. `/media` stays unauthenticated for renderable outputs, so a game id is a read capability, except for the raw `source.mp4`.
+
+## D-81 (2026-10-20) — TV redesign: player-centric, the timeline as a court line
+
+Spec in docs/ux/redesign.md (research in docs/ux/research.md). Goal: a TV app that feels like Prime Video's sports player, calm from the couch, with every feature one layer away.
+
+- **Look:** new tokens (Floor, Bench, Line, Chalk, Bleacher, Scoreboard amber) and Barlow / Barlow Semi Condensed (OFL, bundled). Home is an immersive hero over game art, not a grid.
+- **Player is the app:** Highlights, Rallies and Condensed fold into the player as ways to watch (Full, Highlights capped at 13 plays, Condensed). Layers over full-bleed video, Back peels one: bare video, transport, then Moments (Down) or Do more (Up).
+- **Seeking:** Left/Right tap 10 s; holding accelerates to 30 s, 1 min, 2 min. Rew/FF scrub at 2/4/8/16×. A preview frame from the storyboard sprite rides above the playhead and snaps to moments within ±3 s.
+- **Data to support it:** worker stages `storyboard` and `moments` (soft dependencies, so a game is watchable before they finish); the API exposes `watchable`, `eta_s`, `stage_label`, per-feature readiness, hero art, `/moments` and `/storyboard`. The cloud runner pushes media after every stage so the TV can play while processing.
+- **Phone upload resumes** from the parts S3 already holds (`GET /upload/parts`), keyed by file name and size in localStorage.
+- **Do more** is a placeholder tile row in this wave; its full design (follow, angles, free view, stats panel, phone handoff) is the next wave.

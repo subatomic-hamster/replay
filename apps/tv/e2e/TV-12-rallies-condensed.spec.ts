@@ -1,84 +1,85 @@
-// M13 rally browser + condensed game (D-46). Mock fixture: g_pickle4 has three rallies
-// (r2 the longest) and no condensed render until it is asked for; g_mock01 has none, so
-// its Watch screen has no Rallies item (data-driven, never a sport-name branch).
-import { expect, test, type Page } from "@playwright/test";
-import { menuTo, mockCalls, openWatch } from "./helpers";
+// The Rallies screen folded into the player's Condensed way to watch (D-46). Mock fixture:
+// g_pickle4 has three rallies (1–6, 8–16.5, 17–19.5 s) and no condensed render until it
+// is asked for; g_mock01 has none, so it offers no Condensed (data-driven, never a
+// sport-name branch).
+import { expect, test } from "@playwright/test";
+import { media, menuTo, mockCalls, openWatch } from "./helpers";
 
-async function media(page: Page) {
-  return page.evaluate(() => {
-    const v = document.querySelector<HTMLVideoElement>('[data-testid="video"]');
-    return v
-      ? { t: v.currentTime, paused: v.paused, src: v.currentSrc, ready: v.readyState }
-      : { t: -1, paused: true, src: "", ready: 0 };
-  });
-}
-
-test("TV-12 Rallies shows only for a game with rallies", async ({ page }) => {
+test("TV-12 Condensed is offered only for a game with rallies", async ({
+  page,
+}) => {
   await openWatch(page);
-  await page.keyboard.press("ArrowUp");
-  await expect(page.getByTestId("nav-library")).toHaveAttribute("data-focused", "true");
-  await expect(page.getByTestId("nav-rallies")).toHaveCount(0);
+  await menuTo(page, "menu-watch");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("way-full")).toBeAttached();
+  await expect(page.getByTestId("way-condensed")).toHaveCount(0);
 
   await openWatch(page, "g_pickle4");
-  await menuTo(page, "nav-rallies");
-  await page.keyboard.press("Enter");
-  await expect(page.getByTestId("rallies")).toBeVisible();
-  await expect(page.getByTestId("rally-row")).toHaveCount(3);
-  await expect(page.getByTestId("rally-summary")).toContainText("3 rallies · 16 s of play");
+  await menuTo(page, "way-condensed");
+  await expect(page.getByTestId("way-condensed")).toContainText("3 rallies");
 });
 
-test("TV-12 longest rallies first; Select plays one with the rally counter, pausing at its end", async ({ page }) => {
-  await page.goto("/tv/g_pickle4/rallies");
-  const rows = page.getByTestId("rally-row");
-  await expect(rows).toHaveCount(3);
-  await expect(rows.nth(0)).toHaveAttribute("data-rally-id", "r1");
-  await page.keyboard.press("ArrowRight"); // Longest
-  await expect(page.getByTestId("rally-tab-longest")).toHaveAttribute("data-focused", "true");
-  await expect(rows.nth(0)).toHaveAttribute("data-rally-id", "r2");
-  await expect(rows.nth(2)).toHaveAttribute("data-rally-id", "r3");
-
-  await page.keyboard.press("ArrowDown");
-  await expect(rows.nth(0)).toHaveAttribute("data-focused", "true");
-  await expect.poll(async () => (await media(page)).ready, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
-  await page.keyboard.press("Enter");
-  await expect.poll(async () => (await media(page)).t).toBeGreaterThan(8);
-  await expect(page.getByTestId("rally-counter")).toHaveText("RALLY 2 / 3 · 11 SHOTS · 9 S");
-  // A rally stops at its own end instead of running into the next one (r3: 17–19.5 s).
-  await page.goto("/tv/g_pickle4/rallies");
-  await expect(rows).toHaveCount(3);
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("ArrowRight"); // r3 (game order)
-  await expect.poll(async () => (await media(page)).ready, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
-  await page.keyboard.press("Enter");
-  await expect(page.getByTestId("rally-counter")).toHaveText("RALLY 3 / 3 · 3 S"); // shots unknown: omitted
-  await expect.poll(async () => (await media(page)).paused, { timeout: 8_000 }).toBe(true);
-  const t = (await media(page)).t;
-  expect(t).toBeGreaterThanOrEqual(19.4);
-  expect(t).toBeLessThan(20);
+test("TV-12 while it renders, Condensed plays the rallies back to back and asks for the render", async ({
+  page,
+}) => {
+  await page.goto("/tv/g_pickle4/rallies"); // the old route opens the player in this way
+  const ind = page.getByTestId("way-indicator");
+  await expect(ind).toHaveText("Condensed, 1 of 3");
+  await expect(page.getByTestId("watch")).toHaveAttribute(
+    "data-way",
+    "condensed",
+  );
+  await expect
+    .poll(async () =>
+      (await mockCalls(page)).some(
+        (c) => c.method === "POST" && c.path === "/games/g_pickle4/condensed",
+      ),
+    )
+    .toBe(true);
+  await expect
+    .poll(async () => (await media(page)).t, { timeout: 15_000 })
+    .toBeGreaterThan(1);
+  // r1 ends at 6 s; the reel cuts straight to r2 at 8 s.
+  await expect(ind).toHaveText("Condensed, 2 of 3", { timeout: 10_000 });
+  expect((await media(page)).t).toBeGreaterThanOrEqual(7.9);
+  // Next skips to the following rally.
+  await page.keyboard.press("]");
+  await expect(ind).toHaveText("Condensed, 3 of 3");
+  await expect
+    .poll(async () => (await media(page)).t)
+    .toBeGreaterThanOrEqual(17);
 });
 
-test("TV-12 condensed game: render on request, then play it with the counter in sync", async ({ page }) => {
-  await page.goto("/tv/g_pickle4/rallies");
-  await expect(page.getByTestId("rally-row")).toHaveCount(3);
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("rally-tab-condensed")).toHaveAttribute("data-focused", "true");
-  await expect(page.getByTestId("condensed-status")).toHaveAttribute("data-status", "none");
+test("TV-12 once rendered, Condensed plays the condensed video with the rally counter in sync", async ({
+  page,
+}) => {
+  await page.goto("/tv/g_pickle4/rallies"); // asks for the render (the mock finishes in 0.6 s)
+  await expect(page.getByTestId("way-indicator")).toHaveText(
+    "Condensed, 1 of 3",
+  );
+  await page.waitForTimeout(800);
 
+  await menuTo(page, "way-condensed");
   await page.keyboard.press("Enter");
-  expect((await mockCalls(page)).some((c) => c.method === "POST" && c.path === "/games/g_pickle4/condensed")).toBe(true);
-  await expect(page.getByTestId("rallies")).toHaveAttribute("data-condensed", "true", { timeout: 5_000 });
-  await expect.poll(async () => (await media(page)).src).toContain("rendition=condensed");
-
-  // Rallies in game order on this tab; Select on r2 seeks to its offset in the condensed video.
-  await expect.poll(async () => (await media(page)).ready, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("Enter");
-  await expect.poll(async () => (await media(page)).t).toBeGreaterThan(6.4);
-  await expect(page.getByTestId("rally-counter")).toHaveAttribute("data-rally", "r2");
+  await expect
+    .poll(async () => (await media(page)).src)
+    .toContain("rendition=condensed");
+  await expect(page.getByTestId("way-indicator")).toHaveText(
+    "Condensed, rally 1 of 3",
+  );
+  // r2 starts 6.5 s into the condensed video; no stop between rallies.
+  await expect(page.getByTestId("way-indicator")).toHaveText(
+    "Condensed, rally 2 of 3",
+    { timeout: 15_000 },
+  );
   await expect.poll(async () => (await media(page)).paused).toBe(false);
-  // no stop at the rally's end on the condensed video: the next rally follows
-  await expect(page.getByTestId("rally-counter")).toHaveAttribute("data-rally", "r3", { timeout: 15_000 });
+
+  // Full game again: back on the wide shot, at the same point of the rally in game time.
+  await menuTo(page, "way-full");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () => (await media(page)).src)
+    .toMatch(/\/mock\/wide\.mp4$/);
+  await expect(page.getByTestId("way-indicator")).toHaveCount(0);
+  await expect.poll(async () => (await media(page)).t).toBeGreaterThan(8);
 });

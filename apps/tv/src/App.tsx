@@ -9,8 +9,6 @@ import { usePlatformKeys } from "./platform/keys";
 import { AddGame } from "./screens/AddGame";
 import { Advice } from "./screens/Advice";
 import { Clips } from "./screens/Clips";
-import { Highlights } from "./screens/Highlights";
-import { Rallies } from "./screens/Rallies";
 import { Search } from "./screens/Search";
 import { Home } from "./screens/Home";
 import { Pair } from "./screens/Pair";
@@ -48,15 +46,15 @@ function screen(r: Route) {
     case "watch":
       return (
         <Watch
-          key={r.gameId}
+          key={`${r.gameId}/${r.way ?? ""}/${r.q ?? ""}`}
           gameId={r.gameId}
           initialMode={r.mode}
           initialPid={r.pid}
           initialT={r.t}
+          initialWay={r.way}
+          q={r.q}
         />
       );
-    case "highlights":
-      return <Highlights key={r.gameId} gameId={r.gameId} q={r.q} />;
     case "review":
       return <Review key={r.gameId} gameId={r.gameId} />;
     case "replays":
@@ -71,8 +69,6 @@ function screen(r: Route) {
       );
     case "clips":
       return <Clips key={r.gameId} gameId={r.gameId} />;
-    case "rallies":
-      return <Rallies key={r.gameId} gameId={r.gameId} />;
     case "search":
       return <Search key={r.gameId} gameId={r.gameId} />;
     case "advice":

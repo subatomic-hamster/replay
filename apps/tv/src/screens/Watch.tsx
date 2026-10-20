@@ -1,145 +1,335 @@
-// W2 wide transport, W3 select mode, W4 follow mode, W5 court inset, W6 spotlight,
-// W7 tagging, W8 event markers + jumps, H5 bookmarks — the apps/web Watch screen on RN.
+// The player (route "watch"; docs/ux/redesign.md "Player"). Layers stack over full-bleed
+// video and Back peels one: bare video → transport → Moments (Down) or Do more (Up/Menu);
+// Back on bare video goes Home. Following a player and picking one (select mode) sit
+// between the layers and the bare video in that chain.
 //
-// Remote map: Select toggles play/pause in wide/follow (pausing the wide shot opens select
-// mode) and follows the focused box in select mode; Left/Right scrub ±5 s in wide/follow
-// and move between boxes in select mode (repeated presses cycle overlapping boxes); Up opens
-// the action row (from select mode: Up at the top edge). Every keyboard shortcut of the web
-// client (b, s, t, p, [ ], , .) also lives in that row, so D-pad + Back reach everything.
+// Transport: the title (or the followed player's chip) top-left and the court-line
+// timeline; it shows on any key and hides after 5 s of playback (pausing keeps it).
+// Seeking (Left/Right): a tap moves 10 s, holding accelerates (playback/seek.ts), the video
+// pauses while a storyboard preview rides the playhead, snaps to a moment within 3 s, and
+// playback resumes from the new point after the release. Rew/FF scrub at 2/4/8/16×,
+// Select or Play commits. Prev/Next jump moments (or a reel's plays).
+//
+// Ways to watch: Full game, Highlights (the top hype candidates, ≤13, back to back, or a
+// highlight query's clips) and Condensed (the condensed rendition, or the rallies back to
+// back while it renders). Everything polls every 10 s while the game is still processing,
+// so moments arrive on the line and Do more's tiles light up.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, View, useWindowDimensions } from "react-native";
+import { Animated, StyleSheet, View, useWindowDimensions } from "react-native";
 import {
   broadcastOf,
   captionAt,
   commentaryLines,
-  hypeBars,
-  nextPeak,
+  rallyAtCondensed,
+  rallyOrder,
+  type RallyDoc,
 } from "../../../../packages/tv-core/src/discovery";
-import { eventJump } from "../../../../packages/tv-core/src/display";
+import { fmtDuration } from "../../../../packages/tv-core/src/display";
 import { cropRectAt, mapBB } from "../../../../packages/tv-core/src/follow";
 import { followSource } from "../../../../packages/tv-core/src/followSource";
-import { nextFocus, type Direction } from "../../../../packages/tv-core/src/spatial";
+import {
+  nextFocus,
+  type Direction,
+} from "../../../../packages/tv-core/src/spatial";
 import { createTracksCache } from "../../../../packages/tv-core/src/tracksCache";
-import type { CropPath, GameEvent, Player } from "../../../../packages/tv-core/src/types";
+import type {
+  CropPath,
+  FeatureKey,
+  Game,
+  Moment,
+  Player,
+  Storyboard,
+} from "../../../../packages/tv-core/src/types";
 import { api } from "../api";
-import { CourtInset } from "../components/CourtInset";
+import { DoMoreLayer, type Tile } from "../components/DoMoreLayer";
 import { FollowFrame } from "../components/FollowFrame";
-import { SeekBar } from "../components/SeekBar";
-import { SelectOverlay } from "../components/SelectOverlay";
+import { MomentsLayer } from "../components/MomentsLayer";
 import { ProfilePicker } from "../components/ProfilePicker";
+import { SelectOverlay } from "../components/SelectOverlay";
 import { TextEntryDialog } from "../components/TextEntryDialog";
-import { menuStep, watchMenu, type MenuAction, type MenuFocus } from "../../../../packages/tv-core/src/menu";
+import { Timeline, TIMELINE_H, type SeekView } from "../components/Timeline";
+import { etaText } from "../gameState";
 import { useDpad, type DpadAction } from "../input";
-import { navigate } from "../nav";
+import { navigate, type Way } from "../nav";
 import { FOLLOWCAM_MODE } from "../platform/config";
-import { PlayerSurface, useClockTime, type PlayerHandle } from "../playback/PlayerSurface";
-import { storedSession, useSessionMessages, type SessionMessage } from "../session";
-import { color, font, px } from "../theme";
-import { ApiErrorBanner, Hint, Loading, Pill, T, useAsync } from "../ui";
+import {
+  PlayerSurface,
+  useClockTime,
+  type PlayerHandle,
+} from "../playback/PlayerSurface";
+import {
+  HIDE_MS,
+  holdStep,
+  jumpMoment,
+  LINGER_MS,
+  nextScrub,
+  REPEAT_FLOOR_MS,
+  snapTo,
+} from "../playback/seek";
+import {
+  storedSession,
+  useSessionMessages,
+  type SessionMessage,
+} from "../session";
+import { color, px, radius, safe, sp, type } from "../theme";
+import { ApiErrorBanner, Fade, Loading, T, useAsync } from "../ui";
 
 type Mode = "wide" | "select" | "follow";
-const SEEK_STEP_S = 10;
-const SCRUB_STEP_S = 5;
-const HYPE_BARS = 96;
-/** Badges and toasts sit just under the one-row action bar. */
-const BELOW_BAR = px(176);
-const TOAST_MS = 3000;
+type Layer = "moments" | "domore" | null;
+interface Seg {
+  t_start: number;
+  t_end: number;
+}
+/** A way to watch played as back-to-back segments of the game. */
+interface Reel {
+  way: Way;
+  name: string;
+  segs: Seg[];
+  i: number;
+}
+interface SeekState {
+  from: number;
+  target: number;
+  wasPlaying: boolean;
+  /** when the current hold began (a new tap after a release starts a new hold) */
+  holdStart: number;
+  lastStep: number;
+  step: number;
+  released: boolean;
+  scrub: { dir: 1 | -1; speed: number } | null;
+}
 
-/** Menu actions that open a per-game screen. */
-const GAME_ROUTES = ["highlights", "review", "replays", "clips", "rallies", "search", "advice"] as const;
-type GameRoute = (typeof GAME_ROUTES)[number];
+const POLL_MS = 10_000;
+const TOAST_MS = 3000;
+/** Highlights stay short, like Prime's Rapid Recap. */
+const REEL_MAX = 13;
+const WAY_NAMES: Record<Way, string> = {
+  full: "Full game",
+  highlights: "Highlights",
+  condensed: "Condensed",
+};
 
 // ponytail: a hardcoded list beats a contacts import for a demo (same as apps/web).
-const PRESET_NAMES = ["Marcus", "Jordan", "Alex", "Sam", "Chris", "Taylor", "Zoe", "Riley"];
+const PRESET_NAMES = [
+  "Marcus",
+  "Jordan",
+  "Alex",
+  "Sam",
+  "Chris",
+  "Taylor",
+  "Zoe",
+  "Riley",
+];
 const titleCase = (v: string) => v.replace(/(^|\s)\S/g, (m) => m.toUpperCase());
+const clamp = (v: number, lo: number, hi: number) =>
+  Math.min(Math.max(v, lo), hi);
+
+/** Segments in time order with overlaps merged (the reel never plays a second twice). */
+function mergeSegs(segs: Seg[]): Seg[] {
+  const out: Seg[] = [];
+  for (const s of [...segs].sort((a, b) => a.t_start - b.t_start)) {
+    const last = out[out.length - 1];
+    if (last && s.t_start <= last.t_end)
+      last.t_end = Math.max(last.t_end, s.t_end);
+    else out.push({ ...s });
+  }
+  return out;
+}
 
 export function Watch({
   gameId,
   initialMode,
   initialPid,
   initialT,
+  initialWay,
+  q,
 }: {
   gameId: string;
   initialMode?: string;
   initialPid?: string;
   initialT?: number;
+  initialWay?: Way;
+  q?: string;
 }) {
-  const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
+  const {
+    data: game,
+    error,
+    reload,
+  } = useAsync(() => api.getGame(gameId), [gameId]);
   const { data: replays } = useAsync(() => api.listReplays(gameId), [gameId]);
-  const { data: renditions } = useAsync(() => api.listRenditions(gameId), [gameId]);
-  const { data: commentary } = useAsync(() => api.getCommentary(gameId), [gameId]);
-  const { data: hype } = useAsync(() => api.getHype(gameId), [gameId]);
-  const { data: rallies } = useAsync(() => api.getRallies(gameId), [gameId]);
+  const { data: renditions } = useAsync(
+    () => api.listRenditions(gameId),
+    [gameId],
+  );
+  const { data: commentary } = useAsync(
+    () => api.getCommentary(gameId),
+    [gameId],
+  );
+  const { data: hype, error: hypeError } = useAsync(
+    () => api.getHype(gameId),
+    [gameId],
+  );
+  // The game re-read while it is processing: readiness, features, the storyboard URL.
+  const [live, setLive] = useState<Game | null>(null);
+  const info = live ?? game;
+  const [moments, setMoments] = useState<Moment[]>([]);
+  const [storyboard, setStoryboard] = useState<Storyboard | null>(null);
+  const [rallies, setRallies] = useState<RallyDoc | null>(null);
   const broadcast = broadcastOf(renditions);
   const lines = useMemo(() => commentaryLines(commentary), [commentary]);
-  const hypeBarsMemo = useMemo(() => (hype ? hypeBars(hype.values, HYPE_BARS) : null), [hype]);
-  const menuItems = useMemo(() => {
-    const hidden = new Set<MenuAction>();
-    if (!replays?.length) hidden.add("replays");
-    if (!broadcast) hidden.add("broadcast");
-    if (!lines.length) hidden.add("captions");
-    if (!hype?.candidates.length) hidden.add("hype-peak");
-    if (!rallies?.n) hidden.add("rallies");
-    return watchMenu(hidden);
-  }, [replays, broadcast, lines, hype, rallies]);
-  const [broadcastOn, setBroadcastOn] = useState(false);
-  const [captionsOn, setCaptionsOn] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [events, setEvents] = useState<GameEvent[]>([]);
-  const [roster, setRoster] = useState<Player[]>([]);
+
   const [handle, setHandle] = useState<PlayerHandle | null>(null);
   const [mode, setMode] = useState<Mode>(
     initialMode === "select" || initialMode === "follow" ? initialMode : "wide",
   );
+  const [layer, setLayer] = useState<Layer>(null);
+  const [layerT, setLayerT] = useState(0); // media time when the layer opened
+  const [chrome, setChrome] = useState(true);
+  const [way, setWay] = useState<Way>(
+    initialWay ?? (q ? "highlights" : "full"),
+  );
+  const [reel, setReel] = useState<Reel | null>(null);
+  const [condensedSrc, setCondensedSrc] = useState<string | null>(null);
+  const [cue, setCue] = useState<Moment | null>(null);
+  const [seekV, setSeekV] = useState<SeekView | null>(null);
+  const [commentaryOn, setCommentaryOn] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [roster, setRoster] = useState<Player[]>([]);
   const [pid, setPid] = useState<string | null>(initialPid ?? null);
   const [focusId, setFocusId] = useState<string | null>(initialPid ?? null);
   const [crop, setCrop] = useState<CropPath | null>(null);
   const [spotlight, setSpotlight] = useState(false);
   const [tagging, setTagging] = useState<string | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
-  const [menu, setMenu] = useState<MenuFocus | null>(null);
-  const [chrome, setChrome] = useState(true);
   const [rendering, setRendering] = useState(false);
   const renderAsked = useRef<string | null>(null);
   const [version, bump] = useState(0);
-  const restoreT = useRef<number | null>(initialT ?? null);
+  /** Seek + play once the (next) source knows its duration: deep link, a way's first
+   *  play, the swap to or from the condensed rendition. */
+  const pending = useRef<{ t: number | null; play: boolean } | null>({
+    t: initialT ?? null,
+    play: initialMode !== "select",
+  });
+  const seekRef = useRef<SeekState | null>(null);
+  const linger = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastKey = useRef(Date.now());
   const { width: winW, height: winH } = useWindowDimensions();
 
-  const clock = handle?.clock ?? null;
-  const t = useClockTime(clock);
-  const duration = handle?.duration() || game?.video.duration_s || 0;
+  const t = useClockTime(handle?.clock ?? null);
+  const duration =
+    handle?.duration() || (condensedSrc ? 0 : info?.video.duration_s) || 0;
+  // Moments are game time: the condensed rendition has its own clock.
+  const lineMoments = useMemo(
+    () => (condensedSrc ? [] : moments),
+    [condensedSrc, moments],
+  );
 
-  const tracks = useMemo(() => (game ? createTracksCache(game, api.getTracksChunk) : null), [game]);
+  // ---------------------------------------------------------------- data
+  const loadMoments = useCallback(
+    () => api.getMoments(gameId).then(setMoments, () => {}),
+    [gameId],
+  );
+  useEffect(() => {
+    loadMoments();
+    api.getRallies(gameId).then(setRallies, () => setRallies(null));
+  }, [gameId, loadMoments]);
+
+  const processing = !!info && info.status !== "ready";
+  useEffect(() => {
+    if (!processing) return;
+    const timer = setInterval(() => {
+      api.getGame(gameId).then(setLive, () => {});
+      loadMoments();
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [processing, gameId, loadMoments]);
+  // Processing finished: re-read the game once so the roster and tracks arrive.
+  useEffect(() => {
+    if (live?.status === "ready" && game && game.status !== "ready") reload();
+  }, [live, game, reload]);
+
+  const sbUrl = info?.storyboard_url;
+  useEffect(() => {
+    if (!info || !sbUrl) return;
+    let on = true;
+    api.getStoryboard(info).then(
+      (s) => on && setStoryboard(s),
+      () => on && setStoryboard(null),
+    );
+    return () => {
+      on = false;
+    };
+    // the URL, not every re-read of the game
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sbUrl]);
 
   useEffect(() => {
     if (game) setRoster(game.players);
   }, [game]);
 
-  useEffect(() => {
-    if (!game) return;
-    api.getEvents(game).then(setEvents, () => setEvents([]));
-  }, [game]);
-
+  const tracks = useMemo(
+    () => (game ? createTracksCache(game, api.getTracksChunk) : null),
+    [game],
+  );
   useEffect(() => tracks?.onChange(() => bump((n) => n + 1)), [tracks]);
   useEffect(() => {
     tracks?.ensure(t);
   }, [tracks, t]);
 
-  // Deep-link restore (?t=) once the media knows its duration; a failed source never will
-  // (the handle changes when it fails, so this re-runs and stops).
+  // A pending seek/play lands once the media knows its duration; a failed source never
+  // will (the handle changes when it fails, so this re-runs and stops).
   useEffect(() => {
-    if (!handle || handle.error() || restoreT.current === null) return;
-    const target = restoreT.current;
+    if (!handle || handle.error() || pending.current === null) return;
     const timer = setInterval(() => {
+      const p = pending.current;
+      if (!p) return clearInterval(timer);
       if (handle.duration() > 0) {
-        handle.seek(target);
-        restoreT.current = null;
+        pending.current = null;
         clearInterval(timer);
+        if (p.t !== null) handle.seek(p.t);
+        if (p.play) handle.play();
       }
     }, 50);
     return () => clearInterval(timer);
-  }, [handle]);
+  }, [handle, condensedSrc]);
 
+  /** Seek and play now, or as soon as the source can. */
+  const goTo = useCallback(
+    (to: number | null, play = true) => {
+      if (handle && handle.duration() > 0 && !handle.error()) {
+        pending.current = null; // newer than anything still queued
+        if (to !== null) handle.seek(to);
+        if (play) handle.play();
+      } else pending.current = { t: to, play };
+    },
+    [handle],
+  );
+
+  /**
+   * The viewer acted (play/pause, seek, jump): a queued start must not land later on top of
+   * them. Its start point lands now if the source can take it (else stays queued, without
+   * the play); returns whether it was about to play, which counts as playing. The poll
+   * above ticks every 50 ms, so a key in that window used to be undone. Web and native.
+   */
+  const settle = useCallback((h: PlayerHandle | null): boolean => {
+    const p = pending.current;
+    if (!p) return false;
+    if (h && h.duration() > 0 && !h.error()) {
+      pending.current = null;
+      if (p.t !== null) h.seek(p.t);
+    } else pending.current = p.t === null ? null : { t: p.t, play: false };
+    return p.play;
+  }, []);
+  const toggle = useCallback(() => {
+    if (settle(handle)) handle?.pause();
+    else handle?.toggle();
+  }, [handle, settle]);
+  const pause = useCallback(() => {
+    settle(handle);
+    handle?.pause();
+  }, [handle, settle]);
+
+  // ---------------------------------------------------------------- follow-cam
   const rendition = pid ? game?.renditions?.players?.[pid] : undefined;
   const wideUrl = game ? api.mediaUrl(game, game.renditions.wide) : "";
   const source = followSource(
@@ -150,14 +340,14 @@ export function Watch({
   );
 
   useEffect(() => {
-    if (!game || !pid || !source.needsRender || renderAsked.current === pid) return;
+    if (!game || !pid || !source.needsRender || renderAsked.current === pid)
+      return;
     renderAsked.current = pid;
     api.renderPlayer(game.id, pid).then(
       (job) => setRendering(!!job.job_id),
       () => setRendering(false),
     );
   }, [game, pid, source.needsRender]);
-
   useEffect(() => {
     if (mode !== "follow") setRendering(false);
   }, [mode]);
@@ -168,49 +358,442 @@ export function Watch({
       setCrop(null);
       return;
     }
-    let live = true;
-    api.getCropPath(game, pid).then((c) => live && setCrop(c), () => live && setCrop(null));
+    let on = true;
+    api.getCropPath(game, pid).then(
+      (c) => on && setCrop(c),
+      () => on && setCrop(null),
+    );
     return () => {
-      live = false;
+      on = false;
     };
   }, [source.useCrop, pid, game]);
 
   // `version` bumps when a tracks chunk lands; the cache reads it internally.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const players = useMemo(() => tracks?.playersAt(t) ?? [], [tracks, t, version]);
-  const sorted = useMemo(() => [...events].sort((a, b) => a.t_key - b.t_key), [events]);
-
+  const players = useMemo(
+    () => tracks?.playersAt(t) ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tracks, t, version],
+  );
   const tagTarget = mode === "follow" ? pid : (focusId ?? pid);
 
-  const run = useCallback(
+  // Select mode with nothing (or a stale id) focused: start at the leftmost box.
+  useEffect(() => {
+    if (mode !== "select" || players.length === 0) return;
+    if (focusId && players.some((p) => p.id === focusId)) return;
+    setFocusId([...players].sort((a, b) => a.bb[0] - b.bb[0])[0].id);
+  }, [mode, focusId, players]);
+
+  // ---------------------------------------------------------------- ways to watch
+  const startWay = useCallback(
+    (w: Way) => {
+      setLayer(null);
+      setWay(w);
+      if (w === "full") {
+        setReel(null);
+        if (condensedSrc) {
+          // Back to game time: the rally on screen, at the same point in it.
+          const r = rallyAtCondensed(
+            rallies?.rallies ?? [],
+            handle?.currentTime() ?? 0,
+          );
+          const at = r
+            ? r.t_start + (handle?.currentTime() ?? 0) - (r.condensed_t ?? 0)
+            : 0;
+          pending.current = { t: at, play: true };
+          setCondensedSrc(null);
+        }
+        return;
+      }
+      const play = (name: string, segs: Seg[]) => {
+        const list = mergeSegs(segs);
+        if (!list.length) {
+          setWay("full");
+          setReel(null);
+          setToast(`No ${name.toLowerCase()} for this game yet`);
+          return;
+        }
+        setReel({ way: w, name, segs: list, i: 0 });
+        goTo(list[0].t_start);
+      };
+      if (w === "highlights") {
+        if (q) {
+          api.query(gameId, q).then(
+            (r) => play(q, r.clips),
+            () => play(q, []),
+          );
+          return;
+        }
+        const top = [...(hype?.candidates ?? [])]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, REEL_MAX)
+          .map((c) => ({
+            t_start: c.t_start ?? Math.max(0, c.t - 3),
+            t_end: c.t_end ?? c.t + 1,
+          }));
+        play("Highlights", top);
+        return;
+      }
+      // Condensed: the rendition when it exists; else the rallies back to back, and ask
+      // for the render so it is there next time.
+      api.getRallies(gameId).then(
+        (doc) => {
+          setRallies(doc);
+          if (doc.condensed.status === "done" && doc.condensed.url) {
+            setReel(null);
+            pending.current = { t: 0, play: true };
+            setCondensedSrc(doc.condensed.url);
+            return;
+          }
+          if (
+            ["none", "missing", "failed", "error"].includes(
+              doc.condensed.status,
+            )
+          ) {
+            api.renderCondensed(gameId).catch(() => {});
+          }
+          play("Condensed", rallyOrder(doc, "time"));
+        },
+        () => play("Condensed", []),
+      );
+    },
+    [condensedSrc, rallies, handle, goTo, gameId, q, hype],
+  );
+
+  // The way the route asked for, once its data is in (hype answers or fails).
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current || !game || !handle) return;
+    if (way === "highlights" && !q && !hype && !hypeError) return;
+    started.current = true;
+    if (way !== "full") startWay(way);
+  }, [game, handle, way, q, hype, hypeError, startWay]);
+
+  // A reel plays its segments back to back, then hands over to the full game.
+  useEffect(() => {
+    if (!reel || !handle || seekV) return;
+    const seg = reel.segs[reel.i];
+    // Only just past the end: a clock still reporting the time before the reel's own
+    // seek landed (far past it) is not an end.
+    if (!seg || t < seg.t_end || t > seg.t_end + 2) return;
+    if (reel.i + 1 < reel.segs.length) {
+      setReel({ ...reel, i: reel.i + 1 });
+      handle.seek(reel.segs[reel.i + 1].t_start);
+    } else {
+      handle.pause();
+      setReel(null);
+      setWay("full");
+      setChrome(true);
+    }
+  }, [t, reel, handle, seekV]);
+
+  /** Where a seek to `to` lands in a reel: inside a segment, else the next one's start. */
+  const inReel = useCallback(
+    (to: number): number => {
+      if (!reel) return to;
+      const i = reel.segs.findIndex((s) => to < s.t_end);
+      if (i < 0) {
+        setReel(null);
+        setWay("full");
+        return to;
+      }
+      setReel({ ...reel, i });
+      return Math.max(to, reel.segs[i].t_start);
+    },
+    [reel],
+  );
+
+  // ---------------------------------------------------------------- transport + seek
+  // Seek helpers run from timers too, so they read the latest render through a ref.
+  const latest = useRef({ handle, duration, moments: lineMoments, inReel });
+  latest.current = { handle, duration, moments: lineMoments, inReel };
+
+  const poke = useCallback(() => {
+    lastKey.current = Date.now();
+    setChrome(true);
+  }, []);
+
+  const publish = useCallback(() => {
+    const s = seekRef.current;
+    const snapped =
+      s && !s.scrub ? snapTo(latest.current.moments, s.target) : null;
+    setSeekV(
+      s
+        ? {
+            target: s.target,
+            // the readout agrees with the time chip: measured to the snapped moment
+            delta: (snapped?.t ?? s.target) - s.from,
+            step: s.step,
+            scrub: s.scrub,
+            snapped,
+          }
+        : null,
+    );
+  }, []);
+
+  const clearLinger = useCallback(() => {
+    if (linger.current) clearTimeout(linger.current);
+    linger.current = null;
+  }, []);
+
+  const beginSeek = useCallback((): SeekState | null => {
+    const h = latest.current.handle;
+    if (!h) return null;
+    const queued = settle(h); // a queued autoplay counts as playing
+    const now = h.currentTime();
+    const s: SeekState = {
+      from: now,
+      target: now,
+      wasPlaying: queued || !h.paused(),
+      holdStart: Date.now(),
+      lastStep: 0,
+      step: holdStep(0),
+      released: false,
+      scrub: null,
+    };
+    h.pause();
+    seekRef.current = s;
+    return s;
+  }, [settle]);
+
+  const commit = useCallback(
+    (play?: boolean) => {
+      clearLinger();
+      const s = seekRef.current;
+      const { handle: h, moments: ms, inReel: land } = latest.current;
+      seekRef.current = null;
+      publish();
+      if (!s || !h) return;
+      const snapped = s.scrub ? null : snapTo(ms, s.target);
+      h.seek(land(snapped ? snapped.t_start : s.target));
+      if (play ?? (s.wasPlaying || !!s.scrub)) h.play();
+      lastKey.current = Date.now();
+    },
+    [clearLinger, publish],
+  );
+
+  const cancelSeek = useCallback(() => {
+    clearLinger();
+    const s = seekRef.current;
+    seekRef.current = null;
+    publish();
+    if (s?.wasPlaying) latest.current.handle?.play();
+  }, [clearLinger, publish]);
+
+  const holdSeek = useCallback(
+    (dir: 1 | -1) => {
+      const now = Date.now();
+      const s = seekRef.current ?? beginSeek();
+      if (!s) return;
+      if (s.released || s.scrub) {
+        clearLinger();
+        s.released = false;
+        s.scrub = null;
+        s.holdStart = now;
+        s.lastStep = 0;
+      }
+      if (now - s.lastStep < REPEAT_FLOOR_MS) return;
+      s.lastStep = now;
+      s.step = holdStep(now - s.holdStart);
+      s.target = clamp(s.target + dir * s.step, 0, latest.current.duration);
+      publish();
+    },
+    [beginSeek, clearLinger, publish],
+  );
+
+  const releaseSeek = useCallback(() => {
+    const s = seekRef.current;
+    if (!s || s.scrub) return;
+    s.released = true;
+    clearLinger();
+    linger.current = setTimeout(() => commit(), LINGER_MS);
+  }, [clearLinger, commit]);
+
+  const scrubPress = useCallback(
+    (dir: 1 | -1) => {
+      const s = seekRef.current ?? beginSeek();
+      if (!s) return;
+      clearLinger();
+      s.released = false;
+      s.scrub = nextScrub(s.scrub, dir);
+      publish();
+    },
+    [beginSeek, clearLinger, publish],
+  );
+
+  // Rew/FF: the seek point moves at speed × real time until Select/Play commits.
+  const scrubbing = !!seekV?.scrub;
+  useEffect(() => {
+    if (!scrubbing) return;
+    let last = Date.now();
+    const timer = setInterval(() => {
+      const s = seekRef.current;
+      if (!s?.scrub) return;
+      const now = Date.now();
+      s.target = clamp(
+        s.target + (s.scrub.dir * s.scrub.speed * (now - last)) / 1000,
+        0,
+        latest.current.duration,
+      );
+      last = now;
+      publish();
+    }, 100);
+    return () => clearInterval(timer);
+  }, [scrubbing, publish]);
+  useEffect(() => clearLinger, [clearLinger]);
+
+  // Transport hides after HIDE_MS of playback without a key; paused, a layer, a seek or
+  // picking a player keep it.
+  useEffect(() => {
+    if (!chrome || !handle || layer || seekV || mode === "select") return;
+    const timer = setInterval(() => {
+      if (!handle.paused() && Date.now() - lastKey.current >= HIDE_MS)
+        setChrome(false);
+    }, 250);
+    return () => clearInterval(timer);
+  }, [chrome, handle, layer, seekV, mode]);
+
+  const shown = chrome || layer !== null || seekV !== null || mode === "select";
+  const [fade] = useState(() => new Animated.Value(1));
+  useEffect(() => {
+    Animated.timing(fade, {
+      toValue: shown ? 1 : 0,
+      duration: shown ? 150 : 300,
+      useNativeDriver: false,
+    }).start();
+  }, [shown, fade]);
+
+  // ---------------------------------------------------------------- actions
+  const openLayer = useCallback(
+    (l: Layer) => {
+      if (seekRef.current) commit();
+      // Moments cue to the media's own time: the clock lags a seek that has not reported yet.
+      if (handle) {
+        if (settle(handle)) handle.play();
+        setLayerT(handle.currentTime());
+      }
+      setLayer(l);
+    },
+    [commit, handle, settle],
+  );
+
+  const jump = useCallback(
+    (dir: 1 | -1) => {
+      if (!handle) return;
+      if (settle(handle)) handle.play(); // jump from the start point; a queued autoplay still plays
+      const now = handle.currentTime();
+      if (reel) {
+        const i = clamp(reel.i + dir, 0, reel.segs.length - 1);
+        setReel({ ...reel, i });
+        handle.seek(reel.segs[i].t_start);
+        return;
+      }
+      const m = jumpMoment(lineMoments, now, dir);
+      if (m) handle.seek(m.t_start);
+    },
+    [handle, reel, lineMoments, settle],
+  );
+
+  const toMoment = useCallback(
+    (m: Moment) => {
+      setLayer(null);
+      poke();
+      if (condensedSrc) {
+        setWay("full");
+        pending.current = { t: m.t_start, play: true };
+        setCondensedSrc(null);
+        return;
+      }
+      goTo(inReel(m.t_start));
+    },
+    [condensedSrc, goTo, inReel, poke],
+  );
+
+  const bookmark = useCallback(() => {
+    if (!game || !handle) return;
+    const at = handle.currentTime();
+    api
+      .createEvent(game.id, { type: "bookmark", t_key: at })
+      .then(() => {
+        setToast(`Bookmarked ${fmtDuration(at)}`);
+        loadMoments();
+      })
+      .catch(() => setToast("Could not save the bookmark"));
+  }, [game, handle, loadMoments]);
+
+  const toggleCommentary = useCallback(() => {
+    // D-42: rendition time = source time, so the swap keeps the playback position; track
+    // boxes describe the wide frame, so select/follow sit the broadcast out.
+    setCommentaryOn((on) => !on);
+    if (broadcast) setMode("wide");
+  }, [broadcast]);
+
+  const onAction = useCallback(
     (a: DpadAction) => {
       if (!handle || !game) return;
+      const seeking = seekRef.current;
+      if (a !== "back" && a !== "release") poke();
       switch (a) {
-        case "playpause":
-          handle.toggle();
-          // W3: pausing the wide shot is what opens select mode (not over the broadcast).
-          if (mode !== "follow" && !broadcastOn) setMode(handle.paused() ? "select" : "wide");
-          break;
-        case "seek-back":
-          handle.seek(handle.currentTime() - SEEK_STEP_S);
-          break;
-        case "seek-fwd":
-          handle.seek(handle.currentTime() + SEEK_STEP_S);
-          break;
-        case "prev-event":
-        case "next-event": {
-          const to = eventJump(sorted, handle.currentTime(), a === "next-event" ? 1 : -1);
-          if (to !== null) handle.seek(to);
+        case "left":
+        case "right":
+        case "up":
+        case "down": {
+          if (mode === "select") {
+            const targets = players.map((p) => ({
+              id: p.id,
+              cx: p.bb[0] + p.bb[2] / 2,
+              cy: p.bb[1] + p.bb[3] / 2,
+              w: p.bb[2],
+              h: p.bb[3],
+            }));
+            const from = focusId ?? targets[0]?.id ?? null;
+            const next = nextFocus(targets, from, a as Direction);
+            // Up against the top edge leaves the boxes for Do more.
+            if (a === "up" && next === from) openLayer("domore");
+            else setFocusId(next);
+          } else if (a === "up") openLayer("domore");
+          else if (a === "down") openLayer("moments");
+          else holdSeek(a === "right" ? 1 : -1);
           break;
         }
-        case "spotlight":
-          setSpotlight((s) => !s);
+        case "release":
+          releaseSeek();
+          break;
+        case "seek-back":
+        case "seek-fwd":
+          if (mode !== "select") scrubPress(a === "seek-fwd" ? 1 : -1);
+          break;
+        case "menu":
+          openLayer("domore");
+          break;
+        case "select":
+          if (seeking) commit();
+          else if (mode === "select") {
+            if (!focusId) break;
+            // W4: follow at the same timestamp; playback state is left as-is (S-19).
+            setPid(focusId);
+            setMode("follow");
+          } else toggle();
+          break;
+        case "playpause":
+          if (seeking) commit(true);
+          else toggle();
+          break;
+        case "prev-event":
+        case "next-event":
+          if (seeking) commit();
+          jump(a === "next-event" ? 1 : -1);
+          break;
+        case "back":
+          if (seeking) cancelSeek();
+          else if (mode !== "wide") setMode("wide");
+          else if (chrome) setChrome(false);
+          else navigate({ name: "library" });
           break;
         case "bookmark":
-          api
-            .createEvent(game.id, { type: "bookmark", t_key: handle.currentTime() })
-            .then((e) => setEvents((prev) => [...prev, e]))
-            .catch(() => {});
+          bookmark();
+          break;
+        case "spotlight":
+          setSpotlight((s) => !s);
           break;
         case "tag":
           if (tagTarget) setTagging(tagTarget);
@@ -222,119 +805,55 @@ export function Watch({
           break;
       }
     },
-    [handle, game, mode, sorted, tagTarget, broadcastOn],
+    [
+      handle,
+      game,
+      mode,
+      players,
+      focusId,
+      chrome,
+      tagTarget,
+      poke,
+      openLayer,
+      holdSeek,
+      releaseSeek,
+      scrubPress,
+      commit,
+      cancelSeek,
+      jump,
+      bookmark,
+      toggle,
+    ],
   );
-
-  const onAction = useCallback(
-    (a: DpadAction) => {
-      setChrome(true);
-      if (!handle || !game) return;
-
-      // The action menu (one row; a group opens its own row): Left/Right move, Select runs
-      // or opens, Back/Down close the group, then the menu.
-      if (menu !== null) {
-        if (a === "left" || a === "right" || a === "select" || a === "back" || a === "down" || a === "up") {
-          const step = menuStep(menuItems, menu, a);
-          setMenu(step.focus);
-          const item = step.run?.action;
-          if (!item) return;
-          if (item === "library") navigate({ name: "library" });
-          else if (item === "players") navigate({ name: "players", from: game.id });
-          else if ((GAME_ROUTES as readonly string[]).includes(item)) {
-            navigate({ name: item as GameRoute, gameId: game.id });
-          } else if (item === "broadcast") {
-            // D-42: rendition time = source time, so the swap keeps the playback position;
-            // track boxes describe the wide frame, so select/follow sit broadcast out.
-            setBroadcastOn((on) => !on);
-            setMode("wide");
-          } else if (item === "captions") setCaptionsOn((on) => !on);
-          else if (item === "hype-peak") {
-            const to = nextPeak(hype?.candidates ?? [], handle.currentTime());
-            if (to !== null) handle.seek(to);
-          } else if (item === "link-profile") {
-            setMenu(null);
-            if (tagTarget) setLinking(tagTarget);
-            else setToast("Pause and pick a player first");
-          } else {
-            setMenu(null);
-            run(item as DpadAction);
-          }
-        } else run(a);
-        return;
-      }
-
-      switch (a) {
-        case "menu":
-          setMenu({ group: null, i: 0 });
-          break;
-        case "up":
-        case "down":
-        case "left":
-        case "right": {
-          if (mode === "select") {
-            const targets = players.map((p) => ({
-              id: p.id,
-              cx: p.bb[0] + p.bb[2] / 2,
-              cy: p.bb[1] + p.bb[3] / 2,
-              w: p.bb[2],
-              h: p.bb[3],
-            }));
-            const from = focusId ?? targets[0]?.id ?? null;
-            const next = nextFocus(targets, from, a as Direction);
-            // Up against the top edge leaves the boxes for the action row.
-            if (a === "up" && next === from) setMenu({ group: null, i: 0 });
-            else setFocusId(next);
-          } else if (a === "up") {
-            setMenu({ group: null, i: 0 });
-          } else if (a !== "down") {
-            // W2/S-15: in playback the seek bar is the focused control.
-            handle.seek(handle.currentTime() + (a === "right" ? SCRUB_STEP_S : -SCRUB_STEP_S));
-          }
-          break;
-        }
-        case "select":
-          if (mode === "select") {
-            if (!focusId) break;
-            // W4: follow at the same timestamp; playback state is left as-is (S-19).
-            setPid(focusId);
-            setMode("follow");
-          } else {
-            run("playpause");
-          }
-          break;
-        case "back":
-          // W4: the followed player keeps the amber frame in the wide shot; `pid` clears
-          // only on another pick or on leaving the game.
-          if (mode !== "wide") setMode("wide");
-          else navigate({ name: "library" });
-          break;
-        default:
-          run(a);
-      }
-    },
-    [handle, game, mode, focusId, players, menu, menuItems, run, hype, tagTarget],
-  );
-  useDpad(onAction, !tagging && !linking);
+  useDpad(onAction, !tagging && !linking && layer === null);
 
   // Paired phone: tell it what is on screen once a second (its "Clip that" posts a tap at
-  // this media time), play the search hits it sends, and confirm the clips its taps cut.
+  // this media time), play the search hits it sends, confirm the clips its taps cut, and
+  // play a highlight query it pushes as a reel.
   const send = useSessionMessages(
     storedSession()?.id,
     useCallback(
       (msg: SessionMessage) => {
-        if (msg.type === "seek" && typeof msg.t === "number" && handle) {
-          handle.seek(msg.t);
-          handle.play();
-          if (!broadcastOn) setMode("wide");
+        if (msg.type === "seek" && typeof msg.t === "number") {
+          goTo(msg.t);
+          if (!commentaryOn) setMode("wide");
         } else if (msg.type === "clip") setToast(msg.label ?? "Clip saved");
+        else if (msg.type === "query" && msg.text)
+          navigate({ name: "watch", gameId, q: msg.text });
       },
-      [handle, broadcastOn],
+      [goTo, commentaryOn, gameId],
     ),
   );
   useEffect(() => {
     if (!handle || !game) return;
     const timer = setInterval(
-      () => send({ type: "now", game_id: game.id, title: game.title, t: handle.currentTime() }),
+      () =>
+        send({
+          type: "now",
+          game_id: game.id,
+          title: game.title,
+          t: handle.currentTime(),
+        }),
       1000,
     );
     return () => clearInterval(timer);
@@ -345,69 +864,252 @@ export function Watch({
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Transport fades a few seconds into playback; any key brings it back.
-  useEffect(() => {
-    if (!chrome || !handle) return;
-    const timer = setInterval(() => {
-      if (!handle.paused()) setChrome(false);
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [chrome, handle]);
-
-  // Select mode with nothing (or a stale id) focused: start at the leftmost box.
-  useEffect(() => {
-    if (mode !== "select" || players.length === 0) return;
-    if (focusId && players.some((p) => p.id === focusId)) return;
-    setFocusId([...players].sort((a, b) => a.bb[0] - b.bb[0])[0].id);
-  }, [mode, focusId, players]);
-
   if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
-  if (!game) return <Loading />;
+  if (!game || !info) return <Loading />;
 
+  // ---------------------------------------------------------------- Do more tiles
+  const feature = (k: FeatureKey) => info.features?.[k];
+  /** A tile when its data is here; "Getting ready" while its stage runs; else none. */
+  const tile = (key: FeatureKey | null, ok: boolean, t0: Tile): Tile[] => {
+    if (ok) return [t0];
+    const f = key ? feature(key) : undefined;
+    return f?.state === "pending"
+      ? [
+          {
+            ...t0,
+            // the ETA keeps together, so a wrap never strands "min" on its own line
+            sub: `Getting ready, ${(etaText(f.eta_s) || "soon").replace(/ /g, " ")}`,
+            pending: true,
+            run: undefined,
+          },
+        ]
+      : [];
+  };
+  const close = (fn: () => void) => () => {
+    setLayer(null);
+    fn();
+  };
+  const closeLayer = () => {
+    setLayer(null);
+    poke();
+  };
   const followName = roster.find((p) => p.id === pid);
-  // W4/W6: in follow mode the video carries the crop transform, so the followed player's
-  // spotlight cutout goes through the same crop rect.
+  // An untagged player reads "Player 3" (track p3), as on the Moments chips.
+  const targetName = (id: string) =>
+    roster.find((p) => p.id === id)?.name ?? `Player ${id.replace(/^p/, "")}`;
+  const nearestReplay = [...(replays ?? [])].sort(
+    (a, b) =>
+      Math.abs((a.t_start + a.t_end) / 2 - t) -
+      Math.abs((b.t_start + b.t_end) / 2 - t),
+  )[0];
+  const nHype = hype?.candidates.length ?? 0;
+  const hasRallies =
+    (rallies?.n ?? 0) > 0 || rallies?.condensed.status === "done";
+  const wayTiles: Tile[] = [
+    {
+      id: "way-full",
+      label: "Full game",
+      sub: fmtDuration(info.video.duration_s),
+      on: way === "full",
+      run: () => startWay("full"),
+    },
+    ...tile(q ? null : "highlights", nHype > 0 || !!q, {
+      id: "way-highlights",
+      label: "Highlights",
+      sub: q ? `“${q}”` : `Top ${Math.min(REEL_MAX, nHype)} plays`,
+      on: way === "highlights",
+      run: () => startWay("highlights"),
+    }),
+    ...tile("condensed", hasRallies, {
+      id: "way-condensed",
+      label: "Condensed",
+      sub:
+        rallies?.condensed.status === "done"
+          ? "Dead time cut"
+          : `${rallies?.n ?? 0} rallies`,
+      on: way === "condensed",
+      run: () => startWay("condensed"),
+    }),
+  ];
+  const tiles: Tile[] = [
+    ...tile(
+      "follow",
+      roster.length > 0 && game.tracks.chunks > 0 && !commentaryOn,
+      {
+        id: "action-follow",
+        label: "Follow player",
+        sub:
+          mode === "follow" && pid
+            ? `Following ${targetName(pid)}`
+            : "Pick a player",
+        run: close(() => {
+          pause();
+          setMode("select");
+        }),
+      },
+    ),
+    ...tile("angles", !!nearestReplay, {
+      id: "nav-replays",
+      label: "Angles",
+      sub: nearestReplay?.label ?? "Replays of a play",
+      run: close(
+        () =>
+          nearestReplay &&
+          navigate({ name: "replay", gameId, playId: nearestReplay.play_id }),
+      ),
+    }),
+    ...(wayTiles.length > 1
+      ? [
+          {
+            id: "menu-watch",
+            label: "Watch",
+            sub: WAY_NAMES[way],
+            children: wayTiles,
+          },
+        ]
+      : []),
+    ...tile(
+      "stats",
+      feature("stats")
+        ? feature("stats")?.state === "ready"
+        : info.status === "ready",
+      {
+        id: "nav-review",
+        label: "Stats",
+        sub: "Box score and shots",
+        run: close(() => navigate({ name: "review", gameId })),
+      },
+    ),
+    ...tile("commentary", lines.length > 0 || !!broadcast, {
+      id: "action-captions",
+      label: "Commentary",
+      sub: commentaryOn ? "On" : "Off",
+      on: commentaryOn,
+      run: toggleCommentary,
+    }),
+    {
+      id: "action-bookmark",
+      label: "Bookmark",
+      sub: "Mark this moment",
+      run: close(bookmark),
+    },
+    ...(tagTarget
+      ? [
+          {
+            id: "action-tag",
+            label: "Tag player",
+            sub: targetName(tagTarget),
+            run: close(() => setTagging(tagTarget)),
+          },
+          {
+            id: "action-link-profile",
+            label: "Link profile",
+            sub: targetName(tagTarget),
+            run: close(() => setLinking(tagTarget)),
+          },
+          {
+            id: "action-spotlight",
+            label: "Spotlight",
+            sub: spotlight ? "On" : "Off",
+            on: spotlight,
+            run: () => setSpotlight((s) => !s),
+          },
+        ]
+      : []),
+    {
+      id: "nav-clips",
+      label: "Clips",
+      sub: "Saved clips",
+      run: close(() => navigate({ name: "clips", gameId })),
+    },
+    {
+      id: "nav-search",
+      label: "Search",
+      sub: "Find a play",
+      run: close(() => navigate({ name: "search", gameId })),
+    },
+    {
+      id: "nav-advice",
+      label: "Advice",
+      sub: "Tips from the stats",
+      run: close(() => navigate({ name: "advice", gameId })),
+    },
+    {
+      id: "nav-pair",
+      label: "On your phone",
+      sub: "Pair to clip and search",
+      run: close(() => navigate({ name: "pair", gameId })),
+    },
+  ];
+
+  // ---------------------------------------------------------------- render
   const cropRect = crop ? cropRectAt(crop, t) : null;
-  const spotPlayers = players.filter((p) => p.id === pid).map((p) => ({ ...p, bb: mapBB(p.bb, cropRect) }));
-  const onBroadcast = broadcastOn && !!broadcast;
-  const src = onBroadcast && broadcast ? broadcast.url : source.src;
+  const spotPlayers = players
+    .filter((p) => p.id === pid)
+    .map((p) => ({ ...p, bb: mapBB(p.bb, cropRect) }));
+  const onBroadcast = commentaryOn && !!broadcast && !condensedSrc;
+  const src =
+    condensedSrc ?? (onBroadcast && broadcast ? broadcast.url : source.src);
   const showFollowFrame = !!pid && mode !== "select" && src === wideUrl;
   const stageW = Math.min(winW, (winH * 16) / 9);
-  const caption = captionsOn ? captionAt(lines, t) : null;
-  const shown = chrome || menu !== null;
+  const caption = commentaryOn && !layer ? captionAt(lines, t) : null;
+  const rally = condensedSrc
+    ? rallyAtCondensed(rallies?.rallies ?? [], t)
+    : null;
+  const indicator = reel
+    ? {
+        text: `${reel.name}, ${reel.i + 1} of ${reel.segs.length}`,
+        index: reel.i + 1,
+        count: reel.segs.length,
+      }
+    : condensedSrc
+      ? {
+          text: rally
+            ? `Condensed, rally ${rally.n} of ${rallies?.n ?? 0}`
+            : "Condensed",
+          index: rally?.n ?? 0,
+          count: rallies?.n ?? 0,
+        }
+      : null;
+  const playhead = cue ? cue.t : t;
 
   return (
-    <View style={styles.screen} testID="watch" dataSet={{ mode, broadcast: onBroadcast ? "true" : "false" }}>
+    <View
+      style={styles.screen}
+      testID="watch"
+      dataSet={{
+        mode,
+        layer: layer ?? "",
+        way,
+        broadcast: onBroadcast ? "true" : "false",
+      }}
+    >
       <View style={{ width: stageW }}>
         {/* The broadcast rendition carries its own audio mix (game audio, stings, ducked
             narration — D-43), so it plays with sound; the raw wide shot stays muted. */}
         <PlayerSurface
+          key={condensedSrc ? "condensed" : "game"}
           ref={setHandle}
           src={src}
-          crop={!onBroadcast && source.useCrop ? crop : null}
+          crop={!onBroadcast && !condensedSrc && source.useCrop ? crop : null}
           muted={!onBroadcast}
         >
           {mode === "select" ? (
-            <SelectOverlay players={players} roster={roster} focusId={focusId} spotlight={spotlight} />
+            <SelectOverlay
+              players={players}
+              roster={roster}
+              focusId={focusId}
+              spotlight={spotlight}
+            />
           ) : null}
           {mode === "follow" ? (
-            <>
-              <SelectOverlay
-                players={spotPlayers}
-                roster={roster}
-                focusId={pid}
-                spotlight={spotlight}
-                showBoxes={false}
-              />
-              <View style={styles.followBadge} testID="followcam-active" dataSet={{ playerId: pid ?? "" }}>
-                <T style={styles.badgeText}>FOLLOW • {followName?.name ?? pid}</T>
-              </View>
-              {rendering ? (
-                <View style={[styles.followBadge, { top: BELOW_BAR + px(64) }]} testID="rendering-badge">
-                  <T style={styles.badgeText}>rendering…</T>
-                </View>
-              ) : null}
-            </>
+            <SelectOverlay
+              players={spotPlayers}
+              roster={roster}
+              focusId={pid}
+              spotlight={spotlight}
+              showBoxes={false}
+            />
           ) : null}
           {showFollowFrame && pid ? (
             <FollowFrame
@@ -418,110 +1120,115 @@ export function Watch({
               crop={source.useCrop ? crop : null}
             />
           ) : null}
-          {caption ? (
-            // M7 grounded commentary as captions, timed by the clock (audio_t / audio_s).
-            <View style={[styles.caption, { bottom: shown ? px(250) : px(64) }]}>
-              <T style={styles.captionText} testID="caption" dataSet={{ t: caption.audio_t ?? caption.t }}>
-                {caption.text}
-              </T>
-            </View>
-          ) : null}
-          {toast ? (
-            <View style={styles.toast} testID="toast">
-              <T style={styles.badgeText}>{toast}</T>
-            </View>
-          ) : null}
         </PlayerSurface>
 
-        <View
-          style={[StyleSheet.absoluteFill, { opacity: shown ? 1 : 0 }]}
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { opacity: fade }]}
           pointerEvents="none"
-          testID="watch-chrome"
+          testID="transport"
           dataSet={{ hidden: shown ? "false" : "true" }}
         >
+          <Fade side="top" length={px(240)} strength={0.7} />
+          <Fade side="bottom" length={px(420)} strength={0.85} />
           <View style={styles.top}>
-            {/* One row at a time: the top entries, or the open group's items. Every item
-                is in the tree (hidden rows display:none) so an item's presence still says
-                whether the game has that data. */}
-            {[null, ...menuItems.filter((m) => m.items).map((m) => m.id)].map((group) => {
-              const open = (menu?.group ?? null) === group;
-              const entries = group === null ? menuItems : (menuItems.find((m) => m.id === group)?.items ?? []);
-              return (
+            {mode === "select" ? (
+              <T style={type.meta} testID="select-hint">
+                Pick a player, then Select to follow
+              </T>
+            ) : mode === "follow" ? (
+              <View
+                style={styles.followChip}
+                testID="followcam-active"
+                dataSet={{ playerId: pid ?? "" }}
+              >
                 <View
-                  key={group ?? "top"}
-                  style={[styles.menuRow, !open && { display: "none" }]}
-                  testID={group ? `menu-row-${group}` : "menu-row"}
-                  dataSet={{ open: open ? "true" : "false" }}
-                >
-                  {group ? (
-                    <T style={styles.crumb}>{menuItems.find((m) => m.id === group)?.label.replace(" ▸", "")} ›</T>
-                  ) : null}
-                  {entries.map((m, i) => {
-                    const on = m.action === "broadcast" ? onBroadcast : m.action === "captions" ? captionsOn : null;
-                    return (
-                      <Pill
-                        key={m.id}
-                        testID={m.id}
-                        label={m.label}
-                        focused={open && menu?.i === i}
-                        active={!!on}
-                        dataSet={{ group: group ?? "", ...(on === null ? {} : { on: on ? "true" : "false" }) }}
-                      />
-                    );
-                  })}
-                </View>
-              );
-            })}
-            <T style={styles.title} numberOfLines={1}>
-              {game.title}
+                  style={[
+                    styles.teamDot,
+                    { backgroundColor: followName?.color_hex ?? color.chalk },
+                  ]}
+                />
+                <T style={type.meta}>{pid ? targetName(pid) : ""}</T>
+                {rendering ? (
+                  <T style={[type.meta, styles.dim]} testID="rendering-badge">
+                    {"  "}getting the follow view ready
+                  </T>
+                ) : null}
+              </View>
+            ) : (
+              <T
+                style={[type.meta, { maxWidth: px(1100) }]}
+                numberOfLines={1}
+                testID="watch-title"
+              >
+                {info.title}
+              </T>
+            )}
+          </View>
+          <Timeline
+            duration={duration}
+            t={playhead}
+            moments={lineMoments}
+            seek={seekV}
+            storyboard={condensedSrc ? null : storyboard}
+          />
+        </Animated.View>
+
+        {indicator ? (
+          <View
+            style={styles.indicator}
+            testID="way-indicator"
+            dataSet={{ way, index: indicator.index, count: indicator.count }}
+          >
+            <T style={type.meta}>{indicator.text}</T>
+          </View>
+        ) : null}
+
+        {caption ? (
+          // M7 grounded commentary as captions, timed by the clock (audio_t / audio_s).
+          <View
+            style={[
+              styles.caption,
+              { bottom: shown ? safe.y + TIMELINE_H + sp(4) : safe.y },
+            ]}
+          >
+            <T
+              style={[type.body, styles.captionText]}
+              testID="caption"
+              dataSet={{ t: caption.audio_t ?? caption.t }}
+            >
+              {caption.text}
             </T>
           </View>
+        ) : null}
 
-          {mode !== "follow" ? (
-            <View style={[styles.modePill, mode === "select" && { backgroundColor: color.accent }]}>
-              <T
-                style={[styles.badgeText, { color: mode === "select" ? color.onAccent : color.fg }]}
-                testID="mode-pill"
-              >
-                {mode === "select" ? "SELECT" : onBroadcast ? "BROADCAST" : "WIDE"}
-              </T>
-            </View>
-          ) : null}
-
-          {/* The broadcast draws its own graphics; the inset would sit on top of them. */}
-          {onBroadcast ? null : (
-            <View style={styles.inset}>
-              <CourtInset
-                court={game.sport_ui?.court}
-                variant={game.court.variant}
-                players={players}
-                roster={roster}
-                selectedId={mode === "follow" ? pid : focusId}
-              />
-            </View>
-          )}
-
-          <View style={styles.transport}>
-            <SeekBar
-              duration={duration}
-              current={t}
-              events={sorted}
-              focused={mode !== "select" && menu === null}
-              hype={hypeBarsMemo}
-            />
-            <Hint>
-              {menu !== null
-                ? menu.group
-                  ? "Left/Right pick an action · Select runs it · Back returns to the menu"
-                  : "Left/Right pick · Select runs or opens a group (▸) · Down or Back closes"
-                : mode === "select"
-                  ? "Arrows pick a player · Select follows · Up at the top opens actions · Back exits"
-                  : mode === "follow"
-                    ? "Select plays/pauses · Left/Right scrub · Up actions · Back returns to wide"
-                    : "Select pauses to pick a player · Left/Right scrub 5 s · Up actions · Back to library"}
-            </Hint>
+        {toast ? (
+          <View style={styles.toast} testID="toast">
+            <T style={type.body}>{toast}</T>
           </View>
-        </View>
+        ) : null}
+
+        {layer === "moments" ? (
+          <MomentsLayer
+            moments={moments}
+            t={layerT}
+            empty={
+              feature("moments")?.state === "pending"
+                ? `Finding the big moments, ${etaText(feature("moments")?.eta_s) || "soon"}`
+                : "No moments in this game yet"
+            }
+            onCue={setCue}
+            onJump={toMoment}
+            onClose={closeLayer}
+            onPlayPause={toggle}
+          />
+        ) : null}
+        {layer === "domore" ? (
+          <DoMoreLayer
+            tiles={tiles}
+            onClose={closeLayer}
+            onPlayPause={toggle}
+          />
+        ) : null}
       </View>
 
       {tagging ? (
@@ -530,7 +1237,9 @@ export function Watch({
           title={`Tag player ${tagging}`}
           initial={roster.find((p) => p.id === tagging)?.name}
           presets={PRESET_NAMES.filter(
-            (n) => n === roster.find((p) => p.id === tagging)?.name || !roster.some((p) => p.name === n),
+            (n) =>
+              n === roster.find((p) => p.id === tagging)?.name ||
+              !roster.some((p) => p.name === n),
           )}
           format={titleCase}
           dataSet={{ playerId: tagging }}
@@ -540,7 +1249,9 @@ export function Watch({
             setTagging(null);
             api
               .patchPlayer(game.id, target, { name })
-              .then((p) => setRoster((prev) => prev.map((r) => (r.id === p.id ? p : r))))
+              .then((p) =>
+                setRoster((prev) => prev.map((r) => (r.id === p.id ? p : r))),
+              )
               .catch(() => {});
           }}
         />
@@ -550,13 +1261,24 @@ export function Watch({
         <ProfilePicker
           gameId={game.id}
           playerId={linking}
-          playerLabel={roster.find((p) => p.id === linking)?.name ?? `#${linking}`}
+          playerLabel={
+            roster.find((p) => p.id === linking)?.name ?? `#${linking}`
+          }
           onCancel={() => setLinking(null)}
           onLinked={(p) => {
             const target = linking;
             setLinking(null);
             setRoster((prev) =>
-              prev.map((r) => (r.id === target ? { ...r, name: p.name, tagged: true, profile_id: p.profile_id } : r)),
+              prev.map((r) =>
+                r.id === target
+                  ? {
+                      ...r,
+                      name: p.name,
+                      tagged: true,
+                      profile_id: p.profile_id,
+                    }
+                  : r,
+              ),
             );
             setToast(`Linked to ${p.name}`);
           }}
@@ -567,58 +1289,41 @@ export function Watch({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
+  screen: {
+    flex: 1,
+    backgroundColor: "#000",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   top: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    paddingHorizontal: px(48),
-    paddingTop: px(28),
-    paddingBottom: px(12),
-    backgroundColor: "rgba(5, 7, 10, 0.78)",
+    left: safe.x,
+    right: safe.x,
+    top: safe.y,
+    flexDirection: "row",
   },
-  // never wraps: the menu is one row at 1080p (groups open in place of it)
-  menuRow: { flexDirection: "row", alignItems: "center" },
-  crumb: { color: color.accent, fontSize: font.body, fontWeight: "700", marginRight: px(16), marginBottom: px(12) },
-  title: { color: color.dim, fontSize: font.body },
-  modePill: {
-    position: "absolute",
-    right: px(48),
-    top: BELOW_BAR,
-    backgroundColor: color.scrim,
-    paddingHorizontal: px(18),
-    paddingVertical: px(4),
+  dim: { color: color.bleacher },
+  followChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: sp(2),
+    borderRadius: radius.chip,
+    backgroundColor: color.bench,
+  },
+  teamDot: {
+    width: px(16),
+    height: px(16),
     borderRadius: px(8),
+    marginRight: sp(1.5),
   },
-  inset: {
+  indicator: {
     position: "absolute",
-    right: px(48),
-    bottom: px(190),
-    padding: px(10),
-    backgroundColor: color.scrim,
-    borderRadius: px(10),
+    right: safe.x,
+    top: safe.y,
+    paddingHorizontal: sp(2),
+    borderRadius: radius.chip,
+    backgroundColor: "rgba(18, 26, 35, 0.72)",
   },
-  transport: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: px(48),
-    paddingTop: px(28),
-    paddingBottom: px(28),
-    backgroundColor: "rgba(5, 7, 10, 0.82)",
-  },
-  followBadge: {
-    position: "absolute",
-    left: px(48),
-    top: BELOW_BAR,
-    backgroundColor: color.accent,
-    paddingHorizontal: px(18),
-    paddingVertical: px(4),
-    borderRadius: px(8),
-  },
-  badgeText: { color: color.onAccent, fontSize: font.body, fontWeight: "800" },
   caption: {
     position: "absolute",
     left: px(240),
@@ -626,21 +1331,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   captionText: {
-    fontSize: px(36),
-    fontWeight: "600",
     textAlign: "center",
-    paddingHorizontal: px(24),
-    paddingVertical: px(10),
-    borderRadius: px(8),
-    backgroundColor: "rgba(5, 7, 10, 0.85)",
+    paddingHorizontal: sp(3),
+    paddingVertical: sp(1),
+    borderRadius: radius.card,
+    backgroundColor: "rgba(18, 26, 35, 0.84)",
   },
   toast: {
     position: "absolute",
     alignSelf: "center",
-    top: BELOW_BAR,
-    backgroundColor: color.accent,
-    paddingHorizontal: px(24),
-    paddingVertical: px(8),
-    borderRadius: px(8),
+    top: safe.y + px(64),
+    paddingHorizontal: sp(3),
+    paddingVertical: sp(1),
+    borderRadius: radius.card,
+    backgroundColor: color.bench,
   },
 });

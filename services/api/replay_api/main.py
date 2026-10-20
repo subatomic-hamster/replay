@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import copy
+import fnmatch
 import json
 import logging
 import math
 import secrets
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import (
@@ -24,7 +26,8 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from . import auth, cloud_routes, discovery_routes, edits, plays_routes, providers
+from . import auth, cloud_routes, discovery_routes, edits, plays_routes, providers, readiness
+from . import moments as moments_mod
 from . import pipeline_adapter as adapter
 from . import stats as stats_mod
 from .config import Settings, from_env
@@ -264,7 +267,49 @@ def _thumbnail_rel(game: dict, storage: LocalStorage) -> str | None:
     return rel if storage.path(game["id"], rel).is_file() else None
 
 
-def _summary(game: dict, storage: LocalStorage, base: str) -> dict:
+def _has(storage: LocalStorage, game_id: str) -> Callable[[str], bool]:
+    """has(pattern): whether a game-relative glob matches a file. Cloud mode lists the
+    game prefix once (no downloads); local mode globs the folder."""
+    if hasattr(storage, "listing"):
+        # ponytail: one LIST (per 1000 objects) per game per call; a per-game manifest
+        # object if the library's GET /games grows slow
+        keys = list(storage.listing(game_id))
+        return lambda pat: any(fnmatch.fnmatchcase(k, pat) for k in keys)
+    root = storage.game_dir(game_id)
+    return lambda pat: any(p.is_file() for p in root.glob(pat))
+
+
+def _tv(game: dict, state, base: str) -> dict:
+    """The TV redesign's additive keys (docs/ux/redesign.md): hero art, the storyboard,
+    `watchable`, `eta_s`, `stage_label`, `features`. `game` has job progress merged."""
+    storage, s = state.storage, state.settings
+    has = _has(storage, game["id"])
+    out = readiness.fields(game, has, s.worker_stages, s.cloud)
+    if has(moments_mod.HERO_REL):
+        out["hero_url"] = storage.url(game["id"], moments_mod.HERO_REL, base)
+    if has(moments_mod.STORYBOARD_REL):
+        out["storyboard_url"] = f"{base}/games/{game['id']}/storyboard"
+    return out
+
+
+def _bookmark_frame(state, game_id: str, event: dict) -> None:
+    """Best effort: the moment thumb for a bookmark made after processing (the worker's
+    moments stage makes the rest). Cloud reads the frame through a presigned GET."""
+    storage = state.storage
+    dst = storage.path(game_id, f"{moments_mod.THUMB_DIR}/{event['id']}.jpg")
+    try:
+        if state.settings.cloud:
+            adapter.grab_frame_url(
+                storage.presign_get(game_id, moments_mod.WIDE_REL), dst, event["t_key"]
+            )
+        elif storage.path(game_id, moments_mod.WIDE_REL).is_file():
+            adapter.grab_frame(storage.path(game_id, moments_mod.WIDE_REL), dst, event["t_key"])
+    except Exception as exc:  # noqa: BLE001 - a bookmark never fails over its picture
+        log.warning("no frame for bookmark %s (%s)", event["id"], exc)
+
+
+def _summary(game: dict, state, base: str) -> dict:
+    storage = state.storage
     thumb = _thumbnail_rel(game, storage)
     # `progress` rides along only while a job is running, same as GET /games/{id}.
     extra = {"progress": game["progress"]} if game.get("progress") else {}
@@ -278,6 +323,7 @@ def _summary(game: dict, storage: LocalStorage, base: str) -> dict:
         "thumb_url": storage.url(game["id"], thumb, base) if thumb else None,
         "recorded_at": game.get("recorded_at"),
         "sport": game.get("sport"),
+        **_tv(game, state, base),
     }
 
 
@@ -413,15 +459,51 @@ def _register_routes(app: FastAPI) -> None:
     def list_games(request: Request):
         ctx = _ctx(request)
         base = _base(request)
-        return [
-            _summary(_with_job_progress(g, ctx.jobs), ctx.storage, base) for g in ctx.index.list()
-        ]
+        return [_summary(_with_job_progress(g, ctx.jobs), ctx, base) for g in ctx.index.list()]
 
     @app.get("/games/{game_id}")
     def get_game(request: Request, game_id: str):
         ctx = _ctx(request)
+        base = _base(request)
+        game = _with_job_progress(
+            _resolve_urls(_game_or_404(request, game_id), ctx.storage, base), ctx.jobs
+        )
+        game.update(_tv(game, ctx, base))
+        rend = game["renditions"]
+        if game["watchable"] and not rend.get("wide"):  # mid-run: the stub has no wide yet
+            rend["wide"] = ctx.storage.url(game_id, moments_mod.WIDE_REL, base)
+        return game
+
+    @app.get("/games/{game_id}/moments")
+    def game_moments(request: Request, game_id: str):
+        """Detected events worth jumping to, labelled from the live events.json (edits and
+        dismissals show at once), each with its frame when the worker or a bookmark made one."""
+        ctx = _ctx(request)
         game = _game_or_404(request, game_id)
-        return _with_job_progress(_resolve_urls(game, ctx.storage, _base(request)), ctx.jobs)
+        storage, base = ctx.storage, _base(request)
+        index = storage.path(game_id, moments_mod.REL)
+        made = json.loads(index.read_text()).get("moments", []) if index.is_file() else []
+        thumbs = {m["id"]: m["thumb"] for m in made if m.get("thumb")}
+        out = []
+        for m in moments_mod.moments(_events(storage, game_id), game):
+            rel = thumbs.get(m["id"])
+            if rel is None and m["kind"] == "bookmark":  # grabbed when the bookmark was made
+                own = f"{moments_mod.THUMB_DIR}/{m['id']}.jpg"
+                rel = own if storage.path(game_id, own).is_file() else None
+            out.append({**m, "thumb_url": storage.url(game_id, rel, base) if rel else None})
+        return out
+
+    @app.get("/games/{game_id}/storyboard")
+    def storyboard(request: Request, game_id: str):
+        """Seek previews (replay.storyboard.v1) with absolute sheet URLs."""
+        _game_or_404(request, game_id)
+        storage = _ctx(request).storage
+        path = storage.path(game_id, moments_mod.STORYBOARD_REL)
+        if not path.is_file():
+            raise HTTPException(404, f"no storyboard for game {game_id} yet")
+        doc = json.loads(path.read_text())
+        doc["sheets"] = [storage.url(game_id, s, _base(request)) for s in doc["sheets"]]
+        return doc
 
     @app.get("/games/{game_id}/jobs")
     def game_jobs(request: Request, game_id: str):
@@ -472,9 +554,9 @@ def _register_routes(app: FastAPI) -> None:
         # D-14: calibration happens before processing, so the frame to click on has to
         # exist now. One ffmpeg -frames:v 1 on a local file, ~100 ms.
         storage = _ctx(request).storage
-        adapter.grab_frame(
-            storage.path(game["id"], SOURCE_REL), storage.path(game["id"], CALIB_REL), 5.0
-        )
+        src = storage.path(game["id"], SOURCE_REL)
+        adapter.grab_frame(src, storage.path(game["id"], CALIB_REL), 5.0)
+        readiness.set_duration(game, adapter.video_duration(src))  # the ETA scales with it
         game["status"] = "uploaded"
         _ctx(request).index.save(game)
         return {"id": game["id"], "size": size, "status": "uploaded"}
@@ -720,6 +802,7 @@ def _register_routes(app: FastAPI) -> None:
         gd = ctx.storage.game_dir(game_id)
         edits.add(gd, EVENTS_REL, event)
         edits.apply(gd, (EVENTS_REL,))
+        _bookmark_frame(ctx, game_id, event)
         return event
 
     # ---------------------------------------------------------------- query & stats

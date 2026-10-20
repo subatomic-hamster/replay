@@ -16,6 +16,7 @@ MODULES = [
     "replay_worker.stages.discovery",
     "replay_worker.stages.tierc",
     "replay_worker.stages.faces",
+    "replay_worker.stages.preview",
 ]
 
 

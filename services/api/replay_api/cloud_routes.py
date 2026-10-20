@@ -5,6 +5,7 @@ in local mode (the existing PUT /games/{id}/upload is the local path).
     POST /games/{id}/upload/multipart {size, content_type}  -> {upload_id, part_size, parts}
     POST /games/{id}/upload/complete  {upload_id, parts: [{n, etag}]}  -> the game
     POST /games/{id}/upload/abort     {upload_id}
+    GET  /games/{id}/upload/parts?upload_id=&size=  -> {upload_id, part_size, done, parts}
     POST /worker/claim                           -> 204 | {job, game_id, files}
     POST /worker/jobs/{job_id}/progress {stage, fraction, ...}
     POST /worker/jobs/{job_id}/upload-urls {paths}  -> {path: presigned PUT}
@@ -17,10 +18,11 @@ import math
 import time
 from typing import Any
 
-from fastapi import Body, FastAPI, HTTPException, Request, Response
+from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from . import pipeline_adapter as adapter
+from .readiness import set_duration
 
 SOURCE_REL = "source.mp4"
 CALIB_REL = "media/calib.jpg"
@@ -73,26 +75,70 @@ def register(app: FastAPI, game_or_404, resolve_urls) -> None:
         code = getattr(exc, "response", {}).get("Error", {}).get("Code", type(exc).__name__)
         return HTTPException(400, f"S3 refused the upload: {code}")
 
+    def part_size(size: int) -> int:
+        part = PART_BYTES
+        while math.ceil(size / part) > MAX_PARTS:
+            part *= 2
+        return part
+
+    def part_urls(st, game_id: str, upload_id: str, numbers) -> list[dict]:
+        params = {"Bucket": st.storage.bucket, "Key": st.storage.key(game_id, SOURCE_REL),
+                  "UploadId": upload_id}  # fmt: skip
+        return [
+            {"n": n, "url": st.storage.s3.generate_presigned_url(
+                "upload_part", Params={**params, "PartNumber": n}, ExpiresIn=PUT_TTL_S)}
+            for n in numbers
+        ]  # fmt: skip
+
     @app.post("/games/{game_id}/upload/multipart")
     def multipart_init(request: Request, game_id: str, body: MultipartInit):
         st = cloud_or_409(request)
         game_or_404(request, game_id)
-        part = PART_BYTES
-        while math.ceil(body.size / part) > MAX_PARTS:
-            part *= 2
+        part = part_size(body.size)
         s3, bucket, key = st.storage.s3, st.storage.bucket, st.storage.key(game_id, SOURCE_REL)
         up = s3.create_multipart_upload(Bucket=bucket, Key=key, ContentType=body.content_type)
-        params = {"Bucket": bucket, "Key": key, "UploadId": up["UploadId"]}
-        urls = [
-            {
-                "n": n,
-                "url": s3.generate_presigned_url(
-                    "upload_part", Params={**params, "PartNumber": n}, ExpiresIn=PUT_TTL_S
-                ),
-            }
-            for n in range(1, math.ceil(body.size / part) + 1)
-        ]
+        urls = part_urls(st, game_id, up["UploadId"], range(1, math.ceil(body.size / part) + 1))
         return {"upload_id": up["UploadId"], "part_size": part, "parts": urls}
+
+    @app.get("/games/{game_id}/upload/parts")
+    def multipart_parts(
+        request: Request,
+        game_id: str,
+        upload_id: str = Query(min_length=1, max_length=1024),
+        size: int = Query(gt=0, le=MAX_OBJECT_BYTES),
+    ):
+        """Resume a phone upload: the parts S3 already holds (full-size ones only; a part
+        cut short by a dropped connection is sent again) and fresh URLs for the rest. The
+        upload id only names an upload of this game's source key, so it cannot reach
+        another game's. 404 when S3 no longer has the upload (completed or aborted)."""
+        st = cloud_or_409(request)
+        game_or_404(request, game_id)
+        part = part_size(size)
+        total = math.ceil(size / part)
+        want = {n: min(part, size - (n - 1) * part) for n in range(1, total + 1)}
+        done = []
+        s3, bucket, key = st.storage.s3, st.storage.bucket, st.storage.key(game_id, SOURCE_REL)
+        # S3 itself refuses an upload id of another key; checked here too (cheap: a game's
+        # source key has a handful of open uploads at most) so no store can be talked into it
+        try:
+            ups = s3.list_multipart_uploads(Bucket=bucket, Prefix=key).get("Uploads", [])
+            mine = upload_id in {u["UploadId"] for u in ups if u["Key"] == key}
+            pages = s3.get_paginator("list_parts").paginate(
+                Bucket=bucket, Key=key, UploadId=upload_id
+            )
+            for page in pages if mine else ():
+                done += [{"n": p["PartNumber"], "etag": p["ETag"], "size": p["Size"]}
+                         for p in page.get("Parts", []) if want.get(p["PartNumber"]) == p["Size"]]  # fmt: skip
+        except Exception as exc:  # botocore ClientError; boto3 is cloud-only
+            code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+            if code in ("NoSuchUpload", "404"):
+                raise HTTPException(404, "that upload is gone; start a new one") from exc
+            raise s3_error(exc) from exc
+        if not mine:
+            raise HTTPException(404, "that upload is gone; start a new one")
+        have = {p["n"] for p in done}
+        return {"upload_id": upload_id, "part_size": part, "done": done,
+                "parts": part_urls(st, game_id, upload_id, [n for n in want if n not in have])}  # fmt: skip
 
     @app.post("/games/{game_id}/upload/complete")
     def multipart_complete(request: Request, game_id: str, body: MultipartComplete):
@@ -116,9 +162,11 @@ def register(app: FastAPI, game_or_404, resolve_urls) -> None:
             storage.s3.delete_object(Bucket=storage.bucket, Key=key)
             raise HTTPException(415, "the upload is not an MP4 or MOV video")
         # D-14: the frame to calibrate on, read through a presigned GET (no download)
+        meta: dict = {}
         adapter.grab_frame_url(
-            storage.presign_get(game_id, SOURCE_REL), storage.path(game_id, CALIB_REL), 5.0
+            storage.presign_get(game_id, SOURCE_REL), storage.path(game_id, CALIB_REL), 5.0, meta
         )
+        set_duration(game, meta.get("duration_s"))  # the ETA scales with it
         game["status"] = "uploaded"
         st.index.save(game)
         return resolve_urls(game, storage, str(request.base_url).rstrip("/"))

@@ -53,7 +53,7 @@ every existing route and test. Cloud mode is `REPLAY_STORAGE=s3` + `REPLAY_JOBS=
   `base64url(game_id "." exp "." HMAC-SHA256(secret, game_id "." exp))`, exp = now + 24 h.
   Accepted (instead of the key) only on routes for that same game: `GET /games/{id}`,
   `GET /games/{id}/jobs` / status, upload init/complete, calibration GET/PUT,
-  autocalibrate, process.
+  autocalibrate, process, upload parts (resume). Not `/moments` or `/storyboard`.
 - `X-Replay-Worker-Key`: hfbox runner key (`REPLAY_WORKER_KEY`), only on `/worker/...`.
 - Secret values come from SSM: `REPLAY_SSM_PREFIX` (e.g. `/replay/`) + `api-key`,
   `worker-key`, `upload-token-secret`, read once per cold start. Local mode reads the
@@ -81,6 +81,13 @@ every existing route and test. Cloud mode is `REPLAY_STORAGE=s3` + `REPLAY_JOBS=
   OpenCV reading a presigned GET URL, no ffmpeg binary), sets status `uploaded`, returns
   the game.
 - `POST /games/{id}/upload/abort` `{upload_id}`.
+- `GET /games/{id}/upload/parts?upload_id=&size=` (token allowed) ->
+  `{upload_id, part_size, done: [{n, etag, size}], parts: [{n, url}]}`: resume. `done` lists the full-size parts S3
+  holds (a part cut short goes again), `parts` fresh URLs for the rest; 404 once the upload
+  is completed or aborted. The upload id only names an upload of this game's source key.
+  The phone keeps `{upload_id, part_size, name, size, etags}` in localStorage under
+  `replay.upload.<game id>`; re-picking the same file (name + size) after a reload or a
+  dropped connection sends only the missing parts. Only Cancel aborts.
 - Bucket CORS allows PUT from the web origin and exposes `ETag`.
 
 ### Media
@@ -107,7 +114,9 @@ runs in Lambda. Claiming uses S3 conditional writes (`If-None-Match: *` on
 Runner on hfbox: `python -m replay_api.remote_runner --api <base>` (env
 `REPLAY_WORKER_KEY`, `REPLAY_DATA_DIR` as its local mirror). It polls every 30 s, mirrors
 the game folder, runs the job with the same local code paths (`pipeline_adapter`, the
-autocalib task), uploads new or changed files, and finishes the job. It runs in a named
+autocalib task), uploads new or changed files, and finishes the job. While a process job
+runs, files under `media/` and `storyboard/` go up after every stage (background thread),
+so the TV can play the mezzanine (`watchable`) and scrub before the run ends. It runs in a named
 tmux session and takes the GPU lock through the worker as today.
 
 ### Cloud-mode gaps (documented, not hidden)

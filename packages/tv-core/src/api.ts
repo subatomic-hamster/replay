@@ -10,7 +10,9 @@ import type {
   Game,
   GameEvent,
   GameSummary,
+  Moment,
   MultipartInit,
+  MultipartParts,
   Player,
   QueryResult,
   RenderJob,
@@ -18,6 +20,7 @@ import type {
   Session,
   SportProfile,
   Stats,
+  Storyboard,
   TracksChunk,
 } from "./types";
 import type { ReplayManifest, ReplaySummary } from "./replays";
@@ -64,14 +67,43 @@ export interface CalibrationPayload {
 export interface ReplayApi {
   listSports(): Promise<SportProfile[]>;
   createGame(title: string, sport: string): Promise<CreateGameResult>;
-  upload(uploadUrl: string, file: File, onProgress: (pct: number) => void): Promise<void>;
+  upload(
+    uploadUrl: string,
+    file: File,
+    onProgress: (pct: number) => void,
+  ): Promise<void>;
   /** D-80 phone upload: presigned part URLs (409 in local mode — use `upload`). */
-  initMultipart(gameId: string, size: number, contentType: string): Promise<MultipartInit>;
-  completeMultipart(gameId: string, uploadId: string, parts: { n: number; etag: string }[]): Promise<Game>;
+  initMultipart(
+    gameId: string,
+    size: number,
+    contentType: string,
+  ): Promise<MultipartInit>;
+  completeMultipart(
+    gameId: string,
+    uploadId: string,
+    parts: { n: number; etag: string }[],
+  ): Promise<Game>;
   abortMultipart(gameId: string, uploadId: string): Promise<void>;
-  calibrate(gameId: string, payload: CalibrationPayload): Promise<CalibrationResult>;
+  /** Resume: the parts S3 already holds and fresh URLs for the rest (404: upload gone). */
+  listMultipartParts(
+    gameId: string,
+    uploadId: string,
+    size: number,
+  ): Promise<MultipartParts>;
+  /** TV redesign: detected events worth jumping to, with labels and thumbs (sorted by t). */
+  getMoments(gameId: string): Promise<Moment[]>;
+  /** Seek previews from `game.storyboard_url` (rejects when the game has none). */
+  getStoryboard(game: Game): Promise<Storyboard>;
+  calibrate(
+    gameId: string,
+    payload: CalibrationPayload,
+  ): Promise<CalibrationResult>;
   /** D-23: queue a landmark proposal for this game's calibration frame. */
-  startAutoCalibration(gameId: string, sport: string, variant: string): Promise<AutoCalibrationJob>;
+  startAutoCalibration(
+    gameId: string,
+    sport: string,
+    variant: string,
+  ): Promise<AutoCalibrationJob>;
   /** Poll it — the model call takes tens of seconds. */
   getAutoCalibration(gameId: string): Promise<AutoCalibration>;
   startProcessing(gameId: string): Promise<void>;
@@ -84,7 +116,11 @@ export interface ReplayApi {
   ): Promise<Player>;
   getEvents(game: Game): Promise<GameEvent[]>;
   createEvent(gameId: string, body: Partial<GameEvent>): Promise<GameEvent>;
-  patchEvent(gameId: string, eventId: string, body: Partial<GameEvent>): Promise<GameEvent>;
+  patchEvent(
+    gameId: string,
+    eventId: string,
+    body: Partial<GameEvent>,
+  ): Promise<GameEvent>;
   query(gameId: string, text: string): Promise<QueryResult>;
   getStats(gameId: string): Promise<Stats>;
   getTracksChunk(game: Game, index: number): Promise<TracksChunk>;
@@ -109,14 +145,22 @@ export interface ReplayApi {
   /** M5: "Replay, clip that" clips and the triggers that cut them. */
   listClips(gameId: string): Promise<PlayClip[]>;
   listTriggers(gameId: string): Promise<Trigger[]>;
-  trimClip(gameId: string, clipId: string, t_start: number, t_end: number): Promise<PlayClip>;
+  trimClip(
+    gameId: string,
+    clipId: string,
+    t_start: number,
+    t_end: number,
+  ): Promise<PlayClip>;
   /** Phone tap at media time `t`: resolves to the play that just ended. */
   tap(gameId: string, t: number): Promise<TapResult>;
   /** M11 (D-45..D-48). */
   getHype(gameId: string): Promise<Hype>;
   getRallies(gameId: string): Promise<RallyDoc>;
   renderCondensed(gameId: string): Promise<JobStatus>;
-  exportVertical(gameId: string, body: VerticalRequest): Promise<VerticalExport>;
+  exportVertical(
+    gameId: string,
+    body: VerticalRequest,
+  ): Promise<VerticalExport>;
   getVertical(gameId: string, vid: string): Promise<VerticalExport>;
   getReviewQueue(gameId: string): Promise<ReviewQuestion[]>;
   /** Send one review answer: the option already names its route (D-48). */
@@ -136,7 +180,11 @@ export interface ReplayApi {
   unlinkProfile(id: string, gameId: string, playerId: string): Promise<Profile>;
   getSuggestions(id: string): Promise<ProfileSuggestion[]>;
   /** "Not this person": never suggested to this profile again; answers the new list. */
-  declineSuggestion(id: string, gameId: string, playerId: string): Promise<ProfileSuggestion[]>;
+  declineSuggestion(
+    id: string,
+    gameId: string,
+    playerId: string,
+  ): Promise<ProfileSuggestion[]>;
   getCard(id: string): Promise<PlayerCard>;
   /** Renders card.png (and the best-moment thumbnail) and answers with the card JSON. */
   renderCard(id: string): Promise<PlayerCard>;
@@ -151,8 +199,13 @@ export interface ReplayApi {
 }
 
 /** The review body with the keyboard text filled into `text_field`. */
-export function reviewBody(option: ReviewOption, text?: string): Record<string, unknown> {
-  return option.text_field ? { ...option.body, [option.text_field]: text ?? "" } : option.body;
+export function reviewBody(
+  option: ReviewOption,
+  text?: string,
+): Record<string, unknown> {
+  return option.text_field
+    ? { ...option.body, [option.text_field]: text ?? "" }
+    : option.body;
 }
 
 /** POST /query clips as search hits — the keyword fallback for `search`. */
@@ -184,7 +237,12 @@ const PART_RETRIES = 4;
 
 /** PUT one part straight to its presigned URL; resolves with the part's ETag (the bucket's
  *  CORS has to expose it). */
-function putPart(url: string, body: Blob, onLoaded: (bytes: number) => void, signal: AbortSignal): Promise<string> {
+function putPart(
+  url: string,
+  body: Blob,
+  onLoaded: (bytes: number) => void,
+  signal: AbortSignal,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return reject(new ApiError(0, "upload cancelled"));
     const xhr = new XMLHttpRequest();
@@ -197,7 +255,15 @@ function putPart(url: string, body: Blob, onLoaded: (bytes: number) => void, sig
       settle();
       const etag = xhr.getResponseHeader("ETag");
       if (xhr.status >= 200 && xhr.status < 300 && etag) resolve(etag);
-      else reject(new ApiError(xhr.status, etag || xhr.status >= 300 ? `part upload → ${xhr.status}` : "part upload: no ETag"));
+      else
+        reject(
+          new ApiError(
+            xhr.status,
+            etag || xhr.status >= 300
+              ? `part upload → ${xhr.status}`
+              : "part upload: no ETag",
+          ),
+        );
     };
     xhr.onerror = () => {
       settle();
@@ -214,13 +280,88 @@ function putPart(url: string, body: Blob, onLoaded: (bytes: number) => void, sig
 const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
     const t = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => (clearTimeout(t), resolve()), { once: true });
+    signal.addEventListener("abort", () => (clearTimeout(t), resolve()), {
+      once: true,
+    });
   });
+
+/** What a phone keeps between page loads to resume an upload (D-80 resumable upload). */
+export interface SavedUpload {
+  upload_id: string;
+  part_size: number;
+  /** The file it belongs to: re-picking the same name and size resumes. */
+  name: string;
+  size: number;
+  modified: number;
+  /** Part number -> ETag of every part that finished. */
+  etags: Record<number, string>;
+}
+
+/** The subset of Web Storage the uploader uses (localStorage by default). */
+export type UploadStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+const uploadKey = (gameId: string) => `replay.upload.${gameId}`;
+
+function defaultStore(): UploadStore | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null; // private mode / blocked storage: uploads still work, just not resumable
+  }
+}
+
+/** The unfinished upload this phone started for `gameId`, if any. */
+export function savedUpload(
+  gameId: string,
+  store = defaultStore(),
+): SavedUpload | null {
+  try {
+    const raw = store?.getItem(uploadKey(gameId));
+    return raw ? (JSON.parse(raw) as SavedUpload) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveUpload(
+  gameId: string,
+  up: SavedUpload | null,
+  store: UploadStore | null,
+) {
+  try {
+    if (up) store?.setItem(uploadKey(gameId), JSON.stringify(up));
+    else store?.removeItem(uploadKey(gameId));
+  } catch {
+    /* storage full or blocked: the upload goes on, it just cannot resume */
+  }
+}
+
+// ponytail: name + size, not the date: some phone pickers stamp `lastModified` with the
+// pick time. A content fingerprint (hash of the first part) if two same-sized files ever
+// share a name.
+const sameFile = (up: SavedUpload, f: File) =>
+  up.name === f.name && up.size === f.size;
+
+/** Forget (and abort server-side) this phone's unfinished upload for `gameId`. */
+export async function discardUpload(
+  api: ReplayApi,
+  gameId: string,
+  store = defaultStore(),
+) {
+  const up = savedUpload(gameId, store);
+  saveUpload(gameId, null, store);
+  if (up) await api.abortMultipart(gameId, up.upload_id).catch(() => {});
+}
 
 /** D-80 phone upload: init, PUT the parts (3 in flight, each retried with backoff), complete
  *  with the ETags. Local mode answers the init with 409; then the file goes through the
- *  existing PUT route at `putUrl`. Cancelling (`signal`) or a part out of retries aborts the
- *  multipart upload server-side. */
+ *  existing PUT route at `putUrl`.
+ *
+ *  Resumable: the upload id and every finished part's ETag are kept in `store`
+ *  (localStorage) under the game. Calling again with the same file — after a reload, or
+ *  after a part ran out of retries on a dropped connection — asks the API which parts S3
+ *  holds and sends only the rest (`onResume` gets the share already sent). Only Cancel
+ *  (`signal`) aborts the multipart upload server-side and forgets it. */
 export async function uploadVideo(
   api: ReplayApi,
   gameId: string,
@@ -228,31 +369,106 @@ export async function uploadVideo(
   putUrl: string,
   onProgress: (pct: number) => void,
   signal: AbortSignal,
+  opts: { store?: UploadStore | null; onResume?: (pct: number) => void } = {},
 ): Promise<void> {
-  let init: MultipartInit;
-  try {
-    init = await api.initMultipart(gameId, file.size, file.type || "video/mp4");
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 409) return api.upload(putUrl, file, onProgress);
-    throw e;
+  const store = opts.store === undefined ? defaultStore() : opts.store;
+  let init: MultipartInit | null = null;
+  const loaded = new Map<number, number>();
+  const etags: { n: number; etag: string }[] = [];
+  let saved = savedUpload(gameId, store);
+  if (saved && !sameFile(saved, file)) {
+    await discardUpload(api, gameId, store); // another file: the old parts are useless
+    saved = null;
   }
+  if (saved) {
+    try {
+      const got = await api.listMultipartParts(
+        gameId,
+        saved.upload_id,
+        file.size,
+      );
+      init = {
+        upload_id: got.upload_id,
+        part_size: got.part_size,
+        parts: got.parts,
+      };
+      for (const p of got.done) {
+        etags.push({ n: p.n, etag: p.etag });
+        loaded.set(p.n, p.size);
+      }
+      saved = {
+        ...saved,
+        etags: Object.fromEntries(got.done.map((p) => [p.n, p.etag])),
+      };
+      saveUpload(gameId, saved, store);
+      opts.onResume?.(
+        Math.round(
+          (got.done.reduce((a, p) => a + p.size, 0) / file.size) * 100,
+        ),
+      );
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 404)) throw e;
+      saveUpload(gameId, null, store); // S3 no longer has it: start over
+      saved = null;
+    }
+  }
+  if (!init || !saved) {
+    try {
+      init = await api.initMultipart(
+        gameId,
+        file.size,
+        file.type || "video/mp4",
+      );
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409)
+        return api.upload(putUrl, file, onProgress);
+      throw e;
+    }
+    saved = {
+      upload_id: init.upload_id,
+      part_size: init.part_size,
+      name: file.name,
+      size: file.size,
+      modified: file.lastModified,
+      etags: {},
+    };
+    saveUpload(gameId, saved, store);
+  }
+  const up = init;
+  const record = saved;
   const stop = new AbortController();
   const onCancel = () => stop.abort();
   signal.addEventListener("abort", onCancel, { once: true });
-  const loaded = new Map<number, number>();
   const report = () =>
-    onProgress(Math.min(99, Math.round(([...loaded.values()].reduce((a, b) => a + b, 0) / file.size) * 100)));
-  const queue = [...init.parts];
-  const etags: { n: number; etag: string }[] = [];
+    onProgress(
+      Math.min(
+        99,
+        Math.round(
+          ([...loaded.values()].reduce((a, b) => a + b, 0) / file.size) * 100,
+        ),
+      ),
+    );
+  report();
+  const queue = [...up.parts];
 
   const worker = async () => {
     for (let p = queue.shift(); p; p = queue.shift()) {
       const part = p;
-      const body = file.slice((part.n - 1) * init.part_size, part.n * init.part_size);
+      const body = file.slice(
+        (part.n - 1) * up.part_size,
+        part.n * up.part_size,
+      );
       for (let attempt = 0; ; attempt++) {
         try {
-          const etag = await putPart(part.url, body, (b) => (loaded.set(part.n, b), report()), stop.signal);
+          const etag = await putPart(
+            part.url,
+            body,
+            (b) => (loaded.set(part.n, b), report()),
+            stop.signal,
+          );
           etags.push({ n: part.n, etag });
+          record.etags[part.n] = etag;
+          saveUpload(gameId, record, store);
           break;
         } catch (e) {
           if (stop.signal.aborted || attempt >= PART_RETRIES) throw e;
@@ -267,11 +483,26 @@ export async function uploadVideo(
   try {
     await Promise.all(Array.from({ length: PART_CONCURRENCY }, worker));
     if (stop.signal.aborted) throw new ApiError(0, "upload cancelled");
-    await api.completeMultipart(gameId, init.upload_id, etags.sort((a, b) => a.n - b.n));
+    try {
+      await api.completeMultipart(
+        gameId,
+        up.upload_id,
+        etags.sort((a, b) => a.n - b.n),
+      );
+    } catch (e) {
+      // refused by S3 / not a video: these parts can never complete, so do not resume them
+      if (e instanceof ApiError && e.status >= 400 && e.status !== 401) {
+        await discardUpload(api, gameId, store);
+      }
+      throw e;
+    }
+    saveUpload(gameId, null, store);
     onProgress(100);
   } catch (e) {
     stop.abort(); // the other workers' parts too
-    api.abortMultipart(gameId, init.upload_id).catch(() => {});
+    // Cancel forgets the upload; anything else (a dropped connection, a part out of
+    // retries) keeps it, so the next call resumes instead of starting over
+    if (signal.aborted) await discardUpload(api, gameId, store);
     throw e;
   } finally {
     signal.removeEventListener("abort", onCancel);
@@ -279,12 +510,20 @@ export async function uploadVideo(
 }
 
 /** `uploadToken`: the phone page's per-game capability (D-80), sent instead of a key. */
-export function createHttpApi(apiBase: string, apiKey = "", uploadToken = ""): ReplayApi {
+export function createHttpApi(
+  apiBase: string,
+  apiKey = "",
+  uploadToken = "",
+): ReplayApi {
   const base = apiBase.replace(/\/$/, "");
 
   /** §4.6: game.json media URLs "resolved to absolute" — but tolerate relative ones. */
   function resolveMedia(gameId: string, path: string): string {
-    if (/^(https?:)?\/\//.test(path) || path.startsWith("blob:") || path.startsWith("data:")) {
+    if (
+      /^(https?:)?\/\//.test(path) ||
+      path.startsWith("blob:") ||
+      path.startsWith("data:")
+    ) {
       return path;
     }
     return `${base}/media/games/${gameId}/${path.replace(/^\//, "")}`;
@@ -298,7 +537,10 @@ export function createHttpApi(apiBase: string, apiKey = "", uploadToken = ""): R
     return h;
   }
 
-  async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+  async function req<T>(
+    path: string,
+    init?: RequestInit & { json?: unknown },
+  ): Promise<T> {
     const { json, ...rest } = init ?? {};
     const res = await fetch(`${base}${path}`, {
       ...rest,
@@ -311,7 +553,10 @@ export function createHttpApi(apiBase: string, apiKey = "", uploadToken = ""): R
         (t) => (t ? ((JSON.parse(t) as { detail?: string }).detail ?? t) : ""),
         () => "",
       );
-      throw new ApiError(res.status, detail || `${init?.method ?? "GET"} ${path} → ${res.status}`);
+      throw new ApiError(
+        res.status,
+        detail || `${init?.method ?? "GET"} ${path} → ${res.status}`,
+      );
     }
     if (res.status === 204) return undefined as T;
     const text = await res.text();
@@ -336,17 +581,22 @@ export function createHttpApi(apiBase: string, apiKey = "", uploadToken = ""): R
   return {
     listSports: () => req<SportProfile[]>("/sports"),
     createGame: (title, sport) =>
-      req<CreateGameResult>("/games", { method: "POST", json: { title, sport } }),
+      req<CreateGameResult>("/games", {
+        method: "POST",
+        json: { title, sport },
+      }),
 
     upload(uploadUrl, file, onProgress) {
       // XHR, not fetch: fetch has no upload progress events.
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", uploadUrl);
-        for (const [k, v] of Object.entries(headers(false))) xhr.setRequestHeader(k, v);
+        for (const [k, v] of Object.entries(headers(false)))
+          xhr.setRequestHeader(k, v);
         xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
         xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+          if (e.lengthComputable)
+            onProgress(Math.round((e.loaded / e.total) * 100));
         };
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
@@ -361,11 +611,38 @@ export function createHttpApi(apiBase: string, apiKey = "", uploadToken = ""): R
       });
     },
     initMultipart: (gameId, size, content_type) =>
-      req<MultipartInit>(`/games/${gameId}/upload/multipart`, { method: "POST", json: { size, content_type } }),
+      req<MultipartInit>(`/games/${gameId}/upload/multipart`, {
+        method: "POST",
+        json: { size, content_type },
+      }),
     completeMultipart: (gameId, upload_id, parts) =>
-      req<Game>(`/games/${gameId}/upload/complete`, { method: "POST", json: { upload_id, parts } }),
+      req<Game>(`/games/${gameId}/upload/complete`, {
+        method: "POST",
+        json: { upload_id, parts },
+      }),
     abortMultipart: (gameId, upload_id) =>
-      req<void>(`/games/${gameId}/upload/abort`, { method: "POST", json: { upload_id } }),
+      req<void>(`/games/${gameId}/upload/abort`, {
+        method: "POST",
+        json: { upload_id },
+      }),
+    listMultipartParts: (gameId, uploadId, size) =>
+      req<MultipartParts>(
+        `/games/${gameId}/upload/parts?upload_id=${encodeURIComponent(uploadId)}&size=${size}`,
+      ),
+    getMoments: (gameId) =>
+      req<Moment[]>(`/games/${gameId}/moments`).then((ms) =>
+        ms.map((m) => ({
+          ...m,
+          thumb_url: m.thumb_url && resolveMedia(gameId, m.thumb_url),
+        })),
+      ),
+    getStoryboard: (game) =>
+      game.storyboard_url
+        ? fetchUrl<Storyboard>(game.storyboard_url).then((s) => ({
+            ...s,
+            sheets: s.sheets.map((u) => resolveMedia(game.id, u)),
+          }))
+        : Promise.reject(new ApiError(404, "no storyboard for this game yet")),
 
     // The API takes `variant` and answers 200 `{court, reprojection_error_px}` /
     // 400 `{detail}`; the screens want a flat ok/error result.
@@ -394,45 +671,79 @@ export function createHttpApi(apiBase: string, apiKey = "", uploadToken = ""): R
         method: "POST",
         json: { sport, variant },
       }),
-    getAutoCalibration: (gameId) => req<AutoCalibration>(`/games/${gameId}/calibration/auto`),
-    startProcessing: (gameId) => req<void>(`/games/${gameId}/process`, { method: "POST" }),
+    getAutoCalibration: (gameId) =>
+      req<AutoCalibration>(`/games/${gameId}/calibration/auto`),
+    startProcessing: (gameId) =>
+      req<void>(`/games/${gameId}/process`, { method: "POST" }),
     listGames: () => req<GameSummary[]>("/games"),
     getGame: (gameId) => req<Game>(`/games/${gameId}`),
     // The API answers with the whole game (a merge rewrites the roster); callers want
     // the one player they touched.
     patchPlayer: (gameId, pid, body) =>
-      req<Game>(`/games/${gameId}/players/${pid}`, { method: "PATCH", json: body }).then(
-        (g) => g.players.find((p) => p.id === pid) ?? { id: pid, name: body.name ?? null, team: 0 },
+      req<Game>(`/games/${gameId}/players/${pid}`, {
+        method: "PATCH",
+        json: body,
+      }).then(
+        (g) =>
+          g.players.find((p) => p.id === pid) ?? {
+            id: pid,
+            name: body.name ?? null,
+            team: 0,
+          },
       ),
     getEvents: (game) =>
-      fetchUrl<{ events: GameEvent[] }>(resolveMedia(game.id, game.events_url)).then(
-        (f) => f.events,
-      ),
+      fetchUrl<{ events: GameEvent[] }>(
+        resolveMedia(game.id, game.events_url),
+      ).then((f) => f.events),
     // §4.6 "create bookmark": the API only takes the timestamp and derives the window.
     createEvent: (gameId, body) =>
-      req<GameEvent>(`/games/${gameId}/events`, { method: "POST", json: { t: body.t_key ?? 0 } }),
+      req<GameEvent>(`/games/${gameId}/events`, {
+        method: "POST",
+        json: { t: body.t_key ?? 0 },
+      }),
     patchEvent: (gameId, eventId, body) =>
-      req<GameEvent>(`/games/${gameId}/events/${eventId}`, { method: "PATCH", json: body }),
+      req<GameEvent>(`/games/${gameId}/events/${eventId}`, {
+        method: "PATCH",
+        json: body,
+      }),
     query: (gameId, text) =>
-      req<QueryResult>(`/games/${gameId}/query`, { method: "POST", json: { text } }),
+      req<QueryResult>(`/games/${gameId}/query`, {
+        method: "POST",
+        json: { text },
+      }),
     getStats: (gameId) => req<Stats>(`/games/${gameId}/stats`),
-    getTracksChunk: (game, index) => fetchUrl<TracksChunk>(chunkUrl(game, index)),
+    getTracksChunk: (game, index) =>
+      fetchUrl<TracksChunk>(chunkUrl(game, index)),
     getCropPath: (game, playerId) =>
       fetchUrl<CropPath>(
-        resolveMedia(game.id, game.croppaths.url_template.replace("{player_id}", playerId)),
+        resolveMedia(
+          game.id,
+          game.croppaths.url_template.replace("{player_id}", playerId),
+        ),
       ),
     createSession: () => req<Session>("/sessions", { method: "POST" }),
     renderPlayer: (gameId, playerId) =>
-      req<RenderJob>(`/games/${gameId}/players/${playerId}/render`, { method: "POST" }),
+      req<RenderJob>(`/games/${gameId}/players/${playerId}/render`, {
+        method: "POST",
+      }),
     listReplays: (gameId) =>
-      req<{ replays: ReplaySummary[] }>(`/games/${gameId}/replays`).then((r) => r.replays),
+      req<{ replays: ReplaySummary[] }>(`/games/${gameId}/replays`).then(
+        (r) => r.replays,
+      ),
     getReplay: (gameId, playId) =>
-      req<ReplayManifest>(`/games/${gameId}/replays/${encodeURIComponent(playId)}`).then((m) => ({
+      req<ReplayManifest>(
+        `/games/${gameId}/replays/${encodeURIComponent(playId)}`,
+      ).then((m) => ({
         ...m,
-        angles: m.angles.map((a) => ({ ...a, url: resolveMedia(gameId, a.url) })),
+        angles: m.angles.map((a) => ({
+          ...a,
+          url: resolveMedia(gameId, a.url),
+        })),
       })),
     getScene: (gameId, playId) =>
-      req<SceneLayout>(`/games/${gameId}/scenes/${encodeURIComponent(playId)}`).then((s) => {
+      req<SceneLayout>(
+        `/games/${gameId}/scenes/${encodeURIComponent(playId)}`,
+      ).then((s) => {
         const rel = `replays/${playId}/scene/`;
         const abs = <T extends { file: string; url?: string }>(e: T): T => ({
           ...e,
@@ -443,69 +754,102 @@ export function createHttpApi(apiBase: string, apiKey = "", uploadToken = ""): R
     mediaUrl: (game, path) => resolveMedia(game.id, path),
 
     listRenditions: (gameId) =>
-      req<{ renditions: Rendition[] }>(`/games/${gameId}/renditions`).then((r) =>
-        r.renditions.map((x) => ({ ...x, url: resolveMedia(gameId, x.url) })),
+      req<{ renditions: Rendition[] }>(`/games/${gameId}/renditions`).then(
+        (r) =>
+          r.renditions.map((x) => ({ ...x, url: resolveMedia(gameId, x.url) })),
       ),
     getCommentary: (gameId) => req<Commentary>(`/games/${gameId}/commentary`),
-    listClips: (gameId) => req<{ clips: PlayClip[] }>(`/games/${gameId}/clips`).then((r) => r.clips),
+    listClips: (gameId) =>
+      req<{ clips: PlayClip[] }>(`/games/${gameId}/clips`).then((r) => r.clips),
     listTriggers: (gameId) =>
-      req<{ triggers: Trigger[] }>(`/games/${gameId}/triggers`).then((r) => r.triggers),
+      req<{ triggers: Trigger[] }>(`/games/${gameId}/triggers`).then(
+        (r) => r.triggers,
+      ),
     trimClip: (gameId, clipId, t_start, t_end) =>
       req<PlayClip>(`/games/${gameId}/clips/${encodeURIComponent(clipId)}`, {
         method: "PATCH",
         json: { t_start, t_end },
       }),
     tap: (gameId, t) =>
-      req<TapResult>(`/games/${gameId}/triggers`, { method: "POST", json: { t } }),
+      req<TapResult>(`/games/${gameId}/triggers`, {
+        method: "POST",
+        json: { t },
+      }),
     getHype: (gameId) => req<Hype>(`/games/${gameId}/hype`),
     getRallies: (gameId) =>
       req<RallyDoc>(`/games/${gameId}/rallies`).then((d) => ({
         ...d,
-        condensed: { ...d.condensed, url: d.condensed.url && resolveMedia(gameId, d.condensed.url) },
-      })),
-    renderCondensed: (gameId) => req<JobStatus>(`/games/${gameId}/condensed`, { method: "POST" }),
-    exportVertical: (gameId, body) =>
-      req<VerticalExport>(`/games/${gameId}/exports/vertical`, { method: "POST", json: body }),
-    getVertical: (gameId, vid) => req<VerticalExport>(`/games/${gameId}/exports/vertical/${vid}`),
-    getReviewQueue: (gameId) =>
-      req<{ questions: ReviewQuestion[] }>(`/games/${gameId}/review/queue`).then((r) => r.questions),
-    answerReview: (option, text) =>
-      req<unknown>(option.path, { method: option.method, json: reviewBody(option, text) }).then(
-        () => undefined,
-      ),
-    search: (gameId, text) =>
-      req<SearchResult>(`/games/${gameId}/search`, { method: "POST", json: { text, k: 8 } }).catch(
-        (e: unknown) => {
-          if (e instanceof ApiError && (e.status === 409 || e.status === 503)) {
-            return req<QueryResult>(`/games/${gameId}/query`, { method: "POST", json: { text } }).then(
-              (r) => queryAsSearch(text, r),
-            );
-          }
-          throw e;
+        condensed: {
+          ...d.condensed,
+          url: d.condensed.url && resolveMedia(gameId, d.condensed.url),
         },
-      ),
-    getAdvice: (gameId, pid) => req<Advice>(`/games/${gameId}/players/${pid}/advice`),
+      })),
+    renderCondensed: (gameId) =>
+      req<JobStatus>(`/games/${gameId}/condensed`, { method: "POST" }),
+    exportVertical: (gameId, body) =>
+      req<VerticalExport>(`/games/${gameId}/exports/vertical`, {
+        method: "POST",
+        json: body,
+      }),
+    getVertical: (gameId, vid) =>
+      req<VerticalExport>(`/games/${gameId}/exports/vertical/${vid}`),
+    getReviewQueue: (gameId) =>
+      req<{ questions: ReviewQuestion[] }>(
+        `/games/${gameId}/review/queue`,
+      ).then((r) => r.questions),
+    answerReview: (option, text) =>
+      req<unknown>(option.path, {
+        method: option.method,
+        json: reviewBody(option, text),
+      }).then(() => undefined),
+    search: (gameId, text) =>
+      req<SearchResult>(`/games/${gameId}/search`, {
+        method: "POST",
+        json: { text, k: 8 },
+      }).catch((e: unknown) => {
+        if (e instanceof ApiError && (e.status === 409 || e.status === 503)) {
+          return req<QueryResult>(`/games/${gameId}/query`, {
+            method: "POST",
+            json: { text },
+          }).then((r) => queryAsSearch(text, r));
+        }
+        throw e;
+      }),
+    getAdvice: (gameId, pid) =>
+      req<Advice>(`/games/${gameId}/players/${pid}/advice`),
 
-    listProfiles: () => req<{ profiles: Profile[] }>("/profiles").then((r) => r.profiles),
+    listProfiles: () =>
+      req<{ profiles: Profile[] }>("/profiles").then((r) => r.profiles),
     getProfile: (id) => req<Profile>(`/profiles/${id}`),
-    createProfile: (body) => req<Profile>("/profiles", { method: "POST", json: body }),
-    patchProfile: (id, body) => req<Profile>(`/profiles/${id}`, { method: "PATCH", json: body }),
+    createProfile: (body) =>
+      req<Profile>("/profiles", { method: "POST", json: body }),
+    patchProfile: (id, body) =>
+      req<Profile>(`/profiles/${id}`, { method: "PATCH", json: body }),
     linkProfile: (id, game_id, player_id) =>
-      req<Profile>(`/profiles/${id}/links`, { method: "POST", json: { game_id, player_id } }),
+      req<Profile>(`/profiles/${id}/links`, {
+        method: "POST",
+        json: { game_id, player_id },
+      }),
     unlinkProfile: (id, gameId, playerId) =>
       req<Profile>(
         `/profiles/${id}/links/${encodeURIComponent(gameId)}/${encodeURIComponent(playerId)}`,
         { method: "DELETE" },
       ),
     getSuggestions: (id) =>
-      req<{ suggestions: ProfileSuggestion[] }>(`/profiles/${id}/suggestions`).then((r) => r.suggestions),
+      req<{ suggestions: ProfileSuggestion[] }>(
+        `/profiles/${id}/suggestions`,
+      ).then((r) => r.suggestions),
     declineSuggestion: (id, game_id, player_id) =>
-      req<{ suggestions: ProfileSuggestion[] }>(`/profiles/${id}/suggestions/decline`, {
-        method: "POST",
-        json: { game_id, player_id },
-      }).then((r) => r.suggestions),
+      req<{ suggestions: ProfileSuggestion[] }>(
+        `/profiles/${id}/suggestions/decline`,
+        {
+          method: "POST",
+          json: { game_id, player_id },
+        },
+      ).then((r) => r.suggestions),
     getCard: (id) => req<PlayerCard>(`/profiles/${id}/card`),
-    renderCard: (id) => req<PlayerCard>(`/profiles/${id}/card`, { method: "POST" }),
+    renderCard: (id) =>
+      req<PlayerCard>(`/profiles/${id}/card`, { method: "POST" }),
     getReel: (id) => req<CareerReel>(`/profiles/${id}/reel`),
     uploadProfilePhoto: (id, photo) =>
       req<Profile>(`/profiles/${id}/photo`, {
@@ -516,10 +860,19 @@ export function createHttpApi(apiBase: string, apiKey = "", uploadToken = ""): R
     enrollFace(id, photos, consent) {
       const form = new FormData();
       form.append("consent", consent ? "true" : "false");
-      photos.forEach((p, i) => form.append("photos", p, (p as File).name ?? `photo${i}.jpg`));
-      return req<Profile>(`/profiles/${id}/face`, { method: "POST", body: form });
+      photos.forEach((p, i) =>
+        form.append("photos", p, (p as File).name ?? `photo${i}.jpg`),
+      );
+      return req<Profile>(`/profiles/${id}/face`, {
+        method: "POST",
+        body: form,
+      });
     },
-    deleteFace: (id) => req<Profile>(`/profiles/${id}/face`, { method: "DELETE" }),
-    profileMediaUrl: (path) => (/^(https?:)?\/\//.test(path) ? path : `${base}/${path.replace(/^\//, "")}`),
+    deleteFace: (id) =>
+      req<Profile>(`/profiles/${id}/face`, { method: "DELETE" }),
+    profileMediaUrl: (path) =>
+      /^(https?:)?\/\//.test(path)
+        ? path
+        : `${base}/${path.replace(/^\//, "")}`,
   };
 }

@@ -7,7 +7,8 @@ Polls `POST /worker/claim` (every 30 s by default), mirrors the game folder from
 presigned GETs (a file with the claim's size is kept), runs the job through the same code
 the local API runs (`main._process_task` -> pipeline_adapter, `main._autocalib_task`),
 reports progress, uploads every new or changed file (size or mtime moved since the
-mirror; game.json last), and finishes the job ok/failed. No AWS credentials: only the
+mirror; game.json last), and finishes the job ok/failed. Media and the storyboard go up
+after every stage while the job runs (`EARLY`), so a game is watchable mid-run. No AWS credentials: only the
 worker key and presigned URLs. Transient HTTP failures are retried with backoff; a job
 that still cannot be finished is logged and stays `running` in S3, never dropped.
 """
@@ -20,6 +21,7 @@ import os
 import sys
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -99,17 +101,52 @@ class Api:
 
 class _Progress:
     """The `jobs` the local task code reports to: progress goes to the API, best effort
-    (a lost progress post must not fail a pipeline run)."""
+    (a lost progress post must not fail a pipeline run). `on_stage_done(stage)` runs
+    after each stage finishes (the early media push)."""
 
-    def __init__(self, api: Api):
+    def __init__(self, api: Api, on_stage_done: Callable[[str], None] | None = None):
         self.api = api
+        self.on_stage_done = on_stage_done
 
     def progress(self, job_id: str, stage: str, fraction: float) -> None:
+        if fraction >= 1.0 and self.on_stage_done:
+            self.on_stage_done(stage)
         try:
             self.api.post(f"/worker/jobs/{job_id}/progress",
                           {"stage": stage, "fraction": fraction}, tries=2)  # fmt: skip
         except Exception as exc:  # noqa: BLE001
             log.warning("progress for %s not delivered (%s)", job_id, exc)
+
+
+# Pushed while the job still runs, so the TV can play (wide.mp4 once ingest is done) and
+# scrub (the storyboard) before the run ends. Everything else waits for the final push.
+EARLY = ("media/", "storyboard/")
+
+
+class _EarlyPush:
+    """After each stage, upload new or changed files under EARLY in a background thread
+    (one push at a time, in order), so a multi-GB mezzanine never stalls the pipeline.
+    `before` is updated with what went up, so the final push skips it. A file caught
+    mid-write goes up again at the end (its size/mtime moved)."""
+
+    def __init__(self, api: Api, job_id: str, root: Path, before: dict):
+        self.api, self.job_id, self.root, self.before = api, job_id, root, before
+        self.pool = ThreadPoolExecutor(1, "replay-early-push")
+
+    def __call__(self, stage: str) -> None:
+        self.pool.submit(self._push)
+
+    def _push(self) -> None:
+        try:
+            # taken before the push: a file that moves meanwhile just goes up again later
+            snap = {r: st for r, st in _snapshot(self.root).items() if r.startswith(EARLY)}
+            push(self.api, self.job_id, self.root, self.before, only=EARLY)
+            self.before.update(snap)
+        except Exception as exc:  # noqa: BLE001 - the final push still uploads it
+            log.warning("early push for %s failed (%s)", self.job_id, exc)
+
+    def close(self) -> None:
+        self.pool.shutdown(wait=True)
 
 
 def _snapshot(root: Path) -> dict[str, tuple[int, int]]:
@@ -139,10 +176,13 @@ def mirror(api: Api, root: Path, files: list[dict]) -> dict[str, tuple[int, int]
     return _snapshot(root)
 
 
-def push(api: Api, job_id: str, root: Path, before: dict[str, tuple[int, int]]) -> int:
-    """Upload every file that is new or changed since `before`; game.json goes last, as
-    it is what flips the game to ready. Returns how many were uploaded."""
-    changed = sorted(r for r, st in _snapshot(root).items() if before.get(r) != st)
+def push(api: Api, job_id: str, root: Path, before: dict[str, tuple[int, int]],
+         only: tuple[str, ...] | None = None) -> int:  # fmt: skip
+    """Upload every file that is new or changed since `before` (and under one of the
+    `only` prefixes, when given); game.json goes last, as it is what flips the game to
+    ready. Returns how many were uploaded."""
+    changed = sorted(r for r, st in _snapshot(root).items()
+                     if before.get(r) != st and (only is None or r.startswith(only)))  # fmt: skip
     changed.sort(key=lambda r: r == GAME_JSON)
     for i in range(0, len(changed), 500):
         batch = changed[i : i + 500]
@@ -169,7 +209,11 @@ def run_job(job: dict, settings: Settings, api: Api, before: dict) -> None:
         push(api, job_id, storage.game_dir(gid), {k: v for k, v in before.items()
                                                   if k != GAME_JSON})  # fmt: skip
         before[GAME_JSON] = _snapshot(storage.game_dir(gid))[GAME_JSON]
-        main._process_task(settings, storage, index, _Progress(api), gid)(job_id)
+        early = _EarlyPush(api, job_id, storage.game_dir(gid), before)
+        try:
+            main._process_task(settings, storage, index, _Progress(api, early), gid)(job_id)
+        finally:
+            early.close()  # the final push (run_once) must not race it
     elif job["kind"] == "autocalib":
         p = job.get("params") or {}
         main._autocalib_task(settings, storage, gid, p["sport"], p["variant"],

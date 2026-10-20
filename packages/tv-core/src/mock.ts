@@ -9,20 +9,30 @@ import type {
   CalibrationResult,
   CreateGameResult,
   CropPath,
+  FeatureState,
   Game,
   GameEvent,
   GameSummary,
+  Moment,
   Player,
   QueryResult,
   RenderJob,
   Session,
   SportProfile,
   Stats,
+  Storyboard,
   TracksChunk,
   TrackPlayer,
+  TvReadiness,
   SceneLayout,
 } from "./types";
-import { ApiError, queryAsSearch, reviewBody, type CalibrationPayload, type ReplayApi } from "./api";
+import {
+  ApiError,
+  queryAsSearch,
+  reviewBody,
+  type CalibrationPayload,
+  type ReplayApi,
+} from "./api";
 import type { ReplayAngle, ReplayManifest } from "./replays";
 import { REVIEW_CONFIDENCE_THRESHOLD } from "./display";
 import type {
@@ -38,7 +48,13 @@ import type {
   Trigger,
   VerticalExport,
 } from "./discovery";
-import type { CareerReel, PlayerCard, Profile, ProfileSuggestion, SportStats } from "./profiles";
+import type {
+  CareerReel,
+  PlayerCard,
+  Profile,
+  ProfileSuggestion,
+  SportStats,
+} from "./profiles";
 
 export interface MockCall {
   method: string;
@@ -50,7 +66,8 @@ export interface MockCall {
 export const mockCalls: MockCall[] = [];
 function log(method: string, path: string, body?: unknown) {
   mockCalls.push({ method, path, body });
-  (globalThis as { __replayMockCalls?: MockCall[] }).__replayMockCalls = mockCalls;
+  (globalThis as { __replayMockCalls?: MockCall[] }).__replayMockCalls =
+    mockCalls;
 }
 
 const DURATION = 20;
@@ -68,8 +85,20 @@ const PROPOSAL = {
     corner_fr: [847, 208],
     rim: [636, 254],
   } as Record<string, [number, number]>,
-  confidence: { corner_nl: 0.93, corner_nr: 0.9, corner_fl: 0.84, corner_fr: 0.79, rim: 0.42 },
-  snapped: { corner_nl: true, corner_nr: true, corner_fl: true, corner_fr: false, rim: false },
+  confidence: {
+    corner_nl: 0.93,
+    corner_nr: 0.9,
+    corner_fl: 0.84,
+    corner_fr: 0.79,
+    rim: 0.42,
+  },
+  snapped: {
+    corner_nl: true,
+    corner_nr: true,
+    corner_fl: true,
+    corner_fr: false,
+    rim: false,
+  },
   source: "claude-cli",
   notes: "",
   ok: true,
@@ -120,7 +149,14 @@ const PICKLEBALL: SportProfile = {
   id: "pickleball",
   display_name: "Pickleball",
   tier: 1,
-  landmarks: ["corner_nl", "corner_nr", "corner_fl", "corner_fr", "net_post_l", "net_post_r"],
+  landmarks: [
+    "corner_nl",
+    "corner_nr",
+    "corner_fl",
+    "corner_fr",
+    "net_post_l",
+    "net_post_r",
+  ],
   variants: ["doubles"],
   sport_ui: {
     chips: ["Rallies", "Longest rallies", "Bookmarks"],
@@ -177,7 +213,10 @@ function trackAt(id: string, t: number): TrackPlayer {
   return {
     id,
     bb: [x, y, BOX_W, BOX_H],
-    ct: [Number(((x + BOX_W / 2) * 15).toFixed(2)), Number(((y + BOX_H) * 14).toFixed(2))],
+    ct: [
+      Number(((x + BOX_W / 2) * 15).toFixed(2)),
+      Number(((y + BOX_H) * 14).toFixed(2)),
+    ],
     c: 0.9,
   };
 }
@@ -199,10 +238,15 @@ const STAGE_ORDER = [
 /** Stages before `running` done, that one running, the rest pending. */
 const stagesAt = (running: number): Game["stages"] =>
   Object.fromEntries(
-    STAGE_ORDER.map((s, i) => [s, i < running ? "done" : i === running ? "running" : "pending"]),
+    STAGE_ORDER.map((s, i) => [
+      s,
+      i < running ? "done" : i === running ? "running" : "pending",
+    ]),
   );
 const progressAt = (running: number, frac: number): Record<string, number> =>
-  Object.fromEntries(STAGE_ORDER.map((s, i) => [s, i < running ? 1 : i === running ? frac : 0]));
+  Object.fromEntries(
+    STAGE_ORDER.map((s, i) => [s, i < running ? 1 : i === running ? frac : 0]),
+  );
 
 function baseGame(id: string, title: string, status: Game["status"]): Game {
   const done = status === "ready";
@@ -229,13 +273,23 @@ function baseGame(id: string, title: string, status: Game["status"]): Game {
     },
     renditions: { wide: "/mock/wide.mp4" },
     players: done
-      ? [player("p1", "Marcus", 0), player("p2", null, 1), player("p3", null, 0), player("p4", null, 1)]
+      ? [
+          player("p1", "Marcus", 0),
+          player("p2", null, 1),
+          player("p3", null, 0),
+          player("p4", null, 1),
+        ]
       : [],
     teams: [
       { id: 0, color_hex: "#1f4fa0" },
       { id: 1, color_hex: "#e8e8e8" },
     ],
-    tracks: { rate_hz: 10, chunk_s: 10, url_template: "tracks/{chunk:05d}.json", chunks: 2 },
+    tracks: {
+      rate_hz: 10,
+      chunk_s: 10,
+      url_template: "tracks/{chunk:05d}.json",
+      chunks: 2,
+    },
     croppaths: { rate_hz: FPS, url_template: "crops/{player_id}.json" },
     events_url: "events.json",
     sport_ui: BASKETBALL.sport_ui,
@@ -280,7 +334,8 @@ function heatmapFor(playerId: string): number[] {
     const { ct } = trackAt(playerId, i / 10);
     const ix = Math.floor((ct![0] / 15) * HEAT_COLS);
     const iy = Math.floor((ct![1] / 14) * HEAT_ROWS);
-    if (ix >= 0 && ix < HEAT_COLS && iy >= 0 && iy < HEAT_ROWS) values[iy * HEAT_COLS + ix] += 1;
+    if (ix >= 0 && ix < HEAT_COLS && iy >= 0 && iy < HEAT_ROWS)
+      values[iy * HEAT_COLS + ix] += 1;
   }
   return values;
 }
@@ -364,9 +419,14 @@ function needGame(id: string): Game {
   return g;
 }
 
-const delay = <T,>(v: T, ms = 10) => new Promise<T>((r) => setTimeout(() => r(v), ms));
+const delay = <T>(v: T, ms = 10) =>
+  new Promise<T>((r) => setTimeout(() => r(v), ms));
 
-function matchEvents(list: GameEvent[], text: string, players: Player[]): GameEvent[] {
+function matchEvents(
+  list: GameEvent[],
+  text: string,
+  players: Player[],
+): GameEvent[] {
   const q = text.toLowerCase();
   let out = list.filter((e) => e.type === "shot" && !e.dismissed);
   const named = players.find((p) => p.name && q.includes(p.name.toLowerCase()));
@@ -375,6 +435,163 @@ function matchEvents(list: GameEvent[], text: string, players: Player[]): GameEv
   else if (/\bmiss/.test(q)) out = out.filter((e) => e.made === false);
   else if (!/\bshot|\ball\b|\btop\b|\bplay/.test(q) && !named) out = [];
   return out.sort((a, b) => a.t_start - b.t_start);
+}
+
+// ---------------------------------------------------------------- TV redesign readiness
+// Hero, storyboard and moment thumbs are the REAL output of services/api replay_api.moments
+// (the worker's storyboard / moments stages) on /mock/wide.mp4 (ffmpeg testsrc2, synthetic).
+// Readiness is derived from the mock stages like services/api readiness.py, with a made-up
+// cost (MOCK_STAGE_S per remaining stage) so a processing game shows a minutes-long ETA.
+
+const MOCK_STAGE_S = 40;
+const MOCK_THUMBS = new Set(["e_0001", "e_0002", "e_0003", "e_0004"]);
+const MOCK_STORYBOARD: Storyboard = {
+  schema: "replay.storyboard.v1",
+  interval_s: 2,
+  width: 320,
+  height: 180,
+  cols: 10,
+  rows: 10,
+  count: 10,
+  sheets: ["/mock/storyboard/0000.jpg"],
+};
+const STAGE_LABELS: Record<string, string> = {
+  ingest: "Preparing the video",
+  calibrate: "Reading the court",
+  detect: "Finding players",
+  track: "Following players",
+  court: "Placing players on the court",
+  identity: "Telling players apart",
+  tracks: "Following players",
+  crops: "Framing each player",
+  events: "Spotting the plays",
+};
+
+function tvFields(g: Game): TvReadiness & { storyboard_url?: string } {
+  const ready = g.status === "ready";
+  if (!ready && g.status !== "processing") return { watchable: false };
+  const ingested = ready || g.stages.ingest === "done";
+  const left = (upTo: number) =>
+    STAGE_ORDER.slice(0, upTo + 1).reduce(
+      (s, n) =>
+        s +
+        (g.stages[n] === "done"
+          ? 0
+          : MOCK_STAGE_S * (1 - (g.progress?.[n] ?? 0))),
+      0,
+    );
+  const total = Math.ceil(left(STAGE_ORDER.length - 1) + 10);
+  const feat = (
+    ok: boolean,
+    stage?: (typeof STAGE_ORDER)[number],
+    optIn = false,
+  ): FeatureState =>
+    ok
+      ? { state: "ready" }
+      : !ready && !optIn
+        ? {
+            state: "pending",
+            eta_s: stage ? Math.ceil(left(STAGE_ORDER.indexOf(stage))) : total,
+          }
+        : { state: "unavailable" };
+  const replays = MOCK_REPLAYS[g.id] ?? [];
+  return {
+    watchable: ingested,
+    ...(ready
+      ? { hero_url: "/mock/hero.jpg" }
+      : {
+          eta_s: total,
+          stage_label:
+            STAGE_LABELS[
+              STAGE_ORDER.find((s) => g.stages[s] !== "done") ?? ""
+            ] ?? "Finishing up",
+        }),
+    ...(ingested ? { storyboard_url: "/mock/storyboard/manifest.json" } : {}),
+    features: {
+      moments: feat(ready),
+      previews: feat(ingested, "ingest"),
+      follow: feat(ready, "crops"),
+      angles: feat(ready && replays.length > 0, undefined, true),
+      free_view: feat(
+        ready && replays.some((r) => r.scene_url),
+        undefined,
+        true,
+      ),
+      highlights: feat(
+        ready && (MOCK_HYPE_PEAKS[g.id] ?? []).some((p) => p[2]),
+        undefined,
+        true,
+      ),
+      condensed: feat(
+        jobState(`condensed:${g.id}`, "").status === "done",
+        undefined,
+        true,
+      ),
+      stats: feat(ready, "events"),
+      commentary: feat(ready, "events"),
+    },
+  };
+}
+
+/** The same plain labels as services/api moments.label, for the shots and bookmarks the
+ *  mock games carry. */
+function mockMoments(g: Game, list: GameEvent[]): Moment[] {
+  const names = Object.fromEntries(g.players.map((p) => [p.id, p]));
+  return list
+    .filter((e) => !e.dismissed && (e.type === "shot" || e.type === "bookmark"))
+    .map((e) => {
+      const p = e.player_id ? names[e.player_id] : undefined;
+      const base =
+        e.type === "bookmark"
+          ? "Your bookmark"
+          : e.made === true
+            ? "Basket"
+            : e.made === false
+              ? "Missed shot"
+              : "Shot";
+      return {
+        id: e.id,
+        t: e.t_key,
+        t_start: e.t_start,
+        t_end: e.t_end,
+        kind:
+          e.type === "bookmark"
+            ? "bookmark"
+            : e.made === true
+              ? "score"
+              : "play",
+        label: p?.name && e.type !== "bookmark" ? `${base}, ${p.name}` : base,
+        ...(p
+          ? { player: { id: p.id, name: p.name, color_hex: p.color_hex } }
+          : {}),
+        thumb_url:
+          g.id === "g_mock01" && MOCK_THUMBS.has(e.id)
+            ? `/mock/moments/${e.id}.jpg`
+            : null,
+        source: e.source,
+        confidence: e.confidence,
+        confirmed: e.confirmed,
+      } satisfies Moment;
+    })
+    .sort((a, b) => a.t - b.t);
+}
+
+/** Stand-in for S3's ListParts: GET the part URL's object with `?uploadId=`; a Playwright
+ *  spec answers it (page.route) with the parts its fake S3 received. Anything else = gone. */
+async function mockListParts(
+  gameId: string,
+  uploadId: string,
+): Promise<{ n: number; etag: string; size: number }[]> {
+  try {
+    const r = await fetch(
+      `/__mock_s3/games/${gameId}/source.mp4?uploadId=${encodeURIComponent(uploadId)}`,
+    );
+    if (r.ok && (r.headers.get("content-type") ?? "").includes("json"))
+      return await r.json();
+  } catch {
+    /* fall through */
+  }
+  throw new ApiError(404, "that upload is gone; start a new one");
 }
 
 export const mockApi: ReplayApi = {
@@ -408,10 +625,13 @@ export const mockApi: ReplayApi = {
     log("POST", `/games/${gameId}/upload/multipart`, { size, content_type });
     needGame(gameId);
     const part_size = Math.max(1, Math.ceil(size / 4));
-    const parts = Array.from({ length: Math.ceil(size / part_size) }, (_, i) => ({
-      n: i + 1,
-      url: `/__mock_s3/games/${gameId}/source.mp4?partNumber=${i + 1}`,
-    }));
+    const parts = Array.from(
+      { length: Math.ceil(size / part_size) },
+      (_, i) => ({
+        n: i + 1,
+        url: `/__mock_s3/games/${gameId}/source.mp4?partNumber=${i + 1}`,
+      }),
+    );
     return delay({ upload_id: `mpu_${gameId}`, part_size, parts });
   },
 
@@ -425,6 +645,40 @@ export const mockApi: ReplayApi = {
   abortMultipart(gameId, upload_id) {
     log("POST", `/games/${gameId}/upload/abort`, { upload_id });
     return delay(undefined);
+  },
+
+  async listMultipartParts(gameId, upload_id, size) {
+    log("GET", `/games/${gameId}/upload/parts`, { upload_id, size });
+    needGame(gameId);
+    const part_size = Math.max(1, Math.ceil(size / 4)); // as initMultipart
+    const want = Array.from(
+      { length: Math.ceil(size / part_size) },
+      (_, i) => i + 1,
+    );
+    const done = (await mockListParts(gameId, upload_id)).filter(
+      (p) => p.size === Math.min(part_size, size - (p.n - 1) * part_size),
+    );
+    const have = new Set(done.map((p) => p.n));
+    const parts = want
+      .filter((n) => !have.has(n))
+      .map((n) => ({
+        n,
+        url: `/__mock_s3/games/${gameId}/source.mp4?partNumber=${n}`,
+      }));
+    return { upload_id, part_size, done, parts };
+  },
+
+  getMoments(gameId) {
+    log("GET", `/games/${gameId}/moments`);
+    const g = needGame(gameId);
+    return delay(mockMoments(g, events.get(gameId) ?? []));
+  },
+
+  getStoryboard(game) {
+    log("GET", `/games/${game.id}/storyboard`);
+    return game.storyboard_url
+      ? delay(structuredClone(MOCK_STORYBOARD))
+      : Promise.reject(new ApiError(404, "no storyboard for this game yet"));
   },
 
   upload(uploadUrl, file, onProgress) {
@@ -446,7 +700,10 @@ export const mockApi: ReplayApi = {
     log("POST", `/games/${gameId}/calibration/auto`, { sport, variant });
     needGame(gameId);
     autoStartedAt[gameId] = Date.now();
-    return delay<AutoCalibrationJob>({ job_id: "j_autocalib", status: "queued" });
+    return delay<AutoCalibrationJob>({
+      job_id: "j_autocalib",
+      status: "queued",
+    });
   },
 
   getAutoCalibration(gameId) {
@@ -474,17 +731,23 @@ export const mockApi: ReplayApi = {
     const g = needGame(gameId);
     const pts = Object.values(payload.landmarks_px);
     if (pts.length < 4) {
-      return delay<CalibrationResult>({ ok: false, error: `need ${4 - pts.length} more points` });
+      return delay<CalibrationResult>({
+        ok: false,
+        error: `need ${4 - pts.length} more points`,
+      });
     }
     // The API's D-23 gate: an ok=false proposal posted back unmoved needs the confirm.
-    const unmoved = Object.entries(payload.landmarks_px).every(([n, [x, y]]) => {
-      const dot = PROPOSAL.landmarks_px[n];
-      return !!dot && Math.hypot(x - dot[0], y - dot[1]) <= 1;
-    });
+    const unmoved = Object.entries(payload.landmarks_px).every(
+      ([n, [x, y]]) => {
+        const dot = PROPOSAL.landmarks_px[n];
+        return !!dot && Math.hypot(x - dot[0], y - dot[1]) <= 1;
+      },
+    );
     if (lowConfidence(g) && unmoved && !payload.accept_low_confidence) {
       return delay<CalibrationResult>({
         ok: false,
-        error: "these are the auto-calibration points unchanged and the fit was not ok",
+        error:
+          "these are the auto-calibration points unchanged and the fit was not ok",
       });
     }
     // Degenerate check (E-06): largest triangle area among the first 4 points.
@@ -498,7 +761,8 @@ export const mockApi: ReplayApi = {
           );
           area = Math.max(area, a / 2);
         }
-    if (area < 500) return delay<CalibrationResult>({ ok: false, error: "invalid points" });
+    if (area < 500)
+      return delay<CalibrationResult>({ ok: false, error: "invalid points" });
     g.court.variant = payload.court_variant;
     g.court.landmarks_px = payload.landmarks_px;
     // Not a homography — just something that moves when a point moves, so the UI can
@@ -511,7 +775,10 @@ export const mockApi: ReplayApi = {
       // Not a real residual either — just per-landmark and with one clear worst, which
       // is all the `calib-worst` readout needs.
       residuals_px: Object.fromEntries(
-        Object.keys(payload.landmarks_px).map((n, i) => [n, Number((err / (i + 1)).toFixed(2))]),
+        Object.keys(payload.landmarks_px).map((n, i) => [
+          n,
+          Number((err / (i + 1)).toFixed(2)),
+        ]),
       ),
     });
   },
@@ -538,6 +805,7 @@ export const mockApi: ReplayApi = {
         thumb_url: g.thumb_url,
         stages: g.stages,
         ...(g.progress ? { progress: g.progress } : {}),
+        ...tvFields(g),
       }));
     return delay(out);
   },
@@ -546,7 +814,7 @@ export const mockApi: ReplayApi = {
     log("GET", `/games/${gameId}`);
     const g = needGame(gameId);
     advance(g);
-    return delay(structuredClone(g));
+    return delay(structuredClone({ ...g, ...tvFields(g) }));
   },
 
   patchPlayer(gameId, pid, body) {
@@ -599,10 +867,20 @@ export const mockApi: ReplayApi = {
     const list = events.get(gameId) ?? [];
     const i = list.findIndex((e) => e.id === eventId);
     if (i < 0) throw new Error(`unknown event ${eventId}`);
-    if (body.type === undefined && body.made === undefined && !body.confirmed && !body.dismissed) {
+    if (
+      body.type === undefined &&
+      body.made === undefined &&
+      !body.confirmed &&
+      !body.dismissed
+    ) {
       throw new Error("nothing to patch");
     }
-    const next = { ...list[i], ...body, confirmed: true, source: "user" as const };
+    const next = {
+      ...list[i],
+      ...body,
+      confirmed: true,
+      source: "user" as const,
+    };
     list[i] = next;
     return delay(structuredClone(next));
   },
@@ -612,7 +890,9 @@ export const mockApi: ReplayApi = {
     const g = needGame(gameId);
     const matched = matchEvents(events.get(gameId) ?? [], text, g.players);
     const result: QueryResult = {
-      interpretation: matched.length ? `Showing: ${text}` : `No match for "${text}"`,
+      interpretation: matched.length
+        ? `Showing: ${text}`
+        : `No match for "${text}"`,
       clips: matched.map((e) => ({
         t_start: e.t_start,
         t_end: e.t_end,
@@ -628,11 +908,17 @@ export const mockApi: ReplayApi = {
   getStats(gameId) {
     log("GET", `/games/${gameId}/stats`);
     const g = needGame(gameId);
-    const list = (events.get(gameId) ?? []).filter((e) => e.type === "shot" && !e.dismissed);
+    const list = (events.get(gameId) ?? []).filter(
+      (e) => e.type === "shot" && !e.dismissed,
+    );
     const stats: Stats = {
       label: "auto-detected",
       confidence: list.length
-        ? Number((list.reduce((s, e) => s + e.confidence, 0) / list.length).toFixed(2))
+        ? Number(
+            (list.reduce((s, e) => s + e.confidence, 0) / list.length).toFixed(
+              2,
+            ),
+          )
         : null,
       available: list.length ? ["shots"] : [],
       box_score: g.players.map((p) => {
@@ -646,7 +932,11 @@ export const mockApi: ReplayApi = {
           points: 2 * mine.filter((e) => e.made).length,
           distance_m: distanceFor(p.id),
           confidence: mine.length
-            ? Number((mine.reduce((s, e) => s + e.confidence, 0) / mine.length).toFixed(2))
+            ? Number(
+                (
+                  mine.reduce((s, e) => s + e.confidence, 0) / mine.length
+                ).toFixed(2),
+              )
             : 0,
         };
       }),
@@ -657,7 +947,8 @@ export const mockApi: ReplayApi = {
           player_id: e.player_id,
           court: e.court as [number, number],
           made: !!e.made,
-          outcome: e.made === true ? "make" : e.made === false ? "miss" : "unknown",
+          outcome:
+            e.made === true ? "make" : e.made === false ? "miss" : "unknown",
           confirmed: e.confirmed,
         })),
       heatmap: g.players.map((p) => ({
@@ -681,27 +972,38 @@ export const mockApi: ReplayApi = {
       const t = Number((t0 + i / rate).toFixed(3));
       return {
         t,
-        p: t <= DURATION ? ids.filter((id) => tracked(id, t)).map((id) => trackAt(id, t)) : [],
+        p:
+          t <= DURATION
+            ? ids.filter((id) => tracked(id, t)).map((id) => trackAt(id, t))
+            : [],
       };
     });
-    return delay<TracksChunk>({ schema: "replay.tracks.v1", t0, rate_hz: rate, frames });
+    return delay<TracksChunk>({
+      schema: "replay.tracks.v1",
+      t0,
+      rate_hz: rate,
+      frames,
+    });
   },
 
   getCropPath(game, playerId) {
     const rate = game.croppaths.rate_hz;
-    const rects = Array.from({ length: Math.round(DURATION * rate) }, (_, i) => {
-      const t = i / rate;
-      const [x, y] = MOTION[playerId]?.(t) ?? [0.25, 0.25];
-      const cx = x + BOX_W / 2;
-      const cy = y + BOX_H / 2;
-      const w = 0.5;
-      return [
-        Math.min(Math.max(cx - w / 2, 0), 1 - w),
-        Math.min(Math.max(cy - w / 2, 0), 1 - w),
-        w,
-        w,
-      ] as [number, number, number, number];
-    });
+    const rects = Array.from(
+      { length: Math.round(DURATION * rate) },
+      (_, i) => {
+        const t = i / rate;
+        const [x, y] = MOTION[playerId]?.(t) ?? [0.25, 0.25];
+        const cx = x + BOX_W / 2;
+        const cy = y + BOX_H / 2;
+        const w = 0.5;
+        return [
+          Math.min(Math.max(cx - w / 2, 0), 1 - w),
+          Math.min(Math.max(cy - w / 2, 0), 1 - w),
+          w,
+          w,
+        ] as [number, number, number, number];
+      },
+    );
     return delay<CropPath>({
       schema: "replay.crops.v1",
       player_id: playerId,
@@ -718,7 +1020,11 @@ export const mockApi: ReplayApi = {
 
   renderPlayer(gameId, playerId) {
     log("POST", `/games/${gameId}/players/${playerId}/render`);
-    return delay<RenderJob>({ job_id: "j_mock", status: "queued", player_id: playerId });
+    return delay<RenderJob>({
+      job_id: "j_mock",
+      status: "queued",
+      player_id: playerId,
+    });
   },
 
   listReplays(gameId) {
@@ -753,8 +1059,16 @@ export const mockApi: ReplayApi = {
     const res = await fetch(`${MOCK_SCENE_DIR}/layout.json`);
     if (!res.ok) throw new Error(`mock scene fixture → ${res.status}`);
     const s = (await res.json()) as SceneLayout;
-    const abs = <T extends { file: string }>(e: T): T => ({ ...e, url: `${MOCK_SCENE_DIR}/${e.file}` });
-    return { ...s, game_id: gameId, plates: s.plates.map(abs), atlas: abs(s.atlas) };
+    const abs = <T extends { file: string }>(e: T): T => ({
+      ...e,
+      url: `${MOCK_SCENE_DIR}/${e.file}`,
+    });
+    return {
+      ...s,
+      game_id: gameId,
+      plates: s.plates.map(abs),
+      atlas: abs(s.atlas),
+    };
   },
 
   mediaUrl: (_game, path) => path,
@@ -764,9 +1078,16 @@ export const mockApi: ReplayApi = {
   listRenditions(gameId) {
     log("GET", `/games/${gameId}/renditions`);
     const g = needGame(gameId);
-    const out: Rendition[] = [{ id: "wide", kind: "wide", url: g.renditions.wide }];
+    const out: Rendition[] = [
+      { id: "wide", kind: "wide", url: g.renditions.wide },
+    ];
     if (MOCK_BROADCAST.has(gameId)) {
-      out.push({ id: "broadcast", kind: "broadcast", url: "/mock/wide.mp4?rendition=broadcast", cuts_url: null });
+      out.push({
+        id: "broadcast",
+        kind: "broadcast",
+        url: "/mock/wide.mp4?rendition=broadcast",
+        cuts_url: null,
+      });
     }
     return delay(out);
   },
@@ -774,7 +1095,11 @@ export const mockApi: ReplayApi = {
   getCommentary(gameId) {
     log("GET", `/games/${gameId}/commentary`);
     needGame(gameId);
-    return delay<Commentary>(structuredClone(MOCK_COMMENTARY[gameId] ?? { plays: [], narration_url: null }));
+    return delay<Commentary>(
+      structuredClone(
+        MOCK_COMMENTARY[gameId] ?? { plays: [], narration_url: null },
+      ),
+    );
   },
 
   listClips(gameId) {
@@ -791,7 +1116,8 @@ export const mockApi: ReplayApi = {
     log("PATCH", `/games/${gameId}/clips/${clipId}`, { t_start, t_end });
     const c = clipsOf(gameId).find((x) => x.id === clipId);
     if (!c) throw new Error(`clip ${clipId} not found`);
-    if (t_end <= t_start || t_end > DURATION + 1e-6) throw new Error("need 0 <= t_start < t_end <= duration");
+    if (t_end <= t_start || t_end > DURATION + 1e-6)
+      throw new Error("need 0 <= t_start < t_end <= duration");
     Object.assign(c, { t_start, t_end, source: "user", edited: true });
     return delay(structuredClone(c));
   },
@@ -821,13 +1147,20 @@ export const mockApi: ReplayApi = {
           trigger_id: trigger.id,
           t_start: Math.max(0, play.t_start - 1),
           t_end: Math.min(DURATION, play.t_end + 1),
-          attribution: { owner_player_id: null, by_player_id: null, subject_player_id: null },
+          attribution: {
+            owner_player_id: null,
+            by_player_id: null,
+            subject_player_id: null,
+          },
           participants: play.participants,
           source: "user",
         }
       : null;
     if (clip) clipsOf(gameId).push(clip);
-    return delay({ trigger: structuredClone(trigger), clip: structuredClone(clip) });
+    return delay({
+      trigger: structuredClone(trigger),
+      clip: structuredClone(clip),
+    });
   },
 
   getHype(gameId) {
@@ -840,14 +1173,22 @@ export const mockApi: ReplayApi = {
     log("GET", `/games/${gameId}/rallies`);
     needGame(gameId);
     const rallies = MOCK_RALLIES[gameId] ?? [];
-    const condensed = jobState(`condensed:${gameId}`, "/mock/wide.mp4?rendition=condensed");
+    const condensed = jobState(
+      `condensed:${gameId}`,
+      "/mock/wide.mp4?rendition=condensed",
+    );
     const done = condensed.status === "done";
     return delay<RallyDoc>({
       n: rallies.length,
       game_s: DURATION,
       rally_s: rallies.reduce((s, r) => s + r.duration_s, 0),
-      longest: [...rallies].sort((a, b) => b.duration_s - a.duration_s).map((r) => r.id),
-      rallies: rallies.map((r) => ({ ...r, condensed_t: done ? r.condensed_t : null })),
+      longest: [...rallies]
+        .sort((a, b) => b.duration_s - a.duration_s)
+        .map((r) => r.id),
+      rallies: rallies.map((r) => ({
+        ...r,
+        condensed_t: done ? r.condensed_t : null,
+      })),
       condensed,
     });
   },
@@ -855,22 +1196,34 @@ export const mockApi: ReplayApi = {
   renderCondensed(gameId) {
     log("POST", `/games/${gameId}/condensed`);
     if (!(MOCK_RALLIES[gameId] ?? []).length) {
-      throw new Error("no rallies in this game: the condensed game is for net sports");
+      throw new Error(
+        "no rallies in this game: the condensed game is for net sports",
+      );
     }
     startJob(`condensed:${gameId}`);
-    return delay<JobStatus>(jobState(`condensed:${gameId}`, "/mock/wide.mp4?rendition=condensed"));
+    return delay<JobStatus>(
+      jobState(`condensed:${gameId}`, "/mock/wide.mp4?rendition=condensed"),
+    );
   },
 
   exportVertical(gameId, body) {
     log("POST", `/games/${gameId}/exports/vertical`, body);
-    const clip = body.clip_id ? clipsOf(gameId).find((c) => c.id === body.clip_id) : undefined;
+    const clip = body.clip_id
+      ? clipsOf(gameId).find((c) => c.id === body.clip_id)
+      : undefined;
     const t0 = clip?.t_start ?? body.t_start;
     const t1 = clip?.t_end ?? body.t_end;
-    if (t0 === undefined || t1 === undefined || t1 <= t0) throw new Error("need a clip or a window");
+    if (t0 === undefined || t1 === undefined || t1 <= t0)
+      throw new Error("need a clip or a window");
     // D-47: a content-hash id — the same request is the same file.
     const vid = `v_${hex12(`${t0}|${t1}|${body.player_id ?? ""}`)}`;
-    const name = (pid?: string | null) => needGame(gameId).players.find((p) => p.id === pid)?.name ?? pid;
-    const pid = clip?.attribution.subject_player_id ?? clip?.attribution.by_player_id ?? body.player_id ?? null;
+    const name = (pid?: string | null) =>
+      needGame(gameId).players.find((p) => p.id === pid)?.name ?? pid;
+    const pid =
+      clip?.attribution.subject_player_id ??
+      clip?.attribution.by_player_id ??
+      body.player_id ??
+      null;
     verticals.set(`${gameId}/${vid}`, {
       id: vid,
       t_start: t0,
@@ -886,7 +1239,10 @@ export const mockApi: ReplayApi = {
   getVertical(gameId, vid) {
     const spec = verticals.get(`${gameId}/${vid}`);
     if (!spec) throw new Error(`export ${vid} not found`);
-    return delay<VerticalExport>({ ...spec, ...jobState(`vertical:${gameId}/${vid}`, `/mock/wide.mp4?export=${vid}`) });
+    return delay<VerticalExport>({
+      ...spec,
+      ...jobState(`vertical:${gameId}/${vid}`, `/mock/wide.mp4?export=${vid}`),
+    });
   },
 
   getReviewQueue(gameId) {
@@ -897,8 +1253,10 @@ export const mockApi: ReplayApi = {
   async answerReview(option: ReviewOption, text?: string) {
     // patchEvent / patchPlayer log the call
     const [, , gid, kind, id] = option.path.split("/");
-    if (kind === "events") await mockApi.patchEvent(gid, id, reviewBody(option, text));
-    else if (kind === "players") await mockApi.patchPlayer(gid, id, reviewBody(option, text));
+    if (kind === "events")
+      await mockApi.patchEvent(gid, id, reviewBody(option, text));
+    else if (kind === "players")
+      await mockApi.patchPlayer(gid, id, reviewBody(option, text));
     else throw new Error(`unknown review route ${option.path}`);
   },
 
@@ -911,17 +1269,35 @@ export const mockApi: ReplayApi = {
       return mockApi.query(gameId, text).then((r) => queryAsSearch(text, r));
     }
     const words = new Set(text.toLowerCase().match(/[a-z]+/g) ?? []);
-    const filtered = new Set(matchEvents(events.get(gameId) ?? [], text, g.players).map((e) => e.id));
+    const filtered = new Set(
+      matchEvents(events.get(gameId) ?? [], text, g.players).map((e) => e.id),
+    );
     const hits = plays
       .map((p) => {
-        const overlap = (p.text.toLowerCase().match(/[a-z]+/g) ?? []).filter((w) => words.has(w)).length;
+        const overlap = (p.text.toLowerCase().match(/[a-z]+/g) ?? []).filter(
+          (w) => words.has(w),
+        ).length;
         const filter_match = p.event_ids.some((id) => filtered.has(id));
-        return { play_id: p.id, t_start: p.t_start, t_end: p.t_end, text: p.text, filter_match, score: overlap };
+        return {
+          play_id: p.id,
+          t_start: p.t_start,
+          t_end: p.t_end,
+          text: p.text,
+          filter_match,
+          score: overlap,
+        };
       })
-      .sort((a, b) => Number(b.filter_match) - Number(a.filter_match) || b.score - a.score || a.t_start - b.t_start);
+      .sort(
+        (a, b) =>
+          Number(b.filter_match) - Number(a.filter_match) ||
+          b.score - a.score ||
+          a.t_start - b.t_start,
+      );
     return delay({
       query: text,
-      interpretation: filtered.size ? `Showing: ${text}` : "No filter — ranked by similarity",
+      interpretation: filtered.size
+        ? `Showing: ${text}`
+        : "No filter — ranked by similarity",
       filter_source: "rules",
       results: hits,
     });
@@ -933,12 +1309,25 @@ export const mockApi: ReplayApi = {
     const p = g.players.find((x) => x.id === playerId);
     if (!p) throw new Error(`player ${playerId} not found`);
     const name = p.name ?? `Player ${playerId.slice(1)}`;
-    const mine = (events.get(gameId) ?? []).filter((e) => e.type === "shot" && !e.dismissed && e.player_id === playerId);
+    const mine = (events.get(gameId) ?? []).filter(
+      (e) => e.type === "shot" && !e.dismissed && e.player_id === playerId,
+    );
     const makes = mine.filter((e) => e.made).length;
     const lines = mine.length
-      ? [`${name} made ${makes} of ${mine.length} shots (mock).`, makes < mine.length ? "Work on the misses from the right side (mock)." : "Keep taking those shots (mock)."]
+      ? [
+          `${name} made ${makes} of ${mine.length} shots (mock).`,
+          makes < mine.length
+            ? "Work on the misses from the right side (mock)."
+            : "Keep taking those shots (mock).",
+        ]
       : [`${name} took no shots this game (mock).`];
-    return delay<Advice>({ player_id: playerId, name, lines, source: "template", auto_detected: true });
+    return delay<Advice>({
+      player_id: playerId,
+      name,
+      lines,
+      source: "template",
+      auto_detected: true,
+    });
   },
 
   // ---- M10 profiles: synthetic fixtures (MOCK_PROFILES below), same rules as D-58 ----
@@ -977,7 +1366,9 @@ export const mockApi: ReplayApi = {
     const edited = new Set(doc.user_edited_fields);
     for (const f of ["name", "photo_url", "sports", "positions"] as const) {
       if (!(f in body)) continue;
-      Object.assign(doc, { [f]: f === "positions" ? (body.positions ?? []) : body[f] });
+      Object.assign(doc, {
+        [f]: f === "positions" ? (body.positions ?? []) : body[f],
+      });
       edited.add(f);
     }
     if ("sports" in body && body.sports == null) edited.delete("sports");
@@ -990,16 +1381,23 @@ export const mockApi: ReplayApi = {
       if (!Object.keys(mine).length) delete doc.stats_user[sport];
     }
     doc.user_edited_fields = [...edited].sort();
-    if (body.name) for (const l of linksOf(id)) setRoster(l.game_id, l.player_id, doc.name, id);
+    if (body.name)
+      for (const l of linksOf(id))
+        setRoster(l.game_id, l.player_id, doc.name, id);
     return delay(fullProfile(doc));
   },
 
   linkProfile(id, gameId, playerId) {
-    log("POST", `/profiles/${id}/links`, { game_id: gameId, player_id: playerId });
+    log("POST", `/profiles/${id}/links`, {
+      game_id: gameId,
+      player_id: playerId,
+    });
     const doc = needProfile(id);
-    if (!needGame(gameId).players.some((p) => p.id === playerId)) throw new Error(`player ${playerId} not found`);
+    if (!needGame(gameId).players.some((p) => p.id === playerId))
+      throw new Error(`player ${playerId} not found`);
     const owner = profileLinks.get(`${gameId}/${playerId}`);
-    if (owner && owner !== id) throw new Error(`${gameId}/${playerId} is linked to another profile`);
+    if (owner && owner !== id)
+      throw new Error(`${gameId}/${playerId} is linked to another profile`);
     profileLinks.set(`${gameId}/${playerId}`, id);
     setRoster(gameId, playerId, doc.name, id);
     return delay(fullProfile(doc));
@@ -1008,7 +1406,8 @@ export const mockApi: ReplayApi = {
   unlinkProfile(id, gameId, playerId) {
     log("DELETE", `/profiles/${id}/links/${gameId}/${playerId}`);
     const doc = needProfile(id);
-    if (profileLinks.get(`${gameId}/${playerId}`) !== id) throw new Error("no such link");
+    if (profileLinks.get(`${gameId}/${playerId}`) !== id)
+      throw new Error("no such link");
     profileLinks.delete(`${gameId}/${playerId}`);
     setRoster(gameId, playerId, null, null);
     return delay(fullProfile(doc));
@@ -1017,28 +1416,54 @@ export const mockApi: ReplayApi = {
   getSuggestions(id) {
     log("GET", `/profiles/${id}/suggestions`);
     const doc = needProfile(id);
-    const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+    const norm = (s: string | null | undefined) =>
+      (s ?? "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
     const out: ProfileSuggestion[] = [];
     for (const g of games.values()) {
       for (const p of g.players) {
-        if (profileLinks.has(`${g.id}/${p.id}`) || declinedSuggestions.has(`${id}/${g.id}/${p.id}`)) continue;
+        if (
+          profileLinks.has(`${g.id}/${p.id}`) ||
+          declinedSuggestions.has(`${id}/${g.id}/${p.id}`)
+        )
+          continue;
         const reasons: ProfileSuggestion["reasons"] = [];
-        if (norm(p.name) && norm(p.name) === norm(doc.name)) reasons.push({ kind: "same_name" });
+        if (norm(p.name) && norm(p.name) === norm(doc.name))
+          reasons.push({ kind: "same_name" });
         // D-58: face matches exist only for enrolled profiles (deleting enrollment drops them)
         const face = doc.face_enrolled
-          ? faceMatches.find((m) => m.profile_id === id && m.game_id === g.id && m.player_id === p.id)
+          ? faceMatches.find(
+              (m) =>
+                m.profile_id === id &&
+                m.game_id === g.id &&
+                m.player_id === p.id,
+            )
           : undefined;
-        if (face) reasons.push({ kind: "face", similarity: face.similarity, votes: face.votes });
-        if (reasons.length) out.push({ game_id: g.id, game_title: g.title, player_id: p.id, reasons });
+        if (face)
+          reasons.push({
+            kind: "face",
+            similarity: face.similarity,
+            votes: face.votes,
+          });
+        if (reasons.length)
+          out.push({
+            game_id: g.id,
+            game_title: g.title,
+            player_id: p.id,
+            reasons,
+          });
       }
     }
     return delay(out);
   },
 
   declineSuggestion(id, gameId, playerId) {
-    log("POST", `/profiles/${id}/suggestions/decline`, { game_id: gameId, player_id: playerId });
+    log("POST", `/profiles/${id}/suggestions/decline`, {
+      game_id: gameId,
+      player_id: playerId,
+    });
     needProfile(id);
-    if (!needGame(gameId).players.some((p) => p.id === playerId)) throw new Error(`player ${playerId} not found`);
+    if (!needGame(gameId).players.some((p) => p.id === playerId))
+      throw new Error(`player ${playerId} not found`);
     declinedSuggestions.add(`${id}/${gameId}/${playerId}`);
     return mockApi.getSuggestions(id);
   },
@@ -1064,15 +1489,21 @@ export const mockApi: ReplayApi = {
     const doc = needProfile(id);
     if (!photo.size) throw new Error("send one image up to 8 MB");
     doc.photo_url = URL.createObjectURL(photo);
-    doc.user_edited_fields = [...new Set([...doc.user_edited_fields, "photo_url"])].sort();
+    doc.user_edited_fields = [
+      ...new Set([...doc.user_edited_fields, "photo_url"]),
+    ].sort();
     return delay(fullProfile(doc));
   },
 
   enrollFace(id, photos, consent) {
     log("POST", `/profiles/${id}/face`, { consent, photos: photos.length });
     const doc = needProfile(id);
-    if (!consent) throw new Error("face enrollment needs consent=true from the person enrolled");
-    if (photos.length < 1 || photos.length > 10) throw new Error("send 1 to 10 photos");
+    if (!consent)
+      throw new Error(
+        "face enrollment needs consent=true from the person enrolled",
+      );
+    if (photos.length < 1 || photos.length > 10)
+      throw new Error("send 1 to 10 photos");
     doc.face_enrolled = true;
     return delay(fullProfile(doc));
   },
@@ -1089,7 +1520,10 @@ export const mockApi: ReplayApi = {
 };
 
 /** D-80: the TV specs play the phone's part (status changes, startProcessing) through this. */
-(globalThis as { __replayMock?: unknown }).__replayMock = { api: mockApi, games };
+(globalThis as { __replayMock?: unknown }).__replayMock = {
+  api: mockApi,
+  games,
+};
 
 /** D-80 phone page client. The token "expired" stands in for a stale QR: every call 401s. */
 export function mockUploadApi(token: string): ReplayApi {
@@ -1120,26 +1554,82 @@ interface MockPlay {
 }
 const MOCK_PLAYS: Record<string, MockPlay[]> = {
   g_mock01: [
-    { id: "pl_m1", t_start: 0.5, t_end: 4.5, event_ids: ["e_0001"], participants: ["p1"], text: "Marcus drives and scores two (mock)." },
-    { id: "pl_m2", t_start: 5.5, t_end: 9.5, event_ids: ["e_0002"], participants: ["p2"], text: "Player 2 shoots from the wing, no good (mock)." },
-    { id: "pl_m3", t_start: 11, t_end: 15.5, event_ids: ["e_0003"], participants: ["p1", "p3"], text: "Steal, then Marcus scores on the break (mock)." },
-    { id: "pl_m4", t_start: 15.5, t_end: 18.5, event_ids: ["e_0004"], participants: ["p3"], text: "Player 3 hits a long jumper (mock)." },
+    {
+      id: "pl_m1",
+      t_start: 0.5,
+      t_end: 4.5,
+      event_ids: ["e_0001"],
+      participants: ["p1"],
+      text: "Marcus drives and scores two (mock).",
+    },
+    {
+      id: "pl_m2",
+      t_start: 5.5,
+      t_end: 9.5,
+      event_ids: ["e_0002"],
+      participants: ["p2"],
+      text: "Player 2 shoots from the wing, no good (mock).",
+    },
+    {
+      id: "pl_m3",
+      t_start: 11,
+      t_end: 15.5,
+      event_ids: ["e_0003"],
+      participants: ["p1", "p3"],
+      text: "Steal, then Marcus scores on the break (mock).",
+    },
+    {
+      id: "pl_m4",
+      t_start: 15.5,
+      t_end: 18.5,
+      event_ids: ["e_0004"],
+      participants: ["p3"],
+      text: "Player 3 hits a long jumper (mock).",
+    },
   ],
   // M10: a second game for Marcus, so a career reel crosses games (no events: no stats)
   g_mock02: [
-    { id: "pl_n1", t_start: 2, t_end: 6, event_ids: [], participants: ["p1", "p2"], text: "Marcus brings it up (mock)." },
-    { id: "pl_n2", t_start: 12, t_end: 16, event_ids: [], participants: ["p1"], text: "Marcus on the break (mock)." },
+    {
+      id: "pl_n1",
+      t_start: 2,
+      t_end: 6,
+      event_ids: [],
+      participants: ["p1", "p2"],
+      text: "Marcus brings it up (mock).",
+    },
+    {
+      id: "pl_n2",
+      t_start: 12,
+      t_end: 16,
+      event_ids: [],
+      participants: ["p1"],
+      text: "Marcus on the break (mock).",
+    },
   ],
 };
 
-function clip(id: string, play: string, trig: string, t0: number, t1: number, by: string | null, subject: string | null, participants: string[], source: PlayClip["source"] = "auto"): PlayClip {
+function clip(
+  id: string,
+  play: string,
+  trig: string,
+  t0: number,
+  t1: number,
+  by: string | null,
+  subject: string | null,
+  participants: string[],
+  source: PlayClip["source"] = "auto",
+): PlayClip {
   return {
     id,
     play_id: play,
     trigger_id: trig,
     t_start: t0,
     t_end: t1,
-    attribution: { owner_player_id: by ?? subject, by_player_id: by, subject_player_id: subject },
+    attribution: {
+      owner_player_id: by ?? subject,
+      by_player_id: by,
+      subject_player_id: subject,
+    },
     participants,
     source,
   };
@@ -1158,9 +1648,36 @@ const triggers = new Map<string, Trigger[]>([
   [
     "g_mock01",
     [
-      { id: "tr_g1", type: "gesture", t: 5.2, by_player_id: "p1", confidence: 0.86, source: "auto", play_id: "pl_m1", clip_id: "c_g1" },
-      { id: "tr_t1", type: "tap", t: 10, confidence: 1, source: "user", play_id: "pl_m2", clip_id: "c_t1" },
-      { id: "tr_v1", type: "voice", t: 16, subject_player_id: "p1", transcript: "Replay, clip Marcus", confidence: 0.9, source: "auto", play_id: "pl_m3", clip_id: "c_v1" },
+      {
+        id: "tr_g1",
+        type: "gesture",
+        t: 5.2,
+        by_player_id: "p1",
+        confidence: 0.86,
+        source: "auto",
+        play_id: "pl_m1",
+        clip_id: "c_g1",
+      },
+      {
+        id: "tr_t1",
+        type: "tap",
+        t: 10,
+        confidence: 1,
+        source: "user",
+        play_id: "pl_m2",
+        clip_id: "c_t1",
+      },
+      {
+        id: "tr_v1",
+        type: "voice",
+        t: 16,
+        subject_player_id: "p1",
+        transcript: "Replay, clip Marcus",
+        confidence: 0.9,
+        source: "auto",
+        play_id: "pl_m3",
+        clip_id: "c_v1",
+      },
     ],
   ],
 ]);
@@ -1179,13 +1696,40 @@ const MOCK_COMMENTARY: Record<string, Commentary> = {
     stored: false,
     narration_url: null,
     plays: [
-      { play_id: "pl_m1", source: "template", lines: [
-        { t: 1, text: "Marcus brings it up the floor.", audio_t: 1, audio_s: 1.8 },
-        { t: 3, text: "Marcus scores two.", audio_t: 3, audio_s: 1.5 },
-      ] },
-      { play_id: "pl_m2", source: "template", lines: [{ t: 8, text: "Player 2 shoots, no good.", audio_t: 8, audio_s: 1.8 }] },
-      { play_id: "pl_m3", source: "template", lines: [{ t: 14, text: "Marcus scores again!", audio_t: 14, audio_s: 1.6 }] },
-      { play_id: "pl_m4", source: "template", lines: [{ t: 17, text: "Player 3 scores two.", audio_t: 17, audio_s: 1.6 }] },
+      {
+        play_id: "pl_m1",
+        source: "template",
+        lines: [
+          {
+            t: 1,
+            text: "Marcus brings it up the floor.",
+            audio_t: 1,
+            audio_s: 1.8,
+          },
+          { t: 3, text: "Marcus scores two.", audio_t: 3, audio_s: 1.5 },
+        ],
+      },
+      {
+        play_id: "pl_m2",
+        source: "template",
+        lines: [
+          { t: 8, text: "Player 2 shoots, no good.", audio_t: 8, audio_s: 1.8 },
+        ],
+      },
+      {
+        play_id: "pl_m3",
+        source: "template",
+        lines: [
+          { t: 14, text: "Marcus scores again!", audio_t: 14, audio_s: 1.6 },
+        ],
+      },
+      {
+        play_id: "pl_m4",
+        source: "template",
+        lines: [
+          { t: 17, text: "Player 3 scores two.", audio_t: 17, audio_s: 1.6 },
+        ],
+      },
     ],
   },
 };
@@ -1203,7 +1747,10 @@ function mockHype(peaks: [number, number, boolean][]): Hype {
   const rate = 2;
   const values = Array.from({ length: DURATION * rate }, (_, i) => {
     const t = i / rate;
-    const v = Math.max(0.05, ...peaks.map(([p, h]) => h * Math.exp(-((t - p) ** 2) / 2)));
+    const v = Math.max(
+      0.05,
+      ...peaks.map(([p, h]) => h * Math.exp(-((t - p) ** 2) / 2)),
+    );
     return Number(v.toFixed(3));
   });
   return {
@@ -1213,16 +1760,52 @@ function mockHype(peaks: [number, number, boolean][]): Hype {
     values,
     candidates: peaks
       .filter(([, , c]) => c)
-      .map(([t, score]) => ({ t, score, t_start: Math.max(0, t - 3), t_end: t + 1, reasons: ["audio"] }))
+      .map(([t, score]) => ({
+        t,
+        score,
+        t_start: Math.max(0, t - 3),
+        t_end: t + 1,
+        reasons: ["audio"],
+      }))
       .sort((a, b) => b.score - a.score),
   };
 }
 
 const MOCK_RALLIES: Record<string, RallyDoc["rallies"]> = {
   g_pickle4: [
-    { id: "r1", n: 1, event_id: "e_r1", t_start: 1, t_end: 6, duration_s: 5, shots: 6, confidence: 0.8, condensed_t: 0 },
-    { id: "r2", n: 2, event_id: "e_r2", t_start: 8, t_end: 16.5, duration_s: 8.5, shots: 11, confidence: 0.74, condensed_t: 6.5 },
-    { id: "r3", n: 3, event_id: "e_r3", t_start: 17, t_end: 19.5, duration_s: 2.5, shots: 0, confidence: 0.52, condensed_t: 17.5 },
+    {
+      id: "r1",
+      n: 1,
+      event_id: "e_r1",
+      t_start: 1,
+      t_end: 6,
+      duration_s: 5,
+      shots: 6,
+      confidence: 0.8,
+      condensed_t: 0,
+    },
+    {
+      id: "r2",
+      n: 2,
+      event_id: "e_r2",
+      t_start: 8,
+      t_end: 16.5,
+      duration_s: 8.5,
+      shots: 11,
+      confidence: 0.74,
+      condensed_t: 6.5,
+    },
+    {
+      id: "r3",
+      n: 3,
+      event_id: "e_r3",
+      t_start: 17,
+      t_end: 19.5,
+      duration_s: 2.5,
+      shots: 0,
+      confidence: 0.52,
+      condensed_t: 17.5,
+    },
   ],
 };
 
@@ -1235,7 +1818,8 @@ function startJob(key: string) {
 function jobState(key: string, url: string): JobStatus {
   const started = jobs.get(key);
   if (started === undefined) return { status: "none", url: null, job_id: null };
-  if (Date.now() - started < JOB_MS) return { status: "queued", url: null, job_id: `j_${key}` };
+  if (Date.now() - started < JOB_MS)
+    return { status: "queued", url: null, job_id: `j_${key}` };
   return { status: "done", url, job_id: `j_${key}` };
 }
 const verticals = new Map<string, Omit<VerticalExport, keyof JobStatus>>();
@@ -1249,7 +1833,12 @@ function hex12(s: string): string {
  *  events, then up to 5 untagged players (name them or merge into a teammate). */
 function reviewQueue(g: Game, list: GameEvent[]): ReviewQuestion[] {
   const out: ReviewQuestion[] = [];
-  const opt = (label: string, path: string, body: Record<string, unknown>, text_field?: string): ReviewOption => ({
+  const opt = (
+    label: string,
+    path: string,
+    body: Record<string, unknown>,
+    text_field?: string,
+  ): ReviewOption => ({
     label,
     method: "PATCH",
     path,
@@ -1259,19 +1848,36 @@ function reviewQueue(g: Game, list: GameEvent[]): ReviewQuestion[] {
   for (const e of [...list].sort((a, b) => a.t_key - b.t_key)) {
     if (e.confirmed || e.dismissed || e.type !== "shot") continue;
     const path = `/games/${g.id}/events/${e.id}`;
-    const base = { event_id: e.id, t: e.t_key, player_id: e.player_id, confidence: e.confidence };
+    const base = {
+      event_id: e.id,
+      t: e.t_key,
+      player_id: e.player_id,
+      confidence: e.confidence,
+    };
     const no = opt("Not a shot", path, { dismissed: true, confirmed: true });
     if (e.made === undefined || e.made === null) {
-      out.push({ ...base, id: `q_outcome_${e.id}`, kind: "shot_outcome", prompt: "Make or miss?", options: [
-        opt("Made", path, { made: true, confirmed: true }),
-        opt("Missed", path, { made: false, confirmed: true }),
-        no,
-      ] });
+      out.push({
+        ...base,
+        id: `q_outcome_${e.id}`,
+        kind: "shot_outcome",
+        prompt: "Make or miss?",
+        options: [
+          opt("Made", path, { made: true, confirmed: true }),
+          opt("Missed", path, { made: false, confirmed: true }),
+          no,
+        ],
+      });
     } else if (e.confidence < REVIEW_CONFIDENCE_THRESHOLD) {
-      out.push({ ...base, id: `q_conf_${e.id}`, kind: "low_confidence", prompt: "Was this a shot?", options: [
-        opt("Yes", path, { confirmed: true }),
-        { ...no, label: "No" },
-      ] });
+      out.push({
+        ...base,
+        id: `q_conf_${e.id}`,
+        kind: "low_confidence",
+        prompt: "Was this a shot?",
+        options: [
+          opt("Yes", path, { confirmed: true }),
+          { ...no, label: "No" },
+        ],
+      });
     }
   }
   const tagged = g.players.filter((p) => p.name);
@@ -1285,7 +1891,9 @@ function reviewQueue(g: Game, list: GameEvent[]): ReviewQuestion[] {
       prompt: `Who is #${p.id}?`,
       options: [
         opt("Type a name", path, {}, "name"),
-        ...(mates.length ? mates : tagged).map((q) => opt(`Same as ${q.name}`, path, { merge_into: q.id })),
+        ...(mates.length ? mates : tagged).map((q) =>
+          opt(`Same as ${q.name}`, path, { merge_into: q.id }),
+        ),
       ],
     });
   }
@@ -1295,10 +1903,26 @@ function reviewQueue(g: Game, list: GameEvent[]): ReviewQuestion[] {
 /** M8 replay fixture (labelled mock): every angle is the same 20 s wide.mp4 under a
  *  per-angle query string, so a cut is a real src swap + reload that has to land at the
  *  same media time, without shipping more video. */
-function mockAngle(id: string, tier: ReplayAngle["tier"], label: string): ReplayAngle {
-  return { id, tier, label, url: `/mock/wide.mp4?angle=${id}`, duration_s: DURATION, width: 1280, height: 720 };
+function mockAngle(
+  id: string,
+  tier: ReplayAngle["tier"],
+  label: string,
+): ReplayAngle {
+  return {
+    id,
+    tier,
+    label,
+    url: `/mock/wide.mp4?angle=${id}`,
+    duration_s: DURATION,
+    width: 1280,
+    height: 720,
+  };
 }
-function mockReplay(play_id: string, label: string, angles: ReplayAngle[]): ReplayManifest {
+function mockReplay(
+  play_id: string,
+  label: string,
+  angles: ReplayAngle[],
+): ReplayManifest {
   return {
     schema: "replay.replay_manifest.v1",
     game_id: "g_mock01",
@@ -1352,18 +1976,45 @@ interface MockProfileDoc {
 }
 
 const profileDocs = new Map<string, MockProfileDoc>([
-  ["pr_00000000a001", {
-    profile_id: "pr_00000000a001", name: "Marcus", photo_url: null, sports: null, positions: ["guard"],
-    stats_user: { basketball: { rebounds: 3 } }, user_edited_fields: ["positions"], face_enrolled: false,
-  }],
-  ["pr_00000000a002", {
-    profile_id: "pr_00000000a002", name: "Jordan", photo_url: null, sports: ["basketball"], positions: [],
-    stats_user: {}, user_edited_fields: ["sports"], face_enrolled: true,
-  }],
-  ["pr_00000000a003", {
-    profile_id: "pr_00000000a003", name: "Sam", photo_url: null, sports: ["pickleball"], positions: [],
-    stats_user: {}, user_edited_fields: ["sports"], face_enrolled: false,
-  }],
+  [
+    "pr_00000000a001",
+    {
+      profile_id: "pr_00000000a001",
+      name: "Marcus",
+      photo_url: null,
+      sports: null,
+      positions: ["guard"],
+      stats_user: { basketball: { rebounds: 3 } },
+      user_edited_fields: ["positions"],
+      face_enrolled: false,
+    },
+  ],
+  [
+    "pr_00000000a002",
+    {
+      profile_id: "pr_00000000a002",
+      name: "Jordan",
+      photo_url: null,
+      sports: ["basketball"],
+      positions: [],
+      stats_user: {},
+      user_edited_fields: ["sports"],
+      face_enrolled: true,
+    },
+  ],
+  [
+    "pr_00000000a003",
+    {
+      profile_id: "pr_00000000a003",
+      name: "Sam",
+      photo_url: null,
+      sports: ["pickleball"],
+      positions: [],
+      stats_user: {},
+      user_edited_fields: ["sports"],
+      face_enrolled: false,
+    },
+  ],
 ]);
 /** "game/player" → profile id (one owner per roster player, D-58). */
 const profileLinks = new Map<string, string>([
@@ -1373,7 +2024,15 @@ const profileLinks = new Map<string, string>([
 /** "profile/game/player" suggestions a person declined. */
 const declinedSuggestions = new Set<string>();
 /** What a face_match job would have written for enrolled profiles (faces.json). */
-let faceMatches = [{ profile_id: "pr_00000000a002", game_id: "g_mock01", player_id: "p3", similarity: 0.58, votes: 4 }];
+let faceMatches = [
+  {
+    profile_id: "pr_00000000a002",
+    game_id: "g_mock01",
+    player_id: "p3",
+    similarity: 0.58,
+    votes: 4,
+  },
+];
 const renderedCards = new Set<string>();
 for (const [key, id] of profileLinks) {
   const [g, p] = key.split("/");
@@ -1386,7 +2045,12 @@ function needProfile(id: string): MockProfileDoc {
   return d;
 }
 
-function setRoster(gameId: string, playerId: string, name: string | null, profileId: string | null) {
+function setRoster(
+  gameId: string,
+  playerId: string,
+  name: string | null,
+  profileId: string | null,
+) {
   const p = games.get(gameId)?.players.find((x) => x.id === playerId);
   if (!p) return;
   if (profileId === null) delete p.profile_id;
@@ -1397,21 +2061,36 @@ function setRoster(gameId: string, playerId: string, name: string | null, profil
 function linksOf(id: string): { game_id: string; player_id: string }[] {
   return [...profileLinks]
     .filter(([, owner]) => owner === id)
-    .map(([key]) => ({ game_id: key.split("/")[0], player_id: key.split("/")[1] }))
-    .sort((a, b) => a.game_id.localeCompare(b.game_id) || a.player_id.localeCompare(b.player_id));
+    .map(([key]) => ({
+      game_id: key.split("/")[0],
+      player_id: key.split("/")[1],
+    }))
+    .sort(
+      (a, b) =>
+        a.game_id.localeCompare(b.game_id) ||
+        a.player_id.localeCompare(b.player_id),
+    );
 }
 
 function mockGameStats(gameId: string, pid: string): Record<string, number> {
   const evs = (events.get(gameId) ?? []).filter((e) => !e.dismissed);
   const out: Record<string, number> = {
     games: 1,
-    plays: (MOCK_PLAYS[gameId] ?? []).filter((p) => p.participants.includes(pid)).length,
+    plays: (MOCK_PLAYS[gameId] ?? []).filter((p) =>
+      p.participants.includes(pid),
+    ).length,
     distance_m: distanceFor(pid),
   };
   if (evs.some((e) => e.type === "shot")) {
     const mine = evs.filter((e) => e.type === "shot" && e.player_id === pid);
     const made = mine.filter((e) => e.made).length;
-    Object.assign(out, { points: 2 * made, shots_made: made, shots_attempted: mine.length, rebounds: 0, steals: 0 });
+    Object.assign(out, {
+      points: 2 * made,
+      shots_made: made,
+      shots_attempted: mine.length,
+      rebounds: 0,
+      steals: 0,
+    });
   }
   return out;
 }
@@ -1424,9 +2103,11 @@ function statsBySport(doc: MockProfileDoc): Record<string, SportStats> {
     const s = (out[g.sport] ??= { stats: {}, auto: {}, edited: [], games: [] });
     const row = mockGameStats(l.game_id, l.player_id);
     s.games = [...(s.games ?? []), { ...l, ...row }];
-    for (const [k, v] of Object.entries(row)) s.auto[k] = Number(((s.auto[k] ?? 0) + v).toFixed(1));
+    for (const [k, v] of Object.entries(row))
+      s.auto[k] = Number(((s.auto[k] ?? 0) + v).toFixed(1));
   }
-  for (const sport of Object.keys(doc.stats_user)) out[sport] ??= { stats: {}, auto: {}, edited: [], games: [] };
+  for (const sport of Object.keys(doc.stats_user))
+    out[sport] ??= { stats: {}, auto: {}, edited: [], games: [] };
   for (const [sport, s] of Object.entries(out)) {
     const user = doc.stats_user[sport] ?? {};
     s.stats = { ...s.auto, ...user };
@@ -1438,14 +2119,28 @@ function statsBySport(doc: MockProfileDoc): Record<string, SportStats> {
 
 function publicDoc(doc: MockProfileDoc): Profile {
   const { stats_user, ...rest } = doc;
-  const fields = new Set(doc.user_edited_fields.filter((f) => !f.startsWith("stats_by_sport.")));
-  for (const [sport, vals] of Object.entries(stats_user)) for (const k of Object.keys(vals)) fields.add(`stats_by_sport.${sport}.${k}`);
-  return { schema: "replay.profile.v1", ...structuredClone(rest), user_edited_fields: [...fields].sort(), linked: linksOf(doc.profile_id) };
+  const fields = new Set(
+    doc.user_edited_fields.filter((f) => !f.startsWith("stats_by_sport.")),
+  );
+  for (const [sport, vals] of Object.entries(stats_user))
+    for (const k of Object.keys(vals))
+      fields.add(`stats_by_sport.${sport}.${k}`);
+  return {
+    schema: "replay.profile.v1",
+    ...structuredClone(rest),
+    user_edited_fields: [...fields].sort(),
+    linked: linksOf(doc.profile_id),
+  };
 }
 
 function fullProfile(doc: MockProfileDoc): Profile {
   const stats = statsBySport(doc);
-  return { ...publicDoc(doc), sports: doc.sports ?? Object.keys(stats).sort(), stats_by_sport: stats, missing_links: [] };
+  return {
+    ...publicDoc(doc),
+    sports: doc.sports ?? Object.keys(stats).sort(),
+    stats_by_sport: stats,
+    missing_links: [],
+  };
 }
 
 function mockReel(doc: MockProfileDoc): CareerReel {
@@ -1463,20 +2158,44 @@ function mockReel(doc: MockProfileDoc): CareerReel {
         url: `/mock/wide.mp4?game=${l.game_id}`,
       })),
   );
-  return { schema: "replay.reel.v1", profile_id: doc.profile_id, items, duration_s: items.reduce((s, i) => s + i.t_end - i.t_start, 0) };
+  return {
+    schema: "replay.reel.v1",
+    profile_id: doc.profile_id,
+    items,
+    duration_s: items.reduce((s, i) => s + i.t_end - i.t_start, 0),
+  };
 }
 
 function mockCard(doc: MockProfileDoc): PlayerCard {
   const stats = statsBySport(doc);
-  const sport = Object.keys(stats).sort((a, b) => (stats[b].stats.games ?? 0) - (stats[a].stats.games ?? 0) || a.localeCompare(b))[0] ?? null;
+  const sport =
+    Object.keys(stats).sort(
+      (a, b) =>
+        (stats[b].stats.games ?? 0) - (stats[a].stats.games ?? 0) ||
+        a.localeCompare(b),
+    )[0] ?? null;
   const s = sport ? stats[sport] : undefined;
   const n = s?.stats.games ?? 0;
   const g = n === 1 ? "1 game" : `${n} games`;
-  const title = s?.stats.points ? `${doc.name} the scorer: ${s.stats.points} points in ${g} (mock)` : `${doc.name}: ${s?.stats.plays ?? 0} plays in ${g} (mock)`;
-  const TILES: [string, string][] = [["points", "PTS"], ["rebounds", "REB"], ["plays", "PLAYS"], ["distance_m", "METRES"]];
+  const title = s?.stats.points
+    ? `${doc.name} the scorer: ${s.stats.points} points in ${g} (mock)`
+    : `${doc.name}: ${s?.stats.plays ?? 0} plays in ${g} (mock)`;
+  const TILES: [string, string][] = [
+    ["points", "PTS"],
+    ["rebounds", "REB"],
+    ["plays", "PLAYS"],
+    ["distance_m", "METRES"],
+  ];
   const first = mockReel(doc).items.find((i) => i.sport === sport);
   const best: PlayerCard["best_moment"] = first
-    ? { game_id: first.game_id, player_id: first.player_id, play_id: first.play_id, sport: first.sport, t_start: first.t_start, t_end: first.t_end }
+    ? {
+        game_id: first.game_id,
+        player_id: first.player_id,
+        play_id: first.play_id,
+        sport: first.sport,
+        t_start: first.t_start,
+        t_end: first.t_end,
+      }
     : null;
   const st = s?.stats ?? {};
   return {

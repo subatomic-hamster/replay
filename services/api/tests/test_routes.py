@@ -163,6 +163,9 @@ def test_library_list(client: TestClient, settings):
         "thumb_url",
         "recorded_at",
         "sport",
+        # TV redesign readiness (no eta_s / stage_label once ready)
+        "watchable",
+        "features",
     }
     assert row["duration_s"] == 20.0
     assert row["thumb_url"].endswith(f"/media/games/{gid}/media/thumb.jpg")

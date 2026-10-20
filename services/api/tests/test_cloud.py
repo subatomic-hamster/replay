@@ -322,3 +322,102 @@ def test_remote_runner_end_to_end(cloud, cloud_settings, tmp_path, aws):
         assert rr.run_once(api, runner_settings) is True
         auto = cloud.get(f"/games/{gid}/calibration/auto").json()
         assert auto["status"] == "done" and auto["ok"], auto
+
+
+def test_list_parts_resumes_a_dropped_upload(cloud, aws):
+    """The phone lost its connection after part 1: list-parts names what S3 holds and
+    hands out URLs for the rest; the upload completes from there. Token-auth, own game."""
+    a, b = _game(cloud), _game(cloud)
+    gid = a["id"]
+    phone = TestClient(cloud.app, headers={"X-Replay-Upload-Token": a["upload_token"]})
+    data = TINY_MP4.read_bytes() + b"\0" * ((33 << 20) - TINY_MP4.stat().st_size)  # 3 parts
+    init = phone.post(f"/games/{gid}/upload/multipart", json={"size": len(data)}).json()
+    size, uid = init["part_size"], init["upload_id"]
+    assert [p["n"] for p in init["parts"]] == [1, 2, 3]
+    first = httpx.put(init["parts"][0]["url"], content=data[:size])
+    httpx.put(init["parts"][1]["url"], content=data[size : size + 1000])  # cut short
+
+    q = {"upload_id": uid, "size": len(data)}
+    got = phone.get(f"/games/{gid}/upload/parts", params=q).json()
+    assert got["part_size"] == size and got["upload_id"] == uid
+    assert got["done"] == [{"n": 1, "etag": first.headers["etag"], "size": size}]
+    assert [p["n"] for p in got["parts"]] == [2, 3]  # the short part 2 goes again
+    parts = [{"n": 1, "etag": first.headers["etag"]}]
+    for p in got["parts"]:
+        chunk = data[(p["n"] - 1) * size : p["n"] * size]
+        parts.append({"n": p["n"], "etag": httpx.put(p["url"], content=chunk).headers["etag"]})
+    r = phone.post(f"/games/{gid}/upload/complete", json={"upload_id": uid, "parts": parts})
+    assert r.status_code == 200 and r.json()["status"] == "uploaded"
+    assert 19.5 < r.json()["video"]["duration_s"] < 20.5  # probed at upload, for the ETA
+    got = aws.get_object(Bucket=BUCKET, Key=f"games/{gid}/source.mp4")["Body"].read()
+    assert got == data
+
+    # gone once completed; another game's token or id never reaches it
+    assert phone.get(f"/games/{gid}/upload/parts", params=q).status_code == 404
+    other = {"X-Replay-Upload-Token": b["upload_token"]}
+    assert TestClient(cloud.app).get(f"/games/{gid}/upload/parts", params=q,
+                                     headers=other).status_code == 401  # fmt: skip
+    up_b = cloud.post(f"/games/{b['id']}/upload/multipart", json={"size": 10}).json()
+    assert phone.get(f"/games/{gid}/upload/parts",
+                     params={"upload_id": up_b["upload_id"], "size": 10}).status_code == 404  # fmt: skip
+    assert (
+        cloud.get(f"/games/{gid}/upload/parts", params={"upload_id": "x", "size": 0}).status_code
+        == 422
+    )
+
+
+def test_remote_runner_tv_fields_and_early_push(cloud, cloud_settings, tmp_path, aws, monkeypatch):
+    """The runner pushes media/ and storyboard/ while the job runs (so the TV can play a
+    processing game), and the API serves hero, storyboard, moments and readiness from S3."""
+    from replay_api import remote_runner as rr
+
+    gid = _game(cloud)["id"]
+    _upload(cloud, gid)
+    assert cloud.post(f"/games/{gid}/calibration", json=CALIB).status_code == 200
+    game = cloud.post(f"/games/{gid}/process")
+    queued = cloud.get(f"/games/{gid}").json()
+    assert queued["watchable"] is False and queued["stage_label"] == "Waiting to start"
+    assert queued["eta_s"] >= 30  # at least one runner poll
+    assert queued["features"]["moments"]["state"] == "pending"
+
+    early: list[tuple] = []
+    real_push = rr.push
+
+    def spy(api, job_id, root, before, only=None):
+        n = real_push(api, job_id, root, before, only)
+        if only:
+            early.append((n, set(aws_keys())))
+        return n
+
+    def aws_keys():
+        objs = aws.list_objects_v2(Bucket=BUCKET, Prefix=f"games/{gid}/").get("Contents", [])
+        return {o["Key"].split("/", 2)[2] for o in objs}
+
+    monkeypatch.setattr(rr, "push", spy)
+    runner = dataclasses.replace(cloud_settings, storage="local", jobs="local",
+                                 data_dir=tmp_path / "runner")  # fmt: skip
+    with httpx.Client() as http:
+        api = rr.Api(TestClient(cloud.app), WORKER, http, tries=2, backoff_s=0.01)
+        assert rr.run_once(api, runner) is True
+    # the first early push (after ingest) put the mezzanine up before the run ended
+    assert early and early[0][0] >= 1 and "media/wide.mp4" in early[0][1]
+    assert "events.json" not in early[0][1]  # everything else waits for the final push
+
+    game = cloud.get(f"/games/{gid}").json()
+    assert game["status"] == "ready" and game["watchable"] is True
+    assert game["features"]["moments"] == {"state": "ready"}
+    hero = TestClient(cloud.app).get(game["hero_url"], follow_redirects=False)
+    assert (
+        hero.status_code == 302 and httpx.get(hero.headers["location"]).content[:2] == b"\xff\xd8"
+    )
+    sb = cloud.get(game["storyboard_url"]).json()
+    assert sb["count"] == 10 and sb["sheets"][0].endswith(f"/media/games/{gid}/storyboard/0000.jpg")
+    ms = cloud.get(f"/games/{gid}/moments").json()
+    assert [m["label"] for m in ms if m["kind"] == "score"] == ["Basket, Marcus", "Basket, Alex"]
+    assert all(m["thumb_url"] for m in ms)
+    phone = {"X-Replay-Upload-Token": _token(cloud, gid)}
+    assert TestClient(cloud.app).get(f"/games/{gid}/moments", headers=phone).status_code == 401
+
+
+def _token(cloud, gid: str) -> str:
+    return auth.make_token(SECRET, gid)

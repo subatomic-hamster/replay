@@ -47,11 +47,15 @@ class Stage:
     version: str
     fn: Callable[[Ctx, str | None], None]
     # Game-relative paths, or "{cfg_key}" for a path the run config supplies (skipped when
-    # that key is missing or None). "{item}" is replaced by the fan-out item.
+    # that key is missing or None). "{item}" is replaced by the fan-out item. A trailing
+    # "?" makes a game-relative input optional: hashed when present, skipped when not.
     inputs: tuple[str, ...] = ()
     outputs: tuple[str, ...] = ()
     params: tuple[str, ...] = ()  # cfg keys that change the outputs
     after: tuple[str, ...] = ()  # upstream stages
+    # upstream only when they are in the same run (never pulled in): the producers of
+    # optional inputs, e.g. the opt-in `hype` before `moments`
+    soft_after: tuple[str, ...] = ()
     resource: str | Callable[[dict], str] = "cpu"
     fanout: Callable[[Ctx], list[str]] | None = None  # -> one task per item
     key_extra: Callable[[dict], Any] | None = None  # e.g. the device detection ran on
@@ -124,7 +128,9 @@ def _resolve_inputs(stage: Stage, ctx: Ctx, item: str | None) -> dict[str, Path]
                 continue
             path = Path(value)
         else:
-            path = ctx.game_dir / spec.format(item=item)
+            path = ctx.game_dir / spec.removesuffix("?").format(item=item)
+            if spec.endswith("?") and not path.exists():
+                continue
         if not path.exists():
             raise FileNotFoundError(f"stage {stage.name!r}: input {spec} missing ({path})")
         out[spec] = path
@@ -256,7 +262,7 @@ def run(
         while (remaining or running) and failure is None:
             for name in [n for n, c in remaining.items() if c is None]:
                 stage = registry[name]
-                if not set(stage.after) <= done:
+                if not set(stage.after) | (set(stage.soft_after) & set(order)) <= done:
                     continue
                 items = stage.fanout(r.ctx) if stage.fanout else [None]
                 remaining[name] = len(items)

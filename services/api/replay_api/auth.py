@@ -17,7 +17,7 @@ TTL_S = 24 * 3600
 # The phone page's routes. Bare game and its jobs: GET only; the rest are its own writes.
 _GAME_ROUTE = re.compile(
     r"^/games/(g_[0-9a-f]+)"
-    r"(/jobs|/upload|/upload/multipart|/upload/complete|/upload/abort"
+    r"(/jobs|/upload|/upload/multipart|/upload/parts|/upload/complete|/upload/abort"
     r"|/calibration|/calibration/auto|/process)?$"
 )
 

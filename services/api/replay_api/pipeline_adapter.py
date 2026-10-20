@@ -474,7 +474,23 @@ def _run_fake(
     probed = _probe(media / "wide.mp4")
     if probed:
         keys["video"] = {**keys.get("video", {}), **probed}
+    _fake_previews(out_dir, keys)
     return keys
+
+
+def _fake_previews(out_dir: Path, keys: dict) -> None:
+    """The worker's storyboard + moments stages on the transcoded upload, so fake mode
+    (Playwright live, API tests) serves real seek previews, thumbs and hero art. The
+    labels come from the fixture's events."""
+    from . import moments
+
+    gj = out_dir / "game.json"  # the API's: players arrive with `keys` after the run
+    game = json.loads(gj.read_text()) if gj.is_file() else {}
+    try:
+        moments.write_storyboard(out_dir / "media/wide.mp4", out_dir)
+        moments.write_moments(out_dir, game={**game, **keys})
+    except Exception as exc:  # noqa: BLE001 - fake mode never fails over a preview
+        log.warning("fake previews skipped (%s)", exc)
 
 
 @functools.cache
@@ -563,13 +579,20 @@ def is_isobmff(head: bytes) -> bool:
     return len(head) >= 8 and head[4:8] == b"ftyp"
 
 
-def grab_frame_url(url: str, dst: Path, at_s: float = 5.0) -> bool:
+def video_duration(path: Path) -> float | None:
+    """Seconds of video in a local file (ffprobe), or None."""
+    probed = _probe(Path(path))
+    return probed["duration_s"] if probed else None
+
+
+def grab_frame_url(url: str, dst: Path, at_s: float = 5.0, meta: dict | None = None) -> bool:
     """`grab_frame` for a video behind a URL (D-80: a presigned S3 GET), through OpenCV's
     own FFmpeg: Lambda has no ffmpeg binary and must not download the whole upload.
 
     The bytes are the uploader's, so FFmpeg gets the mov/mp4 demuxer only (no HLS / concat
     playlist that could name file:// or another host) and only the URL's own protocol.
-    Callers check `is_isobmff` first."""
+    Callers check `is_isobmff` first. `meta`, when given, gets the clip's `duration_s`
+    (frame count / fps from the container, no extra request)."""
     try:
         import cv2  # type: ignore
     except ImportError as exc:
@@ -591,6 +614,9 @@ def grab_frame_url(url: str, dst: Path, at_s: float = 5.0) -> bool:
         else:
             os.environ[key] = prev
     try:
+        fps, frames = cap.get(cv2.CAP_PROP_FPS), cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        if meta is not None and fps > 0 and frames > 0:
+            meta["duration_s"] = round(frames / fps, 3)
         for seek in (at_s, 0.0):
             cap.set(cv2.CAP_PROP_POS_MSEC, seek * 1000.0)
             ok, frame = cap.read()

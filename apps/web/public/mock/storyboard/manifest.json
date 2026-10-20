@@ -1,0 +1,10 @@
+{
+  "schema": "replay.storyboard.v1",
+  "interval_s": 2,
+  "width": 320,
+  "height": 180,
+  "cols": 10,
+  "rows": 10,
+  "count": 10,
+  "sheets": ["/mock/storyboard/0000.jpg"]
+}

@@ -359,5 +359,25 @@
   "fanout": false,
   "cached": true,
   "default": false
+ },
+ {
+  "name": "storyboard",
+  "after": [
+   "ingest"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
+ },
+ {
+  "name": "moments",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": true
  }
 ]

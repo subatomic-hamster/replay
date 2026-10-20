@@ -59,7 +59,7 @@ export interface Team {
   color_hex: string;
 }
 
-export interface Game {
+export interface Game extends TvReadiness {
   schema: "replay.game.v1";
   id: string;
   title: string;
@@ -79,17 +79,61 @@ export interface Game {
   renditions: { wide: string; players?: Record<string, string> };
   players: Player[];
   teams: Team[];
-  tracks: { rate_hz: number; chunk_s: number; url_template: string; chunks: number };
+  tracks: {
+    rate_hz: number;
+    chunk_s: number;
+    url_template: string;
+    chunks: number;
+  };
   croppaths: { rate_hz: number; url_template: string };
   events_url: string;
   /** Not §4.5 game.json fields; the API adds them to GET /games/{id} (D-13, D-14). */
   sport_ui?: SportUi | null;
   thumb_url?: string | null;
   calib_url?: string | null;
+  /** Seek previews: GET it with `api.getStoryboard(game)` (key auth); absent until the
+   *  worker's storyboard stage ran. */
+  storyboard_url?: string;
+}
+
+/** Per-feature readiness keys (docs/ux/redesign.md "Tiered readiness"). */
+export type FeatureKey =
+  | "moments"
+  | "previews"
+  | "follow"
+  | "angles"
+  | "free_view"
+  | "highlights"
+  | "condensed"
+  | "stats"
+  | "commentary";
+
+export interface FeatureState {
+  /** pending: this run will make it; unavailable: it will not exist for this game. */
+  state: "ready" | "pending" | "unavailable";
+  /** Estimated seconds until ready (pending only; absent when the API cannot tell). */
+  eta_s?: number;
+}
+
+/** Readiness and hero art, on both Game and GameSummary. All optional: an older API or a
+ *  game created before the redesign sends none of them. */
+export interface TvReadiness {
+  /** The best-moment frame, 16:9 JPEG 1280x720 (top hype moment, else best event, else
+   *  mid-game). Absent until processing finished. */
+  hero_url?: string;
+  /** True once a playable rendition exists: ingest's media/wide.mp4, after ingest is done
+   *  (mid-run, `renditions.wide` is filled in for it). */
+  watchable?: boolean;
+  /** Seconds until processing finishes. An ESTIMATE from per-stage hfbox costs scaled by
+   *  the video's duration (services/api/replay_api/readiness.py); say "about". */
+  eta_s?: number;
+  /** Plain words for the running stage, sentence case ("Finding players"). */
+  stage_label?: string;
+  features?: Partial<Record<FeatureKey, FeatureState>>;
 }
 
 /** Library list item — §4.6 GET /games. A trimmed Game is also accepted. */
-export interface GameSummary {
+export interface GameSummary extends TvReadiness {
   id: string;
   title: string;
   status: GameStatus;
@@ -99,6 +143,58 @@ export interface GameSummary {
   thumb_url?: string | null;
   stages?: Record<string, StageState>;
   progress?: Record<string, number>;
+}
+
+/** GET {storyboard_url}: frame i (time i * interval_s) is on sheet floor(i / (cols*rows)),
+ *  cell i % (cols*rows), row-major; each cell is width x height. The last sheet may be
+ *  shorter (only the rows it uses). */
+export interface Storyboard {
+  schema?: "replay.storyboard.v1";
+  interval_s: number;
+  width: number;
+  height: number;
+  cols: number;
+  rows: number;
+  /** Number of frames across all sheets. */
+  count?: number;
+  /** Absolute sheet JPEG URLs, in order. */
+  sheets: string[];
+}
+
+export type MomentKind = "score" | "play" | "bookmark";
+
+/** One row of GET /games/{id}/moments (sorted by t). The label is built only from what
+ *  the detector reported (a shot whose make is unknown is "Shot", never a basket). */
+export interface Moment {
+  /** The event id. */
+  id: string;
+  /** Key time (the event's t_key), seconds. */
+  t: number;
+  t_start: number;
+  t_end: number;
+  kind: MomentKind;
+  label: string;
+  player?: {
+    id: string;
+    name?: string | null;
+    number?: number;
+    color_hex?: string;
+  };
+  /** 480x270 JPEG at `t`; null when no frame was grabbed (a game processed before the
+   *  moments stage existed). */
+  thumb_url: string | null;
+  /** Where the event came from and how sure the detector was (keep the honesty cues). */
+  source?: "heuristic" | "vlm" | "user";
+  confidence?: number | null;
+  confirmed?: boolean;
+}
+
+/** D-80 resume: GET /games/{id}/upload/parts — what S3 holds, fresh URLs for the rest. */
+export interface MultipartParts {
+  upload_id: string;
+  part_size: number;
+  done: { n: number; etag: string; size: number }[];
+  parts: { n: number; url: string }[];
 }
 
 export interface TrackPlayer {
@@ -128,12 +224,7 @@ export interface CropPath {
 }
 
 export type EventType =
-  | "shot"
-  | "possession_change"
-  | "rally"
-  | "point"
-  | "serve"
-  | "bookmark";
+  "shot" | "possession_change" | "rally" | "point" | "serve" | "bookmark";
 
 export interface GameEvent {
   id: string;
@@ -251,7 +342,8 @@ export interface LandmarkProposal {
   min_score?: number;
 }
 
-export type AutoCalibrationState = "idle" | "queued" | "running" | "done" | "failed";
+export type AutoCalibrationState =
+  "idle" | "queued" | "running" | "done" | "failed";
 
 /** GET /games/{id}/calibration/auto */
 export interface AutoCalibration {
@@ -414,7 +506,12 @@ export interface SceneLayout {
     hoops: SceneHoop[];
     net: null | { top_l_m: Vec3; top_r_m: Vec3; depth_m: number };
   };
-  ball: null | { source: "model"; note: string; radius_m: number; xyz: (Vec3 | null)[] };
+  ball: null | {
+    source: "model";
+    note: string;
+    radius_m: number;
+    xyz: (Vec3 | null)[];
+  };
   envelope: SceneEnvelope;
   presets: ScenePreset[];
 }

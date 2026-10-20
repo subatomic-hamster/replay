@@ -18,36 +18,40 @@ async function shot(page: Page, name: string) {
 async function videoState(page: Page) {
   return page.evaluate(() => {
     const v = document.querySelector<HTMLVideoElement>('[data-testid="video"]');
-    return v ? { t: v.currentTime, paused: v.paused, ready: v.readyState } : null;
+    return v
+      ? { t: v.currentTime, paused: v.paused, ready: v.readyState }
+      : null;
   });
 }
 
 test("M3 walkthrough", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto("/");
-  const ready = page.locator('[data-testid="game-card"]', {
-    has: page.locator('[data-testid="game-status"]', { hasText: "ready" }),
-  });
-  await expect(ready.first()).toBeVisible({ timeout: 20_000 });
-  const cards = page.getByTestId("game-card");
-  const index = await cards.evaluateAll(
-    (els) => els.findIndex((el) => el.textContent?.includes("ready")),
+  // Home starts on the newest finished game's card.
+  const ready = page.locator(
+    '[data-testid="game-card"][data-processing="false"]',
   );
-  for (let i = 0; i < index; i++) await page.keyboard.press("ArrowRight");
+  await expect(ready.first()).toBeVisible({ timeout: 20_000 });
+  await expect(ready.first()).toHaveAttribute("data-focused", "true");
   await shot(page, "01-library");
 
   await page.keyboard.press("Enter");
-  await expect.poll(async () => (await videoState(page))?.ready ?? 0, { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  await expect
+    .poll(async () => (await videoState(page))?.ready ?? 0, { timeout: 30_000 })
+    .toBeGreaterThanOrEqual(2);
   // Select plays; seek into the action (Right scrubs 5 s).
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await videoState(page))?.paused).toBe(false);
-  for (let i = 0; i < Math.round(SEEK_TO / 5); i++) await page.keyboard.press("ArrowRight");
+  for (let i = 0; i < Math.round(SEEK_TO / 5); i++)
+    await page.keyboard.press("ArrowRight");
   await page.waitForTimeout(1200);
   await shot(page, "02-watch-wide");
 
   // Select again: pause → select mode with boxes on the players.
   await page.keyboard.press("Enter");
-  await expect(page.locator('[data-testid^="select-box-"]').first()).toBeVisible({ timeout: 10_000 });
+  await expect(
+    page.locator('[data-testid^="select-box-"]').first(),
+  ).toBeVisible({ timeout: 10_000 });
   await page.keyboard.press("ArrowRight");
   await shot(page, "03-select");
 

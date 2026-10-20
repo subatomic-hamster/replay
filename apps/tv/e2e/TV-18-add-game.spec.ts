@@ -40,48 +40,88 @@ const drawn = (page: Page) =>
         bg: getComputedStyle(k).backgroundColor,
       };
     });
-    return { edge: box.width, height: box.height, cell, bg: getComputedStyle(el).backgroundColor, kids };
+    return {
+      edge: box.width,
+      height: box.height,
+      cell,
+      bg: getComputedStyle(el).backgroundColor,
+      kids,
+    };
   });
 
 async function openAddGame(page: Page) {
   await page.goto("/");
-  await expect(page.getByTestId("game-card").first()).toHaveAttribute("data-focused", "true");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("library-add")).toHaveAttribute("data-focused", "true");
+  await expect(
+    page.locator('[data-testid="game-card"][data-focused="true"]'),
+  ).toBeVisible();
+  // Add game is the first card of the Games row: Left past the processing game.
+  for (
+    let i = 0;
+    i < 6 &&
+    (await page.getByTestId("library-add").getAttribute("data-focused")) !==
+      "true";
+    i++
+  ) {
+    await page.keyboard.press("ArrowLeft");
+  }
+  await expect(page.getByTestId("library-add")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("add-sport-basketball")).toHaveAttribute("data-focused", "true");
+  await expect(page.getByTestId("add-sport-basketball")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
 }
 
-test("TV-18 add game: sport by D-pad, QR of the upload page, follow it to ready", async ({ page }) => {
+test("TV-18 add game: sport by D-pad, QR of the upload page, follow it to ready", async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   await openAddGame(page);
   // Keep what POST /games returned, to know the full upload_page_url (token included).
   await page.evaluate(() => {
     const w = window as unknown as {
-      __replayMock: { api: { createGame: (...a: unknown[]) => Promise<{ upload_page_url: string }> } };
+      __replayMock: {
+        api: {
+          createGame: (...a: unknown[]) => Promise<{ upload_page_url: string }>;
+        };
+      };
       __created?: { upload_page_url: string };
     };
     const create = w.__replayMock.api.createGame;
-    w.__replayMock.api.createGame = async (...a) => (w.__created = await create(...a));
+    w.__replayMock.api.createGame = async (...a) =>
+      (w.__created = await create(...a));
   });
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("add-sport-pickleball")).toHaveAttribute("data-focused", "true");
+  await expect(page.getByTestId("add-sport-pickleball")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
   await page.keyboard.press("Enter");
 
   await expect(page.getByTestId("add-qr")).toBeVisible();
-  const created = (await mockCalls(page)).filter((c) => c.method === "POST" && c.path === "/games");
+  const created = (await mockCalls(page)).filter(
+    (c) => c.method === "POST" && c.path === "/games",
+  );
   expect(created).toHaveLength(1);
-  expect(created[0].body).toMatchObject({ sport: "pickleball", title: expect.stringMatching(/^Pickleball · /) });
+  expect(created[0].body).toMatchObject({
+    sport: "pickleball",
+    title: expect.stringMatching(/^Pickleball · /),
+  });
 
   const url = await page.evaluate(
-    () => (window as unknown as { __created: { upload_page_url: string } }).__created.upload_page_url,
+    () =>
+      (window as unknown as { __created: { upload_page_url: string } })
+        .__created.upload_page_url,
   );
   expect(url).toMatch(/^http:\/\/localhost:\d+\/u\/g_[a-z0-9]+#t=[\w-]{40,}$/);
   const [id, token] = url.match(/\/u\/(g_[a-z0-9]+)#t=(.+)$/)!.slice(1);
   // On screen: host and path only. The token is in the QR code and nowhere else.
-  await expect(page.getByTestId("add-url")).toHaveText(new RegExp(`^localhost:\\d+/u/${id}$`));
+  await expect(page.getByTestId("add-url")).toHaveText(
+    new RegExp(`^localhost:\\d+/u/${id}$`),
+  );
   await expect(page.locator("body")).not.toContainText(token);
   await expect(page.locator("body")).not.toContainText("#t=");
 
@@ -95,7 +135,8 @@ test("TV-18 add game: sport by D-pad, QR of the upload page, follow it to ready"
   expect(qr.height).toBeCloseTo(qr.edge, 1);
   expect((want.n - 17) % 4).toBe(0); // 4·version + 17 modules
   const got: Run[] = qr.kids.map((k) => {
-    for (const v of [k.x, k.y, k.w, k.h]) expect(Math.abs(v - Math.round(v))).toBeLessThan(0.01);
+    for (const v of [k.x, k.y, k.w, k.h])
+      expect(Math.abs(v - Math.round(v))).toBeLessThan(0.01);
     expect(k.bg).toBe("rgb(0, 0, 0)");
     expect(Math.round(k.h)).toBe(1);
     return [Math.round(k.y) - 4, Math.round(k.x) - 4, Math.round(k.w)];
@@ -108,11 +149,15 @@ test("TV-18 add game: sport by D-pad, QR of the upload page, follow it to ready"
   // The game as the phone moves it along.
   const status = page.getByTestId("add-status");
   await expect(status).toHaveAttribute("data-status", "created");
-  await expect(status).toContainText("Waiting for the upload");
+  await expect(status).toContainText("Waiting for your phone");
   const set = (s: string) =>
     page.evaluate(
       ([gid, st]) => {
-        (window as unknown as { __replayMock: { games: Map<string, { status: string }> } }).__replayMock.games.get(gid)!.status = st;
+        (
+          window as unknown as {
+            __replayMock: { games: Map<string, { status: string }> };
+          }
+        ).__replayMock.games.get(gid)!.status = st;
       },
       [id, s],
     );
@@ -123,17 +168,27 @@ test("TV-18 add game: sport by D-pad, QR of the upload page, follow it to ready"
   await expect(status).toHaveAttribute("data-status", "calibrated");
   await page.evaluate(
     (gid) =>
-      (window as unknown as { __replayMock: { api: { startProcessing(id: string): Promise<void> } } }).__replayMock.api.startProcessing(gid),
+      (
+        window as unknown as {
+          __replayMock: { api: { startProcessing(id: string): Promise<void> } };
+        }
+      ).__replayMock.api.startProcessing(gid),
     id,
   );
   await expect(status).toHaveAttribute("data-status", "processing");
-  await expect(status).toContainText(/stage \d of 9 · \d+%/);
+  await expect(status).toHaveText("Processing. It's on Home.");
+  // Plain words for the stage, then how far along (no stage names, no "stage 3 of 9").
+  await expect(page.getByTestId("add-stage")).toHaveText(
+    /^[A-Z][a-z ]+, (about \d+ min|under a minute|\d+%)$/,
+  );
   await expect(page.getByTestId("add-progress")).toBeVisible();
 
   // Ready opens the game.
   await expect(page.getByTestId("video")).toBeAttached({ timeout: 45_000 });
   await expect(page.getByTestId("add-game")).toHaveCount(0);
-  expect((await mockCalls(page)).some((c) => c.path === `/games/${id}`)).toBe(true);
+  expect((await mockCalls(page)).some((c) => c.path === `/games/${id}`)).toBe(
+    true,
+  );
 });
 
 test("TV-18 Back leaves Add game for the library", async ({ page }) => {
@@ -141,5 +196,9 @@ test("TV-18 Back leaves Add game for the library", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("add-game")).toHaveCount(0);
   await expect(page.getByTestId("library-add")).toBeVisible();
-  expect((await mockCalls(page)).some((c) => c.method === "POST" && c.path === "/games")).toBe(false);
+  expect(
+    (await mockCalls(page)).some(
+      (c) => c.method === "POST" && c.path === "/games",
+    ),
+  ).toBe(false);
 });

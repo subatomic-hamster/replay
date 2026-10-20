@@ -1,17 +1,28 @@
 // Settings: the Replay API address and API key, set with the D-pad and kept on the device.
-// Reached from the library's top row and from the "Could not reach the Replay API" banner;
-// the app opens here on first run when the build has no default (REPLAY_API_BASE).
+// Reached from Home's gear and from the "Could not reach the Replay API" banner; the app
+// opens here on first run when the build has no default (REPLAY_API_BASE). A short list
+// (docs/ux/redesign.md "Settings"): Up/Down (or Left/Right) move, Select edits or runs.
 // The key (X-Replay-Key, D-80 cloud mode) is only ever shown masked to its last 4 characters.
+// ponytail: address and key are typed on the on-screen keyboard; the spec's phone (QR)
+// handoff for them needs a phone page route first.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View } from "react-native";
-import { apiBase, apiKey, maskKey, normalizeApiBase, probeApi, setApiBase, setApiKey } from "../api";
+import { StyleSheet, View } from "react-native";
+import {
+  apiBase,
+  apiKey,
+  maskKey,
+  normalizeApiBase,
+  probeApi,
+  setApiBase,
+  setApiKey,
+} from "../api";
 import { TextEntryDialog } from "../components/TextEntryDialog";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
-import { color, px } from "../theme";
-import { Hint, Pill, T, styles as ui } from "../ui";
+import { color, px, radius, sp, type } from "../theme";
+import { Hint, T, styles as ui } from "../ui";
 
-const ITEMS = ["Change address", "API key", "Test connection", "Done"] as const;
+const ITEMS = ["Server address", "API key", "Test connection", "Done"] as const;
 const [ADDRESS, KEY, TEST, DONE] = [0, 1, 2, 3];
 const URL_KEYS = [
   ["http://", "192.168.", "10.0.", ":8000", ".local"],
@@ -21,7 +32,12 @@ const URL_KEYS = [
   [..."UVWXYZ.:/-"],
 ];
 // The deploy's keys are `openssl rand -hex 32`; the letters type lowercase.
-const KEY_KEYS = [[..."1234567890"], [..."ABCDEFGHIJ"], [..."KLMNOPQRST"], [..."UVWXYZ._-"]];
+const KEY_KEYS = [
+  [..."1234567890"],
+  [..."ABCDEFGHIJ"],
+  [..."KLMNOPQRST"],
+  [..."UVWXYZ._-"],
+];
 
 type Check = { state: "idle" | "checking" | "ok" | "error"; text: string };
 
@@ -29,7 +45,9 @@ export function Settings() {
   const [base, setBase] = useState(apiBase);
   const [key, setKey] = useState(apiKey);
   const [focus, setFocus] = useState(base ? TEST : ADDRESS);
-  const [editing, setEditing] = useState<"base" | "key" | null>(base ? null : "base");
+  const [editing, setEditing] = useState<"base" | "key" | null>(
+    base ? null : "base",
+  );
   const [check, setCheck] = useState<Check>({ state: "idle", text: "" });
 
   // Only the latest check may report (an older, slower one must not overwrite it).
@@ -41,8 +59,13 @@ export function Settings() {
     probeApi(url)
       .listGames()
       .then(
-        (games) => report({ state: "ok", text: `Connected · ${games.length} game${games.length === 1 ? "" : "s"}` }),
-        (e: Error) => report({ state: "error", text: `Not reachable: ${e.message}` }),
+        (games) =>
+          report({
+            state: "ok",
+            text: `Connected · ${games.length} game${games.length === 1 ? "" : "s"}`,
+          }),
+        (e: Error) =>
+          report({ state: "error", text: `Not reachable: ${e.message}` }),
       );
   }, []);
 
@@ -54,8 +77,9 @@ export function Settings() {
 
   const onAction = useCallback(
     (a: DpadAction) => {
-      if (a === "left") setFocus((i) => Math.max(0, i - 1));
-      else if (a === "right") setFocus((i) => Math.min(ITEMS.length - 1, i + 1));
+      if (a === "up" || a === "left") setFocus((i) => Math.max(0, i - 1));
+      else if (a === "down" || a === "right")
+        setFocus((i) => Math.min(ITEMS.length - 1, i + 1));
       else if (a === "select" && focus === ADDRESS) setEditing("base");
       else if (a === "select" && focus === KEY) setEditing("key");
       else if (a === "select" && focus === TEST && base) test(base);
@@ -99,30 +123,36 @@ export function Settings() {
     [base, test],
   );
 
+  const at = editing ? -1 : focus;
   return (
-    <View style={ui.screen} testID="settings">
-      <T style={ui.h1}>Settings</T>
-      <T style={{ color: color.dim }}>Replay API address (the computer running services/api):</T>
-      <T testID="settings-api-base" style={{ fontSize: px(44), fontWeight: "700", marginVertical: px(16) }}>
-        {base || "not set"}
-      </T>
-      <T
-        testID="settings-check"
+    <View style={ui.safe} testID="settings">
+      <T style={[type.display, styles.head]}>Settings</T>
+      <Row
+        i={ADDRESS}
+        focus={at}
+        value={base || "not set"}
+        valueID="settings-api-base"
+      />
+      <Row
+        i={KEY}
+        focus={at}
+        value={key ? maskKey(key) : "none"}
+        valueID="settings-api-key"
+      />
+      {/* Errors are plain text (no red), per the spec; the state is in data-state. */}
+      <Row
+        i={TEST}
+        focus={at}
+        value={check.text}
+        valueID="settings-check"
         dataSet={{ state: check.state }}
-        style={{ color: check.state === "ok" ? color.made : check.state === "error" ? color.missed : color.dim, minHeight: px(40) }}
-      >
-        {check.text}
+      />
+      <Row i={DONE} focus={at} />
+      <T style={styles.note}>
+        The server address is the computer or cloud running Replay. The API key
+        is needed by a cloud server. Both are kept on this TV.
       </T>
-      <T style={{ color: color.dim }}>API key (X-Replay-Key, needed by a cloud deploy):</T>
-      <T testID="settings-api-key" style={{ fontSize: px(36), fontWeight: "700", marginVertical: px(12) }}>
-        {key ? maskKey(key) : "none"}
-      </T>
-      <View style={{ flexDirection: "row", marginTop: px(32) }}>
-        {ITEMS.map((label, i) => (
-          <Pill key={label} label={label} focused={!editing && focus === i} testID={`settings-item-${i}`} />
-        ))}
-      </View>
-      <Hint>Left/Right move · Select picks · Back returns · Both are kept on this device</Hint>
+      <Hint k="Back">Home</Hint>
       {editing === "base" ? (
         <TextEntryDialog
           idPrefix="api-base"
@@ -145,3 +175,70 @@ export function Settings() {
     </View>
   );
 }
+
+/** One list row: the item's label on the left, its value on the right; Chalk fill with
+ *  Floor text when focused. */
+function Row({
+  i,
+  focus,
+  value,
+  valueID,
+  dataSet,
+}: {
+  i: number;
+  focus: number;
+  value?: string;
+  valueID?: string;
+  dataSet?: Record<string, string>;
+}) {
+  const on = i === focus;
+  return (
+    <View
+      testID={`settings-item-${i}`}
+      dataSet={{ focused: on ? "true" : "false" }}
+      style={[styles.row, on && styles.rowOn]}
+    >
+      <T style={[styles.label, on && styles.ink]}>{ITEMS[i]}</T>
+      {valueID ? (
+        <T
+          testID={valueID}
+          dataSet={dataSet}
+          style={[styles.value, on && styles.ink]}
+          numberOfLines={1}
+        >
+          {value}
+        </T>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  head: { marginTop: px(64), marginBottom: sp(5) },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: px(1200),
+    height: px(88),
+    paddingHorizontal: sp(4),
+    marginBottom: sp(2),
+    borderRadius: radius.card,
+    backgroundColor: color.bench,
+  },
+  rowOn: { backgroundColor: color.chalk },
+  label: { ...type.body, fontFamily: undefined, fontWeight: "600" },
+  ink: { color: color.floor },
+  value: {
+    ...type.body,
+    color: color.bleacher,
+    maxWidth: px(720),
+    textAlign: "right",
+  },
+  note: {
+    ...type.meta,
+    color: color.bleacher,
+    marginTop: sp(4),
+    maxWidth: px(1200),
+  },
+});

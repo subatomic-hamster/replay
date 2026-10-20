@@ -8,7 +8,10 @@
 // rows are whatever keys the career stats carry (D-58).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
-import { fmtClock, listWindow } from "../../../../packages/tv-core/src/discovery";
+import {
+  fmtClock,
+  listWindow,
+} from "../../../../packages/tv-core/src/discovery";
 import {
   playableReel,
   reasonText,
@@ -27,9 +30,21 @@ import { api } from "../api";
 import { Avatar } from "../components/Avatar";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
-import { PlayerSurface, useClockTime, type PlayerHandle } from "../playback/PlayerSurface";
-import { color, focusRing, font, px } from "../theme";
-import { ApiErrorBanner, Hint, Loading, Pill, T, styles as ui, useAsync } from "../ui";
+import {
+  PlayerSurface,
+  useClockTime,
+  type PlayerHandle,
+} from "../playback/PlayerSurface";
+import { color, face, focusRing, font, px } from "../theme";
+import {
+  ApiErrorBanner,
+  Hint,
+  Loading,
+  Pill,
+  T,
+  styles as ui,
+  useAsync,
+} from "../ui";
 
 const TABS = ["Stats", "Card", "Reel", "Links"] as const;
 const STAT_ROWS = 8;
@@ -42,7 +57,13 @@ interface TabProps {
   onChange: (p: ProfileDoc) => void;
 }
 
-export function Profile({ profileId, from }: { profileId: string; from?: string }) {
+export function Profile({
+  profileId,
+  from,
+}: {
+  profileId: string;
+  from?: string;
+}) {
   const [profile, setProfile] = useState<ProfileDoc | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -66,12 +87,24 @@ export function Profile({ profileId, from }: { profileId: string; from?: string 
   useDpad(onAction, zone === "tabs");
   const exit = useCallback(() => setZone("tabs"), []);
 
-  if (error) return <ApiErrorBanner error={error} onRetry={() => setNonce((n) => n + 1)} />;
+  if (error)
+    return (
+      <ApiErrorBanner error={error} onRetry={() => setNonce((n) => n + 1)} />
+    );
   if (!profile) return <Loading />;
 
-  const props: TabProps = { profile, active: zone === "body", onExit: exit, onChange: setProfile };
+  const props: TabProps = {
+    profile,
+    active: zone === "body",
+    onExit: exit,
+    onChange: setProfile,
+  };
   return (
-    <View style={ui.screen} testID="profile" dataSet={{ profileId, zone, tab: TABS[tab].toLowerCase() }}>
+    <View
+      style={ui.screen}
+      testID="profile"
+      dataSet={{ profileId, zone, tab: TABS[tab].toLowerCase() }}
+    >
       <View style={styles.head}>
         <Avatar name={profile.name} photo={profile.photo_url} size={128} />
         <View style={{ marginLeft: px(32), flex: 1 }}>
@@ -80,7 +113,9 @@ export function Profile({ profileId, from }: { profileId: string; from?: string 
           </T>
           <T style={{ color: color.dim }} testID="profile-sports">
             {sportsText(profile)}
-            {profile.positions.length ? ` · ${profile.positions.join(" / ")}` : ""}
+            {profile.positions.length
+              ? ` · ${profile.positions.join(" / ")}`
+              : ""}
           </T>
         </View>
         {profile.face_enrolled ? (
@@ -123,7 +158,11 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
   const sport = sports[Math.min(sportIdx, sports.length - 1)];
   const rows = useMemo(() => statRows(bySport[sport]), [bySport, sport]);
   const [row, setRow] = useState(multi ? -1 : 0);
-  const [edit, setEdit] = useState<{ key: string; value: number; at: 0 | 1 } | null>(null);
+  const [edit, setEdit] = useState<{
+    key: string;
+    value: number;
+    at: 0 | 1;
+  } | null>(null);
   const [note, setNote] = useState("");
 
   const save = useCallback(
@@ -132,7 +171,11 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
         (p) => {
           onChange(p);
           setEdit(null);
-          setNote(value === null ? `${statLabel(key)}: back to the auto value` : `${statLabel(key)} saved as ${value} (edited)`);
+          setNote(
+            value === null
+              ? `${statLabel(key)}: back to the auto value`
+              : `${statLabel(key)} saved as ${value} (edited)`,
+          );
         },
         (e: Error) => setNote(`Not saved: ${e.message}`),
       );
@@ -145,10 +188,15 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
       if (edit) {
         const r = rows.find((x) => x.key === edit.key);
         if (a === "back") setEdit(null);
-        else if ((a === "left" || a === "right") && edit.at === 0) setEdit({ ...edit, value: stepStat(edit.value, a === "right" ? 1 : -1) });
+        else if ((a === "left" || a === "right") && edit.at === 0)
+          setEdit({
+            ...edit,
+            value: stepStat(edit.value, a === "right" ? 1 : -1),
+          });
         else if (a === "down" && r?.edited) setEdit({ ...edit, at: 1 });
         else if (a === "up") setEdit({ ...edit, at: 0 });
-        else if (a === "select") save(edit.key, edit.at === 0 ? edit.value : null);
+        else if (a === "select")
+          save(edit.key, edit.at === 0 ? edit.value : null);
         return;
       }
       if (a === "back") onExit();
@@ -157,7 +205,12 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
         else onExit();
       } else if (a === "down") setRow((i) => Math.min(rows.length - 1, i + 1));
       else if ((a === "left" || a === "right") && row === -1) {
-        setSportIdx((i) => Math.max(0, Math.min(sports.length - 1, i + (a === "right" ? 1 : -1))));
+        setSportIdx((i) =>
+          Math.max(
+            0,
+            Math.min(sports.length - 1, i + (a === "right" ? 1 : -1)),
+          ),
+        );
       } else if (a === "select" && rows[row]?.editable) {
         setEdit({ key: rows[row].key, value: rows[row].value, at: 0 });
         setNote("");
@@ -168,7 +221,11 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
   useDpad(onAction, active);
 
   if (!sports.length) {
-    return <T testID="stats-empty">No stats yet: link this player to a game first.</T>;
+    return (
+      <T testID="stats-empty">
+        No stats yet: link this player to a game first.
+      </T>
+    );
   }
   const first = listWindow(Math.max(0, row), rows.length, STAT_ROWS);
   return (
@@ -187,8 +244,10 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
         </View>
       ) : null}
       <T style={styles.dim} testID="stats-label">
-        {bySport[sport]?.label === "auto-detected" ? "Auto-detected" : "Stats"} across {bySport[sport]?.stats.games ?? 0} linked
-        {bySport[sport]?.stats.games === 1 ? " game" : " games"} · corrections are marked EDITED, the auto value is kept
+        {bySport[sport]?.label === "auto-detected" ? "Auto-detected" : "Stats"}{" "}
+        across {bySport[sport]?.stats.games ?? 0} linked
+        {bySport[sport]?.stats.games === 1 ? " game" : " games"} · corrections
+        are marked EDITED, the auto value is kept
       </T>
       {rows.slice(first, first + STAT_ROWS).map((r, k) => {
         const i = first + k;
@@ -198,17 +257,35 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
           <View
             key={r.key}
             testID="stat-row"
-            dataSet={{ key: r.key, edited: r.edited ? "true" : "false", focused: on ? "true" : "false", value: r.value }}
-            style={[styles.statRow, focusRing(on && !editing), on && { backgroundColor: color.raised }]}
+            dataSet={{
+              key: r.key,
+              edited: r.edited ? "true" : "false",
+              focused: on ? "true" : "false",
+              value: r.value,
+            }}
+            style={[
+              styles.statRow,
+              focusRing(on && !editing),
+              on && { backgroundColor: color.raised },
+            ]}
           >
             <T style={{ flex: 1 }}>{r.label}</T>
             {editing ? (
               <>
-                <View style={[styles.stepper, focusRing(edit.at === 0)]} testID="stat-edit" dataSet={{ value: edit.value }}>
+                <View
+                  style={[styles.stepper, focusRing(edit.at === 0)]}
+                  testID="stat-edit"
+                  dataSet={{ value: edit.value }}
+                >
                   <T style={styles.value}>◀ {edit.value} ▶</T>
                 </View>
                 {r.edited ? (
-                  <Pill label={`Use auto (${r.auto ?? "none"})`} focused={edit.at === 1} testID="stat-use-auto" style={{ marginLeft: px(16), marginBottom: 0 }} />
+                  <Pill
+                    label={`Use auto (${r.auto ?? "none"})`}
+                    focused={edit.at === 1}
+                    testID="stat-use-auto"
+                    style={{ marginLeft: px(16), marginBottom: 0 }}
+                  />
                 ) : null}
               </>
             ) : (
@@ -231,7 +308,12 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
           {note}
         </T>
       ) : null}
-      {edit ? <Hint>Left/Right change the value · Select saves · Down: use the auto value · Back cancels</Hint> : null}
+      {edit ? (
+        <Hint>
+          Left/Right change the value · Select saves · Down: use the auto value
+          · Back cancels
+        </Hint>
+      ) : null}
     </View>
   );
 }
@@ -245,7 +327,9 @@ function CardTab({ profile, active, onExit }: TabProps) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.getCard(profile.profile_id).then(setCard, (e: Error) => setNote(`No card: ${e.message}`));
+    api
+      .getCard(profile.profile_id)
+      .then(setCard, (e: Error) => setNote(`No card: ${e.message}`));
   }, [profile]);
 
   const onAction = useCallback(
@@ -274,24 +358,47 @@ function CardTab({ profile, active, onExit }: TabProps) {
   if (!card) return <T testID="card-note">{note || "Loading the card…"}</T>;
   const png = `${api.profileMediaUrl(card.png)}${version ? `?v=${version}` : ""}`;
   return (
-    <View style={styles.cardTab} testID="card-tab" dataSet={{ rendered: card.rendered ? "true" : "false" }}>
+    <View
+      style={styles.cardTab}
+      testID="card-tab"
+      dataSet={{ rendered: card.rendered ? "true" : "false" }}
+    >
       <View style={styles.cardImage}>
         {card.rendered ? (
-          <Image source={{ uri: png }} style={StyleSheet.absoluteFill} resizeMode="contain" testID="card-png" />
+          <Image
+            source={{ uri: png }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="contain"
+            testID="card-png"
+          />
         ) : (
           <T style={styles.dim}>No card image yet. Select “Render card”.</T>
         )}
       </View>
       <View style={{ flex: 1, marginLeft: px(40) }} testID="card-json">
-        <T style={[ui.h2, { color: color.accent }]} testID="card-title">
+        <T style={ui.h2} testID="card-title">
           {card.title}
         </T>
         <T style={styles.dim}>
-          {[card.sport, card.games === 1 ? "1 game" : `${card.games} games`, card.positions.join(" / ")].filter(Boolean).join(" · ")}
+          {[
+            card.sport,
+            card.games === 1 ? "1 game" : `${card.games} games`,
+            card.positions.join(" / "),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </T>
         <View style={[styles.row, { marginTop: px(20) }]}>
           {card.stats.map((tile) => (
-            <View key={tile.key} style={styles.tile} testID="card-tile" dataSet={{ key: tile.key, edited: tile.edited ? "true" : "false" }}>
+            <View
+              key={tile.key}
+              style={styles.tile}
+              testID="card-tile"
+              dataSet={{
+                key: tile.key,
+                edited: tile.edited ? "true" : "false",
+              }}
+            >
               <T style={styles.tileValue}>{String(tile.value)}</T>
               <T style={styles.dim}>{tile.label}</T>
               {tile.edited ? <T style={styles.edited}>EDITED</T> : null}
@@ -301,15 +408,22 @@ function CardTab({ profile, active, onExit }: TabProps) {
         <T style={styles.dim}>
           {card.label === "auto-detected" ? "Auto-detected stats" : card.label}
           {card.user_edited ? " · edited values marked" : ""}
-          {card.title_source ? ` · title: ${card.title_source === "llm" ? "rephrased, fact-checked" : "fact-checked template"}` : ""}
+          {card.title_source
+            ? ` · title: ${card.title_source === "llm" ? "rephrased, fact-checked" : "fact-checked template"}`
+            : ""}
         </T>
         {card.best_moment ? (
           <T style={styles.dim} testID="card-best">
-            Best moment: {card.best_moment.game_id} at {fmtClock(card.best_moment.t ?? card.best_moment.t_start)}
+            Best moment: {card.best_moment.game_id} at{" "}
+            {fmtClock(card.best_moment.t ?? card.best_moment.t_start)}
           </T>
         ) : null}
         <View style={[styles.row, { marginTop: px(24) }]}>
-          <Pill label={card.rendered ? "Re-render card" : "Render card"} focused={active} testID="card-render" />
+          <Pill
+            label={card.rendered ? "Re-render card" : "Render card"}
+            focused={active}
+            testID="card-render"
+          />
         </View>
         {note ? (
           <T style={styles.dim} testID="card-note">
@@ -324,7 +438,10 @@ function CardTab({ profile, active, onExit }: TabProps) {
 // ---------------------------------------------------------------- career reel
 
 function ReelTab({ profile, active, onExit }: TabProps) {
-  const { data: reel, error } = useAsync(() => api.getReel(profile.profile_id), [profile]);
+  const { data: reel, error } = useAsync(
+    () => api.getReel(profile.profile_id),
+    [profile],
+  );
   const items = useMemo(() => playableReel(reel), [reel]);
   const [focus, setFocus] = useState(0);
   const [cur, setCur] = useState<number | null>(null);
@@ -366,7 +483,8 @@ function ReelTab({ profile, active, onExit }: TabProps) {
       else if (a === "up") {
         if (focus > 0) setFocus(focus - 1);
         else onExit();
-      } else if (a === "down") setFocus((i) => Math.min(items.length - 1, i + 1));
+      } else if (a === "down")
+        setFocus((i) => Math.min(items.length - 1, i + 1));
       else if (a === "select" && items[focus]) {
         setCur(focus);
         setNonce((n) => n + 1);
@@ -378,7 +496,12 @@ function ReelTab({ profile, active, onExit }: TabProps) {
 
   if (error) return <T testID="reel-note">No reel: {error.message}</T>;
   if (!reel) return <T>Loading the reel…</T>;
-  if (!items.length) return <T testID="reel-empty">No plays yet: link this player to a processed game.</T>;
+  if (!items.length)
+    return (
+      <T testID="reel-empty">
+        No plays yet: link this player to a processed game.
+      </T>
+    );
   const first = listWindow(focus, items.length, LIST_ROWS);
   return (
     <View style={styles.reel} testID="reel-tab">
@@ -389,16 +512,22 @@ function ReelTab({ profile, active, onExit }: TabProps) {
               <T
                 style={styles.counterText}
                 testID="reel-counter"
-                dataSet={{ index: (cur ?? 0) + 1, gameId: item.game_id, playId: item.play_id }}
+                dataSet={{
+                  index: (cur ?? 0) + 1,
+                  gameId: item.game_id,
+                  playId: item.play_id,
+                }}
               >
-                PLAY {(cur ?? 0) + 1} / {items.length} · {item.game_title ?? item.game_id}
+                PLAY {(cur ?? 0) + 1} / {items.length} ·{" "}
+                {item.game_title ?? item.game_id}
               </T>
             </View>
           </PlayerSurface>
         ) : (
           <View style={styles.reelIdle}>
             <T style={styles.dim}>
-              {items.length} plays · {fmtClock(reel.duration_s)} · Select a play to start the reel there
+              {items.length} plays · {fmtClock(reel.duration_s)} · Select a play
+              to start the reel there
             </T>
           </View>
         )}
@@ -411,8 +540,18 @@ function ReelTab({ profile, active, onExit }: TabProps) {
             <View
               key={`${it.game_id}/${it.play_id}`}
               testID="reel-item"
-              dataSet={{ index: i, focused: on ? "true" : "false", current: i === cur ? "true" : "false", gameId: it.game_id, tStart: it.t_start }}
-              style={[styles.listRow, focusRing(on), i === cur && { backgroundColor: color.raised }]}
+              dataSet={{
+                index: i,
+                focused: on ? "true" : "false",
+                current: i === cur ? "true" : "false",
+                gameId: it.game_id,
+                tStart: it.t_start,
+              }}
+              style={[
+                styles.listRow,
+                focusRing(on),
+                i === cur && { backgroundColor: color.raised },
+              ]}
             >
               <T numberOfLines={1}>{it.game_title ?? it.game_id}</T>
               <T style={styles.dim}>
@@ -431,31 +570,48 @@ function ReelTab({ profile, active, onExit }: TabProps) {
 
 type LinkRow =
   | { kind: "link"; game_id: string; player_id: string; missing?: string }
-  | { kind: "suggestion"; game_id: string; player_id: string; title: string; reasons: string[]; face: boolean };
+  | {
+      kind: "suggestion";
+      game_id: string;
+      player_id: string;
+      title: string;
+      reasons: string[];
+      face: boolean;
+    };
 
 function LinksTab({ profile, active, onExit, onChange }: TabProps) {
   const id = profile.profile_id;
   const { data: games } = useAsync(() => api.listGames(), []);
-  const { data: raw, reload } = useAsync(() => api.getSuggestions(id), [id, profile]);
+  const { data: raw, reload } = useAsync(
+    () => api.getSuggestions(id),
+    [id, profile],
+  );
   const [row, setRow] = useState(0);
   const [col, setCol] = useState(0);
   const [note, setNote] = useState("");
-  const title = useCallback((g: string) => games?.find((x) => x.id === g)?.title ?? g, [games]);
+  const title = useCallback(
+    (g: string) => games?.find((x) => x.id === g)?.title ?? g,
+    [games],
+  );
 
   const rows = useMemo<LinkRow[]>(() => {
-    const missing = new Map((profile.missing_links ?? []).map((m) => [suggestionKey(m), m.missing]));
+    const missing = new Map(
+      (profile.missing_links ?? []).map((m) => [suggestionKey(m), m.missing]),
+    );
     return [
-      ...profile.linked.map((l): LinkRow => ({ kind: "link", ...l, missing: missing.get(suggestionKey(l)) })),
-      ...visibleSuggestions(profile, raw ?? []).map(
-        (s): LinkRow => ({
-          kind: "suggestion",
-          game_id: s.game_id,
-          player_id: s.player_id,
-          title: s.game_title ?? s.game_id,
-          reasons: s.reasons.map(reasonText),
-          face: s.reasons.some((r) => r.kind === "face"),
-        }),
-      ),
+      ...profile.linked.map((l): LinkRow => ({
+        kind: "link",
+        ...l,
+        missing: missing.get(suggestionKey(l)),
+      })),
+      ...visibleSuggestions(profile, raw ?? []).map((s): LinkRow => ({
+        kind: "suggestion",
+        game_id: s.game_id,
+        player_id: s.player_id,
+        title: s.game_title ?? s.game_id,
+        reasons: s.reasons.map(reasonText),
+        face: s.reasons.some((r) => r.kind === "face"),
+      })),
     ];
   }, [profile, raw]);
   const nLinks = profile.linked.length;
@@ -469,9 +625,13 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
       };
       const fail = (e: Error) => setNote(`Failed: ${e.message}`);
       if (r.kind === "link") {
-        api.unlinkProfile(id, r.game_id, r.player_id).then(done(`Unlinked #${r.player_id} in ${title(r.game_id)}`), fail);
+        api
+          .unlinkProfile(id, r.game_id, r.player_id)
+          .then(done(`Unlinked #${r.player_id} in ${title(r.game_id)}`), fail);
       } else if (c === 0) {
-        api.linkProfile(id, r.game_id, r.player_id).then(done(`Linked #${r.player_id} in ${title(r.game_id)}`), fail);
+        api
+          .linkProfile(id, r.game_id, r.player_id)
+          .then(done(`Linked #${r.player_id} in ${title(r.game_id)}`), fail);
       } else {
         api.declineSuggestion(id, r.game_id, r.player_id).then(() => {
           reload();
@@ -511,7 +671,9 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
       <T style={styles.dim}>
         Linked in {nLinks} {nLinks === 1 ? "game" : "games"} · {SUGGESTION_NOTE}
       </T>
-      {rows.length === 0 ? <T testID="links-empty">No links or suggestions yet.</T> : null}
+      {rows.length === 0 ? (
+        <T testID="links-empty">No links or suggestions yet.</T>
+      ) : null}
       {rows.slice(first, first + LIST_ROWS).map((r, k) => {
         const i = first + k;
         const on = active && i === row;
@@ -519,26 +681,52 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
           <View
             key={`${r.kind}/${suggestionKey(r)}`}
             testID={r.kind === "link" ? "link-row" : "suggestion-row"}
-            dataSet={{ gameId: r.game_id, playerId: r.player_id, focused: on ? "true" : "false", face: r.kind === "suggestion" && r.face ? "true" : "false" }}
+            dataSet={{
+              gameId: r.game_id,
+              playerId: r.player_id,
+              focused: on ? "true" : "false",
+              face: r.kind === "suggestion" && r.face ? "true" : "false",
+            }}
             style={[styles.linkRow, on && { backgroundColor: color.raised }]}
           >
             <View style={{ flex: 1 }}>
               <T numberOfLines={1}>
-                {r.kind === "link" ? title(r.game_id) : r.title} · #{r.player_id}
-                {r.kind === "link" && r.missing ? ` · ${r.missing} missing` : ""}
+                {r.kind === "link" ? title(r.game_id) : r.title} · #
+                {r.player_id}
+                {r.kind === "link" && r.missing
+                  ? ` · ${r.missing} missing`
+                  : ""}
               </T>
               {r.kind === "suggestion" ? (
                 <T style={styles.suggest} testID="suggestion-reason">
-                  {r.face ? "FACE SUGGESTION (opt-in) · confirm only if this is them" : "SUGGESTION · needs your confirmation"} · {r.reasons.join(" + ")}
+                  {r.face
+                    ? "FACE SUGGESTION (opt-in) · confirm only if this is them"
+                    : "SUGGESTION · needs your confirmation"}{" "}
+                  · {r.reasons.join(" + ")}
                 </T>
               ) : null}
             </View>
             {r.kind === "link" ? (
-              <Pill label="Unlink" focused={on} testID="link-unlink" style={{ marginBottom: 0 }} />
+              <Pill
+                label="Unlink"
+                focused={on}
+                testID="link-unlink"
+                style={{ marginBottom: 0 }}
+              />
             ) : (
               <>
-                <Pill label="Accept" focused={on && col === 0} testID="suggestion-accept" style={{ marginBottom: 0 }} />
-                <Pill label="Decline" focused={on && col === 1} testID="suggestion-decline" style={{ marginBottom: 0 }} />
+                <Pill
+                  label="Accept"
+                  focused={on && col === 0}
+                  testID="suggestion-accept"
+                  style={{ marginBottom: 0 }}
+                />
+                <Pill
+                  label="Decline"
+                  focused={on && col === 1}
+                  testID="suggestion-decline"
+                  style={{ marginBottom: 0 }}
+                />
               </>
             )}
           </View>
@@ -556,8 +744,8 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
 const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", marginBottom: px(16) },
   badge: {
-    color: color.onAccent,
-    backgroundColor: color.accent,
+    color: color.floor,
+    backgroundColor: color.chalk,
     fontWeight: "800",
     fontSize: font.small,
     paddingHorizontal: px(16),
@@ -575,10 +763,19 @@ const styles = StyleSheet.create({
     paddingVertical: px(4),
     borderRadius: px(10),
   },
-  value: { width: px(200), textAlign: "right", fontWeight: "700", fontVariant: ["tabular-nums"] },
-  stepper: { borderRadius: px(10), paddingHorizontal: px(8), backgroundColor: color.line },
+  value: {
+    width: px(200),
+    textAlign: "right",
+    fontFamily: face.figures,
+    fontVariant: ["tabular-nums"],
+  },
+  stepper: {
+    borderRadius: px(10),
+    paddingHorizontal: px(8),
+    backgroundColor: color.line,
+  },
   flag: { width: px(360), marginLeft: px(24) },
-  edited: { color: color.accent, fontSize: font.small, fontWeight: "800" },
+  edited: { color: color.chalk, fontSize: font.small, fontWeight: "600" },
   cardTab: { flexDirection: "row" },
   cardImage: {
     width: px(405),
@@ -590,9 +787,15 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   tile: { width: px(170), marginRight: px(16), marginBottom: px(12) },
-  tileValue: { fontSize: px(56), fontWeight: "800" },
+  tileValue: { fontSize: px(56), fontFamily: face.figures },
   reel: { flexDirection: "row" },
-  reelIdle: { aspectRatio: 16 / 9, backgroundColor: color.panel, alignItems: "center", justifyContent: "center", borderRadius: px(12) },
+  reelIdle: {
+    aspectRatio: 16 / 9,
+    backgroundColor: color.panel,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: px(12),
+  },
   counter: { position: "absolute", left: px(24), top: px(24) },
   counterText: {
     color: color.onAccent,
@@ -601,7 +804,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: px(16),
     borderRadius: px(8),
   },
-  listRow: { paddingHorizontal: px(20), paddingVertical: px(6), borderRadius: px(12), marginBottom: px(8), backgroundColor: color.panel },
+  listRow: {
+    paddingHorizontal: px(20),
+    paddingVertical: px(6),
+    borderRadius: px(12),
+    marginBottom: px(8),
+    backgroundColor: color.panel,
+  },
   linkRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -610,5 +819,5 @@ const styles = StyleSheet.create({
     borderRadius: px(12),
     marginBottom: px(8),
   },
-  suggest: { color: color.accent, fontSize: font.small },
+  suggest: { color: color.chalk, fontSize: font.small },
 });

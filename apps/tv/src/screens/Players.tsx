@@ -9,8 +9,15 @@ import { api } from "../api";
 import { Avatar } from "../components/Avatar";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
-import { color, focusRing, font, px } from "../theme";
-import { ApiErrorBanner, Hint, Loading, T, styles as ui, useAsync } from "../ui";
+import { color, focusRing, font, px, radius } from "../theme";
+import {
+  ApiErrorBanner,
+  Hint,
+  Loading,
+  T,
+  styles as ui,
+  useAsync,
+} from "../ui";
 
 const COLS = 5;
 const ROWS = 2;
@@ -23,12 +30,16 @@ export function Players({ from }: { from?: string }) {
   const onAction = useCallback(
     (a: DpadAction) => {
       const n = list.length;
-      if (a === "back") navigate(from ? { name: "watch", gameId: from } : { name: "library" });
+      if (a === "back")
+        navigate(from ? { name: "watch", gameId: from } : { name: "library" });
       else if (a === "left") setFocus((i) => Math.max(0, i - 1));
-      else if (a === "right") setFocus((i) => Math.max(0, Math.min(n - 1, i + 1)));
+      else if (a === "right")
+        setFocus((i) => Math.max(0, Math.min(n - 1, i + 1)));
       else if (a === "up") setFocus((i) => (i - COLS >= 0 ? i - COLS : i));
-      else if (a === "down") setFocus((i) => Math.max(0, Math.min(n - 1, i + COLS)));
-      else if (a === "select" && list[focus]) navigate({ name: "profile", profileId: list[focus].profile_id, from });
+      else if (a === "down")
+        setFocus((i) => Math.max(0, Math.min(n - 1, i + COLS)));
+      else if (a === "select" && list[focus])
+        navigate({ name: "profile", profileId: list[focus].profile_id, from });
     },
     [list, focus, from],
   );
@@ -38,14 +49,20 @@ export function Players({ from }: { from?: string }) {
   if (!data) return <Loading />;
 
   // whole rows scroll: the window starts on a row boundary
-  const firstRow = listWindow(Math.floor(focus / COLS), Math.ceil(list.length / COLS), ROWS);
+  const firstRow = listWindow(
+    Math.floor(focus / COLS),
+    Math.ceil(list.length / COLS),
+    ROWS,
+  );
   const shown = list.slice(firstRow * COLS, (firstRow + ROWS) * COLS);
 
   return (
     <View style={ui.screen} testID="players">
       <T style={ui.h1}>Players</T>
       {list.length === 0 ? (
-        <T testID="players-empty">No profiles yet. Create one on your phone at /profiles.</T>
+        <T testID="players-empty">
+          No profiles yet. Create one on your phone at /profiles.
+        </T>
       ) : null}
       <View style={styles.grid}>
         {shown.map((p, k) => {
@@ -55,11 +72,18 @@ export function Players({ from }: { from?: string }) {
             <View
               key={p.profile_id}
               testID="profile-card"
-              dataSet={{ profileId: p.profile_id, focused: on ? "true" : "false" }}
-              style={[styles.card, focusRing(on), on && { backgroundColor: color.raised }]}
+              dataSet={{
+                profileId: p.profile_id,
+                focused: on ? "true" : "false",
+              }}
+              style={[styles.card, focusRing(on)]}
             >
               <Avatar name={p.name} photo={p.photo_url} size={160} />
-              <T style={styles.name} numberOfLines={1} testID="profile-card-name">
+              <T
+                style={styles.name}
+                numberOfLines={1}
+                testID="profile-card-name"
+              >
                 {p.name}
               </T>
               <T style={styles.meta} numberOfLines={1}>
@@ -85,7 +109,7 @@ const styles = StyleSheet.create({
     paddingVertical: px(24),
     marginRight: px(32),
     marginBottom: px(32),
-    borderRadius: px(16),
+    borderRadius: radius.card,
     backgroundColor: color.panel,
   },
   name: { fontSize: font.h2, fontWeight: "700", marginTop: px(16) },

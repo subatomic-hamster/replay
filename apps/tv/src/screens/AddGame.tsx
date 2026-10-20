@@ -1,26 +1,38 @@
-// D-80 "Add game": pick the sport with the D-pad, POST /games, and show the QR code of the
-// phone upload page (plus its URL). Then follow the game while the phone does the work:
-// waiting for the upload, uploaded, calibrated, processing stage by stage, and ready,
-// which opens it. Back returns to the library at any point; the game stays.
+// D-80 "Add game" (docs/ux/redesign.md "Add game"), two beats on one screen: pick the
+// sport tile with the D-pad (POST /games), then the QR code of the phone upload page with
+// its short URL, and a status line that follows the game while the phone does the work:
+// waiting, uploading, uploaded, calibrated, processing, and ready, which opens it. Back
+// returns to Home at any point; the game stays (it shows on Home while it processes).
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import type { CreateGameResult, Game } from "../../../../packages/tv-core/src/types";
+import type {
+  CreateGameResult,
+  Game,
+} from "../../../../packages/tv-core/src/types";
 import { api } from "../api";
 import { QrCode } from "../components/QrCode";
+import { progressOf, stageWords } from "../gameState";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
-import { color, font, px } from "../theme";
-import { ApiErrorBanner, Hint, Pill, T, styles as ui, useAsync } from "../ui";
+import { color, px, radius, safe, sp, type } from "../theme";
+import {
+  ApiErrorBanner,
+  Focusable,
+  Hint,
+  T,
+  styles as ui,
+  useAsync,
+} from "../ui";
 
 /** Poll GET /games/{id} this often while the screen is open (a Lambda call each in cloud mode). */
 const POLL_MS = 2000;
 
 const PHASE: Record<string, string> = {
-  created: "Waiting for the upload…",
+  created: "Waiting for your phone…",
   uploading: "Uploading…",
   uploaded: "Uploaded. Calibrating on the phone…",
   calibrated: "Calibrated. Start processing on the phone.",
-  processing: "Processing",
+  processing: "Processing. It's on Home.",
   ready: "Ready",
   error: "Processing failed. The phone has the details.",
 };
@@ -41,10 +53,14 @@ export function AddGame() {
       }
       if (created || busy || !sports?.length) return;
       if (a === "left") setFocus((i) => Math.max(0, i - 1));
-      else if (a === "right") setFocus((i) => Math.min(sports.length - 1, i + 1));
+      else if (a === "right")
+        setFocus((i) => Math.min(sports.length - 1, i + 1));
       else if (a === "select") {
         const s = sports[focus];
-        const day = new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" });
+        const day = new Date().toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        });
         setBusy(true);
         api
           .createGame(`${s.display_name} · ${day}`, s.id)
@@ -92,70 +108,130 @@ export function AddGame() {
 
   if (!created) {
     return (
-      <View style={ui.screen} testID="add-game">
-        <T style={ui.h1}>Add a game</T>
-        <T style={{ color: color.dim, marginBottom: px(24) }}>Which sport?</T>
-        <View style={styles.row}>
+      <View style={ui.safe} testID="add-game">
+        <T style={[type.display, styles.head]}>Add a game</T>
+        <T style={[type.body, styles.sub]}>Which sport?</T>
+        <View style={styles.tiles}>
           {(sports ?? []).map((s, i) => (
-            <Pill key={s.id} label={s.display_name} focused={i === focus} testID={`add-sport-${s.id}`} />
+            <View
+              key={s.id}
+              style={styles.tileSlot}
+              testID={`add-sport-${s.id}`}
+              dataSet={{ focused: i === focus ? "true" : "false" }}
+            >
+              <Focusable focused={i === focus}>
+                <View style={styles.tile}>
+                  <T style={type.title} numberOfLines={1}>
+                    {s.display_name}
+                  </T>
+                </View>
+              </Focusable>
+            </View>
           ))}
         </View>
-        {busy ? <T>Creating the game…</T> : null}
-        <Hint>Left/Right picks · Select creates the game · Back returns</Hint>
+        {busy ? <T style={styles.sub}>Creating the game…</T> : null}
+        <View style={styles.foot}>
+          <Hint k="Back">Home</Hint>
+        </View>
       </View>
     );
   }
 
   const status = game?.status ?? "created";
-  const stages = Object.entries(game?.stages ?? {});
-  const done = stages.filter(([, s]) => s === "done").length;
-  const running = stages.find(([, s]) => s === "running")?.[0];
-  const frac = running ? (game?.progress?.[running] ?? 0) : 0;
+  const working = status === "processing" && game;
 
   return (
-    <View style={ui.screen} testID="add-game" dataSet={{ gameId: created.id }}>
-      <T style={ui.h1}>Upload from your phone</T>
-      <View style={styles.row}>
-        {created.upload_page_url ? (
-          <QrCode text={created.upload_page_url} size={640} testID="add-qr" />
-        ) : (
-          <T testID="add-no-qr" style={styles.side}>
-            This Replay API has no public web address (REPLAY_PUBLIC_WEB_BASE), so there is no QR
-            code. Upload from a phone at /upload instead.
-          </T>
-        )}
-        <View style={styles.side}>
-          <T style={ui.h2}>Scan with your phone camera</T>
-          {/* Address only, never the token (the `#t=` fragment): it is in the QR code alone. */}
-          <T style={{ color: color.dim }}>It opens the Replay upload page:</T>
-          <T testID="add-url" style={styles.url}>
-            {(created.upload_page_url ?? "").replace(/^https?:\/\//, "").split("#")[0]}
-          </T>
-          <T testID="add-status" dataSet={{ status }} style={styles.status}>
-            {status === "processing" && running
-              ? `Processing · ${running} · stage ${done + 1} of ${stages.length} · ${Math.round(frac * 100)}%`
-              : (PHASE[status] ?? status)}
-          </T>
-          {status === "processing" && stages.length ? (
+    <View
+      style={[ui.safe, styles.pair]}
+      testID="add-game"
+      dataSet={{ gameId: created.id }}
+    >
+      {created.upload_page_url ? (
+        <QrCode text={created.upload_page_url} size={520} testID="add-qr" />
+      ) : (
+        <T testID="add-no-qr" style={[styles.side, { color: color.bleacher }]}>
+          This Replay API has no public web address (REPLAY_PUBLIC_WEB_BASE), so
+          there is no QR code. Upload from a phone at /upload instead.
+        </T>
+      )}
+      <View style={styles.side}>
+        <T style={type.title}>Scan with your phone's camera</T>
+        <T style={[type.body, styles.sub]}>
+          It opens a page to pick the video and upload it.
+        </T>
+        {/* Address only, never the token (the `#t=` fragment): it is in the QR code alone. */}
+        <T testID="add-url" style={[type.figures, styles.url]}>
+          {
+            (created.upload_page_url ?? "")
+              .replace(/^https?:\/\//, "")
+              .split("#")[0]
+          }
+        </T>
+        <T
+          testID="add-status"
+          dataSet={{ status }}
+          style={[type.title, styles.status]}
+        >
+          {PHASE[status] ?? status}
+        </T>
+        {working ? (
+          <>
+            <T
+              testID="add-stage"
+              style={[type.body, { color: color.bleacher }]}
+            >
+              {stageWords(game)}
+            </T>
             <View style={styles.bar}>
               <View
                 testID="add-progress"
-                style={[styles.fill, { width: `${Math.round(((done + frac) / stages.length) * 100)}%` }]}
+                style={[
+                  styles.fill,
+                  { width: `${Math.round(progressOf(game) * 100)}%` },
+                ]}
               />
             </View>
-          ) : null}
-          <Hint>The game opens here when it is ready · Back returns to the library</Hint>
-        </View>
+          </>
+        ) : null}
+        <T style={[type.body, styles.sub, { marginTop: sp(6) }]}>
+          You can go back to Home. The game appears there and plays as soon as
+          it's ready.
+        </T>
+        <Hint k="Back">Home</Hint>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "flex-start" },
-  side: { flex: 1, marginLeft: px(56) },
-  url: { fontSize: font.small, color: color.fg, marginTop: px(8) },
-  status: { fontSize: font.h2, fontWeight: "700", color: color.accent, marginTop: px(40) },
-  bar: { height: px(16), borderRadius: px(8), backgroundColor: color.raised, marginTop: px(16), overflow: "hidden" },
-  fill: { height: "100%", backgroundColor: color.accent },
+  head: { marginTop: px(120) },
+  sub: { color: color.bleacher, marginTop: sp(1) },
+  tiles: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: sp(6),
+    marginLeft: -px(8),
+  },
+  tileSlot: { marginRight: sp(3), marginBottom: sp(3) },
+  tile: {
+    width: px(360),
+    height: px(200),
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: sp(3),
+  },
+  foot: { position: "absolute", left: safe.x, bottom: safe.y },
+  pair: { flexDirection: "row", alignItems: "center" },
+  side: { flex: 1, marginLeft: sp(10) },
+  url: { color: color.chalk, marginTop: sp(3) },
+  status: { marginTop: sp(6) },
+  bar: {
+    height: px(8),
+    borderRadius: radius.chip,
+    backgroundColor: color.line,
+    marginTop: sp(2),
+    overflow: "hidden",
+    maxWidth: px(720),
+  },
+  fill: { height: "100%", backgroundColor: color.scoreboard },
 });

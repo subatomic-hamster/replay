@@ -12,7 +12,7 @@ import { Clips } from "./screens/Clips";
 import { Highlights } from "./screens/Highlights";
 import { Rallies } from "./screens/Rallies";
 import { Search } from "./screens/Search";
-import { Library } from "./screens/Library";
+import { Home } from "./screens/Home";
 import { Pair } from "./screens/Pair";
 import { Players } from "./screens/Players";
 import { Profile } from "./screens/Profile";
@@ -25,7 +25,11 @@ import { color } from "./theme";
 export function App({ initial }: { initial?: Route }) {
   // Seed the route once, before the first render reads it. No API address yet (a build
   // without REPLAY_API_BASE, first run): Settings first.
-  useState(() => navigate(initial ?? (apiBase() ? { name: "library" } : { name: "settings" })));
+  useState(() =>
+    navigate(
+      initial ?? (apiBase() ? { name: "library" } : { name: "settings" }),
+    ),
+  );
   usePlatformKeys();
   const route = useRoute();
 
@@ -40,9 +44,17 @@ export function App({ initial }: { initial?: Route }) {
 function screen(r: Route) {
   switch (r.name) {
     case "library":
-      return <Library />;
+      return <Home />;
     case "watch":
-      return <Watch key={r.gameId} gameId={r.gameId} initialMode={r.mode} initialPid={r.pid} initialT={r.t} />;
+      return (
+        <Watch
+          key={r.gameId}
+          gameId={r.gameId}
+          initialMode={r.mode}
+          initialPid={r.pid}
+          initialT={r.t}
+        />
+      );
     case "highlights":
       return <Highlights key={r.gameId} gameId={r.gameId} q={r.q} />;
     case "review":
@@ -50,7 +62,13 @@ function screen(r: Route) {
     case "replays":
       return <ReplayList key={r.gameId} gameId={r.gameId} />;
     case "replay":
-      return <Replay key={`${r.gameId}/${r.playId}`} gameId={r.gameId} playId={r.playId} />;
+      return (
+        <Replay
+          key={`${r.gameId}/${r.playId}`}
+          gameId={r.gameId}
+          playId={r.playId}
+        />
+      );
     case "clips":
       return <Clips key={r.gameId} gameId={r.gameId} />;
     case "rallies":
@@ -64,7 +82,9 @@ function screen(r: Route) {
     case "players":
       return <Players from={r.from} />;
     case "profile":
-      return <Profile key={r.profileId} profileId={r.profileId} from={r.from} />;
+      return (
+        <Profile key={r.profileId} profileId={r.profileId} from={r.from} />
+      );
     case "settings":
       return <Settings />;
     case "add":
@@ -73,5 +93,5 @@ function screen(r: Route) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.ink },
+  root: { flex: 1, backgroundColor: color.floor },
 });

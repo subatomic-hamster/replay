@@ -13,7 +13,8 @@ import { enterSelectMode, menuTo, openWatch } from "../e2e/helpers";
 const API = process.env.REPLAY_TV_API ?? "mock";
 const LIVE = API !== "mock";
 const OUT = process.env.REPLAY_TV_EVIDENCE_DIR ?? "test-results/evidence-m10";
-const MAIN = process.env.REPLAY_TV_EVIDENCE_PROFILE ?? (LIVE ? "Alex" : "Marcus");
+const MAIN =
+  process.env.REPLAY_TV_EVIDENCE_PROFILE ?? (LIVE ? "Alex" : "Marcus");
 const OTHER = process.env.REPLAY_TV_EVIDENCE_PROFILE2 ?? "Jordan";
 
 async function shot(page: Page, name: string) {
@@ -24,7 +25,9 @@ async function shot(page: Page, name: string) {
 /** Library → Players, then Right to the card named `name` and open it. */
 async function openByName(page: Page, name: string) {
   await page.goto("/");
-  await expect(page.getByTestId("game-card").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("game-card").first()).toBeVisible({
+    timeout: 20_000,
+  });
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("profile-card").first()).toBeVisible();
@@ -44,7 +47,9 @@ async function tab(page: Page, to: "card" | "reel" | "links") {
 
 test.describe.configure({ mode: "serial" });
 
-test("M10 players, profile stats + correction, card, reel, links", async ({ page }) => {
+test("M10 players, profile stats + correction, card, reel, links", async ({
+  page,
+}) => {
   test.setTimeout(150_000);
   await openByName(page, MAIN);
   await shot(page, "01-players");
@@ -57,10 +62,18 @@ test("M10 players, profile stats + correction, card, reel, links", async ({ page
 
   // a D-pad correction on the first editable stat that is not edited yet
   const rows = page.getByTestId("stat-row");
-  const keys = await rows.evaluateAll((els) => els.map((e) => [e.getAttribute("data-key"), e.getAttribute("data-edited")]));
-  const target = keys.find(([k, ed]) => k !== "games" && ed === "false")?.[0] ?? "";
+  const keys = await rows.evaluateAll((els) =>
+    els.map((e) => [e.getAttribute("data-key"), e.getAttribute("data-edited")]),
+  );
+  const target =
+    keys.find(([k, ed]) => k !== "games" && ed === "false")?.[0] ?? "";
   const row = page.locator(`[data-testid="stat-row"][data-key="${target}"]`);
-  for (let i = 0; i < 12 && (await row.getAttribute("data-focused")) !== "true"; i++) await page.keyboard.press("ArrowDown");
+  for (
+    let i = 0;
+    i < 12 && (await row.getAttribute("data-focused")) !== "true";
+    i++
+  )
+    await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("stat-edit")).toBeVisible();
@@ -71,13 +84,21 @@ test("M10 players, profile stats + correction, card, reel, links", async ({ page
 
   await tab(page, "card");
   await page.keyboard.press("Enter"); // render (or re-render) the PNG
-  await expect(page.getByTestId("card-tab")).toHaveAttribute("data-rendered", "true", { timeout: 60_000 });
+  await expect(page.getByTestId("card-tab")).toHaveAttribute(
+    "data-rendered",
+    "true",
+    { timeout: 60_000 },
+  );
   await page.waitForTimeout(1500); // the image itself
   await shot(page, "05-card");
 
   await tab(page, "reel");
   const items = page.getByTestId("reel-item");
-  await expect(page.locator('[data-testid="reel-item"], [data-testid="reel-empty"]').first()).toBeVisible();
+  await expect(
+    page
+      .locator('[data-testid="reel-item"], [data-testid="reel-empty"]')
+      .first(),
+  ).toBeVisible();
   if (await items.count()) {
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("reel-counter")).toBeVisible();
@@ -95,22 +116,30 @@ test("M10 links and suggestions of a second profile", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("profile")).toBeVisible();
   for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("profile")).toHaveAttribute("data-tab", "links");
+  await expect(page.getByTestId("profile")).toHaveAttribute(
+    "data-tab",
+    "links",
+  );
   await page.keyboard.press("ArrowDown");
   await shot(page, "08-links-second-profile");
 });
 
-test("M10 watch: one-row menu, the Players group, link a picked player", async ({ page }) => {
+test("M10 watch: one-row menu, the Players group, link a picked player", async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   await page.goto("/");
-  const ready = page.locator('[data-testid="game-card"]', {
-    has: page.locator('[data-testid="game-status"]', { hasText: "ready" }),
-  });
+  const ready = page.locator(
+    '[data-testid="game-card"][data-processing="false"]',
+  );
   await expect(ready.first()).toBeVisible({ timeout: 20_000 });
   const id = await ready.first().getAttribute("data-game-id");
   await openWatch(page, id ?? "g_mock01");
   await page.keyboard.press("ArrowUp");
-  await expect(page.getByTestId("nav-library")).toHaveAttribute("data-focused", "true");
+  await expect(page.getByTestId("nav-library")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
   await shot(page, "09-watch-menu-top-row");
   await page.keyboard.press("Escape");
   await menuTo(page, "action-link-profile");
@@ -120,7 +149,13 @@ test("M10 watch: one-row menu, the Players group, link a picked player", async (
 
   await enterSelectMode(page);
   // Up walks the boxes until the top one, then opens the menu: park on the top player
-  for (let i = 0; i < 8 && (await page.getByTestId("nav-library").getAttribute("data-focused")) !== "true"; i++) {
+  for (
+    let i = 0;
+    i < 8 &&
+    (await page.getByTestId("nav-library").getAttribute("data-focused")) !==
+      "true";
+    i++
+  ) {
     await page.keyboard.press("ArrowUp");
   }
   await page.keyboard.press("Escape");

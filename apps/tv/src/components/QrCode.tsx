@@ -11,7 +11,10 @@ const QUIET = 4;
 
 /** Module count and, per row, the dark runs as [first column, length]. EC level M: the
  *  ~170-char upload URL fits in version 9 (53 modules). */
-export function qrRuns(text: string): { n: number; rows: [number, number][][] } {
+export function qrRuns(text: string): {
+  n: number;
+  rows: [number, number][][];
+} {
   const qr = qrcode(0, "M");
   qr.addData(text);
   qr.make();
@@ -31,13 +34,31 @@ export function qrRuns(text: string): { n: number; rows: [number, number][][] } 
 
 /** `size`: the target edge in design px (1920x1080), quiet zone included. At 640 a v9 code
  *  gets 10 px modules on a 1080p TV — a ~33 cm code on a 55-inch set, easy from the couch. */
-export function QrCode({ text, size, testID }: { text: string; size: number; testID?: string }) {
+export function QrCode({
+  text,
+  size,
+  testID,
+}: {
+  text: string;
+  size: number;
+  testID?: string;
+}) {
   const { n, rows } = useMemo(() => qrRuns(text), [text]);
   const ratio = PixelRatio.get();
-  const cell = Math.max(1, Math.floor((px(size) * ratio) / (n + 2 * QUIET))) / ratio;
+  const cell =
+    Math.max(1, Math.floor((px(size) * ratio) / (n + 2 * QUIET))) / ratio;
   const edge = cell * (n + 2 * QUIET);
   return (
-    <View testID={testID} dataSet={{ modules: n, cell }} style={{ width: edge, height: edge, backgroundColor: "#fff" }}>
+    <View
+      testID={testID}
+      dataSet={{ modules: n, cell }}
+      style={{
+        width: edge,
+        height: edge,
+        backgroundColor: "#fff",
+        borderRadius: px(12),
+      }}
+    >
       {rows.flatMap((runs, r) =>
         runs.map(([c, len]) => (
           <View

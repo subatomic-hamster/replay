@@ -111,6 +111,36 @@ export function Timeline({ duration, t, moments, seek, storyboard }: Props) {
   );
 }
 
+/** The storyboard frame at `t`, `width` wide: a crop of its sprite sheet (fill the parent,
+ *  which clips). */
+export function SpriteFrame({
+  storyboard,
+  t,
+  width,
+}: {
+  storyboard: Storyboard;
+  t: number;
+  width: number;
+}) {
+  const cell = storyboardCell(storyboard, t);
+  if (!cell) return null;
+  const k = width / storyboard.width;
+  return (
+    <Image
+      testID="seek-sprite"
+      source={{ uri: cell.sheet }}
+      resizeMode="stretch"
+      style={{
+        position: "absolute",
+        left: -cell.x * k,
+        top: -cell.y * k,
+        width: cell.sheetW * k,
+        height: cell.sheetH * k,
+      }}
+    />
+  );
+}
+
 function Preview({
   seek,
   at,
@@ -128,7 +158,6 @@ function Preview({
   const left = Math.max(0, Math.min(LINE_W - PREVIEW_W, x - PREVIEW_W / 2));
   const thumb = seek.snapped?.thumb_url;
   const cell = !thumb && storyboard ? storyboardCell(storyboard, at) : null;
-  const k = storyboard ? PREVIEW_W / storyboard.width : 1;
   // The readout sits left of the frame, or right of it when the frame hugs the left edge.
   const readoutSide =
     left >= px(220)
@@ -156,19 +185,8 @@ function Preview({
               style={StyleSheet.absoluteFill}
               resizeMode="cover"
             />
-          ) : cell ? (
-            <Image
-              testID="seek-sprite"
-              source={{ uri: cell.sheet }}
-              resizeMode="stretch"
-              style={{
-                position: "absolute",
-                left: -cell.x * k,
-                top: -cell.y * k,
-                width: cell.sheetW * k,
-                height: cell.sheetH * k,
-              }}
-            />
+          ) : storyboard ? (
+            <SpriteFrame storyboard={storyboard} t={at} width={PREVIEW_W} />
           ) : null}
           <View style={styles.timeChip}>
             <T style={styles.fig}>{fmtDuration(at)}</T>

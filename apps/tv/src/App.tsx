@@ -14,7 +14,6 @@ import { Home } from "./screens/Home";
 import { Pair } from "./screens/Pair";
 import { Players } from "./screens/Players";
 import { Profile } from "./screens/Profile";
-import { Replay, ReplayList } from "./screens/Replay";
 import { Review } from "./screens/Review";
 import { Settings } from "./screens/Settings";
 import { Watch } from "./screens/Watch";
@@ -46,27 +45,18 @@ function screen(r: Route) {
     case "watch":
       return (
         <Watch
-          key={`${r.gameId}/${r.way ?? ""}/${r.q ?? ""}`}
+          key={`${r.gameId}/${r.way ?? ""}/${r.q ?? ""}/${r.play ?? ""}`}
           gameId={r.gameId}
           initialMode={r.mode}
           initialPid={r.pid}
           initialT={r.t}
           initialWay={r.way}
+          initialPlay={r.play}
           q={r.q}
         />
       );
     case "review":
       return <Review key={r.gameId} gameId={r.gameId} />;
-    case "replays":
-      return <ReplayList key={r.gameId} gameId={r.gameId} />;
-    case "replay":
-      return (
-        <Replay
-          key={`${r.gameId}/${r.playId}`}
-          gameId={r.gameId}
-          playId={r.playId}
-        />
-      );
     case "clips":
       return <Clips key={r.gameId} gameId={r.gameId} />;
     case "search":

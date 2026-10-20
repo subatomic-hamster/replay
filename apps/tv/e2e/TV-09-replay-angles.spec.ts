@@ -1,9 +1,9 @@
-// M8 multi-angle replay: Left/Right cut between time-aligned angle videos, keeping the
-// playback position and play state; Back walks Replay → list → Watch. The mock serves
-// every angle as /mock/wide.mp4?angle=<id>, so each cut is a real src swap + reload.
+// M8 multi-angle replay, inside the player: Left/Right cut between time-aligned angle
+// videos, keeping the playback position and play state; Back returns to the game. The mock
+// serves every angle as /mock/wide.mp4?angle=<id>, so each cut is a real src swap + reload.
 import { expect, test, type Page } from "@playwright/test";
 import { cycleAngle, tierBadge } from "../../../packages/tv-core/src/replays";
-import { GAME_ID, menuTo, openWatch } from "./helpers";
+import { GAME_ID, openWatch, smallText } from "./helpers";
 
 const REPLAY = `/tv/${GAME_ID}/replays/play_0001`;
 
@@ -73,42 +73,14 @@ test("TV-09 cycleAngle wraps both ways; tier badges", () => {
   ]);
 });
 
-test("TV-09 player → Do more → Angles (the nearest play) → Back → list → player", async ({
-  page,
-}) => {
-  // A game without replays has no Angles tile.
+// The way in from the player (Do more → Angles → a thumbnail) and Back to the game: TV-26.
+test("TV-09 a game without replays has no Angles tile", async ({ page }) => {
   await openWatch(page, "g_pickle4");
   await page.keyboard.press("ArrowUp");
   await expect(page.getByTestId("domore")).toBeVisible();
+  await expect(page.getByTestId("action-bookmark")).toBeAttached();
   await expect(page.getByTestId("nav-replays")).toHaveCount(0);
-
-  await openWatch(page);
-  await menuTo(page, "nav-replays");
-  await expect(page.getByTestId("nav-replays")).toContainText(
-    "Marcus — make (mock)",
-  );
-  await page.keyboard.press("Enter");
-
-  await expect(page.getByTestId("replay")).toHaveAttribute(
-    "data-angle",
-    "wide",
-  );
-  await expect(page.getByTestId("replay-title")).toHaveText(
-    "Marcus — make (mock)",
-  );
-  await expect(page.getByTestId("replay-synthetic")).toBeVisible();
-
-  await page.keyboard.press("Escape");
-  const cards = page.getByTestId("replay-card");
-  await expect(page.getByTestId("replay-list")).toBeVisible();
-  await expect(cards).toHaveCount(2);
-  await expect(cards.first()).toContainText("4 angles");
-  await expect(cards.first()).toHaveAttribute("data-focused", "true");
-  await page.keyboard.press("ArrowDown");
-  await expect(cards.nth(1)).toHaveAttribute("data-focused", "true");
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("video")).toBeAttached();
-  await expect(page.getByTestId("timeline")).toBeAttached();
+  await expect(page.getByTestId("action-free-view")).toHaveCount(0);
 });
 
 test("TV-09 Left/Right cut angles at the same time and play state, wrapping", async ({
@@ -167,38 +139,21 @@ test("TV-09 Left/Right cut angles at the same time and play state, wrapping", as
   expect(after.t).toBeLessThan(before + 5);
   await expect.poll(async () => (await media(page)).paused).toBe(false);
 
+  // Back: the game itself (a deep link has no earlier spot: the play's start).
   await page.keyboard.press("Backspace");
-  await expect(page.getByTestId("replay-list")).toBeVisible();
+  await expect(page.getByTestId("watch")).toBeVisible();
+  await expect(page.getByTestId("timeline")).toBeAttached();
 });
 
-test("TV-09 10-foot UI: replay screens keep text ≥ 24 px and ring the focused card", async ({
+test("TV-09 10-foot UI: the angle view keeps text ≥ 24 px; the old list is the player", async ({
   page,
 }) => {
-  for (const path of [`/tv/${GAME_ID}/replays`, REPLAY]) {
-    await page.goto(path);
-    await page.waitForTimeout(500);
-    const small = await page.evaluate(() =>
-      [...document.querySelectorAll("div, span")]
-        .filter((el) =>
-          [...el.childNodes].some(
-            (n) => n.nodeType === 3 && n.textContent?.trim(),
-          ),
-        )
-        .map((el) => ({
-          text: el.textContent,
-          size: parseFloat(getComputedStyle(el).fontSize),
-        }))
-        .filter((x) => x.size < 24),
-    );
-    expect(small, path).toEqual([]);
-  }
+  await page.goto(REPLAY);
+  await expect(page.getByTestId("replay")).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(await smallText(page)).toEqual([]);
   await page.goto(`/tv/${GAME_ID}/replays`);
-  const ring = (i: number) =>
-    page
-      .getByTestId("replay-card")
-      .nth(i)
-      .evaluate((el) => getComputedStyle(el).borderTopColor);
-  expect(await ring(0)).not.toBe(await ring(1));
+  await expect(page.getByTestId("watch")).toBeVisible();
 });
 
 // Opt-in evidence (REPLAY_TV_EVIDENCE_DIR): the view on a Tier A and a Tier B angle, the

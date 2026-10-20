@@ -365,9 +365,17 @@ export function ProgressRing({
 }
 
 /** A remote hint: an optional key cap ("Back") then what it does, in Meta. */
-export function Hint({ children, k }: { children: ReactNode; k?: string }) {
+export function Hint({
+  children,
+  k,
+  style,
+}: {
+  children: ReactNode;
+  k?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
   return (
-    <View style={styles.hintRow}>
+    <View style={[styles.hintRow, style]}>
       {k ? (
         <View style={styles.keyCap}>
           <T style={styles.keyText}>{k}</T>

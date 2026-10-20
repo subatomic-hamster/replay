@@ -14,6 +14,13 @@
 // highlight query's clips) and Condensed (the condensed rendition, or the rallies back to
 // back while it renders). Everything polls every 10 s while the game is still processing,
 // so moments arrive on the line and Do more's tiles light up.
+//
+// Do more (Wave 3): Follow player (player chips; pick on screen; Spotlight, Tag, Link once
+// a player is picked), Angles and Free view of the nearest play (AngleView replaces the
+// game video until Back, which resumes the game where it was), Watch (the ways), Stats
+// (StatsPanel, the right third), Commentary, On your phone (PhonePanel's QR handoff) and
+// Bookmark. Where the game was is remembered (resume.ts) every second and before leaving,
+// so a sub-screen's Back or Home's Resume comes back to the same time and play state.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, View, useWindowDimensions } from "react-native";
 import {
@@ -31,6 +38,10 @@ import {
   nextFocus,
   type Direction,
 } from "../../../../packages/tv-core/src/spatial";
+import {
+  tierBadge,
+  type ReplayManifest,
+} from "../../../../packages/tv-core/src/replays";
 import { createTracksCache } from "../../../../packages/tv-core/src/tracksCache";
 import type {
   CropPath,
@@ -41,13 +52,21 @@ import type {
   Storyboard,
 } from "../../../../packages/tv-core/src/types";
 import { api } from "../api";
+import { AngleView } from "../components/AngleView";
 import { DoMoreLayer, type Tile } from "../components/DoMoreLayer";
 import { FollowFrame } from "../components/FollowFrame";
 import { MomentsLayer } from "../components/MomentsLayer";
+import { PhonePanel } from "../components/PhonePanel";
 import { ProfilePicker } from "../components/ProfilePicker";
 import { SelectOverlay } from "../components/SelectOverlay";
+import { StatsPanel, type StatsExit } from "../components/StatsPanel";
 import { TextEntryDialog } from "../components/TextEntryDialog";
-import { Timeline, TIMELINE_H, type SeekView } from "../components/Timeline";
+import {
+  SpriteFrame,
+  Timeline,
+  TIMELINE_H,
+  type SeekView,
+} from "../components/Timeline";
 import { etaText } from "../gameState";
 import { useDpad, type DpadAction } from "../input";
 import { navigate, type Way } from "../nav";
@@ -66,16 +85,22 @@ import {
   REPEAT_FLOOR_MS,
   snapTo,
 } from "../playback/seek";
+import { rememberSpot, resumeSpot } from "../resume";
 import {
   storedSession,
   useSessionMessages,
   type SessionMessage,
 } from "../session";
 import { color, px, radius, safe, sp, type } from "../theme";
-import { ApiErrorBanner, Fade, Loading, T, useAsync } from "../ui";
+import { ApiErrorBanner, Fade, Hint, Loading, T, useAsync } from "../ui";
 
 type Mode = "wide" | "select" | "follow";
-type Layer = "moments" | "domore" | null;
+type Layer = "moments" | "domore" | "stats" | "phone" | null;
+/** A play's replay angles in place of the game video: the angle to open, or Free view. */
+interface Angle {
+  playId: string;
+  start: number | "free";
+}
 interface Seg {
   t_start: number;
   t_end: number;
@@ -142,6 +167,7 @@ export function Watch({
   initialPid,
   initialT,
   initialWay,
+  initialPlay,
   q,
 }: {
   gameId: string;
@@ -149,6 +175,8 @@ export function Watch({
   initialPid?: string;
   initialT?: number;
   initialWay?: Way;
+  /** open this play's replay angles first (a `/tv/:id/replays/:playId` deep link) */
+  initialPlay?: string;
   q?: string;
 }) {
   const {
@@ -204,12 +232,32 @@ export function Watch({
   const [rendering, setRendering] = useState(false);
   const renderAsked = useRef<string | null>(null);
   const [version, bump] = useState(0);
+  const [angle, setAngle] = useState<Angle | null>(
+    initialPlay ? { playId: initialPlay, start: 0 } : null,
+  );
+  /** Where the game was when an angle opened (Back resumes it there). */
+  const angleReturn = useRef<{ t: number; play: boolean } | null>(null);
+  const [near, setNear] = useState<ReplayManifest | null>(null);
+  const { data: profiles } = useAsync(
+    () => api.listProfiles().catch(() => []),
+    [],
+  );
   /** Seek + play once the (next) source knows its duration: deep link, a way's first
-   *  play, the swap to or from the condensed rendition. */
-  const pending = useRef<{ t: number | null; play: boolean } | null>({
-    t: initialT ?? null,
-    play: initialMode !== "select",
-  });
+   *  play, the swap to or from the condensed rendition, the return from an angle. A plain
+   *  open of the full game starts where it was left (resume.ts). */
+  const pending = useRef<{ t: number | null; play: boolean } | null>(
+    (() => {
+      const play = initialMode !== "select";
+      if (initialT !== undefined) return { t: initialT, play };
+      const spot =
+        (initialWay ?? "full") === "full" && !q && !initialPlay
+          ? resumeSpot(gameId)
+          : null;
+      return spot
+        ? { t: spot.t, play: play && spot.playing }
+        : { t: null, play };
+    })(),
+  );
   const seekRef = useRef<SeekState | null>(null);
   const linger = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastKey = useRef(Date.now());
@@ -328,6 +376,23 @@ export function Watch({
     settle(handle);
     handle?.pause();
   }, [handle, settle]);
+
+  /** Note where the game is (resume.ts): a queued start while one is pending, a seek's
+   *  target while seeking. Game time only (not the condensed rendition's clock). */
+  const gameLength = info?.video.duration_s ?? 0;
+  const remember = useCallback(() => {
+    if (!handle || condensedSrc || handle.error()) return;
+    const p = pending.current;
+    const s = seekRef.current;
+    const spot = p
+      ? p.t === null
+        ? null
+        : { t: p.t, playing: p.play }
+      : s
+        ? { t: s.target, playing: s.wasPlaying }
+        : { t: handle.currentTime(), playing: !handle.paused() };
+    if (spot) rememberSpot(gameId, { ...spot, duration: gameLength });
+  }, [handle, condensedSrc, gameId, gameLength]);
 
   // ---------------------------------------------------------------- follow-cam
   const rendition = pid ? game?.renditions?.players?.[pid] : undefined;
@@ -652,7 +717,11 @@ export function Watch({
     return () => clearInterval(timer);
   }, [chrome, handle, layer, seekV, mode]);
 
-  const shown = chrome || layer !== null || seekV !== null || mode === "select";
+  // The Stats panel and the phone layer cover the transport's corners: it steps aside.
+  const overlay = layer === "stats" || layer === "phone";
+  const shown =
+    !overlay &&
+    (chrome || layer !== null || seekV !== null || mode === "select");
   const [fade] = useState(() => new Animated.Value(1));
   useEffect(() => {
     Animated.timing(fade, {
@@ -674,6 +743,56 @@ export function Watch({
       setLayer(l);
     },
     [commit, handle, settle],
+  );
+
+  /** A play's angles (or Free view) in place of the game video; the game pauses where it
+   *  is and its player unmounts (one decoder at a time on the Fire TV). */
+  const openAngle = useCallback(
+    (playId: string, start: number | "free") => {
+      if (handle) {
+        const queued = settle(handle);
+        remember();
+        angleReturn.current = {
+          t: handle.currentTime(),
+          play: queued || !handle.paused(),
+        };
+        handle.pause();
+      }
+      setLayer(null);
+      setAngle({ playId, start });
+    },
+    [handle, settle, remember],
+  );
+  /** Back from an angle: the game where it was (a deep link: from the play's start). */
+  const closeAngle = useCallback((m: ReplayManifest | null) => {
+    pending.current = angleReturn.current ?? {
+      t: m?.t_start ?? null,
+      play: true,
+    };
+    angleReturn.current = null;
+    setAngle(null);
+    setChrome(true);
+    lastKey.current = Date.now();
+  }, []);
+
+  /** Follow a player from Do more's chips: in place, playback as it was. */
+  const follow = useCallback(
+    (id: string) => {
+      setLayer(null);
+      setPid(id);
+      setFocusId(id);
+      setMode("follow");
+      poke();
+    },
+    [poke],
+  );
+
+  const leave = useCallback(
+    (to: StatsExit | "library") => {
+      remember();
+      navigate(to === "library" ? { name: to } : { name: to, gameId });
+    },
+    [remember, gameId],
   );
 
   const jump = useCallback(
@@ -787,7 +906,7 @@ export function Watch({
           if (seeking) cancelSeek();
           else if (mode !== "wide") setMode("wide");
           else if (chrome) setChrome(false);
-          else navigate({ name: "library" });
+          else leave("library");
           break;
         case "bookmark":
           bookmark();
@@ -799,6 +918,7 @@ export function Watch({
           if (tagTarget) setTagging(tagTarget);
           break;
         case "pair":
+          remember();
           navigate({ name: "pair", gameId: game.id });
           break;
         default:
@@ -823,9 +943,11 @@ export function Watch({
       jump,
       bookmark,
       toggle,
+      leave,
+      remember,
     ],
   );
-  useDpad(onAction, !tagging && !linking && layer === null);
+  useDpad(onAction, !tagging && !linking && layer === null && !angle);
 
   // Paired phone: tell it what is on screen once a second (its "Clip that" posts a tap at
   // this media time), play the search hits it sends, confirm the clips its taps cut, and
@@ -846,18 +968,37 @@ export function Watch({
   );
   useEffect(() => {
     if (!handle || !game) return;
-    const timer = setInterval(
-      () =>
-        send({
-          type: "now",
-          game_id: game.id,
-          title: game.title,
-          t: handle.currentTime(),
-        }),
-      1000,
-    );
+    const timer = setInterval(() => {
+      remember();
+      send({
+        type: "now",
+        game_id: game.id,
+        title: game.title,
+        t: handle.currentTime(),
+      });
+    }, 1000);
     return () => clearInterval(timer);
-  }, [handle, game, send]);
+  }, [handle, game, send, remember]);
+
+  // The nearest play's angles (Do more's Angles and Free view), read when it changes so
+  // they are in before Do more opens.
+  const nearestReplay = [...(replays ?? [])].sort(
+    (a, b) =>
+      Math.abs((a.t_start + a.t_end) / 2 - t) -
+      Math.abs((b.t_start + b.t_end) / 2 - t),
+  )[0];
+  const nearId = nearestReplay?.play_id;
+  useEffect(() => {
+    if (!nearId) return;
+    let on = true;
+    api.getReplay(gameId, nearId).then(
+      (m) => on && setNear(m),
+      () => on && setNear(null),
+    );
+    return () => {
+      on = false;
+    };
+  }, [gameId, nearId]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), TOAST_MS);
@@ -897,11 +1038,10 @@ export function Watch({
   // An untagged player reads "Player 3" (track p3), as on the Moments chips.
   const targetName = (id: string) =>
     roster.find((p) => p.id === id)?.name ?? `Player ${id.replace(/^p/, "")}`;
-  const nearestReplay = [...(replays ?? [])].sort(
-    (a, b) =>
-      Math.abs((a.t_start + a.t_end) / 2 - t) -
-      Math.abs((b.t_start + b.t_end) / 2 - t),
-  )[0];
+  const photo = (p: Player) =>
+    (p.profile_id &&
+      profiles?.find((x) => x.profile_id === p.profile_id)?.photo_url) ||
+    null;
   const nHype = hype?.candidates.length ?? 0;
   const hasRallies =
     (rallies?.n ?? 0) > 0 || rallies?.condensed.status === "done";
@@ -931,6 +1071,77 @@ export function Watch({
       run: () => startWay("condensed"),
     }),
   ];
+  const pickOnScreen = close(() => {
+    pause();
+    setMode("select");
+  });
+  // Follow player: the roster as chips, picking on screen, and once a player is picked
+  // (followed, or the focused box) Spotlight, Tag and Link for them.
+  const followRow: Tile[] = [
+    ...roster.map((p) => ({
+      id: `follow-${p.id}`,
+      label: targetName(p.id),
+      avatar: { name: targetName(p.id), photo: photo(p) },
+      on: mode === "follow" && pid === p.id,
+      run: () => follow(p.id),
+    })),
+    { id: "follow-pick", label: "Pick on screen", run: pickOnScreen },
+    ...(tagTarget
+      ? [
+          {
+            id: "action-spotlight",
+            label: spotlight ? "Spotlight on" : "Spotlight off",
+            on: spotlight,
+            run: () => setSpotlight((s) => !s),
+          },
+          {
+            id: "action-tag",
+            label: `Tag ${targetName(tagTarget)}`,
+            run: close(() => setTagging(tagTarget)),
+          },
+          {
+            id: "action-link-profile",
+            label: "Link profile",
+            run: close(() => setLinking(tagTarget)),
+          },
+        ]
+      : []),
+  ];
+  // Angles: the nearest play's angles as thumbnails (the play's frame; the API has no
+  // per-angle poster yet), Free view last when the play has a scene.
+  const play = near && near.play_id === nearestReplay?.play_id ? near : null;
+  const playT = nearestReplay
+    ? (nearestReplay.t_start + nearestReplay.t_end) / 2
+    : 0;
+  const frame = (
+    <View style={styles.thumb}>
+      {storyboard ? (
+        <SpriteFrame storyboard={storyboard} t={playT} width={px(304)} />
+      ) : null}
+    </View>
+  );
+  const angleRow: Tile[] = play
+    ? [
+        ...play.angles.map((a, i) => ({
+          id: `angle-${a.id}`,
+          label: a.label,
+          sub: tierBadge(a.tier),
+          art: frame,
+          run: () => openAngle(play.play_id, i),
+        })),
+        ...(play.scene_url
+          ? [
+              {
+                id: "angle-free",
+                label: "Free view",
+                sub: "Orbit the play",
+                art: frame,
+                run: () => openAngle(play.play_id, "free"),
+              },
+            ]
+          : []),
+      ]
+    : [];
   const tiles: Tile[] = [
     ...tile(
       "follow",
@@ -942,21 +1153,23 @@ export function Watch({
           mode === "follow" && pid
             ? `Following ${targetName(pid)}`
             : "Pick a player",
-        run: close(() => {
-          pause();
-          setMode("select");
-        }),
+        view: "chips",
+        children: followRow,
       },
     ),
     ...tile("angles", !!nearestReplay, {
       id: "nav-replays",
       label: "Angles",
       sub: nearestReplay?.label ?? "Replays of a play",
-      run: close(
-        () =>
-          nearestReplay &&
-          navigate({ name: "replay", gameId, playId: nearestReplay.play_id }),
-      ),
+      view: "thumbs",
+      children: angleRow,
+      run: () => nearestReplay && openAngle(nearestReplay.play_id, 0),
+    }),
+    ...tile("free_view", !!play?.scene_url, {
+      id: "action-free-view",
+      label: "Free view",
+      sub: "Orbit this play",
+      run: () => play && openAngle(play.play_id, "free"),
     }),
     ...(wayTiles.length > 1
       ? [
@@ -977,7 +1190,7 @@ export function Watch({
         id: "nav-review",
         label: "Stats",
         sub: "Box score and shots",
-        run: close(() => navigate({ name: "review", gameId })),
+        run: () => openLayer("stats"),
       },
     ),
     ...tile("commentary", lines.length > 0 || !!broadcast, {
@@ -988,61 +1201,31 @@ export function Watch({
       run: toggleCommentary,
     }),
     {
+      id: "nav-phone",
+      label: "On your phone",
+      sub: "Clip, tag, review, search",
+      run: () => openLayer("phone"),
+    },
+    {
       id: "action-bookmark",
       label: "Bookmark",
       sub: "Mark this moment",
       run: close(bookmark),
     },
-    ...(tagTarget
-      ? [
-          {
-            id: "action-tag",
-            label: "Tag player",
-            sub: targetName(tagTarget),
-            run: close(() => setTagging(tagTarget)),
-          },
-          {
-            id: "action-link-profile",
-            label: "Link profile",
-            sub: targetName(tagTarget),
-            run: close(() => setLinking(tagTarget)),
-          },
-          {
-            id: "action-spotlight",
-            label: "Spotlight",
-            sub: spotlight ? "On" : "Off",
-            on: spotlight,
-            run: () => setSpotlight((s) => !s),
-          },
-        ]
-      : []),
-    {
-      id: "nav-clips",
-      label: "Clips",
-      sub: "Saved clips",
-      run: close(() => navigate({ name: "clips", gameId })),
-    },
-    {
-      id: "nav-search",
-      label: "Search",
-      sub: "Find a play",
-      run: close(() => navigate({ name: "search", gameId })),
-    },
-    {
-      id: "nav-advice",
-      label: "Advice",
-      sub: "Tips from the stats",
-      run: close(() => navigate({ name: "advice", gameId })),
-    },
-    {
-      id: "nav-pair",
-      label: "On your phone",
-      sub: "Pair to clip and search",
-      run: close(() => navigate({ name: "pair", gameId })),
-    },
   ];
 
   // ---------------------------------------------------------------- render
+  if (angle) {
+    return (
+      <AngleView
+        key={`${angle.playId}/${angle.start}`}
+        gameId={gameId}
+        playId={angle.playId}
+        start={angle.start}
+        onBack={closeAngle}
+      />
+    );
+  }
   const cropRect = crop ? cropRectAt(crop, t) : null;
   const spotPlayers = players
     .filter((p) => p.id === pid)
@@ -1135,26 +1318,7 @@ export function Watch({
               <T style={type.meta} testID="select-hint">
                 Pick a player, then Select to follow
               </T>
-            ) : mode === "follow" ? (
-              <View
-                style={styles.followChip}
-                testID="followcam-active"
-                dataSet={{ playerId: pid ?? "" }}
-              >
-                <View
-                  style={[
-                    styles.teamDot,
-                    { backgroundColor: followName?.color_hex ?? color.chalk },
-                  ]}
-                />
-                <T style={type.meta}>{pid ? targetName(pid) : ""}</T>
-                {rendering ? (
-                  <T style={[type.meta, styles.dim]} testID="rendering-badge">
-                    {"  "}getting the follow view ready
-                  </T>
-                ) : null}
-              </View>
-            ) : (
+            ) : mode === "follow" ? null : (
               <T
                 style={[type.meta, { maxWidth: px(1100) }]}
                 numberOfLines={1}
@@ -1173,7 +1337,39 @@ export function Watch({
           />
         </Animated.View>
 
-        {indicator ? (
+        {mode === "follow" && !overlay ? (
+          // Stays while following, transport or not: who the camera is on; with the
+          // transport, how to stop.
+          <View style={styles.followRow}>
+            <View
+              style={styles.followChip}
+              testID="followcam-active"
+              dataSet={{ playerId: pid ?? "" }}
+            >
+              <View
+                style={[
+                  styles.teamDot,
+                  { backgroundColor: followName?.color_hex ?? color.chalk },
+                ]}
+              />
+              <T style={type.meta}>
+                {pid ? `Following ${targetName(pid)}` : ""}
+              </T>
+              {rendering ? (
+                <T style={[type.meta, styles.dim]} testID="rendering-badge">
+                  , getting the view ready
+                </T>
+              ) : null}
+            </View>
+            {shown ? (
+              <Hint k="Back" style={styles.stopHint}>
+                Stop following
+              </Hint>
+            ) : null}
+          </View>
+        ) : null}
+
+        {indicator && !overlay ? (
           <View
             style={styles.indicator}
             testID="way-indicator"
@@ -1225,6 +1421,23 @@ export function Watch({
         {layer === "domore" ? (
           <DoMoreLayer
             tiles={tiles}
+            onClose={closeLayer}
+            onPlayPause={toggle}
+          />
+        ) : null}
+        {layer === "stats" ? (
+          <StatsPanel
+            game={game}
+            roster={roster}
+            onClose={closeLayer}
+            onOpen={leave}
+            onPlayPause={toggle}
+          />
+        ) : null}
+        {layer === "phone" ? (
+          <PhonePanel
+            gameId={gameId}
+            t={layerT}
             onClose={closeLayer}
             onPlayPause={toggle}
           />
@@ -1303,13 +1516,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   dim: { color: color.bleacher },
+  followRow: {
+    position: "absolute",
+    left: safe.x,
+    top: safe.y,
+    flexDirection: "row",
+    alignItems: "center",
+  },
   followChip: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: sp(2),
     borderRadius: radius.chip,
-    backgroundColor: color.bench,
+    backgroundColor: "rgba(29, 40, 52, 0.88)",
   },
+  stopHint: { marginTop: 0, marginLeft: sp(3) },
+  thumb: { flex: 1, backgroundColor: color.bench },
   teamDot: {
     width: px(16),
     height: px(16),

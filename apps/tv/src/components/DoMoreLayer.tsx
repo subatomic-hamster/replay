@@ -1,31 +1,52 @@
-// The player's Do more layer (Up / Menu). Wave 2 placeholder: one row of large tiles over
-// a soft scrim, so every feature of the old grouped watch menu stays reachable with the
-// D-pad; Wave 3 designs the real layer (follow, angles, free view, stats panel, phone).
-// A tile whose feature is still processing says "Getting ready, about N min" and cannot be
-// chosen. A tile with `children` (Watch) opens its own row in place; Back returns.
-import { useCallback, useState } from "react";
+// The player's Do more layer (Up / Menu; docs/ux/redesign.md "Do more"): one row of large
+// actions over a soft scrim, in the spec's order (Follow player, Angles, Free view, Watch,
+// Stats, Commentary, On your phone, then Bookmark). The row keeps inside the safe zone:
+// what does not fit is clipped at its edge, the next tile peeking, and the row scrolls with
+// focus. A tile whose feature is still processing says "Getting ready, about N min" and
+// cannot be chosen. A tile with `children` opens its own row in place (Follow player's
+// player chips, Angles' thumbnails, Watch's ways), the current child marked; Back or Down
+// returns to the main row, and from there closes the layer.
+import { useCallback, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { useDpad, type DpadAction } from "../input";
-import { color, face, px, safe, sp, type } from "../theme";
+import { color, face, px, radius, safe, sp, type } from "../theme";
 import { Fade, Focusable, SlideIn, T } from "../ui";
+import { Avatar } from "./Avatar";
 
 export interface Tile {
   /** testID; the old menu's ids where the concept survives (nav-review, action-tag…) */
   id: string;
   label: string;
-  sub: string;
+  sub?: string;
   /** still processing: shown, focusable, not selectable */
   pending?: boolean;
-  /** a toggle's state */
+  /** a toggle's state, or the current choice in a sub-row (marked) */
   on?: boolean;
   run?: () => void;
   children?: Tile[];
+  /** How `children` draw: large tiles (default), player chips, or 16:9 thumbnails. */
+  view?: View_;
+  /** a chip's face: the profile photo, else initials */
+  avatar?: { name: string; photo: string | null };
+  /** a thumbnail's picture */
+  art?: ReactNode;
 }
+type View_ = "tiles" | "chips" | "thumbs";
 
-const TILE_W = px(304);
-const TILE_H = px(168);
-const PITCH = TILE_W + px(16) + sp(3);
-const SHOWN = 5;
+const RING_BOX = px(8); // Focusable's ring + gap, each side
+const GAP = sp(3);
+const SIZE: Record<View_, { w: number; h: number }> = {
+  tiles: { w: px(280), h: px(168) },
+  chips: { w: px(280), h: px(88) },
+  thumbs: { w: px(304), h: px(171) },
+};
+/** The row's clip: the safe zone, plus room for the focused tile's ring and 1.06 scale. */
+const SCALE_ROOM = px(12);
+const CLIP_W = px(1920) - 2 * safe.x + 2 * SCALE_ROOM;
+const pitch = (v: View_) => SIZE[v].w + 2 * RING_BOX + GAP;
+/** Whole items that fit in the safe zone; the next one peeks. */
+const shown = (v: View_) =>
+  Math.max(1, Math.floor((px(1920) - 2 * safe.x + GAP) / pitch(v)));
 
 export function DoMoreLayer({
   tiles,
@@ -43,6 +64,7 @@ export function DoMoreLayer({
   const open = tiles.find((t) => t.id === openId && t.children) ?? null;
   const row = open?.children ?? tiles;
   const rowKey = open?.id ?? "main";
+  const view: View_ = open?.view ?? "tiles";
   const k = Math.max(
     0,
     row.findIndex((t) => t.id === at[rowKey]),
@@ -61,7 +83,7 @@ export function DoMoreLayer({
       else if (a === "select") {
         const t = row[k];
         if (!t || t.pending) return;
-        if (t.children) {
+        if (t.children?.length) {
           const cur = t.children.find((c) => c.on) ?? t.children[0];
           setAt({ ...at, [t.id]: cur.id });
           setOpenId(t.id);
@@ -72,9 +94,15 @@ export function DoMoreLayer({
   );
   useDpad(onAction);
 
+  const { w, h } = SIZE[view];
+  const shift = Math.max(0, k - (shown(view) - 1)) * pitch(view);
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Fade side="top" length={px(480)} strength={0.85} />
+      <Fade
+        side="top"
+        length={px(view === "thumbs" ? 600 : 480)}
+        strength={0.85}
+      />
       <SlideIn
         from="above"
         style={styles.layer}
@@ -82,43 +110,89 @@ export function DoMoreLayer({
         dataSet={{ row: open ? open.id : "main" }}
       >
         <T style={[type.meta, styles.crumb]}>{open ? open.label : "Do more"}</T>
-        <View
-          style={[
-            styles.row,
-            {
-              transform: [
-                { translateX: -Math.max(0, k - (SHOWN - 1)) * PITCH },
-              ],
-            },
-          ]}
-        >
-          {row.map((t, n) => (
-            <View key={t.id} style={styles.slot}>
-              <Focusable
-                focused={n === k}
-                testID={t.id}
-                dataSet={{
-                  focused: n === k ? "true" : "false",
-                  pending: t.pending ? "true" : "false",
-                  ...(t.on === undefined
-                    ? {}
-                    : { on: t.on ? "true" : "false" }),
-                }}
-              >
-                <View style={[styles.tile, t.pending && { opacity: 0.55 }]}>
-                  <T
-                    style={[type.body, { fontFamily: face.semibold }]}
-                    numberOfLines={1}
+        <View style={styles.clip}>
+          <View style={[styles.row, { transform: [{ translateX: -shift }] }]}>
+            {row.map((t, n) => {
+              const on = n === k;
+              return (
+                <View key={t.id} style={{ marginRight: GAP }}>
+                  <Focusable
+                    focused={on}
+                    round={view === "chips" ? radius.chip : radius.card}
+                    testID={t.id}
+                    dataSet={{
+                      focused: on ? "true" : "false",
+                      pending: t.pending ? "true" : "false",
+                      children: t.children?.length ?? 0,
+                      ...(t.on === undefined
+                        ? {}
+                        : { on: t.on ? "true" : "false" }),
+                    }}
                   >
-                    {t.label}
-                  </T>
-                  <T style={[type.meta, styles.sub]} numberOfLines={2}>
-                    {t.sub}
-                  </T>
+                    <View
+                      style={[
+                        { width: w, height: h },
+                        view === "chips" ? styles.chip : styles.tile,
+                        t.on && !on && view !== "thumbs" && styles.current,
+                        t.pending && { opacity: 0.55 },
+                      ]}
+                    >
+                      {view === "thumbs" ? (
+                        t.art
+                      ) : view === "chips" ? (
+                        <>
+                          {t.avatar ? (
+                            <View style={styles.face}>
+                              <Avatar
+                                name={t.avatar.name}
+                                photo={t.avatar.photo}
+                                size={56}
+                              />
+                            </View>
+                          ) : null}
+                          <T
+                            style={[type.body, styles.semi, { flexShrink: 1 }]}
+                            numberOfLines={1}
+                          >
+                            {t.label}
+                          </T>
+                        </>
+                      ) : (
+                        <>
+                          <T style={[type.body, styles.semi]} numberOfLines={1}>
+                            {t.label}
+                          </T>
+                          {t.sub ? (
+                            <T
+                              style={[type.meta, styles.sub]}
+                              numberOfLines={2}
+                            >
+                              {t.sub}
+                            </T>
+                          ) : null}
+                        </>
+                      )}
+                    </View>
+                  </Focusable>
+                  {view === "thumbs" ? (
+                    <View style={[styles.caption, { width: w }]}>
+                      <T
+                        style={[type.body, !on && styles.dim]}
+                        numberOfLines={1}
+                      >
+                        {t.on ? `${t.label}, now` : t.label}
+                      </T>
+                      {t.sub ? (
+                        <T style={[type.meta, styles.dim]} numberOfLines={1}>
+                          {t.sub}
+                        </T>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
-              </Focusable>
-            </View>
-          ))}
+              );
+            })}
+          </View>
         </View>
       </SlideIn>
     </View>
@@ -128,13 +202,32 @@ export function DoMoreLayer({
 const styles = StyleSheet.create({
   layer: {
     position: "absolute",
-    left: safe.x,
-    right: 0,
+    left: safe.x - SCALE_ROOM,
     top: safe.y + px(56),
   },
-  crumb: { color: color.bleacher, marginLeft: px(8), marginBottom: sp(1) },
+  crumb: {
+    color: color.bleacher,
+    marginLeft: SCALE_ROOM + px(8),
+    marginBottom: sp(1),
+  },
+  clip: {
+    width: CLIP_W,
+    overflow: "hidden",
+    paddingHorizontal: SCALE_ROOM,
+    paddingVertical: SCALE_ROOM,
+  },
   row: { flexDirection: "row" },
-  slot: { marginRight: sp(3) },
-  tile: { width: TILE_W, height: TILE_H, padding: sp(3) },
+  tile: { padding: sp(3) },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: sp(2),
+    paddingRight: sp(3),
+  },
+  face: { marginRight: sp(2) },
+  current: { backgroundColor: color.line },
+  semi: { fontFamily: face.semibold },
   sub: { color: color.bleacher, marginTop: sp(1) },
+  dim: { color: color.bleacher },
+  caption: { marginTop: sp(1), marginLeft: RING_BOX },
 });

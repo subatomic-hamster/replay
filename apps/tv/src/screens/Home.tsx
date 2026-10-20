@@ -18,8 +18,10 @@ import {
   watchable,
   type GameLike,
 } from "../gameState";
+import { fmtDuration } from "../../../../packages/tv-core/src/display";
 import { useDpad, type DpadAction } from "../input";
 import { navigate, type Route } from "../nav";
+import { resumeAt } from "../resume";
 import { color, px, radius, safe, sp, type } from "../theme";
 import {
   ApiErrorBanner,
@@ -34,7 +36,13 @@ import {
 } from "../ui";
 
 type Zone = "gear" | "hero" | "games" | "players";
-type Action = { id: string; label: string; to: Route; play?: boolean };
+type Action = {
+  id: string;
+  label: string;
+  to: Route;
+  play?: boolean;
+  resume?: number;
+};
 
 const ADD = "add";
 /** Re-read the list this often while a game is processing (its ring and words move). */
@@ -59,7 +67,25 @@ const order = (gs: GameLike[]) => [
 
 function actionsFor(g: GameLike): Action[] {
   const out: Action[] = [];
-  if (watchable(g))
+  // Play resumes where the game was left (resume.ts), saying when; Start over is the way
+  // back to the beginning.
+  const at = resumeAt(g.id);
+  if (watchable(g) && at !== null)
+    out.push(
+      {
+        id: "play",
+        label: `Resume ${fmtDuration(at)}`,
+        to: { name: "watch", gameId: g.id, t: at },
+        play: true,
+        resume: at,
+      },
+      {
+        id: "restart",
+        label: "Start over",
+        to: { name: "watch", gameId: g.id, t: 0 },
+      },
+    );
+  else if (watchable(g))
     out.push({
       id: "play",
       label: "Play",
@@ -237,6 +263,9 @@ export function Home() {
                 play={x.play}
                 focused={z === "hero" && i === bi}
                 testID={x.id === "add" ? "library-add" : `hero-${x.id}`}
+                dataSet={
+                  x.resume === undefined ? undefined : { resume: x.resume }
+                }
               />
             ))
           : null}

@@ -99,7 +99,8 @@ test("TV-23 every layer: no text under 24 px, inside the safe zone, clear of the
   await page.waitForTimeout(300);
   const tiles = await box("domore");
   expect(tiles.y).toBeGreaterThan(title.y + title.height);
-  expect(tiles.x).toBeGreaterThanOrEqual(96);
+  // the row's clip keeps 12 px of room for the focused tile's 1.06 scale (TV-24)
+  expect(tiles.x).toBeGreaterThanOrEqual(96 - 12);
   expect((await box("action-follow")).x).toBeGreaterThanOrEqual(96 - 12);
   expect(await smallText(page)).toEqual([]);
   await page.keyboard.press("Escape");

@@ -6,7 +6,7 @@ import { useSyncExternalStore } from "react";
 export type Route =
   | { name: "library" }
   /** The player. `way`: a way to watch (Highlights, Condensed); `q`: a highlight query
-   *  played as a reel (the paired phone's push). */
+   *  played as a reel (the paired phone's push); `play`: open that play's replay angles. */
   | {
       name: "watch";
       gameId: string;
@@ -15,10 +15,9 @@ export type Route =
       t?: number;
       way?: Way;
       q?: string;
+      play?: string;
     }
   | { name: "review"; gameId: string }
-  | { name: "replays"; gameId: string }
-  | { name: "replay"; gameId: string; playId: string }
   | { name: "clips" | "search" | "advice"; gameId: string }
   | { name: "pair"; gameId?: string }
   /** M10: profiles; `from` is the game to return to on Back (when opened from Watch) */
@@ -54,7 +53,8 @@ export function useRoute(): Route {
 
 /** `/tv`, `/tv/settings`, `/tv/add`, `/tv/pair?game=`, `/tv/:id[?mode=&pid=&t=&way=&q=]`,
  *  `/tv/:id/highlights[?q=]` and `/tv/:id/{rallies,condensed}` (the player in that way),
- *  `/tv/:id/review`, `/tv/:id/replays[/:playId]`, `/tv/:id/{clips,search,advice}`,
+ *  `/tv/:id/review`, `/tv/:id/replays[/:playId]` (the player, on that play's angles),
+ *  `/tv/:id/{clips,search,advice}`,
  *  `/tv/players[/:profileId][?from=<game>]`. */
 export function routeFromPath(path: string): Route {
   const [pathname, search = ""] = path.split("?");
@@ -76,11 +76,11 @@ export function routeFromPath(path: string): Route {
   if (seg[1] === "review") return { name: "review", gameId };
   const screen = GAME_SCREENS.find((s) => s === seg[1]);
   if (screen) return { name: screen, gameId };
-  // M8: `/tv/:id/replays` (list) and `/tv/:id/replays/:playId` (angle view).
+  // M8: a play's replay angles open inside the player (the old list is the player).
   if (seg[1] === "replays") {
     return seg[2]
-      ? { name: "replay", gameId, playId: decodeURIComponent(seg[2]) }
-      : { name: "replays", gameId };
+      ? { name: "watch", gameId, play: decodeURIComponent(seg[2]) }
+      : { name: "watch", gameId };
   }
   // The old Highlights and Rallies screens are ways to watch in the player now.
   const way =

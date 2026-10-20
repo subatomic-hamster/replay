@@ -66,9 +66,10 @@ export async function openWatch(page: Page, id = GAME_ID, query = "") {
     .toBeGreaterThanOrEqual(2);
 }
 
-/** Do more → Follow player: the video pauses and the boxes over the players are pickable. */
+/** Do more → Follow player → Pick on screen: the video pauses and the boxes over the
+ *  players are pickable. */
 export async function enterSelectMode(page: Page) {
-  await menuTo(page, "action-follow");
+  await menuTo(page, "follow-pick");
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await video(page))?.paused).toBe(true);
   await expect(
@@ -85,19 +86,42 @@ export async function focusedBoxId(page: Page): Promise<string | null> {
   });
 }
 
+/** The Do more tile a sub-row item sits behind: the ways behind Watch, the player chips
+ *  (and Spotlight, Tag, Link) behind Follow player, the angle thumbnails behind Angles. */
+export function parentTile(id: string): string | null {
+  if (id.startsWith("way-")) return "menu-watch";
+  if (
+    id.startsWith("follow-") ||
+    ["action-spotlight", "action-tag", "action-link-profile"].includes(id)
+  )
+    return "action-follow";
+  if (id.startsWith("angle-")) return "nav-replays";
+  return null;
+}
+
 /** Open Do more with the remote's Menu key (`m`; Up does the same from the transport) and
- *  reach tile `id` with Left/Right. A way to watch (`way-*`) sits behind the Watch tile. */
+ *  reach tile `id` with Left/Right, through its parent's row when it has one. */
 export async function menuTo(page: Page, id: string) {
-  if (!(await page.getByTestId("domore").count()))
-    await page.keyboard.press("m");
-  await expect(page.getByTestId("domore")).toBeVisible();
-  if (id.startsWith("way-")) {
-    await walkTo(page, "menu-watch");
-    await page.keyboard.press("Enter");
-    await expect(page.getByTestId("domore")).toHaveAttribute(
-      "data-row",
-      "menu-watch",
-    );
+  const domore = page.getByTestId("domore");
+  if (!(await domore.count())) await page.keyboard.press("m");
+  await expect(domore).toBeVisible();
+  const parent = parentTile(id);
+  const row = (await domore.getAttribute("data-row")) ?? "main";
+  if (row !== (parent ?? "main")) {
+    if (row !== "main") {
+      await page.keyboard.press("Escape"); // back to the main row
+      await expect(domore).toHaveAttribute("data-row", "main");
+    }
+    if (parent) {
+      await walkTo(page, parent);
+      // its row is in (Angles: the play's manifest arrives after the game)
+      await expect(page.getByTestId(parent)).not.toHaveAttribute(
+        "data-children",
+        "0",
+      );
+      await page.keyboard.press("Enter");
+      await expect(domore).toHaveAttribute("data-row", parent);
+    }
   }
   await walkTo(page, id);
 }

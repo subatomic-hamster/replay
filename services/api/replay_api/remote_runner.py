@@ -219,10 +219,16 @@ def main_cli(argv: list[str] | None = None) -> int:
         ap.error("set REPLAY_WORKER_KEY")
     settings = from_env(storage="local", jobs="local")
     timeout = httpx.Timeout(60.0)
+    # IPv4 only: hfbox resolves the Function URL's AAAA records but IPv6 is blackholed, and
+    # httpx tries each address in turn (no happy eyeballs), so every new connection sat
+    # 8 x 60 s on IPv6 first, stalling the pipeline on each progress post.
+    # ponytail: always IPv4; make it a flag if a runner ever lives on an IPv6-only host.
     with (
-        httpx.Client(base_url=args.api.rstrip("/"), timeout=timeout) as client,
-        httpx.Client(timeout=timeout) as http,
-    ):
+        httpx.Client(base_url=args.api.rstrip("/"), timeout=timeout,
+                     transport=httpx.HTTPTransport(local_address="0.0.0.0")) as client,
+        httpx.Client(timeout=timeout,
+                     transport=httpx.HTTPTransport(local_address="0.0.0.0")) as http,
+    ):  # fmt: skip
         api = Api(client, key, http)
         while True:
             try:

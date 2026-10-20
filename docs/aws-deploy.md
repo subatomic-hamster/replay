@@ -137,10 +137,16 @@ API=$(out ApiUrl)
 ssh hfbox "tmux new -d -s replay-runner 'cd /workspace/wt/replay-deploy &&
   source /workspace/wt/replay-env/env.sh &&
   export REPLAY_WORKER_KEY=\$(cat /workspace/wt/replay-env/worker-key) &&
-  export REPLAY_DATA_DIR=/workspace/wt/replay-env/runner-data &&
-  replay_py \$PWD -m replay_api.remote_runner --api $API'"
+  export REPLAY_DATA_DIR=/workspace/wt/replay-env/runner-data REPLAY_PIPELINE=worker &&
+  PYTHONPATH=\$PWD/courtcam:\$PWD/services/api:\$PWD/services/worker:\$PWD/render \
+  python -m replay_api.remote_runner --api $API 2>&1 | tee -a /workspace/wt/replay-env/runner.log'"
 ssh hfbox 'tmux capture-pane -pt replay-runner | tail'
 ```
+
+`replay_py` puts only courtcam and services/api on `PYTHONPATH`; without services/worker
+`REPLAY_PIPELINE=worker` logs "replay_worker unavailable" and runs courtcam directly (no
+content-hash cache, no worker GPU lock). Smoke test the live stack with
+`scripts/cloud-smoke.py` (header has the usage).
 
 Stop it with `ssh hfbox 'tmux kill-session -t replay-runner'`. After rotating
 `worker-key`, copy the file again and restart the session.

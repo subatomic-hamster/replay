@@ -17,7 +17,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { useDpad } from "./input";
-import { navigate } from "./nav";
+import { navigate, useRoute } from "./nav";
 import {
   color,
   face,
@@ -516,6 +516,7 @@ export function ApiErrorBanner({
 }) {
   // Right reaches Settings: a wrong API address must be fixable from here.
   const [onSettings, setOnSettings] = useState(false);
+  const atHome = useRoute().name === "library";
   useDpad(
     useCallback(
       (a) => {
@@ -523,9 +524,12 @@ export function ApiErrorBanner({
         else if (a === "select") {
           if (onSettings) navigate({ name: "settings" });
           else onRetry();
-        } else if (a === "back") navigate({ name: "library" });
+        } else if (a === "back") {
+          if (atHome) return false; // unhandled: the app exits, as from the library
+          navigate({ name: "library" });
+        }
       },
-      [onRetry, onSettings],
+      [onRetry, onSettings, atHome],
     ),
   );
   return (

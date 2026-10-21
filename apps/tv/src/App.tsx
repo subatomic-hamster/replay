@@ -2,7 +2,7 @@
 // import only RN primitives, packages/tv-core and this app's modules — never a platform
 // package (those stay in src/platform/ and playback/PlayerSurface's Media).
 import { useState } from "react";
-import { StatusBar, StyleSheet, View } from "react-native";
+import { Platform, StatusBar, StyleSheet, View } from "react-native";
 import { apiBase } from "./api";
 import { navigate, useRoute, type Route } from "./nav";
 import { usePlatformKeys } from "./platform/keys";
@@ -31,7 +31,7 @@ export function App({ initial }: { initial?: Route }) {
   const route = useRoute();
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} {...ROOT_FOCUS}>
       <StatusBar hidden />
       {screen(route)}
     </View>
@@ -77,6 +77,12 @@ function screen(r: Route) {
       return <AddGame />;
   }
 }
+
+// Android hands remote keys only down the focused-view chain, and nothing in the app is
+// natively focusable (focus is app state, ui.tsx), so with no focused view no key ever
+// reached JS (seen on a Fire TV Stick). The root, which never unmounts, holds focus.
+const ROOT_FOCUS =
+  Platform.OS === "web" ? {} : { focusable: true, hasTVPreferredFocus: true };
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.floor },

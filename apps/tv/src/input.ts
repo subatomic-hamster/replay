@@ -1,7 +1,7 @@
 // Remote input, platform-neutral. platform/keys.{web,native}.ts turn raw key events into
 // DpadActions and call `dispatch`; screens and components only ever see DpadActions.
 // A stack, so a dialog takes the whole input surface while it is open.
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 export type DpadAction =
   | "up"
@@ -48,15 +48,25 @@ export function useDpad(
   enabled = true,
   splitDelete = false,
 ) {
-  // Layout effect: the handler for what is on screen is in place before the frame paints,
+  // Layout effects: the handler for what is on screen is in place before the frame paints,
   // so a key pressed right after a render never reaches the previous render's handler.
+  const latest = useRef(handler);
+  useLayoutEffect(() => {
+    latest.current = handler;
+  });
+  // The stack slot depends only on mount/enable, not on the handler's identity: a screen
+  // whose handler changes after a child took over (Home re-rendering under its error
+  // banner once a second request fails) must not jump back above that child.
   useLayoutEffect(() => {
     if (!enabled) return;
-    const entry = { handler, splitDelete };
+    const entry = {
+      handler: (a: DpadAction) => latest.current(a),
+      splitDelete,
+    };
     stack.push(entry);
     return () => {
       const i = stack.lastIndexOf(entry);
       if (i >= 0) stack.splice(i, 1);
     };
-  }, [handler, enabled, splitDelete]);
+  }, [enabled, splitDelete]);
 }

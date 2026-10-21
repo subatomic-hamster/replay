@@ -174,3 +174,34 @@ test("TV-16 settings: an unreachable address says so", async ({ page }) => {
     "Not reachable",
   );
 });
+
+test("TV-16 the library's error banner keeps the D-pad when a later request fails too", async ({
+  page,
+}) => {
+  // Seen on a Fire TV Stick: /games failed first, /profiles a moment later; Home re-rendered
+  // and its key handler went back above the banner's, so Right never reached Settings.
+  await page.goto("/tv/settings");
+  await expect(page.getByTestId("settings")).toBeVisible();
+  await page.evaluate(() => {
+    type Api = {
+      listGames: () => Promise<unknown>;
+      listProfiles: () => Promise<unknown>;
+    };
+    const m = (window as unknown as { __replayMock: { api: Api } }).__replayMock
+      .api;
+    const fail = () => new Error("Network request failed");
+    m.listGames = () => Promise.reject(fail());
+    m.listProfiles = () =>
+      new Promise((_, reject) => setTimeout(() => reject(fail()), 800));
+  });
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("api-error")).toBeVisible();
+  await page.waitForTimeout(1200); // the /profiles failure has landed
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("api-error-settings")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("settings")).toBeVisible();
+});

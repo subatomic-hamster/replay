@@ -66,22 +66,19 @@ export async function openWatch(page: Page, id = GAME_ID, query = "") {
     .toBeGreaterThanOrEqual(2);
 }
 
-/** Do more → Follow player (→ Pick another player, once someone is picked): the video
+/** Do more → Follow a player (→ Follow someone else, while following): the video
  *  pauses and the markers over the players are pickable. */
 export async function enterSelectMode(page: Page) {
   if (!(await page.getByTestId("domore").count())) await openDoMore(page);
-  const picked = await page
-    .getByTestId("action-follow")
-    .getAttribute("data-children");
-  await menuTo(
-    page,
-    picked && picked !== "0" ? "follow-pick" : "action-follow",
-  );
+  const following = await page.getByTestId("follow-pick").count();
+  await menuTo(page, following ? "follow-pick" : "action-follow");
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await video(page))?.paused).toBe(true);
   await expect(
     page.locator('[data-testid^="select-box-"]').first(),
   ).toBeVisible();
+  // a marker has focus (set an effect after the boxes draw): Select then follows someone
+  await expect.poll(() => focusedBoxId(page)).not.toBeNull();
 }
 
 export async function focusedBoxId(page: Page): Promise<string | null> {
@@ -93,27 +90,15 @@ export async function focusedBoxId(page: Page): Promise<string | null> {
   });
 }
 
-/** The Do more tile a sub-row item sits behind: the ways behind Watch, Pick another
- *  player, Spotlight, Tag and Link behind Follow player, the angle thumbnails behind Angles. */
+/** The Do more tile a sub-row item sits behind: the ways behind Highlights (the only
+ *  sub-row left). */
 export function parentTile(id: string): string | null {
-  if (id.startsWith("way-")) return "menu-watch";
-  if (
-    id.startsWith("follow-") ||
-    ["action-spotlight", "action-tag", "action-link-profile"].includes(id)
-  )
-    return "action-follow";
-  if (id.startsWith("angle-")) return "nav-replays";
-  if (id.startsWith("pov-")) return "action-pov";
-  return null;
+  return id.startsWith("way-") ? "menu-watch" : null;
 }
 
-/** Do more: the remote's Menu key (`m`), or Up while following (Menu is the player card
- *  there, D-83). */
+/** Do more: the remote's Menu key (`m`), in every mode. */
 async function openDoMore(page: Page) {
-  const following = await page
-    .locator('[data-testid="watch"][data-mode="follow"]')
-    .count();
-  await page.keyboard.press(following ? "ArrowUp" : "m");
+  await page.keyboard.press("m");
 }
 
 /** Open Do more with the remote's Menu key (`m`; Up does the same from the transport) and
@@ -131,7 +116,6 @@ export async function menuTo(page: Page, id: string) {
     }
     if (parent) {
       await walkTo(page, parent);
-      // its row is in (Angles: the play's manifest arrives after the game)
       await expect(page.getByTestId(parent)).not.toHaveAttribute(
         "data-children",
         "0",

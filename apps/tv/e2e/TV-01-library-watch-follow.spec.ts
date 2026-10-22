@@ -93,11 +93,28 @@ test("TV-01 Home → player → follow a player → Back → Home", async ({
     "p3",
   );
 
-  // Do more now says who is followed.
-  await menuTo(page, "action-follow");
-  await expect(page.getByTestId("action-follow")).toContainText(
+  // The context chip says who is followed; the legend says how to stop.
+  await expect(page.getByTestId("followcam-active")).toContainText(
     "Following Player 3",
   );
+  await expect(page.getByTestId("context-chip")).toHaveAttribute(
+    "data-kind",
+    "follow",
+  );
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Stop following",
+  );
+
+  // Menu is Do more here too: the followed player's card leads, the picker second.
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("domore")).toBeVisible();
+  await expect(page.getByTestId("follow-card")).toContainText("Player 3");
+  await expect(page.getByTestId("follow-card")).toContainText("Player card");
+  await expect(page.getByTestId("follow-pick")).toContainText(
+    "Follow someone else",
+  );
+  await expect(page.getByTestId("action-follow")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("domore")).toHaveCount(0);
 
@@ -115,17 +132,12 @@ test("TV-01 Home → player → follow a player → Back → Home", async ({
   await expect(page.getByTestId("follow-frame")).toHaveCSS("opacity", "0");
   await expect(page.getByTestId("watch-title")).toBeAttached();
 
-  // Back hides the transport, then Back on bare video goes Home.
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("transport")).toHaveAttribute(
-    "data-hidden",
-    "true",
-  );
+  // One more Back goes Home (hiding the transport is not a step).
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("game-card").first()).toBeVisible();
 });
 
-test("TV-02 Prev/Next jump moments; Spotlight on the picked player from Do more", async ({
+test("TV-02 Prev/Next jump moments; Spotlight on the followed player from their card", async ({
   page,
 }) => {
   await page.goto(`/tv/${GAME_ID}?t=0.5`);
@@ -149,12 +161,24 @@ test("TV-02 Prev/Next jump moments; Spotlight on the picked player from Do more"
     .toBeCloseTo(1.5, 1);
 
   await enterSelectMode(page);
-  await menuTo(page, "action-spotlight");
-  await page.keyboard.press("Enter");
-  await expect(page.getByTestId("action-spotlight")).toHaveAttribute(
-    "data-on",
-    "true",
+  await expect.poll(() => focusedBoxId(page)).toBe("p1");
+  await page.keyboard.press("Enter"); // follow p1
+  await expect(page.getByTestId("watch")).toHaveAttribute(
+    "data-mode",
+    "follow",
   );
+  await menuTo(page, "follow-card");
+  await page.keyboard.press("Enter");
+  const spot = page.getByTestId("player-card-spotlight");
+  await expect(spot).toHaveText("Spotlight off");
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowDown");
+  await expect(spot).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press("Enter");
+  await expect(spot).toHaveText("Spotlight on");
+  await expect(page.getByTestId("spotlight-overlay")).toBeAttached();
+  // Left closes the card, as on Stats; the spotlight stays on the followed player
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByTestId("player-card")).toHaveCount(0);
   await expect(page.getByTestId("spotlight-overlay")).toBeVisible();
 });
 

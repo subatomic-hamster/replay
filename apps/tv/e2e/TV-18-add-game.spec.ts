@@ -193,6 +193,16 @@ test("TV-18 add game: sport by D-pad, QR of the upload page, follow it to ready"
 
 test("TV-18 Back leaves Add game for the library", async ({ page }) => {
   await openAddGame(page);
+  // UI pass: a breadcrumb and a key legend, no prose hint
+  await expect(page.getByTestId("context-chip")).toHaveText("Home › Add game");
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Home",
+  );
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Choose",
+  );
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("add-game")).toHaveCount(0);
   await expect(page.getByTestId("library-add")).toBeVisible();

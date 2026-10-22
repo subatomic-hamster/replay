@@ -71,7 +71,9 @@ test("S-04/S-06 five landmarks give a reprojection error and unlock Start", asyn
   await expect(page.getByTestId("calib-error")).toContainText(
     "need 5 more points",
   );
-  await expect(page.getByTestId("calib-prompt")).toContainText("corner nl");
+  await expect(page.getByTestId("calib-prompt")).toContainText(
+    "Tap the near-left corner",
+  );
 
   await clickLandmarks(page, 4);
   await expect(page.getByTestId("start-processing")).toBeDisabled();
@@ -236,7 +238,9 @@ test("S-05b a single-variant sport hides the picker and posts its own variant", 
 
   // pickleball asks for 6 landmarks, not basketball's 5
   await expect(page.getByTestId("calib-prompt")).toContainText("point 1 of 6");
-  await expect(page.getByTestId("calib-prompt")).toContainText("corner nl");
+  await expect(page.getByTestId("calib-prompt")).toContainText(
+    "Tap the near-left corner",
+  );
   await clickLandmarks(page, 5);
   const img = page.getByTestId("calib-image");
   const box = (await img.boundingBox())!;

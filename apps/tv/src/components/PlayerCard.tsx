@@ -1,7 +1,8 @@
 // The player card (D-83): who a tracked player is and what they did this game, on the right
-// third over the paused video (like the Stats panel). Opened with the remote's Menu while
-// following someone, or Do more → Follow player → Player details. Up/Down pick an action,
-// Select runs it, Back or Menu closes (Watch resumes playback if it was playing).
+// third over the paused video (like the Stats panel). Opened from Do more's first tile while
+// following someone. Actions: name them, follow or stop, their moments, view or link a
+// profile, and the follow spotlight. Up/Down pick an action, Select runs it, Left, Back or
+// Menu closes (Watch resumes playback if it was playing).
 //
 // The name is the viewer's own label for the track (PATCH /games/{id}/players/{pid}); an
 // unnamed player stays "Player 7" and nothing names anyone automatically. The stat line is
@@ -20,7 +21,7 @@ import type {
 import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
 import { color, face, focusRing, px, radius, safe, sp, type } from "../theme";
-import { Hint, Spinner, T } from "../ui";
+import { KeyLegend, Spinner, T } from "../ui";
 import { Avatar } from "./Avatar";
 import { PANEL_W } from "./StatsPanel";
 import { TextEntryDialog } from "./TextEntryDialog";
@@ -29,7 +30,7 @@ const PAD = sp(6);
 const INNER_W = PANEL_W - PAD - safe.x;
 const NAME_MAX = 60; // the API's PlayerPatch limit
 
-type ActId = "edit" | "follow" | "moments" | "profile";
+type ActId = "edit" | "follow" | "moments" | "profile" | "link" | "spotlight";
 
 const titleCase = (v: string) => v.replace(/(^|\s)\S/g, (m) => m.toUpperCase());
 
@@ -53,6 +54,9 @@ export function PlayerCard({
   onFollow,
   onMoments,
   onProfile,
+  onLink,
+  spotlight,
+  onSpotlight,
   onClose,
   onPlayPause,
 }: {
@@ -69,6 +73,11 @@ export function PlayerCard({
   onMoments: () => void;
   /** absent when no cross-game profile is linked to this player */
   onProfile?: () => void;
+  /** link this player to a cross-game profile (offered when there is no `onProfile`) */
+  onLink?: () => void;
+  /** the follow spotlight's state, and its toggle (offered while following) */
+  spotlight?: boolean;
+  onSpotlight?: () => void;
   onClose: () => void;
   onPlayPause: () => void;
 }) {
@@ -126,6 +135,17 @@ export function PlayerCard({
     },
     ...(onProfile
       ? [{ id: "profile" as const, label: "View profile", run: onProfile }]
+      : onLink
+        ? [{ id: "link" as const, label: "Link to a profile", run: onLink }]
+        : []),
+    ...(following && onSpotlight
+      ? [
+          {
+            id: "spotlight" as const,
+            label: spotlight ? "Spotlight on" : "Spotlight off",
+            run: onSpotlight,
+          },
+        ]
       : []),
   ];
   const k = Math.max(
@@ -149,7 +169,8 @@ export function PlayerCard({
 
   // useDpad keeps the latest handler in a ref: no memo needed
   useDpad((a: DpadAction) => {
-    if (a === "back" || a === "menu") onClose();
+    // Left closes, as on the Stats panel (the card sits on the right)
+    if (a === "back" || a === "menu" || a === "left") onClose();
     else if (a === "playpause") onPlayPause();
     else if (a === "up") setFocus(acts[Math.max(0, k - 1)].id);
     else if (a === "down") setFocus(acts[Math.min(acts.length - 1, k + 1)].id);
@@ -284,9 +305,13 @@ export function PlayerCard({
             {status.text}
           </T>
         ) : null}
-        <Hint k="Back" style={styles.hint}>
-          Close and keep watching
-        </Hint>
+        <KeyLegend
+          items={[
+            { k: "Select", label: "Choose" },
+            { k: "◀", label: "Close" },
+          ]}
+          style={styles.legend}
+        />
       </View>
 
       {editing ? (
@@ -382,5 +407,12 @@ const styles = StyleSheet.create({
     textAlignVertical: "center",
     includeFontPadding: false,
   },
-  hint: { marginTop: sp(2) },
+  // in the panel's flow, under the actions, right-aligned as everywhere
+  legend: {
+    position: "relative",
+    right: 0,
+    bottom: 0,
+    marginTop: sp(2),
+    alignSelf: "flex-end",
+  },
 });

@@ -124,11 +124,19 @@ async function followP2(page: Page) {
   await expect.poll(async () => (await video(page))?.paused).toBe(false);
 }
 
-test("TV-32 Menu while following opens the player card paused; the stat line is the game's events; Back resumes", async ({
+/** Menu → Do more's first tile while following: the player, "Player card". */
+async function openCard(page: Page) {
+  await menuTo(page, "follow-card");
+  await expect(page.getByTestId("follow-card")).toContainText("Player card");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("player-card")).toBeVisible();
+}
+
+test("TV-32 Do more → the followed player opens the card paused; the stat line is the game's events; Back resumes", async ({
   page,
 }) => {
   await followP2(page);
-  await page.keyboard.press("m");
+  await openCard(page);
   const card = page.getByTestId("player-card");
   await expect(card).toBeVisible();
   await expect(card).toHaveAttribute("data-player-id", "p2");
@@ -171,7 +179,8 @@ test("TV-32 Menu while following opens the player card paused; the stat line is 
     "data-focused",
     "true",
   );
-  for (const id of ["follow", "moments", "moments"]) {
+  // not linked: Link to a profile in place of View profile; following: the spotlight
+  for (const id of ["follow", "moments", "link", "spotlight", "spotlight"]) {
     await page.keyboard.press("ArrowDown");
     await expect(page.getByTestId(`player-card-${id}`)).toHaveAttribute(
       "data-focused",
@@ -181,7 +190,32 @@ test("TV-32 Menu while following opens the player card paused; the stat line is 
   await expect(page.getByTestId("player-card-follow")).toHaveText(
     "Stop following",
   );
-  await expect(page.getByTestId("player-card-profile")).toHaveCount(0); // not linked
+  await expect(page.getByTestId("player-card-profile")).toHaveCount(0);
+  await expect(page.getByTestId("player-card-link")).toHaveText(
+    "Link to a profile",
+  );
+  // no "Tag Player 2": Name this player is the one way to name them
+  await expect(card).not.toContainText("Tag");
+  await expect(page.getByTestId("player-card-spotlight")).toHaveText(
+    "Spotlight off",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("player-card-spotlight")).toHaveText(
+    "Spotlight on",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("player-card-spotlight")).toHaveText(
+    "Spotlight off",
+  );
+  // the legend: Select Choose, ◀ Close
+  await expect(card.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Choose",
+  );
+  await expect(card.getByTestId("legend-◀")).toHaveAttribute(
+    "data-label",
+    "Close",
+  );
 
   // Back: the card closes, the game plays on from where it paused, still following p2.
   await page.keyboard.press("Escape");
@@ -192,13 +226,41 @@ test("TV-32 Menu while following opens the player card paused; the stat line is 
     "data-player-id",
     "p2",
   );
+
+  // Left closes it too, as on the Stats panel; still following
+  await openCard(page);
+  await page.keyboard.press("ArrowLeft");
+  await expect(card).toHaveCount(0);
+  await expect.poll(async () => (await video(page))?.paused).toBe(false);
+  await expect(page.getByTestId("watch")).toHaveAttribute(
+    "data-mode",
+    "follow",
+  );
+});
+
+test("TV-32 Link to a profile from the card opens the profile picker for that player", async ({
+  page,
+}) => {
+  await followP2(page);
+  await openCard(page);
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("player-card-link")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("player-card")).toHaveCount(0);
+  await expect(page.getByTestId("profile-picker")).toHaveAttribute(
+    "data-player-id",
+    "p2",
+  );
 });
 
 test("TV-32 Edit name on the card saves through the API and the follow ring and chip show it", async ({
   page,
 }) => {
   await followP2(page);
-  await page.keyboard.press("m");
+  await openCard(page);
   await page.keyboard.press("Enter"); // Name this player
   const dialog = page.getByTestId("player-name-dialog");
   await expect(dialog).toBeVisible();
@@ -249,7 +311,7 @@ async function cardOnP1(page: Page) {
     "p1",
   );
   await expect.poll(async () => (await video(page))?.paused).toBe(false);
-  await page.keyboard.press("m");
+  await openCard(page);
   await expect(page.getByTestId("player-card")).toHaveAttribute(
     "data-player-id",
     "p1",
@@ -342,7 +404,7 @@ test("TV-32 View profile from the card: one Back returns to the card, paused whe
   );
 });
 
-test("TV-32 Player details from Do more while picking; Their moments filters Moments; Menu elsewhere is Do more", async ({
+test("TV-32 the player card from Do more while picking; Their moments filters Moments; Menu elsewhere is Do more", async ({
   page,
 }) => {
   await openWatch(page);
@@ -389,4 +451,11 @@ test("TV-32 Player details from Do more while picking; Their moments filters Mom
       )
     ).sort(),
   ).toEqual(mine.map((m) => m.id).sort());
+  // the row says whose they are; no per-player chips
+  await expect(page.getByTestId("moments-title")).toHaveText(
+    "Moments · Marcus",
+  );
+  await expect(
+    page.locator('[data-testid="moment-filter"][data-filter^="p:"]'),
+  ).toHaveCount(0);
 });

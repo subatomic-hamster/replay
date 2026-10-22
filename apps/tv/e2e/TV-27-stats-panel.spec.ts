@@ -34,8 +34,20 @@ test("TV-27 Stats panel: right third, video plays on, box score and shots, revie
     .poll(async () => (await media(page)).t, { timeout: 5_000 })
     .toBeGreaterThan(t0 + 0.5);
 
-  await expect(page.getByTestId("auto-detected-label")).toContainText(
-    "Auto-detected",
+  // plain words: no confidence figure on screen
+  await expect(page.getByTestId("auto-detected-label")).toHaveText(
+    "Auto-detected from the video",
+  );
+  await expect(panel).not.toContainText("confidence");
+  await expect(page.getByTestId("stats-advice")).toHaveText("Tips for players");
+  // the legend, inside the panel: Select Open, ◀ Close
+  await expect(panel.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Open",
+  );
+  await expect(panel.getByTestId("legend-◀")).toHaveAttribute(
+    "data-label",
+    "Close",
   );
   await expect(page.getByTestId("stats-score")).toBeVisible();
   // the players who took a shot (the fourth has none: an all-zero row says nothing)
@@ -46,7 +58,12 @@ test("TV-27 Stats panel: right third, video plays on, box score and shots, revie
   await expect(page.getByTestId("shot-chart")).toBeVisible();
   await expect(page.getByTestId("shot-marker")).toHaveCount(4);
   // everything inside the panel and the bottom safe edge
-  for (const id of ["shot-chart", "stats-review", "stats-advice"]) {
+  for (const id of [
+    "shot-chart",
+    "stats-review",
+    "stats-advice",
+    "key-legend",
+  ]) {
     const x = (await page.getByTestId(id).boundingBox())!;
     expect(x.x, id).toBeGreaterThanOrEqual(b.x);
     expect(x.x + x.width, id).toBeLessThanOrEqual(1920 - 96 + 1);
@@ -54,13 +71,19 @@ test("TV-27 Stats panel: right third, video plays on, box score and shots, revie
   }
   expect(await smallText(page)).toEqual([]);
 
-  // Back closes the panel; the transport is back.
-  await page.keyboard.press("Escape");
+  // Left closes the panel (it sits on the right); the transport is back.
+  await page.keyboard.press("ArrowLeft");
   await expect(panel).toHaveCount(0);
   await expect(page.getByTestId("transport")).toHaveAttribute(
     "data-hidden",
     "false",
   );
+  // and so does Back
+  await menuTo(page, "nav-review");
+  await page.keyboard.press("Enter");
+  await expect(panel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
 
   // The review queue: Select on "Review N plays" opens the Review screen.
   await menuTo(page, "nav-review");

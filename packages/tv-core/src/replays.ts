@@ -48,14 +48,30 @@ export interface ReplaySummary {
   manifest_url: string;
 }
 
+// Plain words on screen (UI pass glossary): the camera's own pixels, or recreated from them.
+// Tier C is image-based since D-86: the real players' pixels on a reconstructed court.
 const TIER_BADGE: Record<ReplayTier, string> = {
-  A: "Real video",
-  B: "2.5D",
-  // image-based since D-86: the real players' pixels on a reconstructed court, any camera
-  C: "Virtual view",
+  A: "Camera",
+  B: "Virtual replay",
+  C: "Virtual replay",
 };
 
 export const tierBadge = (tier: ReplayTier): string => TIER_BADGE[tier] ?? tier;
+
+/** An angle's on-screen name: a virtual POV ("Virtual POV · Player 3" in the manifest)
+ *  reads "Player's view · Player 3"; every other label as rendered. */
+export const angleLabel = (a: ReplayAngle): string =>
+  povOf(a) ? a.label.replace(/^Virtual POV\b/, "Player's view") : a.label;
+
+/** The honesty line of a recreated view (a virtual cut, Free view). */
+export const RECREATED =
+  "Recreated from the real players on a model of the court";
+
+/** The plain honesty line under a recreated angle; null for the camera's own video. */
+export function angleHonesty(a: ReplayAngle): string | null {
+  if (a.tier === "A") return null;
+  return povOf(a) ? "A recreated player's-eye view, not a camera" : RECREATED;
+}
 
 /** The next angle index for a Left (-1) / Right (+1) press; wraps both ways. */
 export function cycleAngle(index: number, count: number, dir: 1 | -1): number {
@@ -81,5 +97,5 @@ export function nextPov(angles: ReplayAngle[], at: number): number {
   return povs.length ? povs[(povs.indexOf(at) + 1) % povs.length] : at;
 }
 
-/** How long the angle label stays big after a cut (broadcast lower-third), in ms. */
-export const ANGLE_BUG_MS = 2000;
+/** How long the angle label and its honesty line stay big after a cut, in ms. */
+export const ANGLE_BUG_MS = 5000;

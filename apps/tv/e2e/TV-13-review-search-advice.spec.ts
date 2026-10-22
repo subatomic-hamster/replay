@@ -5,19 +5,45 @@
 import { expect, test } from "@playwright/test";
 import { GAME_ID, menuTo, mockCalls, openWatch } from "./helpers";
 
-test("TV-13 review: confidence label, Pts + distance columns, unknown outcomes ringed", async ({
+test("TV-13 review: plain words (no confidence or metres on screen), breadcrumb and legend, Pts column, unknown outcomes ringed", async ({
   page,
 }) => {
   await page.goto(`/tv/${GAME_ID}/review`);
-  // mean of the four shots' confidences (0.82, 0.74, 0.91, 0.55)
-  await expect(page.getByTestId("auto-detected-label")).toHaveText(
-    /^Auto-detected · mean confidence 0\.7[56]$/,
+  const label = page.getByTestId("auto-detected-label");
+  await expect(label).toHaveText(
+    "Auto-detected. Answer these to fix the stats.",
   );
+  // the mean of the four shots' confidences (0.82, 0.74, 0.91, 0.55) stays in the data
+  expect(Number(await label.getAttribute("data-confidence"))).toBeCloseTo(
+    0.755,
+    1,
+  );
+  await expect(page.getByTestId("review-item")).toBeVisible();
+  const screen = page.locator("body");
+  await expect(screen).not.toContainText("confidence");
+  await expect(screen).not.toContainText("Dist m");
+  await expect(page.getByTestId("context-chip")).toHaveText(
+    /› Stats › Review plays$/,
+  );
+  await expect(page.getByTestId("context-chip")).toHaveAttribute(
+    "data-kind",
+    "room",
+  );
+  for (const [k, l] of [
+    ["◀▶", "Answer"],
+    ["Select", "Confirm"],
+    ["Back", "Stats"],
+  ])
+    await expect(page.getByTestId(`legend-${k}`)).toHaveAttribute(
+      "data-label",
+      l,
+    );
   const marcus = page.locator(
     '[data-testid="box-score-row"][data-player-id="p1"]',
   );
   await expect(marcus.getByTestId("box-pts")).toHaveText("4");
-  await expect(marcus.getByTestId("box-dist")).not.toHaveText("—");
+  await expect(marcus.getByTestId("box-dist")).toHaveCount(0);
+  await expect(marcus.getByTestId("box-conf")).toHaveCount(0);
   await expect(page.getByTestId("shot-marker").first()).toHaveAttribute(
     "data-outcome",
     "make",
@@ -32,6 +58,9 @@ test("TV-13 identity questions: type a name, or merge into a teammate", async ({
   await expect(item).toHaveAttribute("data-kind", "low_confidence");
   await page.keyboard.press("Enter"); // Yes, it was a shot
   await expect(item).toHaveAttribute("data-player-id", "p2");
+  // the API's "Who is #p2?" reads as everywhere else
+  await expect(item).toContainText("Who is Player 2?");
+  await expect(item).not.toContainText("#p");
   await expect(page.getByTestId("review-action-type-a-name")).toHaveAttribute(
     "data-focused",
     "true",
@@ -188,6 +217,14 @@ test("TV-13 advice: per-player lines, labelled as written from that player's sta
   );
   await expect(page.getByTestId("advice-source")).toContainText(
     "written from this player's stats",
+  );
+  // "Tips" on screen (never "Advice"), with its way back
+  await expect(page.getByTestId("advice")).toContainText("Tips");
+  await expect(page.getByTestId("advice")).not.toContainText("Advice");
+  await expect(page.getByTestId("context-chip")).toHaveText(/› Stats › Tips$/);
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Stats",
   );
 
   await page.keyboard.press("ArrowRight");

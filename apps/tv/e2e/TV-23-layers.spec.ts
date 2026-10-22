@@ -1,5 +1,5 @@
-// The player's layers (docs/ux/redesign.md "Player"): Back peels one — Moments / Do more →
-// transport → bare video → Home; the transport hides after 5 s of playback (Media3's
+// The player's layers (docs/ux/redesign.md "Player"; UI pass §2): Back peels one — Moments /
+// Do more → Home (the transport showing is not a level); the transport hides after 5 s of playback (Media3's
 // default) and pausing keeps it. Every layer keeps to the 24 px text floor, sits inside the
 // 96/54 px safe zone and clears the court line.
 import { expect, test, type Page } from "@playwright/test";
@@ -22,14 +22,48 @@ test("TV-23 Back peels one layer at a time, then goes Home", async ({
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("domore")).toHaveCount(0);
   expect(await hidden(page)).toBe("false");
-  await page.keyboard.press("Escape"); // transport → bare video
-  await expect(page.getByTestId("transport")).toHaveAttribute(
-    "data-hidden",
-    "true",
-  );
-  await expect(page.getByTestId("watch")).toBeVisible();
-  await page.keyboard.press("Escape"); // bare video → Home
+  // Menu toggles Do more (it opens it in every mode, and closes it)
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("domore")).toBeVisible();
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("domore")).toHaveCount(0);
+  // the transport showing is not a level: one Back goes Home
+  expect(await hidden(page)).toBe("false");
+  await page.keyboard.press("Escape");
   await expect(page.getByTestId("home")).toBeVisible();
+});
+
+test("TV-23 the context chip and the first-open legend", async ({ page }) => {
+  await openWatch(page);
+  const chip = page.getByTestId("context-chip");
+  await expect(chip).toHaveAttribute("data-kind", "title");
+  await expect(page.getByTestId("watch-title")).toContainText(/\S/);
+  // ▼ Moments ▲ Do more, bottom-right, only for the first 5 s
+  await expect(page.getByTestId("legend-▼")).toHaveAttribute(
+    "data-label",
+    "Moments",
+  );
+  await expect(page.getByTestId("legend-▲")).toHaveAttribute(
+    "data-label",
+    "Do more",
+  );
+  const legend = (await page.getByTestId("key-legend").boundingBox())!;
+  const line = (await page.getByTestId("time-remaining").boundingBox())!;
+  expect(legend.x + legend.width).toBeLessThanOrEqual(1920 - 96 + 1);
+  expect(legend.y + legend.height).toBeLessThanOrEqual(line.y);
+  await expect(page.getByTestId("key-legend")).toHaveCount(0, {
+    timeout: 8_000,
+  });
+  // a layer shows its own legend: Do more's
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Choose",
+  );
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Close",
+  );
 });
 
 test("TV-23 the transport hides after 5 s of playback; pausing keeps it; a key brings it back", async ({
@@ -70,7 +104,7 @@ test("TV-23 every layer: no text under 24 px, inside the safe zone, clear of the
   const box = async (id: string) =>
     (await page.getByTestId(id).first().boundingBox())!;
   const line = await box("time-elapsed"); // the times row tops the court line
-  const title = await box("watch-title");
+  const title = await box("context-chip");
   expect(title.x).toBeGreaterThanOrEqual(96);
   // T paints its glyphs 0.04 em up to centre the capitals (TV-33): the box, not the ink,
   // may start a pixel above the safe edge

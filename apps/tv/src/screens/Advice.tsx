@@ -1,6 +1,7 @@
 // M7 advice panel: per-player insights written only from that player's own stats in
 // this game (grounded templates; an LLM rephrasing ships only when the grounding check
-// passes — D-52). Left/Right pick a player; Back returns to the game.
+// passes — D-52). On screen it is "Tips", reached from the Stats panel's "Tips for
+// players". Left/Right pick a player; Back returns to the Stats panel.
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import {
@@ -16,7 +17,8 @@ import { color, px, radius } from "../theme";
 const trackName = (pid: string) => `Player ${pid.replace(/^p/, "")}`;
 import {
   ApiErrorBanner,
-  Hint,
+  ContextChip,
+  KeyLegend,
   Loading,
   Pill,
   Spinner,
@@ -66,7 +68,9 @@ export function Advice({ gameId }: { gameId: string }) {
 
   return (
     <View style={ui.safe} testID="advice">
-      <T style={ui.h1}>Advice</T>
+      <ContextChip parts={[game.title, "Stats", "Tips"]} kind="room" />
+      <View style={styles.crumbGap} />
+      <T style={ui.h1}>Tips</T>
       <View style={styles.row}>
         {players.slice(first, first + CHIPS).map((p, k) => (
           <Pill
@@ -79,7 +83,7 @@ export function Advice({ gameId }: { gameId: string }) {
       </View>
       {players.length === 0 ? <T>No players in this game.</T> : null}
       {typeof doc === "string" ? (
-        <T testID="advice-error">No advice: {doc}</T>
+        <T testID="advice-error">No tips: {doc}</T>
       ) : null}
       {doc && typeof doc !== "string" ? (
         <View
@@ -103,12 +107,27 @@ export function Advice({ gameId }: { gameId: string }) {
       ) : !doc && pid ? (
         <Spinner testID="advice-loading" />
       ) : null}
-      <Hint>Left/Right pick a player · Back returns to the game</Hint>
+      <KeyLegend
+        items={[
+          { k: "◀▶", label: "Player" },
+          { k: "Back", label: "Stats" },
+        ]}
+        style={styles.legend}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // the breadcrumb chip's line (it is drawn absolutely, top-left)
+  crumbGap: { height: px(56) },
+  legend: {
+    position: "relative",
+    right: 0,
+    bottom: 0,
+    marginTop: "auto",
+    alignSelf: "flex-end",
+  },
   row: { flexDirection: "row", flexWrap: "wrap" },
   panel: {
     marginTop: px(24),

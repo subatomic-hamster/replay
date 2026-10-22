@@ -46,6 +46,22 @@ test("TV-28 On your phone: a QR per job, the API's phone link for this game and 
   const { panel, t } = await openPanel(page);
   const origin = new URL(page.url()).origin;
   const host = origin.replace(/^https?:\/\//, "");
+  // the phone's own tab names (Clip · Names · Review · Search · Reel), and the titles
+  await expect(panel).toContainText("On your phone");
+  expect(
+    await Promise.all(
+      JOBS.map((j) => page.getByTestId(`phone-${j}`).textContent()),
+    ),
+  ).toEqual(["Clip", "Names", "Review", "Search", "Highlight reel"]);
+  await expect(panel).not.toContainText("Tag");
+  await expect(page.getByTestId("legend-◀▶")).toHaveAttribute(
+    "data-label",
+    "Choose",
+  );
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Close",
+  );
 
   for (const job of JOBS) {
     if (job !== "clip") await page.keyboard.press("ArrowRight");
@@ -63,6 +79,7 @@ test("TV-28 On your phone: a QR per job, the API's phone link for this game and 
     await expect(page.getByTestId("phone-url")).toHaveText(
       `${host}/p/${GAME_ID}`,
     );
+    if (job === "review") await expect(panel).toContainText("Review the plays");
     await expect(panel).not.toContainText("#k=");
     await expect(panel).not.toContainText("MOCK-phone-token");
     const qr = (await page.getByTestId("phone-qr").boundingBox())!;
@@ -95,7 +112,7 @@ test("TV-28 On your phone: a QR per job, the API's phone link for this game and 
   expect(await mints(page)).toHaveLength(JOBS.length);
 });
 
-test("TV-28 Play on the TV: the phone's search hit plays here, once; another game's is ignored", async ({
+test("TV-28 Play on TV: the phone's search hit plays here, once; another game's is ignored", async ({
   page,
 }) => {
   const { panel } = await openPanel(page);

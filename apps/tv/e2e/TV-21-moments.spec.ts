@@ -1,10 +1,11 @@
 // The Moments layer (Down): moment cards above the court line cued to the nearest moment,
-// Left/Right walk (the playhead follows), Select jumps and closes, filter chips above
-// (All N, Scores, each player, Your bookmarks), Up to the chips then Up closes, Back
-// closes. Mock g_mock01: moments at 3 (Basket, Marcus), 8 (Missed shot, p2),
-// 14 (Basket, Marcus), 17 (Basket, p3); thumbs for all four.
+// Left/Right walk (the playhead follows), Select jumps and closes, one short row above
+// (the title, the filters All N, Scores, Bookmarks, and "+ Bookmark m:ss"; no chip per
+// player), Up to that row then Up closes, Back closes. Mock g_mock01: moments at 3
+// (Basket, Marcus), 8 (Missed shot, p2), 14 (Basket, Marcus), 17 (Basket, p3); thumbs for
+// all four.
 import { expect, test, type Page } from "@playwright/test";
-import { GAME_ID, media, menuTo, openWatch } from "./helpers";
+import { GAME_ID, media, openWatch } from "./helpers";
 
 const cards = (page: Page) => page.getByTestId("moment-card");
 const focusedCard = (page: Page) =>
@@ -32,9 +33,29 @@ test("TV-21 Moments: cued to the nearest, walk, filter, jump", async ({
   await expect(focusedCard(page)).toHaveAttribute("data-moment-id", "e_0003");
   await expect(page.getByTestId("timeline")).toHaveAttribute("data-t", "14.0");
 
-  // Chips: All 4, Scores, then each player in game order.
+  // The row: its title, All 4 and Scores (no chip per player, no bookmarks yet), then the
+  // bookmark action at the playhead the layer opened on.
+  await expect(page.getByTestId("moments-title")).toHaveText("Moments");
   const labels = await page.getByTestId("moment-filter").allTextContents();
-  expect(labels).toEqual(["All 4", "Scores", "Marcus", "Player 2", "Player 3"]);
+  expect(labels).toEqual(["All 4", "Scores"]);
+  await expect(page.getByTestId("moment-bookmark")).toHaveText(
+    /^\+ Bookmark 0:0[78]$/,
+  );
+  // the legend: Select Play, ▼ Angles only when the focused card has them, Back Close
+  const legend = page.getByTestId("key-legend");
+  await expect(legend).toBeVisible();
+  const angles = await focusedCard(page).getAttribute("data-angles");
+  await expect(page.getByTestId("legend-▼")).toHaveCount(
+    angles === "true" ? 1 : 0,
+  );
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Play",
+  );
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Close",
+  );
   await page.keyboard.press("ArrowUp");
   await expect(page.getByTestId("moments-layer")).toHaveAttribute(
     "data-zone",
@@ -47,9 +68,12 @@ test("TV-21 Moments: cued to the nearest, walk, filter, jump", async ({
   await expect(cards(page)).toHaveCount(3);
   await expect(focusedCard(page)).toHaveAttribute("data-moment-id", "e_0003"); // same time kept
   await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("Enter"); // Marcus
-  await expect(cards(page)).toHaveCount(2);
+  await expect(chip(page, "score")).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Enter"); // All 4
+  await expect(chip(page, "all")).toHaveAttribute("data-active", "true");
+  await expect(cards(page)).toHaveCount(4);
+  await expect(focusedCard(page)).toHaveAttribute("data-moment-id", "e_0003");
 
   // Select jumps to the moment's start and closes the row.
   await page.keyboard.press("Enter");
@@ -82,20 +106,42 @@ test("TV-21 Back and Up close Moments; Up again opens Do more", async ({
   await expect(page.getByTestId("domore")).toBeVisible();
 });
 
-test("TV-21 a bookmark from Do more lands on the line and gets its own chip", async ({
+test("TV-21 + Bookmark in the Moments row saves the time shown, closes, and gets a Bookmarks filter", async ({
   page,
 }) => {
   await openWatch(page, GAME_ID, "?t=10");
   await expect(page.getByTestId("moment-notch")).toHaveCount(4);
-  await menuTo(page, "action-bookmark");
+  await page.keyboard.press("Space"); // paused: the time on the chip stays put
+  await expect.poll(async () => (await media(page)).paused).toBe(true);
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("moments-layer")).toBeVisible();
+  const mark = page.getByTestId("moment-bookmark");
+  const label = (await mark.textContent()) ?? "";
+  expect(label).toMatch(/^\+ Bookmark 0:1\d$/);
+  await page.keyboard.press("ArrowUp"); // to the row
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight"); // the end holds
+  await expect(mark).toHaveAttribute("data-focused", "true");
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Choose",
+  );
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("toast")).toContainText("Bookmarked 0:1");
+  await expect(page.getByTestId("moments-layer")).toHaveCount(0);
+  await expect(page.getByTestId("toast")).toContainText(
+    `Bookmarked ${label.replace("+ Bookmark ", "")}`,
+  );
   await expect(
     page.locator('[data-testid="moment-notch"][data-kind="bookmark"]'),
   ).toHaveCount(1);
   await page.keyboard.press("ArrowDown");
-  await expect(chip(page, "bookmark")).toHaveText("Your bookmarks");
+  await expect(chip(page, "bookmark")).toHaveText("Bookmarks");
   await expect(cards(page)).toHaveCount(5);
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight"); // All 5 → Scores → Bookmarks
+  await page.keyboard.press("Enter");
+  await expect(cards(page)).toHaveCount(1);
+  await expect(cards(page).first()).toHaveAttribute("data-kind", "bookmark");
 });
 
 /** Arrow keydowns sent in one task, before React re-renders: a held remote on a slow Fire
@@ -121,8 +167,8 @@ test("TV-21 keys faster than a render all count: cards and chips", async ({
   await burst(page, "ArrowLeft", 2);
   await expect(focusedCard(page)).toHaveAttribute("data-moment-id", "e_0001");
   await page.keyboard.press("ArrowUp");
-  await burst(page, "ArrowRight", 2); // All 4 → Scores → Marcus
-  await expect(page.getByTestId("moment-filter").nth(2)).toHaveAttribute(
+  await burst(page, "ArrowRight", 2); // All 4 → Scores → + Bookmark
+  await expect(page.getByTestId("moment-bookmark")).toHaveAttribute(
     "data-focused",
     "true",
   );

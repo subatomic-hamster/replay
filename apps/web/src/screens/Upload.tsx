@@ -22,6 +22,37 @@ const HOOP = "rim_top";
 // the user moves it. Same bar courtcam.autocalib uses before it fits a homography.
 const MIN_CONFIDENCE = 0.5;
 
+// Landmark ids (courtcam sports/*.yaml: corner_nl, net_post_l, key_fr, ...) in plain
+// words: "near-left corner", "left net post". n/f = near/far from the camera.
+const SIDE: Record<string, string> = {
+  nl: "near-left",
+  nr: "near-right",
+  fl: "far-left",
+  fr: "far-right",
+  l: "left",
+  r: "right",
+  n: "near",
+  f: "far",
+};
+const PART: Record<string, string> = {
+  key: "corner of the key",
+  ft: "free-throw line end",
+  attack: "attack line end",
+  kitchen: "kitchen line end",
+  long: "long service line end",
+  short: "short service line end",
+  singles: "singles line end",
+  centre: "centre line end",
+  rim_top: "top of the hoop",
+};
+function pointName(id: string): string {
+  const words = id.split("_");
+  const side = SIDE[words[words.length - 1]];
+  const rest = side ? words.slice(0, -1).join("_") : id;
+  const part = PART[rest] ?? rest.replace(/_/g, " ");
+  return side ? `${side} ${part}` : part;
+}
+
 /** `/upload` — create a game (S-02, S-09). */
 export function UploadCreate() {
   const { data: sports, error, reload } = useAsync(() => api.listSports(), []);
@@ -573,9 +604,6 @@ export function Calibrate({
                 ? "Finding the court…"
                 : proposal && Object.keys(proposal.landmarks_px).length > 0
                   ? `Found ${Object.keys(proposal.landmarks_px).length} points` +
-                    (proposal.reprojection_error_px != null
-                      ? ` · ${proposal.reprojection_error_px.toFixed(1)} px`
-                      : "") +
                     (proposal.ok ? "" : " · needs a check")
                   : "Could not find the court — place the points yourself."}
         </p>
@@ -601,21 +629,23 @@ export function Calibrate({
         ) : null}
         {offering ? (
           <>
+            {/* Adjust first: a proposal on phone footage of a half court is rarely
+                right as it is (docs/demo-script.md) */}
             <button
               type="button"
+              data-testid="autocalib-adjust"
+              onClick={() => applyProposal(true)}
+            >
+              Adjust
+            </button>
+            <button
+              type="button"
+              className="secondary"
               data-testid="autocalib-accept"
               disabled={!proposal.ok && !confirmLow}
               onClick={() => applyProposal(false)}
             >
               Looks right — continue
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              data-testid="autocalib-adjust"
-              onClick={() => applyProposal(true)}
-            >
-              Adjust
             </button>
           </>
         ) : null}
@@ -651,9 +681,9 @@ export function Calibrate({
         {selected === HOOP
           ? 'Tap the middle of the hoop (the ring, not the board), or "Not visible".'
           : selected
-            ? `Tap where ${selected.replace(/_/g, " ")} really is, or "Not visible" if it is off the frame.`
+            ? `Tap where the ${pointName(selected)} really is, or "Not visible" if it is off the frame.`
             : next
-              ? `Tap ${next.replace(/_/g, " ")} — point ${names.indexOf(next) + 1} of ${names.length}`
+              ? `Tap the ${pointName(next)} — point ${names.indexOf(next) + 1} of ${names.length}`
               : "All landmarks placed."}
       </p>
 
@@ -693,7 +723,7 @@ export function Calibrate({
                     ? `0 0 0 4px hsl(${Math.round(conf * 120)} 85% 45%)`
                     : undefined,
                 }}
-                title={name.replace(/_/g, " ")}
+                title={pointName(name)}
               >
                 {/* numbered in the full list: a proposal can hold optional points the
                     walk has not reached, which would otherwise all read "0" */}
@@ -704,7 +734,7 @@ export function Calibrate({
                   type="button"
                   className={`landmark-handle${selected === name ? " selected" : ""}`}
                   data-testid={`landmark-handle-${name}`}
-                  aria-label={`Move ${name.replace(/_/g, " ")}`}
+                  aria-label={`Move the ${pointName(name)}`}
                   aria-pressed={selected === name}
                   style={handleAt}
                   onPointerDown={(e) => {
@@ -774,7 +804,7 @@ export function Calibrate({
               aria-pressed={selected === name}
               onClick={() => setSelected(selected === name ? null : name)}
             >
-              {name.replace(/_/g, " ")}
+              {pointName(name)}
             </button>
           ))}
         </div>
@@ -794,8 +824,7 @@ export function Calibrate({
         </p>
         {worst ? (
           <p className="calib-worst" data-testid="calib-worst">
-            worst point: {worst[0].replace(/_/g, " ")} · {worst[1].toFixed(1)}{" "}
-            px
+            worst point: {pointName(worst[0])} · {worst[1].toFixed(1)} px
           </p>
         ) : null}
         <button

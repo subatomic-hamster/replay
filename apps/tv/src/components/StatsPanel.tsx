@@ -1,14 +1,11 @@
 // The player's Stats panel (docs/ux/redesign.md "Do more": Stats, like Prime's X-Ray): the
 // right third of the screen while the game keeps playing on the left. The score by team,
 // a short box score and the shot chart, all labelled auto-detected (D-48), from what the
-// Review screen shows. Two ways on: the review queue (the Review screen) and tips for the
-// players (Advice); Up/Down pick one, Select opens it, Back closes the panel.
+// Review screen shows. Two ways on: "Review N plays" (the Review screen) and "Tips for
+// players" (Tips); Up/Down pick one, Select opens it, Left or Back closes the panel.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import {
-  autoDetectedLabel,
-  reviewPanels,
-} from "../../../../packages/tv-core/src/display";
+import { reviewPanels } from "../../../../packages/tv-core/src/display";
 import type {
   Game,
   Player,
@@ -17,7 +14,7 @@ import type {
 import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
 import { color, face, px, safe, sp, teamColorMap, type } from "../theme";
-import { Chip, Spinner, T } from "../ui";
+import { Chip, KeyLegend, Spinner, T } from "../ui";
 import { CourtView, courtSize } from "./CourtView";
 
 export const PANEL_W = px(640);
@@ -130,11 +127,11 @@ export function StatsPanel({
   const court = game.sport_ui?.court;
   const [cw] = courtSize(court, game.court.variant);
   // The chart takes the height the rest leaves (design px of the 972 inside the safe area:
-  // title, label, two exits and margins ~250; the score 88; the no-makes line 56; the
-  // box score 24 + 40 a row with its header).
+  // title, label, two exits, the key legend and margins ~300; the score 88; the no-makes
+  // line 56; the box score 24 + 40 a row with its header).
   const chartH = Math.max(
     200,
-    720 -
+    670 -
       (teams.length >= 2 ? 88 : 0) -
       (made ? 0 : 56) -
       (panels.has("box_score") && rows.length
@@ -159,7 +156,8 @@ export function StatsPanel({
         testID="auto-detected-label"
         numberOfLines={1}
       >
-        {autoDetectedLabel(stats)}
+        {/* plain words: the mean confidence stays in the data, off the screen */}
+        Auto-detected from the video
       </T>
 
       {teams.length >= 2 ? (
@@ -280,6 +278,13 @@ export function StatsPanel({
           />
         ))}
       </View>
+      <KeyLegend
+        items={[
+          { k: "Select", label: "Open" },
+          { k: "◀", label: "Close" },
+        ]}
+        style={styles.legend}
+      />
     </View>
   );
 }
@@ -322,4 +327,12 @@ const styles = StyleSheet.create({
   fig: { fontFamily: face.figures, fontSize: px(30) },
   dot: { position: "absolute", borderWidth: px(4) },
   exits: { marginTop: "auto", alignItems: "flex-start" },
+  // in the panel's flow, under the exits, right-aligned as everywhere
+  legend: {
+    position: "relative",
+    right: 0,
+    bottom: 0,
+    marginTop: sp(2),
+    alignSelf: "flex-end",
+  },
 });

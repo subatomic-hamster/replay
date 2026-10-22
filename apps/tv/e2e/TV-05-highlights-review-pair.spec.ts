@@ -9,7 +9,7 @@ test("TV-05 a highlight query plays its clips back to back in the player (H3)", 
   await page.goto(`/tv/${GAME_ID}/highlights?q=Makes`);
   const ind = page.getByTestId("way-indicator");
   // Makes: e_0001 (1.5–4.5 s), then e_0003 + e_0004 merged (12.5–18.5 s).
-  await expect(ind).toHaveText("Makes, 1 of 2");
+  await expect(ind).toHaveText("Makes · 1 of 2");
   const q = (await mockCalls(page)).find(
     (c) => c.path === `/games/${GAME_ID}/query`,
   );
@@ -20,7 +20,7 @@ test("TV-05 a highlight query plays its clips back to back in the player (H3)", 
   await expect.poll(async () => (await media(page)).t).toBeGreaterThan(1.4);
 
   // At the clip's end the reel cuts to the next one.
-  await expect(ind).toHaveText("Makes, 2 of 2", { timeout: 8_000 });
+  await expect(ind).toHaveText("Makes · 2 of 2", { timeout: 8_000 });
   expect((await media(page)).t).toBeGreaterThan(12.4);
   await expect(page.getByTestId("watch")).toHaveAttribute(
     "data-way",

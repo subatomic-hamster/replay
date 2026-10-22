@@ -9,7 +9,7 @@ import {
 } from "./helpers";
 
 // W7 / S-24 / S-25 on the RN TV app: tag a player with only D-pad + Select.
-test("TV-03 tag from the action row with a preset name (S-24)", async ({
+test("TV-03 name a player from the picker through their card (S-24)", async ({
   page,
 }) => {
   await openWatch(page);
@@ -19,29 +19,47 @@ test("TV-03 tag from the action row with a preset name (S-24)", async ({
   // untagged: anonymous, by track number
   await expect(page.getByTestId("player-label-p2")).toHaveText("Player 2");
 
-  // Up from p2 (nothing above) → action menu; "Tag player" is in the "Players ▸" group.
-  await menuTo(page, "action-tag");
+  // Menu → Do more: the focused player's card leads (no separate Tag tile any more)
+  await expect(page.getByTestId("action-tag")).toHaveCount(0);
+  await menuTo(page, "follow-card");
+  await expect(page.getByTestId("follow-card")).toContainText("Player 2");
   await page.keyboard.press("Enter");
-
-  const dialog = page.getByTestId("tag-dialog");
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toHaveAttribute("data-player-id", "p2");
-  // Presets exclude names already on the roster (p1 is Marcus).
-  await expect(page.getByTestId("tag-key-Marcus")).toHaveCount(0);
-  await expect(page.getByTestId("tag-key-Jordan")).toHaveAttribute(
-    "data-focused",
-    "true",
+  await expect(page.getByTestId("player-card-edit")).toHaveText(
+    "Name this player",
   );
   await page.keyboard.press("Enter");
 
+  const dialog = page.getByTestId("player-name-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("data-player-id", "p2");
+  const press = async (key: string, n = 1) => {
+    for (let i = 0; i < n; i++) await page.keyboard.press(key);
+  };
+  // row 0 is A..J: Z = row 2 col 5, O = row 1 col 4, E = row 0 col 4
+  await press("ArrowDown", 2);
+  await press("ArrowRight", 5);
+  await press("Enter");
+  await press("ArrowUp");
+  await press("ArrowLeft");
+  await press("Enter");
+  await press("ArrowUp");
+  await press("Enter");
+  await press("ArrowDown", 3); // control row, col 4 clamps to CANCEL
+  await press("ArrowLeft"); // SAVE
+  await press("Enter");
+
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByTestId("player-label-p2")).toHaveText("Jordan");
+  await expect(page.getByTestId("player-card-name")).toHaveText("Zoe");
   const patch = (await mockCalls(page)).find((c) => c.method === "PATCH");
   expect(patch).toEqual({
     method: "PATCH",
     path: `/games/${GAME_ID}/players/p2`,
-    body: { name: "Jordan" },
+    body: { name: "Zoe" },
   });
+  // Left closes the card: back on the picker, p2's marker says the new name
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByTestId("player-card")).toHaveCount(0);
+  await expect(page.getByTestId("player-label-p2")).toHaveText("Zoe");
 });
 
 test("TV-04 on-screen keyboard types a name; Backspace deletes a letter, not Back (S-25)", async ({

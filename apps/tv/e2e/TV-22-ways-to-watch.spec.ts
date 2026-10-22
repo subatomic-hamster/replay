@@ -21,13 +21,18 @@ test("TV-22 Home → Highlights plays the top plays back to back with an indicat
   await page.keyboard.press("Enter");
 
   const ind = page.getByTestId("way-indicator");
-  await expect(ind).toHaveText("Highlights, 1 of 2");
+  await expect(ind).toHaveText("Highlights · 1 of 2");
+  // the reel is the mode: the context chip says so
+  await expect(page.getByTestId("context-chip")).toHaveAttribute(
+    "data-kind",
+    "way",
+  );
   await expect(ind).toHaveAttribute("data-way", "highlights");
   await expect
     .poll(async () => (await media(page)).t, { timeout: 15_000 })
     .toBeGreaterThan(0.5);
   // 4.5 s: the first play ends, the second starts at 11.5 s.
-  await expect(ind).toHaveText("Highlights, 2 of 2", { timeout: 10_000 });
+  await expect(ind).toHaveText("Highlights · 2 of 2", { timeout: 10_000 });
   expect((await media(page)).t).toBeGreaterThanOrEqual(11.4);
   // After the last play (15.5 s) the full game takes over, paused, transport up.
   await expect(ind).toHaveCount(0, { timeout: 10_000 });
@@ -39,16 +44,21 @@ test("TV-22 Home → Highlights plays the top plays back to back with an indicat
   );
 });
 
-test("TV-22 Do more → Watch switches ways; Back leaves the Watch row first", async ({
+test("TV-22 Do more → Highlights switches ways; Back leaves the Highlights row first", async ({
   page,
 }) => {
   await openWatch(page);
   await menuTo(page, "menu-watch");
+  // the tile is "Highlights" (not "Watch"), its sub the current way
+  await expect(page.getByTestId("menu-watch")).toContainText("Highlights");
   await expect(page.getByTestId("menu-watch")).toContainText("Full game");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("domore")).toHaveAttribute(
     "data-row",
     "menu-watch",
+  );
+  await expect(page.getByTestId("domore-crumb")).toHaveText(
+    "Do more › Highlights",
   );
   await expect(page.getByTestId("way-full")).toHaveAttribute("data-on", "true");
   await expect(page.getByTestId("way-full")).toHaveAttribute(
@@ -63,21 +73,21 @@ test("TV-22 Do more → Watch switches ways; Back leaves the Watch row first", a
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("domore")).toHaveCount(0);
   await expect(page.getByTestId("way-indicator")).toHaveText(
-    "Highlights, 1 of 2",
+    "Highlights · 1 of 2",
   );
   // Next goes to the next play of the reel.
   await page.keyboard.press("]");
   await expect(page.getByTestId("way-indicator")).toHaveText(
-    "Highlights, 2 of 2",
+    "Highlights · 2 of 2",
   );
   await expect
     .poll(async () => (await media(page)).t)
     .toBeGreaterThanOrEqual(11.4);
 
-  // Back steps out of the reel into the full game (the transport first), not to Home.
-  await page.keyboard.press("Escape");
+  // One Back steps out of the reel into the full game, not to Home.
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("watch")).toHaveAttribute("data-way", "full");
+  await expect(page.getByTestId("watch-title")).toBeAttached();
   await expect(page.getByTestId("way-indicator")).toHaveCount(0);
 
   await menuTo(page, "way-full");

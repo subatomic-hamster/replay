@@ -895,21 +895,12 @@ async function demoBeats(page: Page, phone: Page) {
       await doMore(page, "nav-replays");
       const play = (
         (await page.getByTestId("nav-replays").textContent()) ?? ""
-      ).replace(/^Angles/, "");
-      await page.keyboard.press("Enter");
-      await expect(page.getByTestId("domore")).toHaveAttribute(
-        "data-row",
-        "nav-replays",
-      );
-      const thumbs = page.locator(
-        '[data-testid="domore"] [data-testid^="angle-"]:not([data-testid="angle-free"])',
-      );
-      const n = await thumbs.count();
-      expect(n).toBeGreaterThan(1);
-      await page.waitForTimeout(1500);
-      await page.keyboard.press("Enter"); // the first angle
+      ).replace(/^Replay angles/, "");
+      await page.keyboard.press("Enter"); // the room opens on the play's first cut
       const replay = page.getByTestId("replay");
       await expect(replay).toBeVisible();
+      const n = Number(await replay.getAttribute("data-cuts"));
+      expect(n).toBeGreaterThan(1);
       await videoReady(page);
       const tiers = new Set<string>([
         (await page.getByTestId("replay-tier-badge").textContent()) ?? "",
@@ -918,7 +909,7 @@ async function demoBeats(page: Page, phone: Page) {
       for (let i = 2; i <= n; i++) {
         await page.keyboard.press("ArrowRight");
         await expect(page.getByTestId("replay-angle-pos")).toHaveText(
-          `${i} / ${n}`,
+          `${i} of ${n}`,
         );
         await videoReady(page);
         const tier =
@@ -928,7 +919,7 @@ async function demoBeats(page: Page, phone: Page) {
         tiers.add(tier);
         await page.waitForTimeout(1100);
       }
-      expect([...tiers].sort()).toEqual(["2.5D", "3D", "Real video"]);
+      expect([...tiers].sort()).toEqual(["Camera", "Virtual replay"]);
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("watch")).toBeVisible();
       await expect

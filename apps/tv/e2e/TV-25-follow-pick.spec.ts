@@ -68,7 +68,7 @@ test("TV-25 pick on the video with the arrows; Select follows at once; Back canc
   await expect.poll(async () => (await media(page)).paused).toBe(false);
   await menuTo(page, "action-follow");
   const tile = page.getByTestId("action-follow");
-  await expect(tile).toContainText("Pick a player on screen");
+  await expect(tile).toContainText("Follow a player");
   await expect(tile).toHaveAttribute("data-children", "0"); // no carousel of players
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("domore")).toHaveCount(0);
@@ -79,8 +79,19 @@ test("TV-25 pick on the video with the arrows; Select follows at once; Back canc
   await expect.poll(async () => (await media(page)).paused).toBe(true);
   await expect(page.locator('[data-testid^="select-box-"]')).toHaveCount(4);
   await expect.poll(() => focusedBoxId(page)).toBe("p1");
-  await expect(page.getByTestId("select-hint")).toContainText(
-    "Arrows move between players",
+  // the context chip names the mode; the legend (no prose) the keys
+  await expect(page.getByTestId("select-hint")).toHaveText("Pick a player");
+  await expect(page.getByTestId("context-chip")).toHaveAttribute(
+    "data-kind",
+    "pick",
+  );
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Follow",
+  );
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Cancel",
   );
   await expect(page.getByTestId("player-label-p1")).toHaveText("Marcus");
   await expect(page.getByTestId("player-label-p2")).toHaveCount(0); // anonymous, unfocused
@@ -143,21 +154,20 @@ test("TV-25 pick on the video with the arrows; Select follows at once; Back canc
   const b = (await top.boundingBox())!;
   expect(Math.abs(b.width / surface.width - 0.12)).toBeLessThan(0.01);
 
-  // Do more while following: who, and the row for them (no chips).
-  await menuTo(page, "action-follow");
-  await expect(tile).toContainText("Following Player 3");
-  await page.keyboard.press("Enter");
-  await expect(page.getByTestId("domore")).toHaveAttribute(
-    "data-row",
-    "action-follow",
-  );
+  // Do more while following (Menu, as everywhere): the player's card first, then the
+  // picker, at the top level (no child row); no Tag tile (the card names players).
+  await menuTo(page, "follow-card");
+  await expect(page.getByTestId("follow-card")).toContainText("Player 3");
   await expect(page.getByTestId("follow-pick")).toContainText(
-    "Pick another player",
+    "Follow someone else",
   );
-  await expect(page.getByTestId("action-tag")).toContainText("Tag Player 3");
-  await expect(page.getByTestId("action-spotlight")).toBeAttached();
-  await expect(page.getByTestId("action-link-profile")).toBeAttached();
-  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("follow-pick")).toHaveAttribute(
+    "data-children",
+    "0",
+  );
+  await expect(tile).toHaveCount(0);
+  for (const gone of ["action-tag", "action-spotlight", "action-link-profile"])
+    await expect(page.getByTestId(gone)).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("domore")).toHaveCount(0);
 
@@ -275,10 +285,13 @@ test("TV-25 lost past a hand-off's reach: the chip says so and Select picks agai
   const watch = page.getByTestId("watch");
   const chip = page.getByTestId("followcam-active");
   await expect(chip).toContainText("Following Marcus");
-  await expect(page.getByTestId("follow-repick")).toHaveCount(0);
+  await expect(page.getByTestId("legend-Select")).toHaveCount(0);
   // 1.5 s (HANDOFF_MAX_GAP_S) into the gap, no hand-off: say so, don't park on nobody
   await expect(chip).toContainText("Lost sight of Marcus", { timeout: 10_000 });
-  await expect(page.getByTestId("follow-repick")).toContainText("Pick again");
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Pick again",
+  );
   await expect(watch).toHaveAttribute("data-mode", "follow");
   // Select picks again: paused, markers up, focus on the player nearest where Marcus
   // was last seen (p1 x 0.08: p2 at x 0.44 is nearest), Select follows them
@@ -290,6 +303,6 @@ test("TV-25 lost past a hand-off's reach: the chip says so and Select picks agai
   await expect(watch).toHaveAttribute("data-mode", "follow");
   await expect(chip).toHaveAttribute("data-player-id", "p2");
   await expect(chip).toContainText("Following Player 2");
-  await expect(page.getByTestId("follow-repick")).toHaveCount(0);
+  await expect(page.getByTestId("legend-Select")).toHaveCount(0);
   await expect.poll(async () => (await media(page)).paused).toBe(false);
 });

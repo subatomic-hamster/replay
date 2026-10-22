@@ -91,7 +91,10 @@ test("TV-33 labels sit on the middle of their pills, rows, key caps and badges",
     page.getByTestId("settings-item-2"),
     "focused settings row",
   );
-  await expectCentred(page, page.getByTestId("hint-key"), "Back key cap");
+  // a key legend's cap (the first box inside the entry)
+  const cap = (k: string) =>
+    page.getByTestId(`legend-${k}`).locator("div").first();
+  await expectCentred(page, cap("Select"), "Select key cap");
 
   await page.keyboard.press("Escape"); // Home
   await expect(page.getByTestId("home")).toBeVisible();
@@ -118,12 +121,12 @@ test("TV-33 labels sit on the middle of their pills, rows, key caps and badges",
   );
 });
 
-test("TV-33 the Moments filter chips slide to keep the focused chip on screen", async ({
+test("TV-33 a real game's many players add no Moments chips: the whole row and the legend sit on screen, clear of the cards", async ({
   page,
 }) => {
-  // A real game: 14 more tracked players, each with a moment, so 19 chips (far wider
-  // than the screen). The mock is patched before the player mounts (Settings → Home →
-  // the featured game).
+  // A real game: 14 more tracked players, each with a moment (19 chips before the UI
+  // pass). The mock is patched before the player mounts (Settings → Home → the featured
+  // game).
   await page.goto("/tv/settings");
   await expect(page.getByTestId("settings")).toBeVisible();
   await page.evaluate(() => {
@@ -152,15 +155,19 @@ test("TV-33 the Moments filter chips slide to keep the focused chip on screen", 
   await expect(page.getByTestId("video")).toBeAttached();
   await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("moment-card").first()).toBeVisible();
-  await page.keyboard.press("ArrowUp"); // to the chips
+  await page.keyboard.press("ArrowUp"); // to the row
   const chips = page.getByTestId("moment-filter");
-  const n = await chips.count();
-  expect(n).toBeGreaterThan(15);
-  for (let i = 0; i < n; i++) await page.keyboard.press("ArrowRight");
-  const last = chips.nth(n - 1);
+  expect(await chips.allTextContents()).toEqual(["All 18", "Scores"]);
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
+  const last = page.getByTestId("moment-bookmark");
   await expect(last).toHaveAttribute("data-focused", "true");
-  const box = await last.boundingBox();
-  expect((box?.x ?? 1e9) + (box?.width ?? 0)).toBeLessThanOrEqual(
-    1920 - 96 + 1,
-  );
+  const box = (await last.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(1920 - 96 + 1);
+  // the legend: inside the right safe edge, below every card label, above the timeline
+  const legend = (await page.getByTestId("key-legend").boundingBox())!;
+  expect(legend.x + legend.width).toBeLessThanOrEqual(1920 - 96 + 1);
+  const layer = (await page.getByTestId("moments-layer").boundingBox())!;
+  expect(legend.y).toBeGreaterThanOrEqual(layer.y + layer.height - 1);
+  const line = (await page.getByTestId("timeline").boundingBox())!;
+  expect(legend.y + legend.height).toBeLessThanOrEqual(line.y + 1);
 });

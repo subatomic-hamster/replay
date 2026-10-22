@@ -80,6 +80,16 @@ test("TV-16 settings: set the API address and key with the D-pad, test it, keep 
     "data-focused",
     "true",
   ); // Test connection
+  // UI pass: a breadcrumb and a key legend, no prose hint
+  await expect(page.getByTestId("context-chip")).toHaveText("Home › Settings");
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Home",
+  );
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Choose",
+  );
 
   // Change address: a bad one is refused and leaves the saved address alone.
   await page.keyboard.press("ArrowLeft");

@@ -55,8 +55,7 @@ test("TV-29 a sub-screen's Back resumes at the same time and play state; Home of
   expect((await media(page)).paused).toBe(true);
 
   // Home: the game's hero says Resume and when; Start over beside it.
-  await page.keyboard.press("Escape"); // transport → bare video
-  await page.keyboard.press("Escape"); // → Home
+  await page.keyboard.press("Escape"); // → Home (one Back: no hide-the-transport step)
   await expect(page.getByTestId("home")).toBeVisible();
   const card = page.locator(
     `[data-testid="game-card"][data-game-id="${GAME_ID}"]`,
@@ -91,7 +90,6 @@ test("TV-29 a sub-screen's Back resumes at the same time and play state; Home of
   await page.keyboard.press("Space");
   await expect.poll(async () => (await media(page)).paused).toBe(true);
   const t2 = (await media(page)).t;
-  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("home")).toBeVisible();
   await page.goto("/");

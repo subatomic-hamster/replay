@@ -31,9 +31,26 @@ async function firstPlay(
   return replays[0];
 }
 
+/** Right through the room's cuts until `want` holds for the replay's dataset, at most
+ *  one lap; false when the play has no such cut. */
+async function cutTo(
+  page: Page,
+  want: (angle: string, pov: string) => boolean,
+): Promise<boolean> {
+  const cuts = Number(await replay(page).getAttribute("data-cuts"));
+  for (let i = 0; i <= cuts; i++) {
+    const angle = (await replay(page).getAttribute("data-angle")) ?? "";
+    const pov = (await replay(page).getAttribute("data-pov")) ?? "";
+    if (want(angle, pov)) return true;
+    await page.keyboard.press("ArrowRight");
+    await page.waitForTimeout(300);
+  }
+  return false;
+}
+
 test.describe.configure({ mode: "serial" });
 
-test("ANGLES real game: Angles row, a Tier B cut, Player POV, Up, Free view", async ({
+test("ANGLES real game: the room, a recreated cut, Player's view, Up, Free view", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -42,58 +59,43 @@ test("ANGLES real game: Angles row, a Tier B cut, Player POV, Up, Free view", as
   await page.keyboard.press("Space");
   await expect.poll(async () => (await media(page)).paused).toBe(true);
 
+  // Do more → Replay angles opens the room on the nearest play's first cut
   await menuTo(page, "nav-replays");
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("domore")).toHaveAttribute(
-    "data-row",
-    "nav-replays",
+  await expect(replay(page)).toBeVisible();
+  expect(Number(await replay(page).getAttribute("data-cuts"))).toBeGreaterThan(
+    3,
   );
-  const thumbs = page.locator('[data-testid="domore"] [data-testid^="angle-"]');
-  expect(await thumbs.count()).toBeGreaterThan(3);
-  await shot(page, "01-angles-row");
+  await shot(page, "01-angles-room");
 
-  await menuTo(page, "angle-broadcast_high");
-  await page.keyboard.press("Enter");
-  await expect(replay(page)).toHaveAttribute("data-angle", "broadcast_high");
+  expect(await cutTo(page, (a) => a === "broadcast_high")).toBe(true);
+  await expect(page.getByTestId("replay-tier-badge")).toHaveText(
+    "Virtual replay",
+  );
   await expect
     .poll(async () => (await media(page)).ready, { timeout: 30_000 })
     .toBeGreaterThanOrEqual(2);
   await page.keyboard.press("Enter"); // pause on a frame
   await shot(page, "02-tierB-broadcast-high");
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("watch")).toBeVisible();
 
   // a virtual view (Tier C, image-based): the wing camera, when the play has one
-  await menuTo(page, "nav-replays");
-  await page.keyboard.press("Enter");
-  if (await page.getByTestId("angle-3d:wing").count()) {
-    await menuTo(page, "angle-3d:wing");
-    await page.keyboard.press("Enter");
+  if (await cutTo(page, (a) => a === "3d:wing")) {
     await expect(replay(page)).toHaveAttribute("data-tier", "C");
     await expect(page.getByTestId("replay-tier-badge")).toHaveText(
-      "Virtual view",
+      "Virtual replay",
     );
     await expect
       .poll(async () => (await media(page)).ready, { timeout: 30_000 })
       .toBeGreaterThanOrEqual(2);
     await page.waitForTimeout(1500);
-    await page.keyboard.press("Enter");
     await shot(page, "02b-virtual-wing");
-    await page.keyboard.press("Escape");
-  } else {
-    await page.keyboard.press("Escape");
   }
-  await expect(page.getByTestId("watch")).toBeVisible();
 
-  // Player POV: the key player's chip first, then another player's eyes with Up
-  await menuTo(page, "action-pov");
-  await page.keyboard.press("Enter");
-  await expect(page.getByTestId("domore")).toHaveAttribute(
-    "data-row",
-    "action-pov",
+  // Player's view: one cut in the room (the key player's), Up for another player's eyes
+  expect(await cutTo(page, (_a, pov) => pov !== "")).toBe(true);
+  await expect(page.getByTestId("replay-angle-label")).toContainText(
+    "Player's view",
   );
-  await shot(page, "03-player-pov-chips");
-  await page.keyboard.press("Enter");
   await expect(replay(page)).toHaveAttribute("data-tier", "C");
   const first = await replay(page).getAttribute("data-pov");
   expect(first).toBeTruthy();

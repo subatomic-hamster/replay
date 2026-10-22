@@ -3,9 +3,10 @@
 // Games row (Add game first, then games still processing, then the rest) and the Players
 // row peeking at the bottom; Settings is the gear top-right, reached with Up.
 // Focus zones gear / hero / games / players, moved with the D-pad. Focus starts on the
-// newest finished game's card. Back is left unhandled so the remote's Back exits the app
-// (Fire TV convention; E-14 on the web).
-import { useCallback, useEffect, useMemo, useState } from "react";
+// newest finished game's card. The first Back shows "Press Back again to exit"; a second
+// one within EXIT_MS is left unhandled so the app exits (Fire TV convention; E-14 on the
+// web): one Back too many on the device walk dropped the demo onto the launcher.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { api, apiBase } from "../api";
 import { Avatar } from "../components/Avatar";
@@ -28,8 +29,10 @@ import { resumeAt } from "../resume";
 import { color, px, radius, safe, sp, type } from "../theme";
 import {
   ApiErrorBanner,
+  ContextChip,
   Focusable,
   Hero,
+  KeyLegend,
   Loading,
   PillButton,
   ProgressRing,
@@ -50,6 +53,8 @@ type Action = {
 const ADD = "add";
 /** Re-read the list this often while a game is processing (its ring and words move). */
 const POLL_MS = 15_000;
+/** A second Back within this long of the first leaves the app. */
+const EXIT_MS = 3000;
 
 const CARD_W = px(384);
 const CARD_H = px(216);
@@ -213,9 +218,25 @@ export function Home() {
   if (z === "games" && empty) z = "hero";
   if (z === "players" && !playersShown) z = empty ? "hero" : "games";
 
+  const lastBack = useRef(0);
+  const [exitNote, setExitNote] = useState(false);
+  useEffect(() => {
+    if (!exitNote) return;
+    const t = setTimeout(() => setExitNote(false), EXIT_MS);
+    return () => clearTimeout(t);
+  }, [exitNote]);
+
   const onAction = useCallback(
     (a: DpadAction) => {
-      if (a === "back") return false;
+      if (a === "back") {
+        const now = Date.now();
+        if (now - lastBack.current < EXIT_MS) return false; // unhandled: the app exits
+        lastBack.current = now;
+        setExitNote(true);
+        return;
+      }
+      lastBack.current = 0;
+      setExitNote(false);
       if (z === "gear") {
         if (a === "select") navigate({ name: "settings" });
         else if (a === "down") setZone(actions.length ? "hero" : "games");
@@ -278,6 +299,36 @@ export function Home() {
   if (!data) return <Loading />;
 
   const lifted = z === "players";
+  // One line of keys, on the focused row's title line (the hero and the gear use Games').
+  const legend: { k: string; label: string }[] =
+    z === "games"
+      ? cur === ADD
+        ? [{ k: "Select", label: "Add game" }]
+        : game && watchable(game)
+          ? [
+              { k: "Select", label: "Play" },
+              // the hero's other buttons (Start over, Highlights, Condensed) are only
+              // reached with Up, so say so
+              ...(actions.length > 1
+                ? [{ k: "▲", label: "More ways to watch" }]
+                : []),
+            ]
+          : []
+      : z === "hero"
+        ? [
+            ...(actions.length > 1 ? [{ k: "◀▶", label: "Choose" }] : []),
+            { k: "Select", label: actions[bi]?.label ?? "Open" },
+            ...(empty ? [] : [{ k: "▼", label: "Games" }]),
+          ]
+        : z === "players"
+          ? [
+              { k: "Select", label: "Open" },
+              { k: "▲", label: "Games" },
+            ]
+          : [{ k: "Select", label: "Settings" }];
+  const keys = legend.length ? (
+    <KeyLegend items={legend} style={styles.legend} />
+  ) : null;
   const hero = empty
     ? {
         id: "empty",
@@ -340,7 +391,10 @@ export function Home() {
       >
         {empty ? null : (
           <>
-            <Title style={styles.rowTitle}>Games</Title>
+            <View style={styles.rowHead}>
+              <Title style={styles.rowTitle}>Games</Title>
+              {z !== "players" ? keys : null}
+            </View>
             <View
               style={[
                 styles.row,
@@ -379,9 +433,10 @@ export function Home() {
         )}
         {playersShown ? (
           <>
-            <Title style={[styles.rowTitle, { marginTop: sp(3) }]}>
-              Players
-            </Title>
+            <View style={[styles.rowHead, { marginTop: sp(3) }]}>
+              <Title style={styles.rowTitle}>Players</Title>
+              {z === "players" ? keys : null}
+            </View>
             <View
               style={[
                 styles.row,
@@ -427,6 +482,18 @@ export function Home() {
           </>
         ) : null}
       </View>
+      {empty && keys ? (
+        <KeyLegend items={legend} style={{ bottom: safe.y }} />
+      ) : null}
+      {exitNote ? (
+        <View
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+          testID="home-exit-note"
+        >
+          <ContextChip parts={["Press Back again to exit"]} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -547,6 +614,14 @@ const styles = StyleSheet.create({
   },
   rows: { position: "absolute", top: px(552), left: 0, right: 0 },
   rowTitle: { marginLeft: safe.x },
+  rowHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingRight: safe.x,
+  },
+  /** in the row's title line, not KeyLegend's own absolute corner */
+  legend: { position: "relative", right: 0, bottom: 0 },
   row: { flexDirection: "row", paddingLeft: safe.x - RING_BOX },
   cardSlot: { width: CARD_W + 2 * RING_BOX, marginRight: sp(4) },
   art: { width: CARD_W, height: CARD_H, backgroundColor: color.bench },

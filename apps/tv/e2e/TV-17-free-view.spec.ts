@@ -1,7 +1,7 @@
 // TV-17 Free view (2.5D) in the player's angle view (docs/scene-format.md, D-75): Down enters
 // the live scene of the play's package at the angle's media time, the D-pad orbits inside
-// the envelope (hard clamps, edge bars), Rew/FF (`,` `.`) cycle presets, Menu (`m`)
-// switches Up/Down to zoom, Select plays/pauses, Back returns to the video angle at the
+// the envelope (hard clamps, edge bars), Rew/FF (`,` `.`) cycle presets, Menu does
+// nothing (no zoom toggle), Select plays/pauses, Back returns to the video angle at the
 // scene's time. The mock serves the committed SYNTHETIC fixture
 // (services/api/fixtures/scene_synth) for play_0001.
 import fs from "node:fs";
@@ -188,15 +188,31 @@ test("TV-17 Free view: enter at the angle's time, clamp at every edge, presets, 
     "data-preset",
     "real",
   );
-  await expect(page.getByTestId("free-preset-label")).toHaveText("Real camera");
-  await expect(page.getByTestId("replay-tier-badge")).toHaveText("2.5D");
-  // The package's own honesty label (contract), plus the view-limit sentence (D-54).
-  await expect(page.getByTestId("free-honesty")).toHaveText(lay.honesty_label);
-  await expect(page.getByTestId("free-limit")).toHaveText(
-    "View limited to what the camera saw",
+  // Inside a recreated scene the real camera's viewpoint is not "Real camera".
+  await expect(page.getByTestId("free-preset-label")).toHaveText(
+    "From the camera's spot",
+  );
+  await expect(page.getByTestId("replay-tier-badge")).toHaveText(
+    "Virtual replay",
+  );
+  // Plain honesty in words; no numeric readout, no gauge (the edge bars show the limit).
+  await expect(page.getByTestId("free-honesty")).toHaveText(
+    "Recreated from the real players on a model of the court",
   );
   await expect(page.getByTestId("replay-synthetic")).toBeVisible();
-  await expect(page.getByTestId("free-gauge")).toBeVisible();
+  for (const id of ["free-readout", "free-gauge", "free-limit"])
+    await expect(page.getByTestId(id)).toHaveCount(0);
+  await expect(page.getByText(/°|\d m\b/)).toHaveCount(0);
+  await expect(page.getByTestId("key-legend").locator("> *")).toHaveCount(3);
+  for (const [k, label] of [
+    ["◀▶", "Orbit"],
+    ["▲▼", "Height"],
+    ["Back", "Angles"],
+  ])
+    await expect(page.getByTestId(`legend-${k}`)).toHaveAttribute(
+      "data-label",
+      label,
+    );
   for (const id of ["az-min", "az-max", "el-min", "el-max"])
     await expect(page.getByTestId(`edge-${id}`)).toHaveCount(0);
 
@@ -232,25 +248,15 @@ test("TV-17 Free view: enter at the angle's time, clamp at every edge, presets, 
     env.elevation_deg[0].toFixed(2),
   );
   await expect(page.getByTestId("edge-el-min")).toBeVisible();
-  // Menu: Up/Down dolly instead.
+  // Menu does nothing in Free view (the zoom toggle is gone): still the height.
+  const dist = await replayAttr(page, "dist");
   await page.keyboard.press("m");
-  await expect(page.getByTestId("replay")).toHaveAttribute("data-zoom", "true");
-  await pushTo(page, "ArrowUp", "d-min");
+  await press(page, "ArrowUp");
   await expect(page.getByTestId("replay")).toHaveAttribute(
     "data-dist",
-    env.distance_m[0].toFixed(3),
+    dist ?? "",
   );
-  await expect(page.getByTestId("free-gauge")).toContainText("closest");
-  await pushTo(page, "ArrowDown", "d-max");
-  await expect(page.getByTestId("replay")).toHaveAttribute(
-    "data-dist",
-    env.distance_m[1].toFixed(3),
-  );
-  await page.keyboard.press("m");
-  await expect(page.getByTestId("replay")).toHaveAttribute(
-    "data-zoom",
-    "false",
-  );
+  await expect(page.getByTestId("replay")).toHaveAttribute("data-mode", "free");
 
   // Presets: from a free camera FF goes to the first preset (real), then cycles through
   // every preset and wraps; Rew goes back.
@@ -260,7 +266,9 @@ test("TV-17 Free view: enter at the angle's time, clamp at every edge, presets, 
       "data-preset",
       p.id,
     );
-    await expect(page.getByTestId("free-preset-label")).toHaveText(p.label);
+    await expect(page.getByTestId("free-preset-label")).toHaveText(
+      p.id === "real" ? "From the camera's spot" : p.label,
+    );
     const want = presetState(p.id, lay);
     await expect(page.getByTestId("replay")).toHaveAttribute(
       "data-az",

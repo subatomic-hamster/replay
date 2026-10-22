@@ -94,6 +94,16 @@ test("TV-15 Home → Players → profile → Back → Players → Home", async (
 
   const cards = page.getByTestId("profile-card");
   await expect(cards).toHaveCount(3);
+  // UI pass: a breadcrumb names where Back goes, and a key legend replaces the prose hint
+  await expect(page.getByTestId("context-chip")).toHaveText("Home › Players");
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Open",
+  );
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Home",
+  );
   await expect(cards.first()).toHaveAttribute("data-profile-id", MARCUS);
   await expect(cards.first()).toHaveAttribute("data-focused", "true");
   await expect(page.getByTestId("avatar").first()).toHaveText("M"); // initials, no photo
@@ -117,6 +127,26 @@ test("TV-15 Home → Players → profile → Back → Players → Home", async (
   );
   await expect(page.getByTestId("profile-name")).toHaveText("Jordan");
   await expect(page.getByTestId("face-enrolled")).toBeVisible();
+  await expect(page.getByTestId("context-chip")).toHaveText("Players › Jordan");
+  const legend = async () =>
+    page
+      .getByTestId("key-legend")
+      .locator("[data-label]")
+      .evaluateAll((els) =>
+        els.map(
+          (e) =>
+            `${e.getAttribute("data-testid")?.slice(7)} ${e.getAttribute("data-label")}`,
+        ),
+      );
+  expect(await legend()).toEqual(["◀▶ Tab", "▼ Open", "Back Players"]);
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("profile")).toHaveAttribute(
+    "data-zone",
+    "body",
+  );
+  expect(await legend()).toEqual(["Select Choose", "Back Tabs"]);
+  expect(await smallText(page)).toEqual([]);
+  await page.keyboard.press("Escape"); // tabs
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("players")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -153,6 +183,15 @@ test("TV-15 stat correction with the D-pad: PATCH, EDITED with the auto value, u
   await expect(page.getByTestId("stat-edit")).toHaveAttribute(
     "data-value",
     "4",
+  );
+  // the editor's own keys replace the body's
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Save",
+  );
+  await expect(page.getByTestId("legend-Back")).toHaveAttribute(
+    "data-label",
+    "Cancel",
   );
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
@@ -227,7 +266,10 @@ test("TV-15 card: JSON fields with EDITED tiles; Select renders the PNG", async 
   await expect(
     page.locator('[data-testid="card-tile"][data-key="points"]'),
   ).toHaveAttribute("data-edited", "false");
-  await expect(page.getByTestId("card-best")).toContainText(GAME_ID);
+  // the game by its title, not its id
+  await expect(page.getByTestId("card-best")).toContainText(
+    "Best moment: Tuesday run — CRC court 2 at",
+  );
   await expect(page.getByTestId("card-render")).toHaveAttribute(
     "data-focused",
     "true",
@@ -432,20 +474,37 @@ test("TV-15 face suggestions only for the face-enrolled profile, labelled as sug
   await expect(page.getByTestId("reel-empty")).toBeVisible();
 });
 
-test("TV-15 Watch: Link profile on the picked player; without a pick there is no tile", async ({
+/** From Watch with p2 focused in the picker: Menu → p2's card → Link to a profile. */
+async function linkFromCard(page: Page) {
+  await menuTo(page, "follow-card");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("player-card")).toBeVisible();
+  const link = page.getByTestId("player-card-link");
+  await expect(link).toHaveText("Link to a profile");
+  for (
+    let i = 0;
+    i < 6 && (await link.getAttribute("data-focused")) !== "true";
+    i++
+  )
+    await page.keyboard.press("ArrowDown");
+  await expect(link).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press("Enter");
+}
+
+test("TV-15 Watch: Link to a profile from the picked player's card; without a pick there is no card tile", async ({
   page,
 }) => {
   await openWatch(page);
-  // no player picked yet: Do more has no Link profile tile (only actions that exist now)
-  await page.keyboard.press("ArrowUp");
+  // no player picked yet: Do more has no card tile (only actions that exist now)
+  await page.keyboard.press("m");
   await expect(page.getByTestId("action-follow")).toBeAttached();
-  await expect(page.getByTestId("action-link-profile")).toHaveCount(0);
+  await expect(page.getByTestId("follow-card")).toHaveCount(0);
   await page.keyboard.press("Escape");
+  await expect(page.getByTestId("domore")).toHaveCount(0);
 
   await enterSelectMode(page);
   await page.keyboard.press("ArrowRight"); // p2
-  await menuTo(page, "action-link-profile");
-  await page.keyboard.press("Enter");
+  await linkFromCard(page);
   const picker = page.getByTestId("profile-picker");
   await expect(picker).toHaveAttribute("data-player-id", "p2");
   await expect(page.getByTestId("picker-profile")).toHaveCount(3);
@@ -454,8 +513,7 @@ test("TV-15 Watch: Link profile on the picked player; without a pick there is no
   await expect(picker).toHaveCount(0);
   await expect(page.getByTestId("watch")).toBeVisible();
 
-  await menuTo(page, "action-link-profile");
-  await page.keyboard.press("Enter");
+  await linkFromCard(page);
   await expect(page.getByTestId("picker-profile")).toHaveCount(3);
   await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("picker-profile").nth(1)).toHaveAttribute(

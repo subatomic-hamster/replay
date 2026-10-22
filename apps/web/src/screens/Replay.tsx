@@ -13,6 +13,8 @@ import { navigate } from "../router";
 import { ApiErrorBanner, fmtDuration, useAsync } from "../ui";
 import {
   ANGLE_BUG_MS,
+  angleHonesty,
+  angleLabel,
   cutOrder,
   cycleAngle,
   nextPov,
@@ -133,6 +135,7 @@ export function Replay({ gameId, playId }: { gameId: string; playId: string }) {
       </div>
     );
   }
+  const honesty = angleHonesty(angle);
 
   return (
     <div
@@ -171,17 +174,22 @@ export function Replay({ gameId, playId }: { gameId: string; playId: string }) {
               </span>
               <span className="replay-arrow">◀</span>
               <span className="replay-pos" data-testid="replay-angle-pos">
-                {`${order.indexOf(index) + 1} / ${order.length}`}
+                {`${order.indexOf(index) + 1} of ${order.length}`}
               </span>
               <span className="replay-arrow">▶</span>
             </div>
             <div className="replay-angle" data-testid="replay-angle-label">
-              {angle.label}
+              {angleLabel(angle)}
             </div>
+            {honesty ? (
+              <div className="replay-bug-row" data-testid="angle-honesty">
+                {honesty}
+              </div>
+            ) : null}
           </div>
 
           <p className="hint replay-hint">
-            <b>◀ ▶</b> cut between camera angles · <b>Enter</b> plays/pauses ·{" "}
+            <b>◀ ▶</b> cut between angles · <b>Enter</b> plays/pauses ·{" "}
             <b>Escape</b> back to replays
           </p>
         </PlayerSurface>

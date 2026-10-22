@@ -5,7 +5,7 @@
 //
 // Clip: the moment at/near `t` (else t ± 5 s), trim handles, 16:9 / 9:16, Save clip (the
 // TV's tap route cuts it, the trim route sets the window), then a link to share.
-// Tag: the game's players; link one to a profile or name a new one.
+// Names (job "tag"): the game's players; link one to a profile or name a new one.
 // Review: the review queue as cards with the TV's answers.
 // Search: this game's plays; a hit plays its window right here.
 // Reel: the game's highlight reel (your clips, then the top plays), 16:9 or 9:16, rendered
@@ -43,7 +43,7 @@ const JOBS = ["clip", "tag", "review", "search", "reel"] as const;
 type Job = (typeof JOBS)[number];
 const LABEL: Record<Job, string> = {
   clip: "Clip",
-  tag: "Tag",
+  tag: "Names",
   review: "Review",
   search: "Search",
   reel: "Reel",
@@ -70,6 +70,10 @@ interface JobProps {
   game: Game;
   moments: Moment[];
   fail: Fail;
+  /** Whether a TV showed this game at the last send to it (POST /tv/play answers that).
+   *  Assumed at first: this page is opened from the TV's own code. */
+  tv: boolean;
+  sawTv: (showing: boolean) => void;
 }
 
 export function PhonePage({ gameId }: { gameId: string }) {
@@ -93,6 +97,7 @@ export function PhonePage({ gameId }: { gameId: string }) {
     [api, gameId],
   );
   const [expired, setExpired] = useState(false);
+  const [tv, sawTv] = useState(true);
   const fail = useCallback<Fail>((e) => {
     if (isExpired(e)) setExpired(true);
     return e instanceof Error ? e.message : String(e);
@@ -109,7 +114,7 @@ export function PhonePage({ gameId }: { gameId: string }) {
     );
   if (!game || !moments) return <div className="screen phone">Loading…</div>;
 
-  const props: JobProps = { api, game, moments, fail };
+  const props: JobProps = { api, game, moments, fail, tv, sawTv };
   // All the jobs stay mounted (hidden), so switching tabs keeps a search or a half-done trim.
   return (
     <div
@@ -128,7 +133,7 @@ export function PhonePage({ gameId }: { gameId: string }) {
       </section>
       <section
         role="tabpanel"
-        aria-label="Tag"
+        aria-label="Names"
         hidden={job !== "tag"}
         data-testid="phone-tag"
       >
@@ -680,11 +685,11 @@ function TagJob({ api, game, moments, fail }: JobProps) {
           p.id === pid ? { ...p, name: pr.name, profile_id: pr.profile_id } : p,
         ),
       );
-      setNote(`Tagged as ${pr.name}.`);
+      setNote(`Named ${pr.name}.`);
       setName("");
       setPick(null);
     } catch (e) {
-      setNote(`Not tagged: ${fail(e)}`);
+      setNote(`Not saved: ${fail(e)}`);
     } finally {
       setBusy(false);
     }
@@ -791,7 +796,7 @@ function TagJob({ api, game, moments, fail }: JobProps) {
 
 // ---------------------------------------------------------------- Review
 
-function ReviewJob({ api, game, moments, fail }: JobProps) {
+function ReviewJob({ api, game, moments, fail, tv, sawTv }: JobProps) {
   const {
     data: queue,
     error,
@@ -819,11 +824,19 @@ function ReviewJob({ api, game, moments, fail }: JobProps) {
       t1: t + WATCH_TAIL_S,
     };
     setWatch({ ...w, onTv: null });
+    const seen = (onTv: boolean) => {
+      setWatch({ ...w, onTv });
+      sawTv(onTv);
+    };
     api.playOnTv(game.id, w.t0).then(
-      (onTv) => setWatch({ ...w, onTv }),
-      () => setWatch({ ...w, onTv: false }), // no TV to reach: play it here
+      seen,
+      () => seen(false), // no TV to reach: play it here
     );
   };
+  // The API's prompt names unnamed tracks by id ("Who is #p2?"): the same words as
+  // everywhere else instead ("Who is Player 2?", or their name).
+  const prompt = (q: ReviewQuestion) =>
+    q.prompt.replace(/#(p\d+)\b/g, (_, pid: string) => name(pid));
 
   const answer = (opt: ReviewOption, value?: string) => {
     setBusy(true);
@@ -880,7 +893,7 @@ function ReviewJob({ api, game, moments, fail }: JobProps) {
               {m?.thumb_url ? (
                 <img className="card-thumb" src={m.thumb_url} alt="" />
               ) : null}
-              <p className="card-prompt">{q.prompt}</p>
+              <p className="card-prompt">{prompt(q)}</p>
               <p className="dim">
                 {[
                   q.t != null ? fmtClock(q.t) : null,
@@ -915,7 +928,7 @@ function ReviewJob({ api, game, moments, fail }: JobProps) {
                     disabled={watch?.q === q.id && watch.onTv === null}
                     onClick={() => watchIt(q, q.t as number)}
                   >
-                    Watch it
+                    {tv ? "Watch on TV" : "Watch here"}
                   </button>
                 ) : null}
               </div>
@@ -984,7 +997,7 @@ function ReviewJob({ api, game, moments, fail }: JobProps) {
 
 // ---------------------------------------------------------------- Search
 
-function SearchJob({ api, game, fail }: JobProps) {
+function SearchJob({ api, game, fail, sawTv }: JobProps) {
   const [text, setText] = useState("");
   const [result, setResult] = useState<SearchResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1084,12 +1097,19 @@ function SearchJob({ api, game, fail }: JobProps) {
             onClick={() => {
               setTvNote("Sending…");
               api.playOnTv(game.id, hit.t_start).then(
-                () => setTvNote("Playing on the TV"),
+                (onTv) => {
+                  sawTv(onTv);
+                  setTvNote(
+                    onTv
+                      ? "Playing on the TV"
+                      : "No TV is showing this game, so it plays here.",
+                  );
+                },
                 (e) => setTvNote(`Could not reach the TV: ${fail(e)}`),
               );
             }}
           >
-            Play on the TV
+            Play on TV
           </button>
           {tvNote ? (
             <p className="dim" role="status" data-testid="phone-search-tv-note">

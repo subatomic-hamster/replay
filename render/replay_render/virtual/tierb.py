@@ -493,11 +493,12 @@ class Billboard:
 def label(canvas: np.ndarray, angle: str, synthetic: bool) -> None:
     """Burned-in honesty label, bottom right: the one corner the TV overlay leaves free
     (it puts the play title top left, the angle card bottom left, SYNTHETIC top right)."""
-    names = {"orbit": "ORBIT", "push_in": "PUSH-IN", "broadcast_high": "BROADCAST HIGH"}
+    names = {"orbit": "Orbit", "push_in": "Push-in", "broadcast_high": "Broadcast high"}
     h, w = canvas.shape[:2]
     s = w / 1280.0  # designed at 1280x720, scaled to the output
     font, small = cv2.FONT_HERSHEY_DUPLEX, cv2.FONT_HERSHEY_SIMPLEX
-    head = f"TIER B 2.5D  |  {names.get(angle, angle.upper())}"
+    # plain words, as the TV badge says it (no tier letters): synthetic stays identifiable
+    head = f"VIRTUAL REPLAY  |  {names.get(angle, angle.replace('_', ' ').capitalize())}"
     note = "flat player cutouts on a reconstructed court" + ("  |  SYNTHETIC" if synthetic else "")
     (hw, _), _ = cv2.getTextSize(head, font, 0.6 * s, 1)
     (nw, _), _ = cv2.getTextSize(note, small, 0.45 * s, 1)

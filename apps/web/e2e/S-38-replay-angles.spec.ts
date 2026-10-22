@@ -61,9 +61,9 @@ test("S-38 cycleAngle wraps both ways; tier badges", () => {
   expect(cycleAngle(0, 1, 1)).toBe(0);
   expect(cycleAngle(0, 0, -1)).toBe(0);
   expect([tierBadge("A"), tierBadge("B"), tierBadge("C")]).toEqual([
-    "Real video",
-    "2.5D",
-    "Virtual view",
+    "Camera",
+    "Virtual replay",
+    "Virtual replay",
   ]);
 });
 
@@ -117,7 +117,8 @@ test("S-38 Left/Right cut angles at the same time and play state, wrapping", asy
   await expect
     .poll(async () => (await media(page)).ready, { timeout: 15_000 })
     .toBeGreaterThanOrEqual(2);
-  await expectAngle(page, "Wide", "Real video", "1 / 5");
+  await expectAngle(page, "Wide", "Camera", "1 of 5");
+  await expect(page.getByTestId("angle-honesty")).toHaveCount(0);
   await expect(page.getByTestId("replay-bug")).toHaveAttribute(
     "data-prominent",
     "true",
@@ -126,7 +127,7 @@ test("S-38 Left/Right cut angles at the same time and play state, wrapping", asy
     "data-prominent",
     "false",
     {
-      timeout: 5_000,
+      timeout: 8_000,
     },
   );
 
@@ -139,21 +140,27 @@ test("S-38 Left/Right cut angles at the same time and play state, wrapping", asy
   const t0 = (await media(page)).t;
 
   await cut(page, "ArrowRight", "follow:p1", t0);
-  await expectAngle(page, "Follow · Marcus", "Real video", "2 / 5");
+  await expectAngle(page, "Follow · Marcus", "Camera", "2 of 5");
   await cut(page, "ArrowRight", "broadcast_high", t0);
-  await expectAngle(page, "Broadcast high", "2.5D", "3 / 5");
+  await expectAngle(page, "Broadcast high", "Virtual replay", "3 of 5");
+  await expect(page.getByTestId("angle-honesty")).toHaveText(
+    "Recreated from the real players on a model of the court",
+  );
   await cut(page, "ArrowRight", "orbit", t0);
-  await expectAngle(page, "Orbit", "2.5D", "4 / 5");
+  await expectAngle(page, "Orbit", "Virtual replay", "4 of 5");
   // the players' virtual POVs share one slot: the key player's, Up for the next player
   await cut(page, "ArrowRight", "pov:p1", t0);
-  await expectAngle(page, "Virtual POV · Marcus", "Virtual view", "5 / 5");
+  await expectAngle(page, "Player's view · Marcus", "Virtual replay", "5 of 5");
+  await expect(page.getByTestId("angle-honesty")).toHaveText(
+    "A recreated player's-eye view, not a camera",
+  );
   await cut(page, "ArrowUp", "pov:p2", t0);
-  await expectAngle(page, "Virtual POV · Jordan", "Virtual view", "5 / 5");
+  await expectAngle(page, "Player's view · Jordan", "Virtual replay", "5 of 5");
   await cut(page, "ArrowRight", "wide", t0); // wraps forward
-  await expectAngle(page, "Wide", "Real video", "1 / 5");
+  await expectAngle(page, "Wide", "Camera", "1 of 5");
   await cut(page, "ArrowLeft", "pov:p1", t0); // wraps back, to the key player's POV
   await cut(page, "ArrowLeft", "orbit", t0);
-  await expectAngle(page, "Orbit", "2.5D", "4 / 5");
+  await expectAngle(page, "Orbit", "Virtual replay", "4 of 5");
 
   // Playing, with two cuts faster than a load: still playing, not reset to 0.
   await page.keyboard.press("Enter");

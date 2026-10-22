@@ -17,6 +17,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
+import { TIMELINE_H } from "./components/Timeline";
 import { useDpad } from "./input";
 import { navigate, useRoute } from "./nav";
 import {
@@ -424,6 +425,81 @@ export function Hint({
   );
 }
 
+/** Bottom-right key legend: at most 3 entries, key caps plus short words. It replaces
+ *  every prose <Hint>. `testID="key-legend"`; each entry `testID="legend-<key>"`. */
+export function KeyLegend({
+  items,
+  style,
+}: {
+  items: { k: string; label: string }[]; // k: "Back" | "Select" | "◀▶" | "▲" | "▼" | "▲▼" | "◀" | "Menu"
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      testID="key-legend"
+      pointerEvents="none"
+      style={[
+        styles.legend,
+        // read at render, not at load: Timeline imports this module
+        { bottom: safe.y + TIMELINE_H },
+        style,
+      ]}
+    >
+      {items.slice(0, 3).map(({ k, label }) => (
+        <View
+          key={k}
+          testID={`legend-${k}`}
+          dataSet={{ label }}
+          style={styles.legendItem}
+        >
+          <View style={styles.keyCap}>
+            {/* Barlow sets ◀▶ / ▲▼ touching (one diamond): a thin space apart */}
+            <T style={styles.keyText}>
+              {/^[◀▶▲▼]+$/.test(k) ? [...k].join(" ") : k}
+            </T>
+          </View>
+          <T style={styles.hint}>{label}</T>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Top-left context chip and breadcrumb: "Saturday pickup › Replay angles".
+ *  `testID="context-chip"`, dataSet {kind}. `dot`: a team-colour dot before the text. */
+export function ContextChip({
+  parts,
+  dot,
+  kind = "title",
+}: {
+  parts: string[]; // joined with " › "; the last part is the brightest
+  dot?: string; // colour hex
+  kind?: "title" | "follow" | "pick" | "way" | "room";
+}) {
+  const head = parts.slice(0, -1);
+  return (
+    <View
+      testID="context-chip"
+      dataSet={{ kind }}
+      pointerEvents="none"
+      style={styles.context}
+    >
+      {dot ? (
+        <View
+          testID="context-dot"
+          style={[styles.contextDot, { backgroundColor: dot }]}
+        />
+      ) : null}
+      <T style={[type.meta, styles.contextText]} numberOfLines={1}>
+        {head.length ? (
+          <T style={[type.meta, styles.dimText]}>{head.join(" › ") + " › "}</T>
+        ) : null}
+        {parts[parts.length - 1] ?? ""}
+      </T>
+    </View>
+  );
+}
+
 /** A Floor gradient from the edge (opaque) to `length` away (clear), smoothstep, without a
  *  gradient primitive: one band per step, each its own opacity, on whole physical pixels
  *  so bands neither overlap nor leave seams. (Stacking many faint layers instead darkens:
@@ -780,6 +856,32 @@ export const styles = StyleSheet.create({
   title: { color: color.chalk, marginBottom: sp(2) },
   hint: { color: color.bleacher, fontSize: font.meta, lineHeight: px(34) },
   hintRow: { flexDirection: "row", alignItems: "center", marginTop: sp(3) },
+  legend: {
+    position: "absolute",
+    right: safe.x,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  legendItem: { flexDirection: "row", alignItems: "center", marginLeft: sp(3) },
+  context: {
+    position: "absolute",
+    left: safe.x,
+    top: safe.y,
+    maxWidth: px(1100),
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: sp(2),
+    borderRadius: radius.chip,
+    backgroundColor: "rgba(29, 40, 52, 0.88)",
+  },
+  contextDot: {
+    width: px(16),
+    height: px(16),
+    borderRadius: px(8),
+    marginRight: sp(1.5),
+  },
+  contextText: { color: color.chalk, flexShrink: 1 },
+  dimText: { color: color.bleacher },
   keyCap: {
     borderWidth: px(2),
     borderColor: color.bleacher,

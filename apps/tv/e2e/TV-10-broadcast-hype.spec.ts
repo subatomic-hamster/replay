@@ -194,7 +194,7 @@ test("TV-10 a game with no commentary or broadcast has no Commentary tile", asyn
   await openWatch(page, "g_pickle4");
   await page.keyboard.press("ArrowUp"); // Up from the transport opens Do more
   await expect(page.getByTestId("domore")).toBeVisible();
-  await expect(page.getByTestId("action-bookmark")).toBeAttached();
+  await expect(page.getByTestId("nav-phone")).toBeAttached();
   await expect(page.getByTestId("action-captions")).toHaveCount(0);
   await expect(page.getByTestId("watch")).toHaveAttribute(
     "data-broadcast",

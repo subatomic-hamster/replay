@@ -12,7 +12,7 @@ import type {
 import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
 import { color, px, safe, sp, type } from "../theme";
-import { Chip, Hint, SlideIn, Spinner, T } from "../ui";
+import { Chip, KeyLegend, SlideIn, Spinner, T } from "../ui";
 import { QrCode } from "./QrCode";
 
 const JOBS: { id: PhoneJob; label: string; title: string; body: string }[] = [
@@ -24,14 +24,14 @@ const JOBS: { id: PhoneJob; label: string; title: string; body: string }[] = [
   },
   {
     id: "tag",
-    label: "Tag players",
+    label: "Names",
     title: "Name the players",
     body: "Opens this game at this moment, so you can put a name to each player.",
   },
   {
     id: "review",
     label: "Review",
-    title: "Check the calls",
+    title: "Review the plays",
     body: "Answer the plays Replay was not sure about. The stats update here.",
   },
   {
@@ -165,10 +165,15 @@ export function PhonePanel({
                 </T>
               </>
             ) : null}
-            <Hint k="Back">The game</Hint>
           </View>
         </View>
       </SlideIn>
+      <KeyLegend
+        items={[
+          { k: "◀▶", label: "Choose" },
+          { k: "Back", label: "Close" },
+        ]}
+      />
     </View>
   );
 }

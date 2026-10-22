@@ -52,6 +52,15 @@ test("TV-19 the hero follows focus; a processing card shows a ring and words; Up
   await expect(page.getByTestId("hero-highlights")).toBeVisible();
   // Condensed only when the API says the game has it (no `features` here).
   await expect(page.getByTestId("hero-condensed")).toHaveCount(0);
+  // UI pass: the legend says what Select does and that Up has more ways to watch
+  await expect(page.getByTestId("legend-Select")).toHaveAttribute(
+    "data-label",
+    "Play",
+  );
+  await expect(page.getByTestId("legend-▲")).toHaveAttribute(
+    "data-label",
+    "More ways to watch",
+  );
 
   // The focused card: scale 1.06 and a Chalk ring, after the 150 ms ease-out.
   const ring = card(page, GAME_ID).locator(":scope > div").first();
@@ -89,8 +98,9 @@ test("TV-19 the hero follows focus; a processing card shows a ring and words; Up
     "Finding players, 28%",
   );
   await expect(card(page, GAME_ID).getByTestId("progress-ring")).toHaveCount(0);
-  // Not watchable yet: no Play, Select does nothing.
+  // Not watchable yet: no Play, Select does nothing (and the legend does not offer it).
   await expect(page.getByTestId("hero-play")).toHaveCount(0);
+  await expect(page.getByTestId("key-legend")).toHaveCount(0);
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("home")).toBeVisible();
 
@@ -123,6 +133,39 @@ test("TV-19 the hero follows focus; a processing card shows a ring and words; Up
   expect(await smallText(page)).toEqual([]);
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("settings")).toBeVisible();
+});
+
+test("TV-19 Back on Home exits only on a second press, with a note after the first", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(card(page, GAME_ID)).toHaveAttribute("data-focused", "true");
+  // Handled keys are preventDefault-ed on the web build; an unhandled Back is the one
+  // the Fire TV turns into leaving the app.
+  const back = () =>
+    page.evaluate(() => {
+      const e = new KeyboardEvent("keydown", {
+        key: "Escape",
+        cancelable: true,
+      });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    });
+  const note = page.getByTestId("home-exit-note");
+  expect(await back()).toBe(true);
+  await expect(note).toHaveText("Press Back again to exit");
+  await expect(page.getByTestId("home")).toBeVisible();
+  // any other key cancels it: the next Back only warns again
+  await page.keyboard.press("ArrowRight");
+  await expect(note).toHaveCount(0);
+  expect(await back()).toBe(true);
+  await expect(note).toBeVisible();
+  expect(await back()).toBe(false); // the second press: the app exits
+  // the note goes by itself after 3 s, and so does the guard
+  await page.keyboard.press("ArrowLeft");
+  expect(await back()).toBe(true);
+  await expect(note).toHaveCount(0, { timeout: 5000 });
+  expect(await back()).toBe(true);
 });
 
 test("TV-19 Play on the hero opens the game", async ({ page }) => {

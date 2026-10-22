@@ -9,10 +9,11 @@ import { api } from "../api";
 import { Avatar } from "../components/Avatar";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
-import { color, focusRing, font, px, radius } from "../theme";
+import { color, focusRing, font, px, radius, safe } from "../theme";
 import {
   ApiErrorBanner,
-  Hint,
+  ContextChip,
+  KeyLegend,
   Loading,
   T,
   styles as ui,
@@ -26,6 +27,7 @@ export function Players({ from }: { from?: string }) {
   const { data, error, reload } = useAsync(() => api.listProfiles(), []);
   const [focus, setFocus] = useState(0);
   const list = useMemo(() => data ?? [], [data]);
+  const gameTitle = useGameTitle(from);
 
   const onAction = useCallback(
     (a: DpadAction) => {
@@ -58,7 +60,8 @@ export function Players({ from }: { from?: string }) {
 
   return (
     <View style={ui.safe} testID="players">
-      <T style={ui.h1}>Players</T>
+      <ContextChip parts={[gameTitle ?? "Home", "Players"]} kind="room" />
+      <T style={[ui.h1, styles.head]}>Players</T>
       {list.length === 0 ? (
         <T testID="players-empty">
           No profiles yet. Create one on your phone at /profiles.
@@ -96,12 +99,30 @@ export function Players({ from }: { from?: string }) {
           );
         })}
       </View>
-      <Hint>Arrows move · Select opens a player · Back returns</Hint>
+      <KeyLegend
+        items={[
+          ...(list.length ? [{ k: "Select", label: "Open" }] : []),
+          { k: "Back", label: from ? "Game" : "Home" },
+        ]}
+        style={{ bottom: safe.y }}
+      />
     </View>
   );
 }
 
+/** The title of the game a Players or Profile screen was opened from (`from`), for its
+ *  breadcrumb; null when it was not opened from a game. */
+export function useGameTitle(gameId?: string): string | null {
+  const { data } = useAsync(
+    () => (gameId ? api.getGame(gameId) : Promise.resolve(null)),
+    [gameId],
+  );
+  return gameId ? (data?.title ?? "The game") : null;
+}
+
 const styles = StyleSheet.create({
+  /** below the breadcrumb */
+  head: { marginTop: px(64) },
   grid: { flexDirection: "row", flexWrap: "wrap" },
   card: {
     // COLS cards and their margins inside the 1728 px safe width (5 x (312 + 32))

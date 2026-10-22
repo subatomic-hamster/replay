@@ -114,8 +114,9 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
       x,
       `this spec has a pixel for every landmark the profile asks for (${name})`,
     ).toBeDefined();
-    await expect(page.getByTestId("calib-prompt")).toContainText(
-      name.replace(/_/g, " "),
+    await expect(page.getByTestId("calib-prompt")).toHaveAttribute(
+      "data-target",
+      name,
     );
     await expect(page.getByTestId("calib-prompt")).toContainText(
       `point ${i + 1} of ${order.length}`,
@@ -608,13 +609,11 @@ test("S-53 live profiles: suggestion → link, stat correction, card PNG, reel, 
   // Phone: photo upload (re-encoded by the API) and the consent-gated face enrollment
   await page.goto(`/profiles/${id}`);
   await expect(page.getByTestId("profile-edit")).toBeVisible();
-  await page
-    .getByTestId("profile-photo-input")
-    .setInputFiles({
-      name: "synthetic.png",
-      mimeType: "image/png",
-      buffer: PNG_1PX,
-    });
+  await page.getByTestId("profile-photo-input").setInputFiles({
+    name: "synthetic.png",
+    mimeType: "image/png",
+    buffer: PNG_1PX,
+  });
   await expect(page.getByTestId("profile-note")).toHaveText("Photo saved");
   await expect(page.getByTestId("avatar").first()).toHaveAttribute(
     "data-photo",
@@ -632,13 +631,11 @@ test("S-53 live profiles: suggestion → link, stat correction, card PNG, reel, 
   await expect(page.getByTestId("face-enroll")).toBeDisabled();
   await expect(page.getByTestId("face-photos")).toBeDisabled();
   await page.getByTestId("face-consent").check();
-  await page
-    .getByTestId("face-photos")
-    .setInputFiles({
-      name: "synthetic.png",
-      mimeType: "image/png",
-      buffer: PNG_1PX,
-    });
+  await page.getByTestId("face-photos").setInputFiles({
+    name: "synthetic.png",
+    mimeType: "image/png",
+    buffer: PNG_1PX,
+  });
   await page.getByTestId("face-enroll").click();
   // no face model in the fake pipeline (503), or no face in a 1x1 PNG (422): never enrolled
   await expect(page.getByTestId("face-note")).toHaveText(/^Not enrolled: /);

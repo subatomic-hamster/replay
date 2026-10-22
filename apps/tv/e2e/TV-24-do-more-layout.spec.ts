@@ -1,20 +1,25 @@
-// Do more (docs/ux/redesign.md "Do more"): the tiles in the spec's order, a row that keeps
-// to the 96/54 px safe zone (what does not fit peeks at the edge and scrolls in with focus),
-// the 24 px text floor, and a tile whose feature is still processing: "Getting ready,
-// about N min", focusable but not selectable.
+// Do more (UI pass §4.3): at most 6 tiles in the spec's order, all whole and inside the
+// 96/54 px safe zone at once (no peek, no scrolling), the 24 px text floor; following, the
+// player's card and "Follow someone else" lead and Commentary steps out; a tile whose
+// feature is still processing says "Getting ready, about N min" and cannot be chosen.
 import { expect, test, type Page } from "@playwright/test";
-import { openWatch, smallText } from "./helpers";
+import { enterSelectMode, focusedBoxId, openWatch, smallText } from "./helpers";
 
 const ORDER = [
   "action-follow",
   "nav-replays",
-  "action-free-view",
-  "action-pov",
   "menu-watch",
   "nav-review",
   "action-captions",
   "nav-phone",
-  "action-bookmark",
+];
+const FOLLOWING = [
+  "follow-card",
+  "follow-pick",
+  "nav-replays",
+  "menu-watch",
+  "nav-review",
+  "nav-phone",
 ];
 
 /** The main row's tile ids, left to right. */
@@ -31,19 +36,19 @@ const boxes = (page: Page) =>
     const tiles = [
       ...document.querySelectorAll('[data-testid="domore"] [data-focused]'),
     ];
-    const clip = tiles[0]?.parentElement?.parentElement?.parentElement;
-    const c = clip!.getBoundingClientRect();
+    const c = document
+      .querySelector('[data-testid="domore-clip"]')!
+      .getBoundingClientRect();
     return {
       clip: { left: c.left, right: c.right },
       tiles: tiles.map((el) => {
         const r = el.getBoundingClientRect();
         return {
           id: el.getAttribute("data-testid"),
-          focused: el.getAttribute("data-focused") === "true",
           left: r.left,
           right: r.right,
           top: r.top,
-          // what shows through the clip
+          bottom: r.bottom,
           shown: Math.max(
             0,
             Math.min(r.right, c.right) - Math.max(r.left, c.left),
@@ -54,49 +59,73 @@ const boxes = (page: Page) =>
     };
   });
 
-test("TV-24 Do more: spec order, inside the safe zone, the next tile peeks and scrolls in", async ({
+async function allWhole(page: Page, order: string[]) {
+  await expect.poll(() => rowIds(page)).toEqual(order);
+  await page.waitForTimeout(300); // the 150 ms slide
+  const { clip, tiles } = await boxes(page);
+  expect(clip.left).toBeGreaterThanOrEqual(96 - 24);
+  expect(clip.right).toBeLessThanOrEqual(1920 - 96 + 24);
+  for (const t of tiles) {
+    expect(t.shown, t.id!).toBeGreaterThanOrEqual(t.width - 1); // whole: no peek
+    expect(t.left, t.id!).toBeGreaterThanOrEqual(96 - 12);
+    expect(t.right, t.id!).toBeLessThanOrEqual(1920 - 96 + 12);
+    expect(t.top, t.id!).toBeGreaterThanOrEqual(54);
+    expect(t.bottom, t.id!).toBeLessThanOrEqual(1080 / 2);
+  }
+  expect(await smallText(page)).toEqual([]);
+  // walking to the end moves nothing: the row never scrolls
+  const before = tiles.map((t) => t.left);
+  for (let i = 1; i < order.length; i++)
+    await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId(order[order.length - 1])).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
+  await page.waitForTimeout(200);
+  const after = (await boxes(page)).tiles.map((t) => t.left);
+  for (let i = 0; i < before.length; i++)
+    expect(Math.abs(after[i] - before[i])).toBeLessThan(20); // the 1.06 focus scale aside
+}
+
+test("TV-24 Do more: 6 tiles in the spec's order, all whole inside the safe zone", async ({
   page,
 }) => {
   await openWatch(page);
   await page.keyboard.press("Space"); // pause: nothing moves while measuring
   await page.keyboard.press("ArrowUp");
   await expect(page.getByTestId("domore")).toBeVisible();
-  await expect.poll(() => rowIds(page)).toEqual(ORDER);
-  // The old screens' tiles went to the phone.
-  for (const id of ["nav-clips", "nav-search", "nav-advice", "nav-pair"])
+  // The old tiles: the angles family is one tile, Bookmark lives in Moments, the old
+  // screens' tiles went to the phone.
+  for (const id of [
+    "action-free-view",
+    "action-pov",
+    "action-bookmark",
+    "nav-clips",
+    "nav-search",
+    "nav-advice",
+    "nav-pair",
+  ])
     await expect(page.getByTestId(id)).toHaveCount(0);
-  await page.waitForTimeout(300); // the 150 ms slide
+  await expect(page.getByTestId("menu-watch")).toContainText("Highlights");
+  await expect(page.getByTestId("nav-replays")).toContainText("Replay angles");
+  await allWhole(page, ORDER);
+});
 
-  // The clip is the safe zone plus room for the focus ring; never off the screen.
-  const first = await boxes(page);
-  expect(first.clip.left).toBeGreaterThanOrEqual(96 - 24);
-  expect(first.clip.right).toBeLessThanOrEqual(1920 - 96 + 24);
-  const whole = first.tiles.filter((t) => t.shown >= t.width - 1);
-  const cut = first.tiles.filter((t) => t.shown > 0 && t.shown < t.width - 1);
-  // whole tiles sit in the safe zone (the focused one's 1.06 scale aside)
-  for (const t of whole) {
-    expect(t.left, t.id!).toBeGreaterThanOrEqual(96 - 12);
-    expect(t.right, t.id!).toBeLessThanOrEqual(1920 - 96 + 24);
-    expect(t.top, t.id!).toBeGreaterThanOrEqual(54);
-  }
-  expect(whole.length).toBeGreaterThanOrEqual(5);
-  expect(cut.map((t) => t.id)).toEqual([ORDER[whole.length]]); // one peeks
-  expect(cut[0].shown).toBeLessThan(cut[0].width * 0.6);
-  expect(await smallText(page)).toEqual([]);
-
-  // Right to the end: the focused tile is always whole and inside.
-  for (let i = 1; i < ORDER.length; i++) {
-    await page.keyboard.press("ArrowRight");
-    await expect(page.getByTestId(ORDER[i])).toHaveAttribute(
-      "data-focused",
-      "true",
-    );
-    await page.waitForTimeout(200);
-    const f = (await boxes(page)).tiles.find((t) => t.focused)!;
-    expect(f.shown, f.id!).toBeGreaterThanOrEqual(f.width - 1);
-    expect(f.left).toBeGreaterThanOrEqual(96 - 24);
-    expect(f.right).toBeLessThanOrEqual(1920 - 96 + 24);
-  }
+test("TV-24 following: the player's card and Follow someone else lead, still 6 whole", async ({
+  page,
+}) => {
+  await openWatch(page);
+  await enterSelectMode(page);
+  await expect.poll(() => focusedBoxId(page)).not.toBeNull(); // the markers are in
+  await page.keyboard.press("Enter"); // follow the focused player
+  await expect(page.getByTestId("watch")).toHaveAttribute(
+    "data-mode",
+    "follow",
+  );
+  await page.keyboard.press("Space");
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("domore")).toBeVisible();
+  await allWhole(page, FOLLOWING);
 });
 
 test("TV-24 a pending tile says when, cannot be chosen, and keeps the layout", async ({

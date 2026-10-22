@@ -19,8 +19,8 @@ import {
 import { TextEntryDialog } from "../components/TextEntryDialog";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
-import { color, px, radius, sp, type } from "../theme";
-import { Hint, T, styles as ui } from "../ui";
+import { color, px, radius, safe, sp, type } from "../theme";
+import { ContextChip, KeyLegend, T, styles as ui } from "../ui";
 
 const ITEMS = ["Server address", "API key", "Test connection", "Done"] as const;
 const [ADDRESS, KEY, TEST, DONE] = [0, 1, 2, 3];
@@ -126,6 +126,10 @@ export function Settings() {
   const at = editing ? -1 : focus;
   return (
     <View style={ui.safe} testID="settings">
+      <ContextChip
+        parts={base ? ["Home", "Settings"] : ["Settings"]}
+        kind="room"
+      />
       <T style={[type.display, styles.head]}>Settings</T>
       <Row
         i={ADDRESS}
@@ -153,7 +157,16 @@ export function Settings() {
         The server address is the computer or cloud running Replay. The API key
         is needed by a cloud server. Both are kept on this TV.
       </T>
-      <Hint k="Back">Home</Hint>
+      {editing ? null : (
+        <KeyLegend
+          items={[
+            { k: "▲▼", label: "Move" },
+            { k: "Select", label: focus === DONE ? "Done" : "Choose" },
+            ...(base ? [{ k: "Back", label: "Home" }] : []),
+          ]}
+          style={{ bottom: safe.y }}
+        />
+      )}
       {editing === "base" ? (
         <TextEntryDialog
           idPrefix="api-base"

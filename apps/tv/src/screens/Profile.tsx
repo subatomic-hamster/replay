@@ -28,6 +28,7 @@ import {
 } from "../../../../packages/tv-core/src/profiles";
 import { api } from "../api";
 import { Avatar } from "../components/Avatar";
+import { useGameTitle } from "./Players";
 import { useDpad, type DpadAction } from "../input";
 import { navigate, type Route } from "../nav";
 import {
@@ -35,10 +36,11 @@ import {
   useClockTime,
   type PlayerHandle,
 } from "../playback/PlayerSurface";
-import { color, face, focusRing, font, px } from "../theme";
+import { color, face, focusRing, font, px, safe } from "../theme";
 import {
   ApiErrorBanner,
-  Hint,
+  ContextChip,
+  KeyLegend,
   Loading,
   Pill,
   Spinner,
@@ -51,11 +53,15 @@ const TABS = ["Stats", "Card", "Reel", "Links"] as const;
 const STAT_ROWS = 8;
 const LIST_ROWS = 6;
 
+type LegendItem = { k: string; label: string };
+
 interface TabProps {
   profile: ProfileDoc;
   active: boolean;
   onExit: () => void;
   onChange: (p: ProfileDoc) => void;
+  /** replace the screen's key legend (null: the default) */
+  setKeys: (keys: LegendItem[] | null) => void;
 }
 
 export function Profile({
@@ -73,6 +79,9 @@ export function Profile({
   const [nonce, setNonce] = useState(0);
   const [tab, setTab] = useState(0);
   const [zone, setZone] = useState<"tabs" | "body">("tabs");
+  // a tab's own keys while it is in a sub-mode (the stat editor), else the body's
+  const [tabKeys, setTabKeys] = useState<LegendItem[] | null>(null);
+  const gameTitle = useGameTitle(back?.name === "watch" ? back.gameId : from);
 
   useEffect(() => {
     setError(null);
@@ -102,6 +111,7 @@ export function Profile({
     active: zone === "body",
     onExit: exit,
     onChange: setProfile,
+    setKeys: setTabKeys,
   };
   return (
     <View
@@ -109,6 +119,11 @@ export function Profile({
       testID="profile"
       dataSet={{ profileId, zone, tab: TABS[tab].toLowerCase() }}
     >
+      {/* Back goes to the card when it was opened from one, else to Players */}
+      <ContextChip
+        parts={[back ? (gameTitle ?? "The game") : "Players", profile.name]}
+        kind="room"
+      />
       <View style={styles.head}>
         <Avatar name={profile.name} photo={profile.photo_url} size={128} />
         <View style={{ marginLeft: px(32), flex: 1 }}>
@@ -146,18 +161,28 @@ export function Profile({
       {tab === 1 ? <CardTab {...props} /> : null}
       {tab === 2 ? <ReelTab {...props} /> : null}
       {tab === 3 ? <LinksTab {...props} /> : null}
-      <Hint>
-        {zone === "tabs"
-          ? "Left/Right pick a tab · Down enters it · Back returns to Players"
-          : "Up/Down move · Select acts · Back returns to the tabs"}
-      </Hint>
+      <KeyLegend
+        items={
+          zone === "tabs"
+            ? [
+                { k: "◀▶", label: "Tab" },
+                { k: "▼", label: "Open" },
+                { k: "Back", label: back ? "Game" : "Players" },
+              ]
+            : (tabKeys ?? [
+                { k: "Select", label: "Choose" },
+                { k: "Back", label: "Tabs" },
+              ])
+        }
+        style={{ bottom: safe.y }}
+      />
     </View>
   );
 }
 
 // ---------------------------------------------------------------- stats + corrections
 
-function StatsTab({ profile, active, onExit, onChange }: TabProps) {
+function StatsTab({ profile, active, onExit, onChange, setKeys }: TabProps) {
   const bySport = useMemo(() => profile.stats_by_sport ?? {}, [profile]);
   const sports = Object.keys(bySport);
   const multi = sports.length > 1;
@@ -171,6 +196,20 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
     at: 0 | 1;
   } | null>(null);
   const [note, setNote] = useState("");
+  // the editor's keys; "Use auto" is a pill on the row (Down), so it is not repeated here
+  const inEditor = !!edit;
+  useEffect(() => {
+    setKeys(
+      inEditor
+        ? [
+            { k: "◀▶", label: "Change" },
+            { k: "Select", label: "Save" },
+            { k: "Back", label: "Cancel" },
+          ]
+        : null,
+    );
+    return () => setKeys(null);
+  }, [inEditor, setKeys]);
 
   const save = useCallback(
     (key: string, value: number | null) => {
@@ -253,8 +292,8 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
       <T style={styles.dim} testID="stats-label">
         {bySport[sport]?.label === "auto-detected" ? "Auto-detected" : "Stats"}{" "}
         across {bySport[sport]?.stats.games ?? 0} linked
-        {bySport[sport]?.stats.games === 1 ? " game" : " games"} · corrections
-        are marked EDITED, the auto value is kept
+        {bySport[sport]?.stats.games === 1 ? " game" : " games"} · EDITED marks
+        your changes
       </T>
       {rows.slice(first, first + STAT_ROWS).map((r, k) => {
         const i = first + k;
@@ -315,12 +354,6 @@ function StatsTab({ profile, active, onExit, onChange }: TabProps) {
           {note}
         </T>
       ) : null}
-      {edit ? (
-        <Hint>
-          Left/Right change the value · Select saves · Down: use the auto value
-          · Back cancels
-        </Hint>
-      ) : null}
     </View>
   );
 }
@@ -332,6 +365,7 @@ function CardTab({ profile, active, onExit }: TabProps) {
   const [note, setNote] = useState("");
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
+  const bestGame = useGameTitle(card?.best_moment?.game_id);
 
   useEffect(() => {
     api
@@ -426,7 +460,7 @@ function CardTab({ profile, active, onExit }: TabProps) {
         </T>
         {card.best_moment ? (
           <T style={styles.dim} testID="card-best">
-            Best moment: {card.best_moment.game_id} at{" "}
+            Best moment: {bestGame} at{" "}
             {fmtClock(card.best_moment.t ?? card.best_moment.t_start)}
           </T>
         ) : null}
@@ -754,7 +788,12 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
 }
 
 const styles = StyleSheet.create({
-  head: { flexDirection: "row", alignItems: "center", marginBottom: px(16) },
+  head: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: px(56), // below the breadcrumb
+    marginBottom: px(16),
+  },
   badge: {
     backgroundColor: color.chalk,
     paddingHorizontal: px(16),

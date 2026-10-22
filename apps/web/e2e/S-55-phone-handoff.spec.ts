@@ -78,6 +78,14 @@ test("S-55 the token comes from the fragment, leaves the address bar and survive
   await expect(page.getByTestId("phone-search")).toBeVisible();
   await expect(page.getByTestId("phone-review")).toBeHidden();
   expect(new URL(page.url()).searchParams.get("job")).toBe("search");
+  // UI pass: the tab names match the TV's On your phone panel
+  await expect(page.getByRole("tab")).toHaveText([
+    "Clip",
+    "Names",
+    "Review",
+    "Search",
+    "Reel",
+  ]);
   await page.getByTestId("phone-tab-tag").focus();
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("phone-tag")).toBeVisible();
@@ -230,7 +238,7 @@ test("S-57 Tag: players with thumbs; link one to a profile, name another as some
   await page
     .locator('[data-testid="tag-profile"][data-profile-id="pr_00000000a002"]')
     .click();
-  await expect(page.getByTestId("tag-note")).toHaveText("Tagged as Jordan.");
+  await expect(page.getByTestId("tag-note")).toHaveText("Named Jordan.");
   await expect(
     page.locator('[data-testid="tag-player"][data-player-id="p2"]'),
   ).toHaveAttribute("data-name", "Jordan");
@@ -245,7 +253,7 @@ test("S-57 Tag: players with thumbs; link one to a profile, name another as some
   await page.locator('[data-testid="tag-player"][data-player-id="p4"]').click();
   await page.getByTestId("tag-new-name").fill("Riley");
   await page.getByTestId("tag-new-save").click();
-  await expect(page.getByTestId("tag-note")).toHaveText("Tagged as Riley.");
+  await expect(page.getByTestId("tag-note")).toHaveText("Named Riley.");
   await expect(
     page.locator('[data-testid="tag-player"][data-player-id="p4"]'),
   ).toHaveAttribute("data-name", "Riley");
@@ -266,6 +274,8 @@ test("S-58b Review: Watch it plays the play here with no TV, on the TV when one 
     .locator('[data-testid="review-card"]')
     .filter({ has: page.getByTestId("review-watch") })
     .first();
+  // the page comes from the TV's code, so it offers the TV until a send says otherwise
+  await expect(card.getByTestId("review-watch")).toHaveText("Watch on TV");
   await card.getByTestId("review-watch").click();
   // no TV heartbeat: the clip plays on the card, from 4 s before the play
   const video = card.getByTestId("review-watch-video");
@@ -273,6 +283,7 @@ test("S-58b Review: Watch it plays the play here with no TV, on the TV when one 
   await expect(card.getByTestId("review-watch-note")).toHaveText(
     "No TV is showing this game, so it plays here.",
   );
+  await expect(card.getByTestId("review-watch")).toHaveText("Watch here");
   const t0 = Number(await video.getAttribute("data-t-start"));
   expect(
     Number(await video.getAttribute("data-t-end")) - t0,
@@ -338,6 +349,8 @@ test("S-58 Review: the queue as cards with the TV's answers, a typed name includ
   const who = page
     .locator('[data-testid="review-card"][data-kind="identity"]')
     .first();
+  // UI pass: the same words as the TV, never a raw track id
+  await expect(who.locator(".card-prompt")).toHaveText("Who is Player 2?");
   await who.getByTestId("review-action-type-a-name").click();
   await page.getByTestId("review-text").fill("Sam");
   await page.getByTestId("review-text-save").click();
@@ -389,15 +402,21 @@ test("S-59 Search: this game's plays; a hit plays its window on the phone", asyn
   await expect(page.getByTestId("phone-search-interpretation")).toBeVisible();
 });
 
-test("S-59 Play on the TV: a hit's start goes to the TV's command queue", async ({
+test("S-59 Play on TV: a hit's start goes to the TV's command queue", async ({
   page,
 }) => {
+  // a TV showing this game (its heartbeat); without one the note says so (below)
+  await page.addInitScript((id) => {
+    (globalThis as { __replayMockTvShowing?: string }).__replayMockTvShowing =
+      id;
+  }, GAME_ID);
   await open(page, "job=search");
   await page.getByTestId("phone-search-input").fill("Marcus scores");
   await page.getByTestId("phone-search-go").click();
   const hit = page.getByTestId("phone-search-hit").nth(1);
   const t0 = Number(await hit.getAttribute("data-t-start"));
   await hit.click();
+  await expect(page.getByTestId("phone-search-tv")).toHaveText("Play on TV");
   await page.getByTestId("phone-search-tv").click();
   await expect(page.getByTestId("phone-search-tv-note")).toHaveText(
     "Playing on the TV",
@@ -409,6 +428,16 @@ test("S-59 Play on the TV: a hit's start goes to the TV's command queue", async 
   // another hit clears the note
   await page.getByTestId("phone-search-hit").first().click();
   await expect(page.getByTestId("phone-search-tv-note")).toHaveCount(0);
+
+  // no TV showing the game: an honest note, not "Playing on the TV"
+  await page.evaluate(() => {
+    (globalThis as { __replayMockTvShowing?: string }).__replayMockTvShowing =
+      "nobody";
+  });
+  await page.getByTestId("phone-search-tv").click();
+  await expect(page.getByTestId("phone-search-tv-note")).toHaveText(
+    "No TV is showing this game, so it plays here.",
+  );
 });
 
 test("S-60 Reel: the highlight reel, 9:16, rendered on the server, then a download link", async ({

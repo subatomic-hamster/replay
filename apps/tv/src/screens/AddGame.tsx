@@ -17,8 +17,9 @@ import { navigate } from "../nav";
 import { color, px, radius, safe, sp, type } from "../theme";
 import {
   ApiErrorBanner,
+  ContextChip,
   Focusable,
-  Hint,
+  KeyLegend,
   Spinner,
   T,
   styles as ui,
@@ -110,6 +111,7 @@ export function AddGame() {
   if (!created) {
     return (
       <View style={ui.safe} testID="add-game">
+        <ContextChip parts={["Home", "Add game"]} kind="room" />
         <T style={[type.display, styles.head]}>Add a game</T>
         <T style={[type.body, styles.sub]}>Which sport?</T>
         <View style={styles.tiles}>
@@ -141,9 +143,14 @@ export function AddGame() {
             <T style={[type.body, styles.busyText]}>Creating the game</T>
           </View>
         ) : null}
-        <View style={styles.foot}>
-          <Hint k="Back">Home</Hint>
-        </View>
+        <KeyLegend
+          items={[
+            { k: "◀▶", label: "Sport" },
+            { k: "Select", label: "Choose" },
+            { k: "Back", label: "Home" },
+          ]}
+          style={styles.legend}
+        />
       </View>
     );
   }
@@ -157,6 +164,7 @@ export function AddGame() {
       testID="add-game"
       dataSet={{ gameId: created.id }}
     >
+      <ContextChip parts={["Home", "Add game"]} kind="room" />
       {created.upload_page_url ? (
         <QrCode text={created.upload_page_url} size={520} testID="add-qr" />
       ) : (
@@ -208,8 +216,8 @@ export function AddGame() {
           You can go back to Home. The game appears there and plays as soon as
           it's ready.
         </T>
-        <Hint k="Back">Home</Hint>
       </View>
+      <KeyLegend items={[{ k: "Back", label: "Home" }]} style={styles.legend} />
     </View>
   );
 }
@@ -234,7 +242,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: sp(3),
   },
-  foot: { position: "absolute", left: safe.x, bottom: safe.y },
+  legend: { bottom: safe.y },
   pair: { flexDirection: "row", alignItems: "center" },
   side: { flex: 1, marginLeft: sp(10) },
   url: { color: color.chalk, marginTop: sp(3) },

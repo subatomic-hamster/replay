@@ -11,9 +11,9 @@ import {
   type ReviewQuestion,
 } from "../../../../packages/tv-core/src/discovery";
 import {
-  autoDetectedLabel,
   boxColumns,
   courtViewBox,
+  fmtDuration,
   reviewPanels,
 } from "../../../../packages/tv-core/src/display";
 import type { Stats } from "../../../../packages/tv-core/src/types";
@@ -26,7 +26,8 @@ import { navigate } from "../nav";
 import { color, font, px } from "../theme";
 import {
   ApiErrorBanner,
-  Hint,
+  ContextChip,
+  KeyLegend,
   Loading,
   Pill,
   T,
@@ -148,25 +149,34 @@ export function Review({ gameId }: { gameId: string }) {
   );
   const name = (pid?: string | null) =>
     pid ? (game.players.find((p) => p.id === pid)?.name ?? trackName(pid)) : "";
-  const columns = boxColumns(stats);
+  // The API names unnamed tracks by id ("Who is #p2?"): the same words as everywhere else
+  // ("Who is Player 2?", or their name), as the phone does.
+  const prompt = (s: string) =>
+    s.replace(/#(p\d+)\b/g, (_, pid: string) => name(pid));
+  // plain words on screen: no confidence figures, no distance in metres (D-48's numbers
+  // stay in the API and the data-* attributes)
+  const columns = boxColumns(stats).filter(
+    (c) => c.label !== "Conf" && c.label !== "Dist m",
+  );
   const box = stats?.box_score ?? [];
 
   return (
     <View style={ui.safe}>
-      <T style={ui.h1} numberOfLines={1}>
-        Review — {game.title}
-      </T>
+      <ContextChip parts={[game.title, "Stats", "Review plays"]} kind="room" />
+      <View style={styles.crumbGap} />
       <T
         testID="auto-detected-label"
         dataSet={{ confidence: stats?.confidence ?? "" }}
         style={{ color: color.dim }}
       >
-        {autoDetectedLabel(stats)}
+        {current
+          ? "Auto-detected. Answer these to fix the stats."
+          : "Auto-detected."}
       </T>
 
       <View style={styles.section}>
         <T style={ui.h2}>
-          Review queue{Array.isArray(queue) ? ` (${queue.length})` : ""}
+          Plays to review{Array.isArray(queue) ? ` (${queue.length})` : ""}
         </T>
         {current ? (
           <View
@@ -179,13 +189,10 @@ export function Review({ gameId }: { gameId: string }) {
             }}
           >
             <T>
-              {current.prompt}
-              {current.t != null ? ` · ${current.t.toFixed(1)} s` : ""}
+              {prompt(current.prompt)}
+              {current.t != null ? ` · ${fmtDuration(current.t)}` : ""}
               {current.player_id && current.kind !== "identity"
                 ? ` · ${name(current.player_id)}`
-                : ""}
-              {current.confidence != null
-                ? ` · confidence ${current.confidence.toFixed(2)}`
                 : ""}
             </T>
             <View style={styles.row}>
@@ -199,7 +206,7 @@ export function Review({ gameId }: { gameId: string }) {
               ))}
               {linkable ? (
                 <Pill
-                  label="Link to profile…"
+                  label="Link to a profile"
                   focused={row === 0 && focus === current.options.length}
                   testID="review-link-profile"
                 />
@@ -385,15 +392,20 @@ export function Review({ gameId }: { gameId: string }) {
         ) : null}
       </View>
 
-      <Hint>
-        Left/Right pick an answer · Down switches the heatmap player · Select
-        confirms · Back returns
-      </Hint>
+      {/* Down still switches the heatmap player; the legend keeps to three keys */}
+      <KeyLegend
+        items={[
+          ...(current ? [{ k: "◀▶", label: "Answer" }] : []),
+          ...(current ? [{ k: "Select", label: "Confirm" }] : []),
+          { k: "Back", label: "Stats" },
+        ]}
+        style={styles.legend}
+      />
 
       {typing ? (
         <TextEntryDialog
           idPrefix="review-name"
-          title={current?.prompt ?? "Name"}
+          title={current ? prompt(current.prompt) : "Name"}
           format={titleCase}
           onCancel={() => setTyping(null)}
           onSubmit={(text) => {
@@ -422,6 +434,16 @@ export function Review({ gameId }: { gameId: string }) {
 }
 
 const styles = StyleSheet.create({
+  // the breadcrumb chip's line (it is drawn absolutely, top-left)
+  crumbGap: { height: px(56) },
+  // at the bottom of the room's flow, right-aligned: never over the box score
+  legend: {
+    position: "relative",
+    right: 0,
+    bottom: 0,
+    marginTop: "auto",
+    alignSelf: "flex-end",
+  },
   section: { marginTop: px(16) },
   row: { flexDirection: "row", flexWrap: "wrap", marginTop: px(12) },
   panels: { flexDirection: "row", marginTop: px(16) },

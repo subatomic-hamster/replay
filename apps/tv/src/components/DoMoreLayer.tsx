@@ -1,52 +1,42 @@
-// The player's Do more layer (Up / Menu; docs/ux/redesign.md "Do more"): one row of large
-// actions over a soft scrim, in the spec's order (Follow player, Angles, Free view, Watch,
-// Stats, Commentary, On your phone, then Bookmark). The row keeps inside the safe zone:
-// what does not fit is clipped at its edge, the next tile peeking, and the row scrolls with
-// focus. A tile whose feature is still processing says "Getting ready, about N min" and
-// cannot be chosen. A tile with `children` opens its own row in place (Follow player's
-// actions, Player POV's player chips, Angles' thumbnails, Watch's ways), the current child marked; Back or Down
-// returns to the main row, and from there closes the layer.
-import { useCallback, useState, type ReactNode } from "react";
+// The player's Do more layer (Up / Menu; UI pass §4.3): one row of at most 6 large
+// actions over a soft scrim, all on screen at once (Follow a player, Replay angles,
+// Highlights, Stats, Commentary, On your phone; following, the player's card and "Follow
+// someone else" lead). A tile whose feature is still processing says "Getting ready, about
+// N min" and cannot be chosen. A tile with `children` (Highlights' ways) opens its own row
+// in place, the current child marked; Back or Down returns to the main row, and from there
+// closes the layer. Menu closes it from either row.
+import { useCallback, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useDpad, type DpadAction } from "../input";
 import { color, face, px, radius, safe, sp, type } from "../theme";
-import { Fade, Focusable, SlideIn, T } from "../ui";
-import { Avatar } from "./Avatar";
+import { Fade, Focusable, KeyLegend, SlideIn, T } from "../ui";
 
 export interface Tile {
-  /** testID; the old menu's ids where the concept survives (nav-review, action-tag…) */
+  /** testID; the old menu's ids where the concept survives (nav-review, menu-watch…) */
   id: string;
   label: string;
   sub?: string;
+  /** a team-colour dot before the label (the followed player's card) */
+  dot?: string;
   /** still processing: shown, focusable, not selectable */
   pending?: boolean;
   /** a toggle's state, or the current choice in a sub-row (marked) */
   on?: boolean;
   run?: () => void;
   children?: Tile[];
-  /** How `children` draw: large tiles (default), player chips, or 16:9 thumbnails. */
-  view?: View_;
-  /** a chip's face: the profile photo, else initials */
-  avatar?: { name: string; photo: string | null };
-  /** a thumbnail's picture */
-  art?: ReactNode;
 }
-type View_ = "tiles" | "chips" | "thumbs";
 
 const RING_BOX = px(8); // Focusable's ring + gap, each side
 const GAP = sp(3);
-const SIZE: Record<View_, { w: number; h: number }> = {
-  tiles: { w: px(280), h: px(168) },
-  chips: { w: px(280), h: px(88) },
-  thumbs: { w: px(304), h: px(171) },
-};
+/** 6 tiles fit the 1728 px safe width: 6 × (248 + 16 + 24) − 24 = 1704. Tall enough for
+ *  a two-line label over a one-line sub, or the reverse. */
+const TILE = { w: px(248), h: px(184) };
 /** The row's clip: the safe zone, plus room for the focused tile's ring and 1.06 scale. */
 const SCALE_ROOM = px(12);
 const CLIP_W = px(1920) - 2 * safe.x + 2 * SCALE_ROOM;
-const pitch = (v: View_) => SIZE[v].w + 2 * RING_BOX + GAP;
-/** Whole items that fit in the safe zone; the next one peeks. */
-const shown = (v: View_) =>
-  Math.max(1, Math.floor((px(1920) - 2 * safe.x + GAP) / pitch(v)));
+const PITCH = TILE.w + 2 * RING_BOX + GAP;
+/** Whole tiles that fit in the safe zone (a longer row scrolls with focus). */
+const SHOWN = Math.max(1, Math.floor((px(1920) - 2 * safe.x + GAP) / PITCH));
 
 export function DoMoreLayer({
   tiles,
@@ -64,7 +54,6 @@ export function DoMoreLayer({
   const open = tiles.find((t) => t.id === openId && t.children) ?? null;
   const row = open?.children ?? tiles;
   const rowKey = open?.id ?? "main";
-  const view: View_ = open?.view ?? "tiles";
   const k = Math.max(
     0,
     row.findIndex((t) => t.id === at[rowKey]),
@@ -74,7 +63,8 @@ export function DoMoreLayer({
     (a: DpadAction) => {
       const focus = (n: number) =>
         row[n] && setAt({ ...at, [rowKey]: row[n].id });
-      if (a === "back" || a === "down") {
+      if (a === "menu") onClose();
+      else if (a === "back" || a === "down") {
         if (open) setOpenId(null);
         else onClose();
       } else if (a === "playpause") onPlayPause();
@@ -94,26 +84,20 @@ export function DoMoreLayer({
   );
   useDpad(onAction);
 
-  const { w, h } = SIZE[view];
-  const shift = Math.max(0, k - (shown(view) - 1)) * pitch(view);
+  const shift = Math.max(0, k - (SHOWN - 1)) * PITCH;
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Fade
-        side="top"
-        length={px(view === "thumbs" ? 600 : 480)}
-        strength={0.85}
-      />
+      <Fade side="top" length={px(520)} strength={0.85} />
       <SlideIn
         from="above"
         style={styles.layer}
         testID="domore"
         dataSet={{ row: open ? open.id : "main" }}
       >
-        <T style={[type.meta, styles.crumb]}>{open ? open.label : "Do more"}</T>
-        <View
-          style={[styles.clip, view === "chips" && styles.toEdge]}
-          testID="domore-clip"
-        >
+        <T style={[type.meta, styles.crumb]} testID="domore-crumb">
+          {open ? `Do more › ${open.label}` : "Do more"}
+        </T>
+        <View style={styles.clip} testID="domore-clip">
           <View style={[styles.row, { transform: [{ translateX: -shift }] }]}>
             {row.map((t, n) => {
               const on = n === k;
@@ -121,9 +105,8 @@ export function DoMoreLayer({
                 <View key={t.id} style={{ marginRight: GAP }}>
                   <Focusable
                     focused={on}
-                    round={view === "chips" ? radius.chip : radius.card}
-                    // text and avatars need no clip (cheaper over the video)
-                    clip={view === "thumbs"}
+                    round={radius.card}
+                    clip={false} // text needs no clip (cheaper over the video)
                     lift={false}
                     testID={t.id}
                     dataSet={{
@@ -137,73 +120,43 @@ export function DoMoreLayer({
                   >
                     <View
                       style={[
-                        { width: w, height: h },
-                        // a thumb's art fills the tile edge to edge (no text padding)
-                        view === "chips"
-                          ? styles.chip
-                          : view === "tiles" && styles.tile,
-                        t.on && !on && view !== "thumbs" && styles.current,
+                        styles.tile,
+                        t.on && !on && styles.current,
                         t.pending && { opacity: 0.55 },
                       ]}
                     >
-                      {view === "thumbs" ? (
-                        t.art
-                      ) : view === "chips" ? (
-                        <>
-                          {t.avatar ? (
-                            <View style={styles.face}>
-                              <Avatar
-                                name={t.avatar.name}
-                                photo={t.avatar.photo}
-                                size={56}
-                              />
-                            </View>
-                          ) : null}
-                          <T
-                            style={[type.body, styles.semi, { flexShrink: 1 }]}
-                            numberOfLines={1}
-                          >
-                            {t.label}
-                          </T>
-                        </>
-                      ) : (
-                        <>
-                          <T style={[type.body, styles.semi]} numberOfLines={1}>
-                            {t.label}
-                          </T>
-                          {t.sub ? (
-                            <T
-                              style={[type.meta, styles.sub]}
-                              numberOfLines={2}
-                            >
-                              {t.sub}
-                            </T>
-                          ) : null}
-                        </>
-                      )}
-                    </View>
-                  </Focusable>
-                  {view === "thumbs" ? (
-                    <View style={[styles.caption, { width: w }]}>
-                      <T
-                        style={[type.body, !on && styles.dim]}
-                        numberOfLines={1}
-                      >
-                        {t.on ? `${t.label}, now` : t.label}
-                      </T>
+                      <View style={styles.head}>
+                        {t.dot ? (
+                          <View
+                            style={[styles.dot, { backgroundColor: t.dot }]}
+                          />
+                        ) : null}
+                        <T
+                          style={[type.body, styles.semi, styles.label]}
+                          numberOfLines={2}
+                        >
+                          {t.label}
+                        </T>
+                      </View>
                       {t.sub ? (
-                        <T style={[type.meta, styles.dim]} numberOfLines={1}>
+                        <T style={[type.meta, styles.sub]} numberOfLines={2}>
                           {t.sub}
                         </T>
                       ) : null}
                     </View>
-                  ) : null}
+                  </Focusable>
                 </View>
               );
             })}
           </View>
         </View>
       </SlideIn>
+      <KeyLegend
+        items={[
+          { k: "Select", label: "Choose" },
+          { k: "Back", label: open ? "Do more" : "Close" },
+        ]}
+      />
     </View>
   );
 }
@@ -225,21 +178,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: SCALE_ROOM,
     paddingVertical: SCALE_ROOM,
   },
-  // Chips run on off the screen edge, like Moments' filter chips: a chip cut at the safe
-  // edge read as a broken label ("P6 Pla"). `shift` still keeps the focused one inside it.
-  toEdge: { width: px(1920) - safe.x + SCALE_ROOM },
   row: { flexDirection: "row" },
-  tile: { padding: sp(3) },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingLeft: sp(2),
-    paddingRight: sp(3),
+  tile: { width: TILE.w, height: TILE.h, padding: sp(2.5) },
+  head: { flexDirection: "row", alignItems: "flex-start" },
+  dot: {
+    width: px(16),
+    height: px(16),
+    borderRadius: px(8),
+    marginTop: px(12),
+    marginRight: sp(1),
   },
-  face: { marginRight: sp(2) },
+  label: { flexShrink: 1 },
   current: { backgroundColor: color.line },
   semi: { fontFamily: face.semibold },
   sub: { color: color.bleacher, marginTop: sp(1) },
-  dim: { color: color.bleacher },
-  caption: { marginTop: sp(1), marginLeft: RING_BOX },
 });

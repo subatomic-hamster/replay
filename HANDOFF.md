@@ -10,6 +10,40 @@ mini challenges). Submissions close **2026-10-23**; check the exact time on Devp
 
 ---
 
+## 0. This copy lives on hfbox
+
+The owner moved the project from their laptop to hfbox for the handoff:
+
+- **Repo:** `/workspace/wt/replay` on hfbox. It is the full working copy, with `.git`,
+  `REPLAY_PLAN.md`, `data/`, `docs/evidence/local/`, `infra/build/`, `infra/cdk.out/`
+  and `yolo11n.pt`.
+  - The `samples/real/` media are symlinks into the shared copy at
+    `/workspace/wt/replay-env/samples-real/`. The git-tracked text files there are real
+    files.
+  - Not copied: `node_modules` and `.venv`. Use the shared venv (`source
+/workspace/wt/replay-env/env.sh`) and run `pnpm install` in `apps/tv` and `apps/web`
+    when you need them.
+- **Old agent's notes:** `/workspace/wt/replay-notes/memory/`. Everything in them that
+  still matters is folded into this file.
+- **Laptop copy:** the owner's laptop still has the original at
+  `~/Documents/projects/hackathon_projects/firestick/replay`, frozen at the handoff
+  commit. Treat the hfbox copy as the main one from now on.
+
+Because you work on the box itself, a few things change from the rest of this file:
+
+- **Gate and builds.** The "rsync to hfbox" steps in §5–§6 become local copies on the
+  box (`rsync` from `/workspace/wt/replay` or an index snapshot of it into
+  `replay-orch`, `replay-deploy-next` or `replay-deploy`). The locks and the
+  shared-tmux rules still apply.
+- **Fire TV Stick.** The Stick is plugged into the owner's laptop over USB. There is
+  **no adb from hfbox**, so device checks (§7) need the owner, or an agent on the laptop.
+- **AWS deploy.** The `replay` AWS profile and the `cdk deploy` run stay on the owner's
+  laptop. Build `infra/cdk.out` here; the owner pulls it and deploys (§6).
+- **Pushing.** hfbox has git but probably no GitHub credentials for `origin`. Ask the
+  owner before pushing; they may push from the laptop instead.
+
+---
+
 ## 1. What Replay is
 
 You put one phone on a tripod to film an amateur court-sports game (basketball first;

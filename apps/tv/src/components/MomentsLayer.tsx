@@ -92,13 +92,16 @@ export function MomentsLayer({
   useEffect(() => onCue(zone === "cards" ? cur : null), [cur, zone, onCue]);
   useEffect(() => () => onCue(null), [onCue]);
 
+  // Steps update from the pending index, not this render's: on a Fire TV a held arrow can
+  // repeat faster than the row re-renders, and every key must still move one card.
   const onAction = useCallback(
     (a: DpadAction) => {
       if (a === "back") onClose();
       else if (a === "playpause") onPlayPause();
       else if (zone === "chips") {
-        if (a === "left") setCi(Math.max(0, ci - 1));
-        else if (a === "right") setCi(Math.min(filters.length - 1, ci + 1));
+        if (a === "left") setCi((c) => Math.max(0, c - 1));
+        else if (a === "right")
+          setCi((c) => Math.min(filters.length - 1, c + 1));
         else if (a === "up") onClose();
         else if (a === "down") setZone("cards");
         else if (a === "select") {
@@ -108,8 +111,9 @@ export function MomentsLayer({
           setMi(Math.max(0, nearestIndex(next, cur?.t ?? t)));
           setZone("cards");
         }
-      } else if (a === "left") setMi(Math.max(0, i - 1));
-      else if (a === "right") setMi(Math.min(list.length - 1, i + 1));
+      } else if (a === "left")
+        setMi((m) => Math.max(0, Math.min(m, list.length - 1) - 1));
+      else if (a === "right") setMi((m) => Math.min(list.length - 1, m + 1));
       else if (a === "up") {
         if (!moments.length) return onClose(); // no chips to climb to
         setCi(Math.min(fi, filters.length - 1));
@@ -123,7 +127,6 @@ export function MomentsLayer({
       moments,
       cur,
       t,
-      i,
       list,
       fi,
       onClose,

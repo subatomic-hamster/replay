@@ -97,3 +97,33 @@ test("TV-21 a bookmark from Do more lands on the line and gets its own chip", as
   await expect(chip(page, "bookmark")).toHaveText("Your bookmarks");
   await expect(cards(page)).toHaveCount(5);
 });
+
+/** Arrow keydowns sent in one task, before React re-renders: a held remote on a slow Fire
+ *  TV (JS repeat every 120 ms, a render longer than that) delivers keys like this. */
+const burst = (page: Page, key: string, n: number) =>
+  page.evaluate(
+    ([k, count]) => {
+      for (let i = 0; i < count; i++)
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: k }));
+    },
+    [key, n] as const,
+  );
+
+test("TV-21 keys faster than a render all count: cards and chips", async ({
+  page,
+}) => {
+  await openWatch(page, GAME_ID, "?t=2.5");
+  await page.keyboard.press("Space");
+  await page.keyboard.press("ArrowDown");
+  await expect(focusedCard(page)).toHaveAttribute("data-moment-id", "e_0001");
+  await burst(page, "ArrowRight", 2);
+  await expect(focusedCard(page)).toHaveAttribute("data-moment-id", "e_0003");
+  await burst(page, "ArrowLeft", 2);
+  await expect(focusedCard(page)).toHaveAttribute("data-moment-id", "e_0001");
+  await page.keyboard.press("ArrowUp");
+  await burst(page, "ArrowRight", 2); // All 4 → Scores → Marcus
+  await expect(page.getByTestId("moment-filter").nth(2)).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
+});

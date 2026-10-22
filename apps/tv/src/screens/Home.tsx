@@ -182,7 +182,13 @@ export function Home() {
           navigate(actions[bi].to);
       } else if (z === "games") {
         if (a === "left" || a === "right") {
-          setCardId(ids[clamp(gi + (a === "right" ? 1 : -1), ids.length)]);
+          // From the pending focus, not this render's: a held arrow on a Fire TV can
+          // repeat faster than Home re-renders, and every key must still move one card.
+          const d = a === "right" ? 1 : -1;
+          setCardId((c) => {
+            const at = c === null ? -1 : ids.indexOf(c);
+            return ids[clamp((at < 0 ? gi : at) + d, ids.length)];
+          });
           setBtn(0);
         } else if (a === "up") {
           setBtn(0);
@@ -198,7 +204,7 @@ export function Home() {
         }
       } else {
         if (a === "left" || a === "right")
-          setPi(clamp(pi + (a === "right" ? 1 : -1), players.length + 1));
+          setPi((p) => clamp(p + (a === "right" ? 1 : -1), players.length + 1));
         else if (a === "up") setZone(empty ? "hero" : "games");
         else if (a === "select") {
           const p = players[pi];

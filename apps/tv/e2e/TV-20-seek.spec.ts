@@ -124,6 +124,15 @@ test("TV-20 a tap seeks 10 s with a sprite preview, then resumes from there", as
   expect((await media(page)).t).toBeGreaterThan(at - 0.2);
 });
 
+test("TV-20 the storyboard sheets load with the game, before the first seek", async ({
+  page,
+}) => {
+  const sheet = page.waitForRequest(/\/mock\/storyboard\/0000\.jpg/);
+  await openWatch(page, "g_mock02", "?t=1");
+  await sheet; // no key pressed yet
+  await expect(preview(page)).toHaveCount(0);
+});
+
 test("TV-20 holding accelerates: 10 s, then 30 s after 1 s, 1 min after 3 s, 2 min after 5 s", async ({
   page,
 }) => {

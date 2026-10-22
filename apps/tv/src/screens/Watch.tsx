@@ -23,7 +23,13 @@
 // (stored every 5 s, and at once on leaving), so a sub-screen's Back or Home's Resume
 // comes back to the same time and play state, also after an app restart.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, StyleSheet, View, useWindowDimensions } from "react-native";
+import {
+  Animated,
+  Image,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import {
   broadcastOf,
   captionAt,
@@ -305,7 +311,13 @@ export function Watch({
     if (!info || !sbUrl) return;
     let on = true;
     api.getStoryboard(info).then(
-      (s) => on && setStoryboard(s),
+      (s) => {
+        if (!on) return;
+        setStoryboard(s);
+        // A real game's first sheet is ~1 MB (3200x1800): fetched only at the first seek,
+        // a 32-bit Fire TV showed an empty preview frame for seconds.
+        for (const u of s.sheets) Image.prefetch(u).catch(() => {});
+      },
       () => on && setStoryboard(null),
     );
     return () => {

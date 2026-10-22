@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  react-native-video@6.19.3: 85e03c93ba3191e243848fc37b4a5fe0864639583fc54f4d183585df099acc38
+  react-native-video@6.19.3: 3dbc87b3d6524530a7910249acd6d58ecc5609e5f79c232d40939a10455b25e3
 
 importers:
 
@@ -25,7 +25,7 @@ importers:
         version: react-native-tvos@0.87.1-1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native-community/cli@20.2.0(supports-color@8.1.1)(typescript@5.9.3))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react-native-tvos@0.87.1-1)(react@19.2.3)(supports-color@8.1.1)
       react-native-video:
         specifier: 6.19.3
-        version: 6.19.3(patch_hash=85e03c93ba3191e243848fc37b4a5fe0864639583fc54f4d183585df099acc38)(react-native-tvos@0.87.1-1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native-community/cli@20.2.0(supports-color@8.1.1)(typescript@5.9.3))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react-native-tvos@0.87.1-1)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
+        version: 6.19.3(patch_hash=3dbc87b3d6524530a7910249acd6d58ecc5609e5f79c232d40939a10455b25e3)(react-native-tvos@0.87.1-1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native-community/cli@20.2.0(supports-color@8.1.1)(typescript@5.9.3))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react-native-tvos@0.87.1-1)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
       react-native-web:
         specifier: 0.21.3
         version: 0.21.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -5852,7 +5852,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  react-native-video@6.19.3(patch_hash=85e03c93ba3191e243848fc37b4a5fe0864639583fc54f4d183585df099acc38)(react-native-tvos@0.87.1-1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native-community/cli@20.2.0(supports-color@8.1.1)(typescript@5.9.3))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react-native-tvos@0.87.1-1)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3):
+  react-native-video@6.19.3(patch_hash=3dbc87b3d6524530a7910249acd6d58ecc5609e5f79c232d40939a10455b25e3)(react-native-tvos@0.87.1-1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native-community/cli@20.2.0(supports-color@8.1.1)(typescript@5.9.3))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react-native-tvos@0.87.1-1)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3):
     dependencies:
       react: 19.2.3
       react-native: react-native-tvos@0.87.1-1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native-community/cli@20.2.0(supports-color@8.1.1)(typescript@5.9.3))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react-native-tvos@0.87.1-1)(react@19.2.3)(supports-color@8.1.1)

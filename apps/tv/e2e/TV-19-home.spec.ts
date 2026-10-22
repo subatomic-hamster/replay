@@ -168,6 +168,26 @@ test("TV-19 a watchable processing game: an estimate in words, and Play works", 
   await expect(page.getByTestId("video")).toBeAttached();
 });
 
+test("TV-19 keys faster than a render all count in the Games row", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(card(page, GAME_ID)).toHaveAttribute("data-focused", "true");
+  const ids = await page
+    .getByTestId("game-card")
+    .evaluateAll((els) => els.map((e) => e.getAttribute("data-game-id")));
+  const from = ids.indexOf(GAME_ID);
+  // Two Rights in one task, before React re-renders (a held remote on a slow Fire TV).
+  await page.evaluate(() => {
+    for (let i = 0; i < 2; i++)
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+  });
+  await expect(card(page, ids[from + 2] ?? "")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
+});
+
 test("TV-19 the Players row opens a profile", async ({ page }) => {
   await page.goto("/");
   await expect(card(page, GAME_ID)).toHaveAttribute("data-focused", "true");

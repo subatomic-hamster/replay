@@ -60,7 +60,7 @@ index 75e2307fc6616aff7f0f9d884c907b4bdad14899..0080260fbc154ff2dec8dd5753a38f4b
 +        return view.apply {
 +            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
 +            setShutterBackgroundColor(Color.TRANSPARENT)
-+            useController = true
++            useController = false // on only with controls={true}, set at player init; else it showed while loading
 +            controllerAutoShow = true
 +            controllerHideOnTouch = true
 +            controllerShowTimeoutMs = 5000

@@ -500,6 +500,144 @@ export function ContextChip({
   );
 }
 
+/** ▶ or ❚❚ from Views (Barlow has neither glyph): a `size` px square in `tint`. */
+export function PlayGlyph({
+  shape,
+  size,
+  tint = color.chalk,
+}: {
+  shape: "play" | "pause";
+  size: number;
+  tint?: string;
+}) {
+  const bar = {
+    width: size * 0.3,
+    height: size,
+    borderRadius: size * 0.06,
+    backgroundColor: tint,
+  };
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingHorizontal: shape === "pause" ? size * 0.1 : 0,
+      }}
+    >
+      {shape === "pause" ? (
+        <>
+          <View style={bar} />
+          <View style={bar} />
+        </>
+      ) : (
+        // a triangle's mass sits left of its box: nudged right to look centred
+        <View
+          style={{
+            width: 0,
+            height: 0,
+            marginLeft: size * 0.12,
+            borderTopWidth: size / 2,
+            borderBottomWidth: size / 2,
+            borderLeftWidth: size * 0.86,
+            borderTopColor: "transparent",
+            borderBottomColor: "transparent",
+            borderLeftColor: tint,
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+/** The play state: ❚❚ while playing (what the key does), ▶ and "Paused" while paused, so a
+ *  still frame never reads as a frozen app. `testID="playstate"`, dataSet {state}. */
+export function PlayState({
+  playing,
+  style,
+}: {
+  playing: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      testID="playstate"
+      dataSet={{ state: playing ? "playing" : "paused" }}
+      pointerEvents="none"
+      style={[styles.playState, style]}
+    >
+      <PlayGlyph shape={playing ? "pause" : "play"} size={px(30)} />
+      {playing ? null : <T style={styles.playStateText}>Paused</T>}
+    </View>
+  );
+}
+
+const FLASH_MS = 600;
+
+/** The centred flash when playback toggles (Netflix/YouTube): `flash(playing)` shows the
+ *  new state, ▶ or ❚❚, in a translucent circle that grows a little and fades over
+ *  FLASH_MS. Render `node` over the video. `testID="play-flash"`, dataSet {state}. */
+export function usePlayFlash() {
+  const [shown, setShown] = useState<{ playing: boolean; n: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!shown) return;
+    const t = setTimeout(() => setShown(null), FLASH_MS);
+    return () => clearTimeout(t);
+  }, [shown]);
+  const flash = useCallback(
+    (playing: boolean) => setShown((s) => ({ playing, n: (s?.n ?? 0) + 1 })),
+    [],
+  );
+  // keyed: a second press restarts the animation
+  const node = shown ? (
+    <PlayFlash key={shown.n} playing={shown.playing} />
+  ) : null;
+  return { flash, node };
+}
+
+function PlayFlash({ playing }: { playing: boolean }) {
+  const [v] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    Animated.timing(v, {
+      toValue: 1,
+      duration: FLASH_MS,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: NATIVE_DRIVER,
+    }).start();
+  }, [v]);
+  return (
+    <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
+      <Animated.View
+        testID="play-flash"
+        dataSet={{ state: playing ? "playing" : "paused" }}
+        style={[
+          styles.flash,
+          {
+            opacity: v.interpolate({
+              inputRange: [0, 0.4, 1],
+              outputRange: [1, 0.9, 0],
+            }),
+            transform: [
+              {
+                scale: v.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.85, 1.15],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <PlayGlyph shape={playing ? "play" : "pause"} size={px(84)} />
+      </Animated.View>
+    </View>
+  );
+}
+
 /** A Floor gradient from the edge (opaque) to `length` away (clear), smoothstep, without a
  *  gradient primitive: one band per step, each its own opacity, on whole physical pixels
  *  so bands neither overlap nor leave seams. (Stacking many faint layers instead darkens:
@@ -881,6 +1019,21 @@ export const styles = StyleSheet.create({
     marginRight: sp(1.5),
   },
   contextText: { color: color.chalk, flexShrink: 1 },
+  playState: { flexDirection: "row", alignItems: "center" },
+  playStateText: {
+    ...type.body,
+    color: color.chalk,
+    fontFamily: face.semibold,
+    marginLeft: sp(1.5),
+  },
+  flash: {
+    width: px(200),
+    height: px(200),
+    borderRadius: px(100),
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(18, 26, 35, 0.6)",
+  },
   dimText: { color: color.bleacher },
   keyCap: {
     borderWidth: px(2),

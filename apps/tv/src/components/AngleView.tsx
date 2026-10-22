@@ -30,7 +30,11 @@ import {
 import type { SceneLayout } from "../../../../packages/tv-core/src/types";
 import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
-import { PlayerSurface, type PlayerHandle } from "../playback/PlayerSurface";
+import {
+  PlayerSurface,
+  usePlaying,
+  type PlayerHandle,
+} from "../playback/PlayerSurface";
 import { FreeView } from "../scene/FreeView";
 import {
   envelopeEdges,
@@ -48,8 +52,10 @@ import {
   Fade,
   KeyLegend,
   Loading,
+  PlayState,
   T,
   useAsync,
+  usePlayFlash,
 } from "../ui";
 
 /** Free view D-pad → camera step: Left/Right orbit, Up/Down height. */
@@ -97,6 +103,8 @@ export function AngleView({
     [sceneUrl, gameId, playId],
   );
   const [handle, setHandle] = useState<PlayerHandle | null>(null);
+  const playing = usePlaying(handle);
+  const { flash, node: flashNode } = usePlayFlash();
   const [index, setIndex] = useState(start === "free" ? 0 : start);
   const [big, setBig] = useState(true);
   const [free, setFree] = useState<null | { start: number; paused: boolean }>(
@@ -185,8 +193,10 @@ export function AngleView({
           setPreset(next);
           setCam(presetState(next, scene));
           setBig(true);
-        } else if (a === "select" || a === "playpause")
+        } else if (a === "select" || a === "playpause") {
           setFree({ ...free, paused: !free.paused });
+          flash(free.paused);
+        }
         return;
       }
       if (a === "back") onBack(m ?? null);
@@ -197,13 +207,15 @@ export function AngleView({
       } else if (a === "up" && m && povOf(m.angles[index])) {
         setIndex(nextPov(m.angles, index));
         setBig(true);
-      } else if (a === "select" || a === "playpause") handle?.toggle();
-      else if (a === "down" && scene) {
+      } else if ((a === "select" || a === "playpause") && handle) {
+        handle.toggle();
+        flash(!handle.paused());
+      } else if (a === "down" && scene) {
         freeOnly.current = false;
         enterFree(scene, !(handle?.paused() ?? true));
       }
     },
-    [order, index, handle, free, scene, preset, m, onBack, enterFree],
+    [order, index, handle, free, scene, preset, m, onBack, enterFree, flash],
   );
   useDpad(onAction);
   const onSceneTime = useCallback((t: number) => {
@@ -320,6 +332,10 @@ export function AngleView({
             dataSet={{ prominent: big ? "true" : "false" }}
           >
             <View style={styles.bugRow}>
+              <PlayState
+                playing={inFree ? !free.paused : playing}
+                style={styles.state}
+              />
               <View style={styles.tier}>
                 <T
                   style={styles.tierText}
@@ -330,9 +346,7 @@ export function AngleView({
                 </T>
               </View>
               {inFree ? (
-                <T style={[type.meta, styles.dim]}>
-                  Free view{free.paused ? ", paused" : ""}
-                </T>
+                <T style={[type.meta, styles.dim]}>Free view</T>
               ) : (
                 <T style={[type.meta, styles.dim]} testID="replay-angle-pos">
                   {`${order.indexOf(index) + 1} of ${order.length}`}
@@ -361,6 +375,7 @@ export function AngleView({
             ) : null}
           </View>
 
+          {flashNode}
           <KeyLegend items={legend} style={styles.legend} />
         </PlayerSurface>
       </View>
@@ -427,6 +442,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(18, 26, 35, 0.84)",
   },
   bugRow: { flexDirection: "row", alignItems: "center" },
+  state: { marginRight: sp(2) },
   tier: {
     paddingHorizontal: sp(1.5),
     borderRadius: radius.chip,

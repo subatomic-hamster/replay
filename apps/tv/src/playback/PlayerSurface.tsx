@@ -333,6 +333,17 @@ export function useClockTime(clock: Clock | null, step = 1 / 30): number {
   return t;
 }
 
+/** Whether `handle` plays (a pending play counts), re-read on every clock tick so a pause
+ *  from anywhere (a key, the end, a seek) shows; same-value updates do not re-render. */
+export function usePlaying(handle: PlayerHandle | null): boolean {
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    if (!handle?.clock) return;
+    return handle.clock.subscribe(() => setPlaying(!handle.paused()));
+  }, [handle]);
+  return playing;
+}
+
 const styles = StyleSheet.create({
   surface: {
     width: "100%",

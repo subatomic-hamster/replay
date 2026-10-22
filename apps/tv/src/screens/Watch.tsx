@@ -85,6 +85,7 @@ import { FOLLOWCAM_MODE } from "../platform/config";
 import {
   PlayerSurface,
   useClockTime,
+  usePlaying,
   type PlayerHandle,
 } from "../playback/PlayerSurface";
 import {
@@ -111,6 +112,7 @@ import {
   Loading,
   T,
   useAsync,
+  usePlayFlash,
 } from "../ui";
 
 type Mode = "wide" | "select" | "follow";
@@ -358,6 +360,7 @@ export function Watch({
   const { width: winW, height: winH } = useWindowDimensions();
 
   const t = useClockTime(handle?.clock ?? null);
+  const playing = usePlaying(handle);
   const duration =
     handle?.duration() || (condensedSrc ? 0 : info?.video.duration_s) || 0;
   // Moments are game time: the condensed rendition has its own clock.
@@ -479,10 +482,13 @@ export function Watch({
     } else pending.current = p.t === null ? null : { t: p.t, play: false };
     return p.play;
   }, []);
+  const { flash, node: flashNode } = usePlayFlash();
   const toggle = useCallback(() => {
-    if (settle(handle)) handle?.pause();
-    else handle?.toggle();
-  }, [handle, settle]);
+    if (!handle) return;
+    if (settle(handle)) handle.pause();
+    else handle.toggle();
+    flash(!handle.paused());
+  }, [handle, settle, flash]);
 
   /** Note where the game is (resume.ts): a queued start while one is pending, a seek's
    *  target while seeking. Game time only (not the condensed rendition's clock). */
@@ -700,6 +706,7 @@ export function Watch({
             step: s.step,
             scrub: s.scrub,
             snapped: s.snapped,
+            resume: s.wasPlaying || !!s.scrub,
           }
         : null,
     );
@@ -834,9 +841,15 @@ export function Watch({
 
   // The Stats panel and the phone layer cover the transport's corners: it steps aside.
   const overlay = layer === "stats" || layer === "phone" || layer === "player";
+  // Paused, it stays up however the pause came (a key, the end of a reel): a still
+  // frame always says "Paused".
   const shown =
     !overlay &&
-    (chrome || layer !== null || seekV !== null || mode === "select");
+    (chrome ||
+      !playing ||
+      layer !== null ||
+      seekV !== null ||
+      mode === "select");
   const [fade] = useState(() => new Animated.Value(1));
   useEffect(() => {
     Animated.timing(fade, {
@@ -1530,8 +1543,9 @@ export function Watch({
             : shown
               ? [{ k: "Back", label: "Stop following" }]
               : null
-          : shown && intro
+          : shown && (intro || !playing)
             ? [
+                { k: "Select", label: playing ? "Pause" : "Play" },
                 { k: "▼", label: "Moments" },
                 { k: "▲", label: "Do more" },
               ]
@@ -1603,8 +1617,10 @@ export function Watch({
             moments={lineMoments}
             seek={seekV}
             storyboard={condensedSrc ? null : storyboard}
+            playing={seekV ? seekV.resume : playing}
           />
         </Animated.View>
+        {flashNode}
 
         {overlay && chip.id !== "toast" ? null : (
           // Do more slides in from the top, over this: the chip would show through it

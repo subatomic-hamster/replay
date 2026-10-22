@@ -13,7 +13,7 @@ import type {
 } from "../../../../packages/tv-core/src/types";
 import { fmtDelta, storyboardCell } from "../playback/seek";
 import { color, face, px, radius, safe, sp, type } from "../theme";
-import { T } from "../ui";
+import { PlayState, T } from "../ui";
 
 export const LINE_W = px(1920) - 2 * safe.x;
 const LINE_H = px(6);
@@ -34,6 +34,8 @@ export interface SeekView {
   scrub: { dir: 1 | -1; speed: number } | null;
   /** The moment whose start the seek stopped at (its thumb and label show). */
   snapped: Moment | null;
+  /** Playback resumes when the seek lands. */
+  resume: boolean;
 }
 
 interface Props {
@@ -43,9 +45,18 @@ interface Props {
   moments: Moment[];
   seek: SeekView | null;
   storyboard: Storyboard | null;
+  /** Playing (or, while seeking, playing again once the seek lands). */
+  playing: boolean;
 }
 
-export function Timeline({ duration, t, moments, seek, storyboard }: Props) {
+export function Timeline({
+  duration,
+  t,
+  moments,
+  seek,
+  storyboard,
+  playing,
+}: Props) {
   const X = (s: number) =>
     duration > 0 ? Math.max(0, Math.min(1, s / duration)) * LINE_W : 0;
   const shown = seek ? seek.target : t;
@@ -61,9 +72,12 @@ export function Timeline({ duration, t, moments, seek, storyboard }: Props) {
         <Preview seek={seek} at={shown} x={x} storyboard={storyboard} />
       ) : null}
       <View style={styles.times}>
-        <T style={styles.fig} testID="time-elapsed">
-          {fmtDuration(shown)}
-        </T>
+        <View style={styles.left}>
+          <PlayState playing={playing} style={styles.state} />
+          <T style={styles.fig} testID="time-elapsed">
+            {fmtDuration(shown)}
+          </T>
+        </View>
         <T style={[styles.fig, styles.dim]} testID="time-remaining">
           −{fmtDuration(Math.max(0, duration - shown))}
         </T>
@@ -261,6 +275,8 @@ const styles = StyleSheet.create({
     height: px(48),
     alignItems: "flex-end",
   },
+  left: { flexDirection: "row", alignItems: "center" },
+  state: { marginRight: sp(3) },
   fig: { ...type.figures, fontSize: px(36), lineHeight: px(44) },
   dim: { color: color.bleacher },
   line: {

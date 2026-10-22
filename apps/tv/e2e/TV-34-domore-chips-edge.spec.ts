@@ -44,7 +44,52 @@ test("TV-34 the context chip hides under Do more and comes back after", async ({
   await expect.poll(opacity).toBeGreaterThan(0.5);
 });
 
-test("TV-34 an unknown game id shows the error banner", async ({ page }) => {
+test("TV-34 an unknown game id says it is gone, not that Replay can't connect", async ({
+  page,
+}) => {
   await page.goto("/tv/g_nope404");
-  await expect(page.getByTestId("api-error")).toBeVisible();
+  const banner = page.getByTestId("api-error");
+  await expect(banner).toBeVisible();
+  await expect(banner).toHaveAttribute("data-kind", "not-found");
+  await expect(page.getByTestId("api-error-title")).toHaveText(
+    "This game isn't here any more",
+  );
+  await expect(banner).not.toContainText(/can't connect|internet|Settings/);
+  await expect(page.getByTestId("api-error-retry")).toHaveCount(0);
+  await expect(page.getByTestId("api-error-home")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
+  await page.keyboard.press("Enter"); // Back to Home
+  await expect(page.getByTestId("home")).toBeVisible();
+
+  // a game screen off a missing game (Clips) says the same; Back goes Home too
+  await page.goto("/tv/g_nope404/clips");
+  await expect(page.getByTestId("api-error-title")).toHaveText(
+    "This game isn't here any more",
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("home")).toBeVisible();
+});
+
+test("TV-34 a network failure still says Replay can't connect", async ({
+  page,
+}) => {
+  await page.goto("/tv/settings");
+  await expect(page.getByTestId("settings")).toBeVisible();
+  await page.evaluate(() => {
+    const m = (
+      window as unknown as {
+        __replayMock: { api: { getGame: () => Promise<unknown> } };
+      }
+    ).__replayMock.api;
+    m.getGame = () => Promise.reject(new Error("Network request failed"));
+  });
+  await page.keyboard.press("Escape"); // Home
+  await expect(page.getByTestId("home")).toBeVisible();
+  await page.keyboard.press("Enter"); // open the focused game
+  await expect(page.getByTestId("api-error-title")).toHaveText(
+    "Replay can't connect",
+  );
+  await expect(page.getByTestId("api-error-retry")).toBeVisible();
 });

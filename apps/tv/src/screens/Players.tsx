@@ -89,10 +89,16 @@ export function Players({ from }: { from?: string }) {
               >
                 {p.name}
               </T>
-              <T style={styles.meta} numberOfLines={1}>
-                {sportsText(p)}
-              </T>
-              <T style={styles.meta}>
+              {sportsText(p) ? (
+                <T
+                  style={styles.meta}
+                  numberOfLines={1}
+                  testID="profile-card-sports"
+                >
+                  {sportsText(p)}
+                </T>
+              ) : null}
+              <T style={styles.meta} testID="profile-card-games">
                 {p.linked.length} {p.linked.length === 1 ? "game" : "games"}
               </T>
             </View>

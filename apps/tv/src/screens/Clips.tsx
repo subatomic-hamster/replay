@@ -15,7 +15,6 @@ import {
   listWindow,
   nudgeTrim,
   TRIM_STEP_S,
-  triggerLabel,
   type PlayClip,
   type Trigger,
   type VerticalExport,
@@ -39,7 +38,13 @@ import {
   useAsync,
 } from "../ui";
 
-const ACTIONS = ["Save trim", "Share 9:16", "Reset"] as const;
+const ACTIONS = ["Save trim", "Share for phones", "Reset"] as const;
+/** How the clip was marked, in plain words (tv-core's triggerLabel is the phone's). */
+const MARKED: Record<string, string> = {
+  gesture: "Marked with a gesture",
+  voice: "Marked by voice",
+  tap: "Marked on your phone",
+};
 const actionId = (a: string) => `trim-${a.split(" ")[0].toLowerCase()}`;
 const CONTEXT_S = 5;
 // a 9:16 render takes about a minute: no need to ask the API every second (D-87)
@@ -340,7 +345,7 @@ export function Clips({ gameId }: { gameId: string }) {
                   <View style={styles.cardRow}>
                     <View style={styles.badge}>
                       <T style={styles.badgeText} testID="clip-trigger">
-                        {triggerLabel(tr?.type)}
+                        {MARKED[tr?.type ?? ""] ?? "Clip"}
                       </T>
                     </View>
                     <T
@@ -348,7 +353,8 @@ export function Clips({ gameId }: { gameId: string }) {
                       numberOfLines={1}
                       testID="clip-attribution"
                     >
-                      {attributionText(c, name)}
+                      {/* nobody named: say nothing rather than "unattributed" */}
+                      {attributionText(c, name).replace(/^unattributed$/, "")}
                     </T>
                   </View>
                   <T style={styles.meta}>
@@ -388,7 +394,7 @@ function ExportPanel({ exp }: { exp: VerticalExport }) {
         testID="export-panel"
         dataSet={{ status: exp.status, exportId: exp.id }}
       >
-        <T style={ui.h2}>Share 9:16</T>
+        <T style={ui.h2}>Share for phones</T>
         {done && exp.url ? (
           <View style={{ flexDirection: "row" }}>
             <View style={{ width: px(320) }} testID="vertical-preview">

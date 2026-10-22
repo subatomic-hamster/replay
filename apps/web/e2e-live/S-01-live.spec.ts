@@ -143,9 +143,9 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
     .poll(
       () =>
         page.evaluate(() => {
-          const status = document.querySelector(
-            '[data-testid="game-status"]',
-          )?.textContent;
+          const status = document
+            .querySelector('[data-testid="game-status"]')
+            ?.getAttribute("data-status");
           const states = [
             ...document.querySelectorAll('[data-testid^="stage-"]'),
           ]
@@ -166,7 +166,10 @@ test("S-01 upload -> calibrate -> process -> watch -> follow -> highlights -> re
       },
     );
   }
-  await expect(page.getByTestId("game-status")).toHaveText("ready");
+  await expect(page.getByTestId("game-status")).toHaveAttribute(
+    "data-status",
+    "ready",
+  );
 
   // --- library -----------------------------------------------------------
   await page.goto("/tv");

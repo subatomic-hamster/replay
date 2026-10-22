@@ -22,7 +22,10 @@ const TITLE = "Kennesaw wide";
 
 test.describe.configure({ mode: "serial" });
 
-test.skip(!haveClip(CLIP), `samples/real/${CLIP} is gitignored (D-7); nothing to run`);
+test.skip(
+  !haveClip(CLIP),
+  `samples/real/${CLIP} is gitignored (D-7); nothing to run`,
+);
 
 let gameId = "";
 
@@ -40,7 +43,9 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
   gameId = new URL(page.url()).pathname.split("/")[2];
 
   await page.getByTestId("file-input").setInputFiles(clip(CLIP));
-  await expect(page.getByTestId("upload-done")).toBeVisible({ timeout: 180_000 });
+  await expect(page.getByTestId("upload-done")).toBeVisible({
+    timeout: 180_000,
+  });
   await page.getByTestId("go-calibrate").click();
 
   // Whole-court camera => the `full` variant, and corner_fr is off the bottom of the
@@ -61,8 +66,12 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
     .poll(
       () =>
         page.evaluate(() => {
-          const status = document.querySelector('[data-testid="game-status"]')?.textContent;
-          const states = [...document.querySelectorAll('[data-testid^="stage-"]')]
+          const status = document
+            .querySelector('[data-testid="game-status"]')
+            ?.getAttribute("data-status");
+          const states = [
+            ...document.querySelectorAll('[data-testid^="stage-"]'),
+          ]
             .map((el) => el.getAttribute("data-state"))
             .join(",");
           return `${status} ${states}`;
@@ -78,15 +87,22 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
       () =>
         page
           .locator('[data-testid^="stage-"]')
-          .evaluateAll((els) => els.map((e) => e.getAttribute("data-state")).join(",")),
+          .evaluateAll((els) =>
+            els.map((e) => e.getAttribute("data-state")).join(","),
+          ),
       { timeout: 1_000_000, intervals: [5000] },
     )
     .toMatch(/^((done|partial),)*(done|partial)$/);
-  await expect(page.getByTestId("game-status")).toHaveText("ready");
+  await expect(page.getByTestId("game-status")).toHaveAttribute(
+    "data-status",
+    "ready",
+  );
 
   // --- TV: library -> open with the D-pad only ---------------------------
   await page.goto("/tv");
-  const card = page.locator(`[data-testid=game-card][data-game-id="${gameId}"]`);
+  const card = page.locator(
+    `[data-testid=game-card][data-game-id="${gameId}"]`,
+  );
   await expect(card).toBeVisible();
   await expect(card.getByTestId("game-status")).toHaveText("ready");
   await page.goto(`/tv/${gameId}`);
@@ -95,13 +111,17 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
   await waitForVideo(page);
   await page.keyboard.press("Space");
   await expect.poll(async () => (await videoState(page))?.paused).toBe(false);
-  await expect.poll(async () => (await videoState(page))?.currentTime ?? 0).toBeGreaterThan(2);
+  await expect
+    .poll(async () => (await videoState(page))?.currentTime ?? 0)
+    .toBeGreaterThan(2);
   await page.keyboard.press("Space");
   await expect.poll(async () => (await videoState(page))?.paused).toBe(true);
 
   const boxes = page.locator('[data-testid^="select-box-"]');
   await expect(boxes.first()).toBeVisible({ timeout: 20_000 });
-  expect(await boxes.count(), "real detections in select mode").toBeGreaterThan(1);
+  expect(await boxes.count(), "real detections in select mode").toBeGreaterThan(
+    1,
+  );
   await shot(page, "02-select-real");
 
   // --- follow mode -------------------------------------------------------
@@ -113,9 +133,13 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("followcam-active")).toBeVisible();
-  await expect.poll(() => transform(page)).not.toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
+  await expect
+    .poll(() => transform(page))
+    .not.toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
   // W4: following happens at the same media time, not a seek.
-  expect(Math.abs((await videoState(page))!.currentTime - tBefore)).toBeLessThan(1 / 30 + 1e-6);
+  expect(
+    Math.abs((await videoState(page))!.currentTime - tBefore),
+  ).toBeLessThan(1 / 30 + 1e-6);
   await shot(page, "03-follow-real");
 
   await page.keyboard.press("Escape");
@@ -125,15 +149,23 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
   // --- highlights, reached with the remote -------------------------------
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("nav-highlights")).toHaveAttribute("data-focused", "true");
+  await expect(page.getByTestId("nav-highlights")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
   await page.keyboard.press("Enter");
   await page.waitForURL(new RegExp(`/tv/${gameId}/highlights`));
 
   const chips = page.getByTestId("query-chip");
   await expect(chips.first()).toBeVisible();
-  const labels = await chips.evaluateAll((els) => els.map((e) => e.getAttribute("data-chip") ?? ""));
+  const labels = await chips.evaluateAll((els) =>
+    els.map((e) => e.getAttribute("data-chip") ?? ""),
+  );
   const target = labels.findIndex((l) => /all shots/i.test(l));
-  expect(target, `no "all shots" chip in ${JSON.stringify(labels)}`).toBeGreaterThanOrEqual(0);
+  expect(
+    target,
+    `no "all shots" chip in ${JSON.stringify(labels)}`,
+  ).toBeGreaterThanOrEqual(0);
   for (let i = 0; i < target; i++) await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("query-interpretation")).toBeVisible();
@@ -150,7 +182,10 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
 
   // GET /review/queue (D-48): event questions first; an identity question opens a keyboard.
   const item = page.getByTestId("review-item");
-  if ((await item.isVisible()) && (await item.getAttribute("data-kind")) !== "identity") {
+  if (
+    (await item.isVisible()) &&
+    (await item.getAttribute("data-kind")) !== "identity"
+  ) {
     const eventId = await item.getAttribute("data-event-id");
     await page.keyboard.press("Enter"); // the first option: "Made" / "Yes"
     await expect
@@ -164,6 +199,8 @@ test("R-01 upload -> calibrate -> real pipeline -> select -> follow -> highlight
   }
 });
 
-test("R-01c the library exposes the processed game by title", async ({ page }) => {
+test("R-01c the library exposes the processed game by title", async ({
+  page,
+}) => {
   expect(await findGame(page, TITLE)).not.toBe("");
 });

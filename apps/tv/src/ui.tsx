@@ -17,6 +17,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
+import { ApiError } from "../../../packages/tv-core/src/api";
 import { TIMELINE_H } from "./components/Timeline";
 import { useDpad } from "./input";
 import { navigate, useRoute } from "./nav";
@@ -900,23 +901,31 @@ export function Loading({ art }: { art?: string | null }) {
 }
 
 /** E-22: every screen that fetches renders this instead of a blank screen: the same
- *  backdrop as loading, calm words, and Try again / Settings. */
+ *  backdrop as loading, calm words, and Try again / Settings. A 404 is not a connection
+ *  problem: it says the thing is gone (`gone`, else the route's game or profile) and
+ *  offers only Back to Home. */
 export function ApiErrorBanner({
   error,
   onRetry,
   art,
+  gone,
 }: {
   error: Error;
   onRetry: () => void;
   art?: string | null;
+  gone?: string;
 }) {
   // Right reaches Settings: a wrong API address must be fixable from here.
   const [onSettings, setOnSettings] = useState(false);
-  const atHome = useRoute().name === "library";
+  const route = useRoute();
+  const atHome = route.name === "library";
+  const notFound = error instanceof ApiError && error.status === 404;
   useDpad(
     useCallback(
       (a) => {
-        if (a === "left" || a === "right") setOnSettings(a === "right");
+        if (notFound) {
+          if (a === "select" || a === "back") navigate({ name: "library" });
+        } else if (a === "left" || a === "right") setOnSettings(a === "right");
         else if (a === "select") {
           if (onSettings) navigate({ name: "settings" });
           else onRetry();
@@ -925,14 +934,45 @@ export function ApiErrorBanner({
           navigate({ name: "library" });
         }
       },
-      [onRetry, onSettings, atHome],
+      [onRetry, onSettings, atHome, notFound],
     ),
   );
+  if (notFound) {
+    const what =
+      gone ??
+      (route.name === "profile"
+        ? "This profile"
+        : "gameId" in route && route.gameId
+          ? "This game"
+          : "This");
+    return (
+      <View
+        style={[styles.fill, styles.center]}
+        testID="api-error"
+        dataSet={{ kind: "not-found" }}
+      >
+        <Backdrop art={art} dim={0.7} />
+        <View style={styles.message}>
+          <T style={[type.title, styles.centerText]} testID="api-error-title">
+            {`${what} isn't here any more`}
+          </T>
+          <T style={[type.body, styles.calm]}>
+            It may have been deleted. Your other games are on Home.
+          </T>
+          <View style={styles.actions}>
+            <Pill label="Back to Home" focused testID="api-error-home" />
+          </View>
+        </View>
+      </View>
+    );
+  }
   return (
     <View style={[styles.fill, styles.center]} testID="api-error">
       <Backdrop art={art} dim={0.7} />
       <View style={styles.message}>
-        <T style={[type.title, styles.centerText]}>Replay can't connect</T>
+        <T style={[type.title, styles.centerText]} testID="api-error-title">
+          Replay can't connect
+        </T>
         <T style={[type.body, styles.calm]}>
           Check the TV's internet, or the server address in Settings.
         </T>

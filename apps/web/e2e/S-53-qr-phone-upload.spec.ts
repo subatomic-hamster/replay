@@ -79,9 +79,11 @@ test("S-53 phone page: multipart upload with a retried part, calibrate, process"
   await expect
     .poll(() => new URL(page.url()).pathname)
     .toBe(`/u/${GAME}/status`);
-  await expect(page.getByTestId("game-status")).toHaveText("ready", {
-    timeout: 40_000,
-  });
+  await expect(page.getByTestId("game-status")).toHaveAttribute(
+    "data-status",
+    "ready",
+    { timeout: 40_000 },
+  );
   await expect(page.getByTestId("ready-note")).toContainText(
     "Watch it on the TV",
   );
@@ -128,6 +130,9 @@ test("S-53 an expired or missing upload code says what to do", async ({
   await page.goto(`/u/${GAME}#t=expired`);
   await expect(page.getByTestId("qr-problem")).toContainText("expired");
   await expect(page.getByTestId("qr-problem")).toContainText("Add game");
+  await expect(page.getByTestId("qr-next-steps")).toContainText(
+    "go to Home and choose Add game",
+  );
   await page.goto(`/u/${GAME}`);
   await page.reload(); // a hash-only change does not reload
   await expect(page.getByTestId("qr-problem")).toContainText(

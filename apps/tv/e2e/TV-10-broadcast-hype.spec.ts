@@ -155,6 +155,16 @@ test("TV-10 Commentary on: the broadcast rendition at the same media time, with 
     "data-broadcast",
     "true",
   );
+  // feedback: a short toast in the chip slot, shown over Do more (which stays open)
+  await expect(page.getByTestId("domore")).toBeVisible();
+  await expect(page.getByTestId("toast")).toHaveText("Commentary on");
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("toast")
+        .evaluate((el) => Number(getComputedStyle(el).opacity)),
+    )
+    .toBeGreaterThan(0.9);
   await expect(page.getByTestId("action-captions")).toHaveAttribute(
     "data-on",
     "true",
@@ -178,6 +188,7 @@ test("TV-10 Commentary on: the broadcast rendition at the same media time, with 
     "data-broadcast",
     "false",
   );
+  await expect(page.getByTestId("toast")).toHaveText("Commentary off");
   await expect
     .poll(async () => (await media(page)).src)
     .toMatch(/\/mock\/wide\.mp4$/);

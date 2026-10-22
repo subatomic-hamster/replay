@@ -137,7 +137,11 @@ test("S-04/S-06 five landmarks give a reprojection error and unlock Start", asyn
   await expect
     .poll(() => stageStates(page), { timeout: 40_000 })
     .toMatch(/^((done|partial),)*(done|partial)$/);
-  await expect(page.getByTestId("game-status")).toHaveText("ready");
+  await expect(page.getByTestId("game-status")).toHaveAttribute(
+    "data-status",
+    "ready",
+  );
+  await expect(page.getByTestId("game-status")).toHaveText("Ready");
 });
 
 test("S-04c after the fit, one tap places the hoop itself (rim_top)", async ({
@@ -296,7 +300,15 @@ test("S-08 the status page lists the API's own stages, in order, with progress",
     "crops",
     "events",
   ]);
-  await expect(page.getByTestId("game-status")).toHaveText("processing");
+  await expect(page.getByTestId("game-status")).toHaveText("Processing");
+  // Plain words on screen; the stage keys stay in the test ids.
+  await expect(rows.first()).toContainText("Preparing the video");
+  await expect(page.getByTestId("stage-detect")).toContainText(
+    "Finding players",
+  );
+  await expect(page.getByTestId("stage-events")).toContainText(
+    "Spotting plays",
+  );
   // Exactly one running stage, everything before it done, everything after pending...
   expect(await stageStates(page)).toMatch(/^(done,)*running(,pending)*$/);
   // ...and it carries the fraction the job reported.
@@ -306,5 +318,8 @@ test("S-08 the status page lists the API's own stages, in order, with progress",
   await expect
     .poll(() => stageStates(page), { timeout: 40_000 })
     .toMatch(/^(done,){8}done$/);
-  await expect(page.getByTestId("game-status")).toHaveText("ready");
+  await expect(page.getByTestId("game-status")).toHaveAttribute(
+    "data-status",
+    "ready",
+  );
 });

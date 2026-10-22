@@ -78,7 +78,7 @@ import { SelectOverlay } from "../components/SelectOverlay";
 import { StatsPanel, type StatsExit } from "../components/StatsPanel";
 import { TextEntryDialog } from "../components/TextEntryDialog";
 import { Timeline, TIMELINE_H, type SeekView } from "../components/Timeline";
-import { artFor, etaText } from "../gameState";
+import { artFor, etaText, stageWords } from "../gameState";
 import { useDpad, type DpadAction } from "../input";
 import { navigate, type Way } from "../nav";
 import { FOLLOWCAM_MODE } from "../platform/config";
@@ -1031,9 +1031,10 @@ export function Watch({
   const toggleCommentary = useCallback(() => {
     // D-42: rendition time = source time, so the swap keeps the playback position; track
     // boxes describe the wide frame, so select/follow sit the broadcast out.
-    setCommentaryOn((on) => !on);
+    setCommentaryOn(!commentaryOn);
+    setToast(commentaryOn ? "Commentary off" : "Commentary on");
     if (broadcast) setMode("wide");
-  }, [broadcast]);
+  }, [broadcast, commentaryOn]);
 
   const onAction = useCallback(
     (a: DpadAction) => {
@@ -1526,7 +1527,21 @@ export function Watch({
               kind: "way",
               data: { way, index: indicator.index, count: indicator.count },
             }
-          : { id: "watch-title", parts: [info.title], kind: "title" };
+          : processing
+            ? {
+                // still processing: say so, and what it is doing (the title is cut
+                // short so a long one cannot push the status off the chip)
+                id: "watch-title",
+                parts: [
+                  info.title.length > 36
+                    ? `${info.title.slice(0, 35).trimEnd()}…`
+                    : info.title,
+                  `Still processing: ${stageWords(info)}`,
+                ],
+                kind: "title",
+                data: { processing: "true" },
+              }
+            : { id: "watch-title", parts: [info.title], kind: "title" };
   const sticky = chip.id !== "watch-title";
   // The key legend (§2): what the keys do here, at most 3; a layer or panel shows its own.
   const legend: { k: string; label: string }[] | null =
@@ -1622,20 +1637,6 @@ export function Watch({
         </Animated.View>
         {flashNode}
 
-        {overlay && chip.id !== "toast" ? null : (
-          // Do more slides in from the top, over this: the chip would show through it
-          <Animated.View
-            style={[
-              StyleSheet.absoluteFill,
-              { opacity: layer === "domore" ? 0 : sticky ? 1 : fade },
-            ]}
-            pointerEvents="none"
-            testID={chip.id}
-            dataSet={chip.data}
-          >
-            <ContextChip parts={chip.parts} kind={chip.kind} dot={chip.dot} />
-          </Animated.View>
-        )}
         {legend ? <KeyLegend items={legend} /> : null}
 
         {caption ? (
@@ -1790,6 +1791,29 @@ export function Watch({
               );
             })()
           : null}
+
+        {overlay && chip.id !== "toast" ? null : (
+          // Above the layers, so a toast ("Commentary on") shows over Do more; the
+          // rest of the chip hides under Do more, which would show through it.
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                opacity:
+                  layer === "domore" && chip.id !== "toast"
+                    ? 0
+                    : sticky
+                      ? 1
+                      : fade,
+              },
+            ]}
+            pointerEvents="none"
+            testID={chip.id}
+            dataSet={chip.data}
+          >
+            <ContextChip parts={chip.parts} kind={chip.kind} dot={chip.dot} />
+          </Animated.View>
+        )}
       </View>
 
       {tagging ? (

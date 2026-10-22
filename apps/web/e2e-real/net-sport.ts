@@ -5,7 +5,16 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
-import { API, SHOTS, clip, haveClip, shot, transform, videoState, waitForVideo } from "./helpers";
+import {
+  API,
+  SHOTS,
+  clip,
+  haveClip,
+  shot,
+  transform,
+  videoState,
+  waitForVideo,
+} from "./helpers";
 
 export interface NetSport {
   sport: string;
@@ -17,11 +26,27 @@ export interface NetSport {
   stages?: string[];
 }
 
-const STAGES = ["ingest", "detect", "track", "court", "identity", "crops", "events"];
+const STAGES = [
+  "ingest",
+  "detect",
+  "track",
+  "court",
+  "identity",
+  "crops",
+  "events",
+];
 
 interface Profile {
   id: string;
-  sport_ui: { chips: string[]; review: string[]; court: { size_m: [number, number]; x_range: [number, number]; y_range: [number, number] } };
+  sport_ui: {
+    chips: string[];
+    review: string[];
+    court: {
+      size_m: [number, number];
+      x_range: [number, number];
+      y_range: [number, number];
+    };
+  };
 }
 
 export async function profileOf(page: Page, sport: string): Promise<Profile> {
@@ -45,11 +70,17 @@ async function ingest(page: Page, s: NetSport): Promise<string> {
   const gameId = new URL(page.url()).pathname.split("/")[2];
 
   await page.getByTestId("file-input").setInputFiles(clip(s.clip));
-  await expect(page.getByTestId("upload-done")).toBeVisible({ timeout: 300_000 });
+  await expect(page.getByTestId("upload-done")).toBeVisible({
+    timeout: 300_000,
+  });
 
   const marks = JSON.parse(fs.readFileSync(clip(s.landmarksFile), "utf8"));
   const res = await page.request.post(`${API}/games/${gameId}/calibration`, {
-    data: { sport: s.sport, variant: s.variant, landmarks_px: marks.landmarks_px },
+    data: {
+      sport: s.sport,
+      variant: s.variant,
+      landmarks_px: marks.landmarks_px,
+    },
   });
   expect(res.status(), await res.text()).toBe(200);
   const px = (await res.json()).reprojection_error_px;
@@ -64,16 +95,27 @@ async function ingest(page: Page, s: NetSport): Promise<string> {
   for (const stage of s.stages ?? STAGES) {
     const row = page.getByTestId(`stage-${stage}`);
     if (await row.count()) {
-      await expect(row).toHaveAttribute("data-state", /done|partial/, { timeout: 1_200_000 });
+      await expect(row).toHaveAttribute("data-state", /done|partial/, {
+        timeout: 1_200_000,
+      });
     }
   }
-  await expect(page.getByTestId("game-status")).toHaveText("ready", { timeout: 300_000 });
+  await expect(page.getByTestId("game-status")).toHaveAttribute(
+    "data-status",
+    "ready",
+    {
+      timeout: 300_000,
+    },
+  );
   return gameId;
 }
 
 export function netSportSpec(s: NetSport) {
   test.describe.configure({ mode: "serial" });
-  test.skip(!haveClip(s.clip), `samples/real/${s.clip} is gitignored (D-7); nothing to run`);
+  test.skip(
+    !haveClip(s.clip),
+    `samples/real/${s.clip} is gitignored (D-7); nothing to run`,
+  );
   test.skip(
     !haveClip(s.landmarksFile),
     `samples/real/${s.landmarksFile} is missing; calibrate the clip first`,
@@ -91,7 +133,9 @@ export function netSportSpec(s: NetSport) {
     await waitForVideo(page);
     await page.keyboard.press("Space");
     await expect.poll(async () => (await videoState(page))?.paused).toBe(false);
-    await expect.poll(async () => (await videoState(page))?.currentTime ?? 0).toBeGreaterThan(2);
+    await expect
+      .poll(async () => (await videoState(page))?.currentTime ?? 0)
+      .toBeGreaterThan(2);
     await page.keyboard.press("Space");
     await expect.poll(async () => (await videoState(page))?.paused).toBe(true);
 
@@ -113,9 +157,13 @@ export function netSportSpec(s: NetSport) {
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("followcam-active")).toBeVisible();
-    await expect.poll(() => transform(page)).not.toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
+    await expect
+      .poll(() => transform(page))
+      .not.toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
     // W4: following is not a seek.
-    expect(Math.abs((await videoState(page))!.currentTime - tBefore)).toBeLessThan(1 / 30 + 1e-6);
+    expect(
+      Math.abs((await videoState(page))!.currentTime - tBefore),
+    ).toBeLessThan(1 / 30 + 1e-6);
     await shot(page, `${s.sport}-follow`);
 
     await page.keyboard.press("Escape");
@@ -138,7 +186,9 @@ export function netSportSpec(s: NetSport) {
     // Tier 1: the rally detector is a stub, so the honest result is an interpretation
     // with no clips — not a dead button.
     await expect(page.getByTestId("query-interpretation")).toBeVisible();
-    await expect(page.getByTestId("query-interpretation")).not.toHaveText(/No match/);
+    await expect(page.getByTestId("query-interpretation")).not.toHaveText(
+      /No match/,
+    );
     await shot(page, `${s.sport}-highlights`);
 
     // --- review: the heatmap is drawn over THIS court ----------------------
@@ -147,16 +197,20 @@ export function netSportSpec(s: NetSport) {
     await expect(heatmap).toBeVisible({ timeout: 30_000 });
     const [w, h] = profile.sport_ui.court.size_m;
     const want = `${profile.sport_ui.court.x_range[0]} ${profile.sport_ui.court.y_range[0]} ${w} ${h}`;
-    expect(await heatmap.getAttribute("viewBox"), "heatmap drawn on the profile's court").toBe(
-      want,
-    );
-    expect(await page.getByTestId("heatmap-cell").count(), "occupied heatmap cells").toBeGreaterThan(
-      0,
-    );
+    expect(
+      await heatmap.getAttribute("viewBox"),
+      "heatmap drawn on the profile's court",
+    ).toBe(want);
+    expect(
+      await page.getByTestId("heatmap-cell").count(),
+      "occupied heatmap cells",
+    ).toBeGreaterThan(0);
     await shot(page, `${s.sport}-review`);
 
     fs.mkdirSync(SHOTS, { recursive: true });
-    const game = await (await page.request.get(`${API}/games/${gameId}`)).json();
+    const game = await (
+      await page.request.get(`${API}/games/${gameId}`)
+    ).json();
     fs.writeFileSync(
       path.join(SHOTS, `${s.sport}-summary.json`),
       JSON.stringify(

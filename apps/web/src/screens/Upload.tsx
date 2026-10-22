@@ -106,7 +106,7 @@ export function UploadCreate() {
                 data-testid={`sport-option-${s.id}`}
                 onChange={() => setPicked(s.id)}
               />
-              {s.display_name} <span className="dim">tier {s.tier}</span>
+              {s.display_name}
             </label>
           ))}
         </fieldset>
@@ -902,6 +902,47 @@ export function Calibrate({
   );
 }
 
+// The pipeline's stage keys (courtcam.pipeline.STAGES, plus the fake pipeline's render /
+// label) in plain words. A key not listed here shows as itself, so a new stage is never
+// hidden, only unpolished.
+const STAGE: Record<string, string> = {
+  ingest: "Preparing the video",
+  calibrate: "Fitting the court",
+  detect: "Finding players",
+  track: "Following players",
+  court: "Mapping the court",
+  identity: "Telling players apart",
+  tracks: "Saving each player's path",
+  crops: "Framing each player",
+  audio: "Listening to the sound",
+  pose: "Reading body movement",
+  events: "Spotting plays",
+  triggers: "Finding clip requests",
+  plays: "Building plays and the score",
+  render: "Making the videos",
+  label: "Naming the plays",
+};
+const STATE: Record<string, string> = {
+  pending: "Waiting",
+  running: "Working",
+  done: "Done",
+  partial: "Partly done",
+  error: "Failed",
+};
+const STATUS: Record<string, string> = {
+  created: "Waiting for the video",
+  uploading: "Uploading",
+  uploaded: "Uploaded",
+  calibrated: "Waiting to start",
+  queued: "Waiting to start",
+  processing: "Processing",
+  ready: "Ready",
+  failed: "Failed",
+  error: "Failed",
+};
+const plain = (map: Record<string, string>, k: string) =>
+  map[k] ?? k.replace(/_/g, " ");
+
 /** `/upload/:id/status` — I3 (S-07, S-08). */
 export function UploadStatus({
   gameId,
@@ -941,7 +982,9 @@ export function UploadStatus({
     <div className="screen phone">
       <h1>{game?.title ?? "Processing"}</h1>
       <p>
-        Status: <strong data-testid="game-status">{game?.status ?? "…"}</strong>
+        <strong data-testid="game-status" data-status={game?.status ?? ""}>
+          {game ? plain(STATUS, game.status) : "…"}
+        </strong>
       </p>
       {/* The API's `stages` keys are the pipeline's own list, in run order (S-08), so the
           page renders whatever it is sent rather than a copy that goes stale. */}
@@ -959,9 +1002,9 @@ export function UploadStatus({
                 frac != null ? ({ "--p": frac } as CSSProperties) : undefined
               }
             >
-              <span className="stage-name">{s}</span>
+              <span className="stage-name">{plain(STAGE, s)}</span>
               <span className="stage-state">
-                {state}
+                {plain(STATE, state)}
                 {frac != null ? ` · ${Math.round(frac * 100)}%` : ""}
               </span>
             </li>

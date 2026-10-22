@@ -50,10 +50,20 @@ export function QrUpload({ gameId, step }: { gameId: string; step?: string }) {
 
   if (!token) {
     return (
-      <Problem text="This link is missing its upload code. Scan the QR code on the TV again." />
+      <Problem
+        text="This link is missing its upload code. Scan the QR code on the TV again."
+        steps={NEW_UPLOAD_LINK}
+      />
     );
   }
-  if (error) return <Problem text={explain(error)} onRetry={reload} />;
+  if (error) {
+    const text = explain(error);
+    return text === EXPIRED ? (
+      <Problem text={text} steps={NEW_UPLOAD_LINK} />
+    ) : (
+      <Problem text={text} onRetry={reload} />
+    );
+  }
   if (!game) return <div className="screen phone">Loading…</div>;
   if (step === "calibrate")
     return (
@@ -78,12 +88,21 @@ export function QrUpload({ gameId, step }: { gameId: string; step?: string }) {
   );
 }
 
+/** How to get a fresh upload link: the phone has no way in without one. */
+const NEW_UPLOAD_LINK = [
+  "On the TV, go to Home and choose Add game.",
+  "Point your phone's camera at the new code and open the link.",
+];
+
 export function Problem({
   text,
   onRetry,
+  steps,
 }: {
   text: string;
   onRetry?: () => void;
+  /** A dead link's way out: what to do on the TV to get a new one. */
+  steps?: string[];
 }) {
   return (
     <div className="screen phone">
@@ -91,7 +110,17 @@ export function Problem({
       <p className="error" data-testid="qr-problem" role="alert">
         {text}
       </p>
-      {onRetry && text !== EXPIRED ? (
+      {steps ? (
+        <section className="next-steps" data-testid="qr-next-steps">
+          <h2>Get a new link</h2>
+          <ol>
+            {steps.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+      {onRetry && !steps ? (
         <button type="button" onClick={onRetry}>
           Try again
         </button>

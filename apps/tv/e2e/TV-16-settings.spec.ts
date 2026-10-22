@@ -76,10 +76,15 @@ test("TV-16 settings: set the API address and key with the D-pad, test it, keep 
   const shown = page.getByTestId("settings-api-base");
   await expect(shown).not.toHaveText("not set"); // the build default
   await expect(page.getByTestId("settings-api-key")).toHaveText("none");
-  await expect(page.getByTestId("settings-item-2")).toHaveAttribute(
+  // focus opens on the first row (Server address), not Test connection
+  await expect(page.getByTestId("settings-item-0")).toHaveAttribute(
     "data-focused",
     "true",
-  ); // Test connection
+  );
+  await expect(page.getByTestId("settings-item-2")).toHaveAttribute(
+    "data-focused",
+    "false",
+  );
   // UI pass: a breadcrumb and a key legend, no prose hint
   await expect(page.getByTestId("context-chip")).toHaveText("Home › Settings");
   await expect(page.getByTestId("legend-Back")).toHaveAttribute(
@@ -92,8 +97,7 @@ test("TV-16 settings: set the API address and key with the D-pad, test it, keep 
   );
 
   // Change address: a bad one is refused and leaves the saved address alone.
-  await page.keyboard.press("ArrowLeft");
-  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft"); // already the first row: stays
   await expect(page.getByTestId("settings-item-0")).toHaveAttribute(
     "data-focused",
     "true",
@@ -157,7 +161,7 @@ test("TV-16 settings: set the API address and key with the D-pad, test it, keep 
   expect(await page.evaluate(() => localStorage.getItem("replay.apiKey"))).toBe(
     KEY,
   );
-  await page.keyboard.press("ArrowRight");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
   await expect(page.getByTestId("settings-item-3")).toHaveAttribute(
     "data-focused",
     "true",

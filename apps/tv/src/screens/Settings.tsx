@@ -44,7 +44,7 @@ type Check = { state: "idle" | "checking" | "ok" | "error"; text: string };
 export function Settings() {
   const [base, setBase] = useState(apiBase);
   const [key, setKey] = useState(apiKey);
-  const [focus, setFocus] = useState(base ? TEST : ADDRESS);
+  const [focus, setFocus] = useState(ADDRESS); // the first row, as every list opens
   const [editing, setEditing] = useState<"base" | "key" | null>(
     base ? null : "base",
   );

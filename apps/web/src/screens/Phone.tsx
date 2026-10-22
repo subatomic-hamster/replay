@@ -51,6 +51,12 @@ const LABEL: Record<Job, string> = {
 
 const EXPIRED = "This link has expired. Scan the code on the TV again.";
 const MISSING = "This link is missing its code. Scan the code on the TV again.";
+/** The TV's code for this page lives on its On your phone tile (Menu opens Do more). */
+const NEW_LINK = [
+  "On the TV, open the game and press Menu.",
+  "Choose On your phone, then what you want to do.",
+  "Point your phone's camera at the code and open the link.",
+];
 /** No moment near `t`: clip t ± PAD_S. A moment counts as "near" within NEAR_S. */
 const PAD_S = 5;
 const NEAR_S = 10;
@@ -103,8 +109,9 @@ export function PhonePage({ gameId }: { gameId: string }) {
     return e instanceof Error ? e.message : String(e);
   }, []);
 
-  if (!token) return <Problem text={MISSING} />;
-  if (expired || (error && isExpired(error))) return <Problem text={EXPIRED} />;
+  if (!token) return <Problem text={MISSING} steps={NEW_LINK} />;
+  if (expired || (error && isExpired(error)))
+    return <Problem text={EXPIRED} steps={NEW_LINK} />;
   if (error)
     return (
       <Problem
@@ -769,7 +776,7 @@ function TagJob({ api, game, moments, fail }: JobProps) {
                     data-testid="tag-new-save"
                     disabled={busy || !name.trim()}
                   >
-                    Tag as a new player
+                    Name as a new player
                   </button>
                 </form>
               </div>
@@ -786,8 +793,8 @@ function TagJob({ api, game, moments, fail }: JobProps) {
           onClick={() => setShowShort((s) => !s)}
         >
           {showShort
-            ? "Hide the short tracks"
-            : `${nShort} short track${nShort === 1 ? "" : "s"} (under ${MIN_SEEN_S} s on screen)`}
+            ? "Hide the brief ones"
+            : `${nShort} more seen only briefly (under ${MIN_SEEN_S} s)`}
         </button>
       ) : null}
     </>
@@ -877,7 +884,7 @@ function ReviewJob({ api, game, moments, fail, tv, sawTv }: JobProps) {
         <p data-testid="review-empty">Nothing left to review.</p>
       ) : (
         <p className="dim">
-          {queue.length} to check. The detector was not sure about these.
+          {queue.length} to check. Replay was not sure about these.
         </p>
       )}
       <ul className="phone-cards">

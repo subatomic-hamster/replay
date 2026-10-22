@@ -107,10 +107,11 @@ export interface TapResult {
   clip: PlayClip | null;
 }
 
+/** How a clip was marked, in plain words (the same as apps/tv's Clips screen). */
 const TRIGGER_LABEL: Record<TriggerType, string> = {
-  gesture: "X gesture",
-  voice: "Voice",
-  tap: "Phone tap",
+  gesture: "Marked with a gesture",
+  voice: "Marked by voice",
+  tap: "Marked on your phone",
 };
 export const triggerLabel = (t: TriggerType | undefined): string =>
   (t && TRIGGER_LABEL[t]) ?? "Clip";

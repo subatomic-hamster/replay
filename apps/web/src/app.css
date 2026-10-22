@@ -1183,7 +1183,6 @@ body,
   border-radius: 10px;
   background: var(--panel);
   color: var(--dim);
-  text-transform: capitalize;
 }
 .stage::before {
   content: "";
@@ -1755,9 +1754,38 @@ body,
 .phone-hits li .avatar {
   flex: none;
 }
-.phone-hits li a {
+/* The whole profile row is one link: the padding lives on the <a>, not the <li>. */
+.phone-hits li:has(> .profile-row) {
+  padding: 0;
+}
+.phone-hits .profile-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 10px 14px;
+  border-radius: 10px;
   color: var(--fg);
+  text-decoration: none;
+}
+/* name above, "Basketball · 2 games" below: a long summary wraps instead of overflowing */
+.phone-hits .profile-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.phone-hits .profile-row-text b {
   font-weight: 600;
+}
+.next-steps ol {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+.next-steps li {
+  margin: 8px 0;
 }
 .profile-phone-head {
   display: flex;

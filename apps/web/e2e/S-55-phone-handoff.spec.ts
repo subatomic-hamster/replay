@@ -103,6 +103,12 @@ test("S-55 an expired or missing code says to scan again", async ({ page }) => {
     "This link has expired. Scan the code on the TV again.",
   );
   await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  // Not a dead end: how to get a new link from the TV.
+  await expect(page.getByTestId("qr-next-steps").locator("li")).toHaveText([
+    /open the game and press Menu/,
+    /On your phone/,
+    /camera at the code/,
+  ]);
 
   const fresh = await page.context().newPage(); // a new tab: no sessionStorage
   await fresh.goto(`/p/${GAME_ID}?job=clip`);
@@ -220,10 +226,10 @@ test("S-57 Tag: players with thumbs; link one to a profile, name another as some
     page.locator('[data-testid="tag-player"][data-player-id="p3"]'),
   ).toHaveCount(0);
   const short = page.getByTestId("tag-short-toggle");
-  await expect(short).toHaveText("1 short track (under 5 s on screen)");
+  await expect(short).toHaveText("1 more seen only briefly (under 5 s)");
   await short.click();
   await expect(players).toHaveCount(4);
-  await expect(short).toHaveText("Hide the short tracks");
+  await expect(short).toHaveText("Hide the brief ones");
   await short.click();
   await expect(players).toHaveCount(3);
   await expect(

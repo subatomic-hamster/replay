@@ -23,6 +23,17 @@ const splitList = (v: string) =>
     .map((s) => s.trim())
     .filter(Boolean);
 
+/** "Basketball · 2 games". The list route sends `sports: null` when they are derived from
+ *  the links (no stats on the list), so the honest summary is the game count, from
+ *  `linked`; "No games linked yet" only when there really are none. */
+function profileMeta(p: Profile): string {
+  const games = new Set((p.linked ?? []).map((l) => l.game_id)).size;
+  const count = games
+    ? `${games} ${games === 1 ? "game" : "games"}`
+    : "No games linked yet";
+  return p.sports?.length ? `${sportsText(p)} · ${count}` : count;
+}
+
 export function ProfilesPhone() {
   const { data, error, reload } = useAsync(() => api.listProfiles(), []);
   const [name, setName] = useState("");
@@ -50,16 +61,34 @@ export function ProfilesPhone() {
       ) : null}
       <ul className="phone-hits">
         {(data ?? []).map((p) => (
-          <li key={p.profile_id} data-testid="phone-profile" data-profile-id={p.profile_id}>
-            <Avatar name={p.name} photo={p.photo_url} size={48} />
-            <a href={`/profiles/${p.profile_id}`} onClick={(e) => { e.preventDefault(); navigate(`/profiles/${p.profile_id}`); }}>
-              {p.name}
+          <li
+            key={p.profile_id}
+            data-testid="phone-profile"
+            data-profile-id={p.profile_id}
+          >
+            {/* The whole row is the link: a real <a>, so Tab and Enter reach it too. */}
+            <a
+              className="profile-row"
+              href={`/profiles/${p.profile_id}`}
+              onClick={(e) => {
+                e.preventDefault();
+                navigate(`/profiles/${p.profile_id}`);
+              }}
+            >
+              <Avatar name={p.name} photo={p.photo_url} size={48} />
+              <span className="profile-row-text">
+                <b>{p.name}</b>
+                <span className="dim" data-testid="phone-profile-meta">
+                  {profileMeta(p)}
+                </span>
+              </span>
             </a>
-            <span className="dim">{sportsText(p)}</span>
           </li>
         ))}
       </ul>
-      {data && data.length === 0 ? <p className="dim">No profiles yet.</p> : null}
+      {data && data.length === 0 ? (
+        <p className="dim">No profiles yet.</p>
+      ) : null}
       <form onSubmit={create}>
         <h2>New profile</h2>
         <label>
@@ -72,7 +101,11 @@ export function ProfilesPhone() {
             placeholder="e.g. Jordan"
           />
         </label>
-        <button type="submit" data-testid="profile-create" disabled={!name.trim()}>
+        <button
+          type="submit"
+          data-testid="profile-create"
+          disabled={!name.trim()}
+        >
           Create profile
         </button>
         {note ? <p className="error">{note}</p> : null}
@@ -98,10 +131,19 @@ export function ProfileEdit({ profileId }: { profileId: string }) {
   }, []);
 
   useEffect(() => {
-    api.getProfile(profileId).then(adopt, (e: Error) => setLoadError(e.message));
+    api
+      .getProfile(profileId)
+      .then(adopt, (e: Error) => setLoadError(e.message));
   }, [profileId, adopt]);
 
-  if (loadError) return <div className="phone"><p className="error" data-testid="profile-load-error">{loadError}</p></div>;
+  if (loadError)
+    return (
+      <div className="phone">
+        <p className="error" data-testid="profile-load-error">
+          {loadError}
+        </p>
+      </div>
+    );
   if (!profile) return <div className="phone">Loading…</div>;
 
   const save = (e: FormEvent) => {
@@ -135,9 +177,19 @@ export function ProfileEdit({ profileId }: { profileId: string }) {
   };
 
   return (
-    <div className="phone profile-edit" data-testid="profile-edit" data-profile-id={profileId}>
+    <div
+      className="phone profile-edit"
+      data-testid="profile-edit"
+      data-profile-id={profileId}
+    >
       <p>
-        <a href="/profiles" onClick={(e) => { e.preventDefault(); navigate("/profiles"); }}>
+        <a
+          href="/profiles"
+          onClick={(e) => {
+            e.preventDefault();
+            navigate("/profiles");
+          }}
+        >
           ← All profiles
         </a>
       </p>
@@ -146,13 +198,20 @@ export function ProfileEdit({ profileId }: { profileId: string }) {
         <h1 data-testid="profile-edit-name">{profile.name}</h1>
       </div>
       <p className="dim">
-        Linked in {profile.linked.length} {profile.linked.length === 1 ? "game" : "games"} · link players from the TV
+        Linked in {profile.linked.length}{" "}
+        {profile.linked.length === 1 ? "game" : "games"} · link players from the
+        TV
       </p>
 
       <form onSubmit={save}>
         <label>
           Name
-          <input data-testid="profile-name-input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+          <input
+            data-testid="profile-name-input"
+            value={name}
+            maxLength={60}
+            onChange={(e) => setName(e.target.value)}
+          />
         </label>
         <fieldset data-testid="profile-sports">
           <legend>Sports (none ticked: taken from the linked games)</legend>
@@ -163,7 +222,11 @@ export function ProfileEdit({ profileId }: { profileId: string }) {
                 data-testid={`profile-sport-${s.id}`}
                 checked={picked.includes(s.id)}
                 onChange={(e) =>
-                  setPicked((cur) => (e.target.checked ? [...cur, s.id] : cur.filter((x) => x !== s.id)))
+                  setPicked((cur) =>
+                    e.target.checked
+                      ? [...cur, s.id]
+                      : cur.filter((x) => x !== s.id),
+                  )
                 }
               />
               {s.display_name}
@@ -172,19 +235,38 @@ export function ProfileEdit({ profileId }: { profileId: string }) {
         </fieldset>
         <label>
           Positions (comma separated)
-          <input data-testid="profile-positions-input" value={positions} onChange={(e) => setPositions(e.target.value)} />
+          <input
+            data-testid="profile-positions-input"
+            value={positions}
+            onChange={(e) => setPositions(e.target.value)}
+          />
         </label>
-        <button type="submit" data-testid="profile-save" disabled={!name.trim()}>
+        <button
+          type="submit"
+          data-testid="profile-save"
+          disabled={!name.trim()}
+        >
           Save profile
         </button>
       </form>
 
       <h2>Profile photo</h2>
-      <p className="dim">Shown on the TV and the player card. Re-encoded on the server, so no location data is kept.</p>
-      <input type="file" accept="image/*" data-testid="profile-photo-input" onChange={(e) => uploadPhoto(e.target.files?.[0])} />
+      <p className="dim">
+        Shown on the TV and the player card. Re-encoded on the server, so no
+        location data is kept.
+      </p>
+      <input
+        type="file"
+        accept="image/*"
+        data-testid="profile-photo-input"
+        onChange={(e) => uploadPhoto(e.target.files?.[0])}
+      />
 
       {note ? (
-        <p data-testid="profile-note" className={/^(Not|Photo not)/.test(note) ? "error" : "dim"}>
+        <p
+          data-testid="profile-note"
+          className={/^(Not|Photo not)/.test(note) ? "error" : "dim"}
+        >
           {note}
         </p>
       ) : null}
@@ -195,7 +277,13 @@ export function ProfileEdit({ profileId }: { profileId: string }) {
 }
 
 /** Opt-in face matching. Nothing here works until the consent box is ticked. */
-function FaceEnrollment({ profile, onChange }: { profile: Profile; onChange: (p: Profile) => void }) {
+function FaceEnrollment({
+  profile,
+  onChange,
+}: {
+  profile: Profile;
+  onChange: (p: Profile) => void;
+}) {
   const [consent, setConsent] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -216,7 +304,9 @@ function FaceEnrollment({ profile, onChange }: { profile: Profile; onChange: (p:
           onChange(p);
           setPhotos([]);
           setConsent(false);
-          setNote("Enrolled. Your photos were deleted; one face embedding is stored.");
+          setNote(
+            "Enrolled. Your photos were deleted; one face embedding is stored.",
+          );
         },
         (e: Error) => setNote(`Not enrolled: ${e.message}`),
       )
@@ -238,14 +328,25 @@ function FaceEnrollment({ profile, onChange }: { profile: Profile; onChange: (p:
   };
 
   return (
-    <section className="face" data-testid="face-section" data-enrolled={profile.face_enrolled ? "true" : "false"}>
+    <section
+      className="face"
+      data-testid="face-section"
+      data-enrolled={profile.face_enrolled ? "true" : "false"}
+    >
       <h2>Face matching (optional)</h2>
       {profile.face_enrolled ? (
         <>
           <p data-testid="face-status">
-            Enrolled: one face embedding is stored for this profile, used only to suggest links you confirm.
+            Enrolled: one face embedding is stored for this profile, used only
+            to suggest links you confirm.
           </p>
-          <button type="button" className="secondary" data-testid="face-delete" disabled={busy} onClick={forget}>
+          <button
+            type="button"
+            className="secondary"
+            data-testid="face-delete"
+            disabled={busy}
+            onClick={forget}
+          >
             Delete my face data
           </button>
         </>
@@ -267,7 +368,8 @@ function FaceEnrollment({ profile, onChange }: { profile: Profile; onChange: (p:
                 if (!e.target.checked) setPhotos([]);
               }}
             />
-            I am this player (or their parent or guardian) and I agree to face matching as described above.
+            I am this player (or their parent or guardian) and I agree to face
+            matching as described above.
           </label>
           <label>
             1 to {FACE_PHOTOS_MAX} clear photos of your face
@@ -282,17 +384,29 @@ function FaceEnrollment({ profile, onChange }: { profile: Profile; onChange: (p:
             />
           </label>
           {photos.length ? (
-            <p className={countError ? "error" : "dim"} data-testid="face-photo-count">
-              {countError ?? `${photos.length} photo${photos.length === 1 ? "" : "s"} picked`}
+            <p
+              className={countError ? "error" : "dim"}
+              data-testid="face-photo-count"
+            >
+              {countError ??
+                `${photos.length} photo${photos.length === 1 ? "" : "s"} picked`}
             </p>
           ) : null}
-          <button type="button" data-testid="face-enroll" disabled={!ready} onClick={enroll}>
+          <button
+            type="button"
+            data-testid="face-enroll"
+            disabled={!ready}
+            onClick={enroll}
+          >
             Enroll my face
           </button>
         </fieldset>
       )}
       {note ? (
-        <p data-testid="face-note" className={/^Not /.test(note) ? "error" : "dim"}>
+        <p
+          data-testid="face-note"
+          className={/^Not /.test(note) ? "error" : "dim"}
+        >
           {note}
         </p>
       ) : null}

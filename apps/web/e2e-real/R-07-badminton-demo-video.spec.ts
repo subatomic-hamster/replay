@@ -389,7 +389,8 @@ test("R-07 demo video: phone upload+calibrate, then the TV loop", async ({
 
     await a.getByTestId("start-processing").click();
     await a.waitForURL(/\/status$/);
-    await expect(a.getByTestId("game-status")).toHaveText(
+    await expect(a.getByTestId("game-status")).toHaveAttribute(
+      "data-status",
       /processing|queued|ready/,
     );
     await beat(a, 10_000); // ~10 s of the stage list with `ingest` running

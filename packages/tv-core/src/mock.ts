@@ -442,7 +442,7 @@ const mockWebBase = () =>
 
 function needGame(id: string): Game {
   const g = games.get(id);
-  if (!g) throw new Error(`unknown game ${id}`);
+  if (!g) throw new ApiError(404, `unknown game ${id}`); // as the API answers
   return g;
 }
 

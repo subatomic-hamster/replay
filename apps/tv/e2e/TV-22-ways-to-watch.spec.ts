@@ -114,8 +114,20 @@ test("TV-22 a processing game plays now; pending features say when they will be 
     .poll(async () => (await media(page)).ready, { timeout: 15_000 })
     .toBeGreaterThanOrEqual(2);
   await expect.poll(async () => (await media(page)).paused).toBe(false);
+  // the chip says it is still processing, and what it is doing, in plain words
+  const title = page.getByTestId("watch-title");
+  await expect(title).toHaveAttribute("data-processing", "true");
+  await expect(title).toContainText(
+    /^Friday scrimmage › Still processing: [A-Z][a-z ]+, (about \d+ min|under a minute|\d+%)$/,
+  );
 
   await page.keyboard.press("ArrowUp");
+  // nothing from another game: no play of g_mock01's replays, no mock commentary
+  await expect(page.getByTestId("domore")).not.toContainText(/Marcus|mock/);
+  await expect(page.getByTestId("nav-replays")).toHaveAttribute(
+    "data-pending",
+    "true",
+  );
   const follow = page.getByTestId("action-follow");
   await expect(follow).toHaveAttribute("data-pending", "true");
   await expect(follow).toContainText(

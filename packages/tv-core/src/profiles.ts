@@ -47,8 +47,7 @@ export interface ProfileInput {
 }
 
 export type SuggestionReason =
-  | { kind: "same_name" }
-  | { kind: "face"; similarity: number; votes: number };
+  { kind: "same_name" } | { kind: "face"; similarity: number; votes: number };
 
 /** GET /profiles/{id}/suggestions: unlinked roster players that may be this person. */
 export interface ProfileSuggestion {
@@ -151,7 +150,8 @@ export interface StatRow {
 /** Known stats in a fixed order, then any others alphabetically. */
 export function statRows(s: SportStats | undefined): StatRow[] {
   if (!s) return [];
-  const rank = (k: string) => (ORDER.includes(k) ? ORDER.indexOf(k) : ORDER.length);
+  const rank = (k: string) =>
+    ORDER.includes(k) ? ORDER.indexOf(k) : ORDER.length;
   return Object.keys(s.stats)
     .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
     .map((key) => ({
@@ -165,20 +165,32 @@ export function statRows(s: SportStats | undefined): StatRow[] {
 }
 
 /** One D-pad step of a stat: whole numbers, never below zero. */
-export const stepStat = (value: number, dir: 1 | -1): number => Math.max(0, Math.round(value) + dir);
+export const stepStat = (value: number, dir: 1 | -1): number =>
+  Math.max(0, Math.round(value) + dir);
 
 /** PATCH /profiles/{id} body for one stat; null restores the auto value. */
-export const statPatch = (sport: string, key: string, value: number | null): ProfileInput => ({
+export const statPatch = (
+  sport: string,
+  key: string,
+  value: number | null,
+): ProfileInput => ({
   stats: { [sport]: { [key]: value } },
 });
 
-export const suggestionKey = (s: { game_id: string; player_id: string }) => `${s.game_id}/${s.player_id}`;
+export const suggestionKey = (s: { game_id: string; player_id: string }) =>
+  `${s.game_id}/${s.player_id}`;
 
 /** What the TV may show: face reasons only for a face-enrolled profile (the API already
  *  never sends others; this is the client's own guard). Declines are kept by the API. */
-export function visibleSuggestions(p: Pick<Profile, "face_enrolled">, list: ProfileSuggestion[]): ProfileSuggestion[] {
+export function visibleSuggestions(
+  p: Pick<Profile, "face_enrolled">,
+  list: ProfileSuggestion[],
+): ProfileSuggestion[] {
   return list
-    .map((s) => ({ ...s, reasons: s.reasons.filter((r) => r.kind !== "face" || p.face_enrolled) }))
+    .map((s) => ({
+      ...s,
+      reasons: s.reasons.filter((r) => r.kind !== "face" || p.face_enrolled),
+    }))
     .filter((s) => s.reasons.length > 0);
 }
 
@@ -188,7 +200,8 @@ export function reasonText(r: SuggestionReason): string {
     : "Same name tag";
 }
 
-export const SUGGESTION_NOTE = "Suggestions only — nothing is linked until you confirm.";
+export const SUGGESTION_NOTE =
+  "Suggestions only — nothing is linked until you confirm.";
 
 export function initials(name: string): string {
   return (
@@ -201,8 +214,14 @@ export function initials(name: string): string {
   );
 }
 
-export const sportsText = (p: Pick<Profile, "sports">): string =>
-  (p.sports ?? []).map((s) => s[0].toUpperCase() + s.slice(1)).join(" · ") || "No games linked yet";
+/** "Basketball · Pickleball"; "No games linked yet" only when nothing is linked. The list
+ *  route sends `sports: null` (derived) without deriving it, so a linked person can have
+ *  no sports here: then nothing, never a claim that contradicts their game count. */
+export const sportsText = (
+  p: Pick<Profile, "sports"> & { linked?: unknown[] },
+): string =>
+  (p.sports ?? []).map((s) => s[0].toUpperCase() + s.slice(1)).join(" · ") ||
+  (p.linked?.length ? "" : "No games linked yet");
 
 /** The reel items that can play (a game without a wide rendition is skipped). */
 export const playableReel = (r: CareerReel | null | undefined): ReelItem[] =>

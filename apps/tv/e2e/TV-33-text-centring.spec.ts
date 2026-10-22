@@ -83,13 +83,13 @@ test("TV-33 labels sit on the middle of their pills, rows, key caps and badges",
   await page.evaluate(() => document.fonts.ready);
   await expectCentred(
     page,
-    page.getByTestId("settings-item-0"),
+    page.getByTestId("settings-item-2"),
     "settings row",
   );
   await expectCentred(
     page,
-    page.getByTestId("settings-item-2"),
-    "focused settings row",
+    page.getByTestId("settings-item-0"),
+    "focused settings row", // Settings opens on its first row
   );
   // a key legend's cap (the first box inside the entry)
   const cap = (k: string) =>

@@ -26,19 +26,23 @@ test("TV-11 Clips: trigger type and who it belongs to; Back to the game", async 
   const cards = page.getByTestId("clip-card");
   await expect(cards).toHaveCount(3);
   await expect(cards.nth(0)).toHaveAttribute("data-trigger", "gesture");
+  // plain words, not the trigger ids ("X gesture", "Phone tap") or "unattributed"
   await expect(cards.nth(0).getByTestId("clip-trigger")).toHaveText(
-    "X gesture",
+    "Marked with a gesture",
   );
   await expect(cards.nth(0).getByTestId("clip-attribution")).toHaveText(
     "by Marcus",
   );
   await expect(cards.nth(1).getByTestId("clip-trigger")).toHaveText(
-    "Phone tap",
+    "Marked on your phone",
   );
-  await expect(cards.nth(1).getByTestId("clip-attribution")).toHaveText(
-    "unattributed",
+  await expect(cards.nth(1).getByTestId("clip-attribution")).toHaveText("");
+  await expect(cards.nth(2).getByTestId("clip-trigger")).toHaveText(
+    "Marked by voice",
   );
-  await expect(cards.nth(2).getByTestId("clip-trigger")).toHaveText("Voice");
+  await expect(page.getByTestId("clips")).not.toContainText(
+    /X gesture|Phone tap|unattributed|9:16/,
+  );
   await expect(cards.nth(2).getByTestId("clip-attribution")).toHaveText(
     "of Marcus",
   );
@@ -152,10 +156,12 @@ test("TV-11 Share 9:16: export, wait for the render, portrait preview + link", a
     "data-focused",
     "true",
   );
+  await expect(page.getByTestId("trim-share")).toHaveText("Share for phones");
   await page.keyboard.press("Enter");
 
   const panel = page.getByTestId("export-panel");
   await expect(panel).toBeVisible();
+  await expect(panel).toContainText("Share for phones");
   const post = (await mockCalls(page)).find((c) =>
     c.path.endsWith("/exports/vertical"),
   );

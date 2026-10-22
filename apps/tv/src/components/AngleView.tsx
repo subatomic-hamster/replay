@@ -224,7 +224,12 @@ export function AngleView({
 
   if (error)
     return (
-      <ApiErrorBanner error={error} onRetry={reload} art={artFor(gameId)} />
+      <ApiErrorBanner
+        error={error}
+        onRetry={reload}
+        art={artFor(gameId)}
+        gone="This replay"
+      />
     );
   if (!m) return <Loading art={artFor(gameId)} />;
   const angle = m.angles[Math.min(index, count - 1)];

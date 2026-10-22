@@ -106,6 +106,15 @@ test("TV-15 Home → Players → profile → Back → Players → Home", async (
   );
   await expect(cards.first()).toHaveAttribute("data-profile-id", MARCUS);
   await expect(cards.first()).toHaveAttribute("data-focused", "true");
+  // Marcus has two linked games (the list route sends sports: null): the card must not
+  // also claim "No games linked yet"
+  await expect(cards.first().getByTestId("profile-card-games")).toHaveText(
+    "2 games",
+  );
+  await expect(cards.first()).not.toContainText("No games linked yet");
+  await expect(page.getByTestId("players")).not.toContainText(
+    "No games linked yet",
+  );
   await expect(page.getByTestId("avatar").first()).toHaveText("M"); // initials, no photo
   await page.keyboard.press("ArrowRight");
   await expect(cards.nth(1)).toHaveAttribute("data-focused", "true");

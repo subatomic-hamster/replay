@@ -597,8 +597,15 @@ Measured on real games:
   - Re-processed plays: pl_0010 2310 of 2315, pl_0019 2412 of 2412.
 - **Every angle has its own thumbnail.** `replays.poster` writes the middle frame of each angle video as `<angle>.jpg` beside it (480 px wide), and both manifest writers add `poster`; the API signs it like `url`. The TV's angle row shows it, and falls back to the play's storyboard frame for an older manifest. Before, every tile showed the same storyboard frame.
 - **The angle row holds its play while Do more is open.** The nearest play was picked from the live time, so the video playing underneath could swap the row to another play (and its POV names) mid-browse. It now uses the time Do more opened at.
+- **Posed body proxy behind each cutout (`avatars/proxy.py`).** Past 45° from the real camera a flat cutout reads wrong, and the silhouette it fades to is a flat kit-coloured shape. Each player now also has a proxy: 15 capsules (torso, hips, shoulders, thighs, shanks, feet, upper arms, forearms, neck, head) on the scene's per-frame H36M-17 joints, radii from stature. We build it ourselves; no SMPL or other body-model licence.
+  - It stands on the tracked foot point (the lift's root can sit a metre off). Its height is fitted per frame so the head meets the top of the SAM mask in the real camera (15-frame median, x0.75–1.6), because the lift often crouches people.
+  - Texture, per pixel, ray-cast in the player's screen box: the real pixel now, where the real camera sees that surface (normal within ~75°, not behind another part of the same body, inside the mask); else a per-part cylinder atlas filled from the nearest frame of the play that saw that texel; else that part's mean seen colour; else the kit colour. Fixed light shading.
+  - Hand-over (`tierb.PROXY_FULL/NONE`): the cutout keeps its real pixels to 45°, cross-fades onto the proxy by 55°, and the proxy carries everything wider. Cutouts read better than the proxy up to ~45° (measured on the wing angle: the proxy's head and shoulder capsules look like a mannequin), so the proxy only replaces the silhouette zone.
+  - Measured on 3x3 pl_0004 and Nottingham pl_0010, before/after frames looked at for side (80–95°, eval-only angle `side`), wing, courtside and POV: the side view goes from flat orange/grey shapes to people in their own shirt, shorts and skin colours, posed. Wing, courtside and most POVs barely change (players there are within 45°).
+  - Cost: atlas build ~5 s per play (cached across the play's angles in one process). Render 18–22 ms/frame without proxy; 43 ms/frame on the wing (players past 45° near the edges), 76–84 ms/frame on the side view.
+  - Fallback (a cylinder or billboard pair turned with heading) not built: the capsule proxy already beat the silhouette at wide angles, and nothing beat the real cutout at narrow ones.
 - **Not done:**
-  - No articulated proxy (bone quads textured from the frame). Wide angles become silhouettes rather than re-posed pixels.
+  - Proxy limits: the cutout and proxy can stand ~0.3 m apart (pose lean, foot point), so they ghost in the 45–55° hand-over; a near player seen from behind shows a plain head capsule in their mean head colour; texture is blocky (32x16 texels per part). `side` is not shipped: it is past `MAX_OFF`, and a whole angle of mannequins is a step past "real pixels".
   - Free view (the 2.5D scene package) was already image-based and is unchanged; its envelope keeps it near the real camera.
 
 ## D-89 (2026-10-22) — Follow accuracy: no ring after Back, ring on the native driver, tracks cut by look, small games solved as their people
@@ -963,3 +970,54 @@ Context: round 3 on D-90/D-92. The coordinator asked for four things: make or mi
 - Park clips have no court fit, so there are no teams, points or full-pipeline highlights.
 - Unchanged from D-92 on the four D-92 rows. This round changed no ball rule.
 - **For the demo:** film from behind the free-throw line or higher, and tap the hoop. Settle any "can't tell" in Review: "Watch it", then thumbs.
+
+## D-96 (2026-10-22) — No basketball block detector yet: the signals we have cannot tell a block from a contested shot; the phone's "Watch it" plays on the TV when one shows the game
+
+Context: round 4 on D-95. The coordinator asked for two things:
+
+- A block detector to lift the highlights ceiling. It should combine a shot start, the ball turning back before the rim, and a defender's hands at the ball. It is to be checked on the two truth blocks (Q3 59.7 s, park dev 59.2 s), and it must add no false blocks elsewhere.
+- A phone "Watch it" in Review.
+
+**Block detector: measured, not shipped**
+
+- **What the ball can and cannot show:** the ball is watched only in the box around each hoop: ±5 rim radii across, 7 above to 3 below (about ±1.1 m, 1.6 m above to 0.7 m below the rim). A block away from the rim never shows in the ball data.
+  - Q3 59.7 s happens about 2.7 m out; the ball is never seen there.
+  - The park dev block (59.2 s) is at the rim. Its ball path rises from below the rim, then comes down beside it. That is the same shape as a layup (park dev 127.8 s make, 94.2 s miss; 3x3 13.7 s make).
+  - Of the 33 arrivals on the four clips, 8 rise from below without a descent, and only one of them is the block.
+- **Pose candidates:** an arms-up release within 3.5 m of a rim, with no ball arrival within 2.5 s after it and no shot in the 2 s before it, plus an opponent within 1.2 m with arms up. We measured them on the full pipeline for Q1, Q3, 3x3 and park dev. Park dev was newly run with tracking and pose on a ground plane from people's heights, as in D-89; the floor point under the rim came from the hand-placed hoop.
+
+  | clip     | candidates                                      | true blocks found     |
+  | -------- | ----------------------------------------------- | --------------------- |
+  | Q1       | 2 (65.2 s a contested pass, 236.6 s)            | – (no block in truth) |
+  | Q3       | 1 (239.8 s)                                     | 0 of 1                |
+  | 3x3      | 0                                               | –                     |
+  | park dev | 1 (72.4 s, the edited replay of the 59 s block) | 0 of 1                |
+  - Q3 59.2 s: no opponent is tracked within 1.5 m of the driver; the 1080p wide view gives these players a torso of about 20 px.
+  - Park dev 59.0 s: the release is followed by a ball "arrival" (the false make at 59.18 s, D-95), so it is not a candidate.
+  - Loosening the rule (any team, 1.5 m, no arms-up) finds Q3 59.2 s, but with 8 more candidates on Q3 and 10 on Q1, none of them a block.
+
+- **The defender's hand over the shooter's:** we measured the defender's top wrist above the shooter's top wrist, in torso lengths, within ±0.3 s of the release.
+  - The park dev block reads +0.37 to +0.57.
+  - The contested make at park dev 23.6 s reads +0.59.
+  - The false candidates read +1.0 to +2.6 (Q1 65.2 s, 236.6 s; Q3 239.8 s).
+  - Pose alone does not separate a block from a contested shot.
+- **Decision:** we ship no block event. A detector at zero recall with false blocks would put wrong plays at the top of highlights (`NOTABLE_VALUE` block .7) and wrong Blk counts.
+  - Everything downstream already handles `block` events: stats Blk, the highlight value, the "Block" moment label, and "Was this a block?" in Review.
+  - A future detector that sees the ball across the court only has to emit them.
+- **Upgrade path:** a ball detector over the whole frame (a learned one; colour alone confuses red kits and skin), so the ball's turn-back can be seen where blocks happen. Or a higher camera, with the same pose rule re-measured.
+
+**Phone "Watch it" (Review)**
+
+- Each non-identity card with a time has a "Watch it" button (`review-watch`). It sends `POST /games/{id}/tv/play` for 4 s before the play.
+- The route now also answers `tv`: true when a TV is showing this game. That means a `POST /tv/state` heartbeat for that game within `FRESH_S` 30 s.
+  - true: the card says "Playing on the TV".
+  - false: the clip plays on the card, from 4 s before to 3 s after, and the card says so. A failed call also plays it on the card.
+- The heartbeat was missing: no client sent `/tv/state`, so Alexa's "clip that" always answered "open a game first".
+  - The TV's Watch now sends it every 10 s (`tvState`, tv-core).
+  - This also gives Alexa the TV's game and time.
+- Search's "Play on the TV" still says "Playing on the TV" whatever the answer is. Not changed.
+- Tests:
+  - `test_phone_plays_a_hit_on_the_tv`: `tv` is false with no heartbeat, true for this game's heartbeat, and false for another game's.
+  - Playwright S-58b: with no TV the clip plays on the card from t-4 and the TV is asked; with a TV showing the game the card says "Playing on the TV" and nothing plays on the phone.
+
+**Numbers:** no ball, event or highlight rule changed. The D-95 table stands, re-run on this code in box-test.

@@ -258,6 +258,59 @@ test("S-57 Tag: players with thumbs; link one to a profile, name another as some
   ]);
 });
 
+test("S-58b Review: Watch it plays the play here with no TV, on the TV when one shows the game", async ({
+  page,
+}) => {
+  await open(page, "job=review");
+  const card = page
+    .locator('[data-testid="review-card"]')
+    .filter({ has: page.getByTestId("review-watch") })
+    .first();
+  await card.getByTestId("review-watch").click();
+  // no TV heartbeat: the clip plays on the card, from 4 s before the play
+  const video = card.getByTestId("review-watch-video");
+  await expect(video).toBeVisible();
+  await expect(card.getByTestId("review-watch-note")).toHaveText(
+    "No TV is showing this game, so it plays here.",
+  );
+  const t0 = Number(await video.getAttribute("data-t-start"));
+  expect(
+    Number(await video.getAttribute("data-t-end")) - t0,
+  ).toBeGreaterThanOrEqual(3);
+  await expect
+    .poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime), {
+      timeout: 10_000,
+    })
+    .toBeGreaterThanOrEqual(t0 - 0.05);
+  // the TV was asked too (it may open the game any moment)
+  expect(await calls(page, "POST", `/games/${GAME_ID}/tv/play`)).toEqual([
+    { method: "POST", path: `/games/${GAME_ID}/tv/play`, body: { t: t0 } },
+  ]);
+  await phoneFriendly(page);
+  // identity questions have no "Watch it"
+  await expect(
+    page
+      .locator('[data-testid="review-card"][data-kind="identity"]')
+      .getByTestId("review-watch"),
+  ).toHaveCount(0);
+
+  // a TV showing this game: it plays there, nothing plays on the phone
+  await page.addInitScript((id) => {
+    (globalThis as { __replayMockTvShowing?: string }).__replayMockTvShowing =
+      id;
+  }, GAME_ID);
+  await page.reload();
+  const again = page
+    .locator('[data-testid="review-card"]')
+    .filter({ has: page.getByTestId("review-watch") })
+    .first();
+  await again.getByTestId("review-watch").click();
+  await expect(again.getByTestId("review-watch-note")).toHaveText(
+    "Playing on the TV",
+  );
+  await expect(page.getByTestId("review-watch-video")).toHaveCount(0);
+});
+
 test("S-58 Review: the queue as cards with the TV's answers, a typed name included", async ({
   page,
 }) => {

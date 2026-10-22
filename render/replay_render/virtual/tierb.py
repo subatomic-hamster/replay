@@ -387,8 +387,10 @@ def draw_ball(canvas: np.ndarray, view: View, trail: np.ndarray) -> None:
 
 
 SEEN_FULL, SEEN_NONE = np.radians(35), np.radians(75)  # real pixels: full / none
-# over a body proxy the cutout hands over sooner and quicker (two bodies never ghost)
-PROXY_FULL, PROXY_NONE = np.radians(18), np.radians(32)
+# with a body proxy the cutout keeps its real pixels to 45° (it reads better than the
+# proxy there) and hands over by 55°, where it would turn into a silhouette (the two
+# bodies can stand ~0.3 m apart, so they ghost while both show: hence quickly)
+PROXY_FULL, PROXY_NONE = np.radians(45), np.radians(55)
 NEAR_FADE_M = 1.8  # image-based cutouts fade in from 1.2 m to 3.0 m from the camera
 
 

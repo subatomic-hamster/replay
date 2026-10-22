@@ -920,7 +920,11 @@ function ReviewJob({ api, game, moments, fail }: JobProps) {
                 ) : null}
               </div>
               {watch?.q === q.id && watch.onTv === true ? (
-                <p className="dim" role="status" data-testid="review-watch-note">
+                <p
+                  className="dim"
+                  role="status"
+                  data-testid="review-watch-note"
+                >
                   Playing on the TV
                 </p>
               ) : null}
@@ -933,7 +937,11 @@ function ReviewJob({ api, game, moments, fail }: JobProps) {
                     autoPlay
                     testId="review-watch-video"
                   />
-                  <p className="dim" role="status" data-testid="review-watch-note">
+                  <p
+                    className="dim"
+                    role="status"
+                    data-testid="review-watch-note"
+                  >
                     No TV is showing this game, so it plays here.
                   </p>
                 </>

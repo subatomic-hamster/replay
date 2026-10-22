@@ -11,7 +11,11 @@ A cutout is a photo of one side of a person, so it holds up only near the real l
 sight. Each billboard therefore fades, per player and per frame, from its real pixels
 (up to 35° from the real camera's view of that player) to a kit-coloured silhouette
 shaded by its own light (past 75°, mirrored when seen from behind): the view degrades
-to honest shapes in the team's colour, never to stretched pixels. Angles a fixed camera
+to honest shapes in the team's colour, never to stretched pixels. With `PROXY` on, past
+45° the cutout hands over to a posed capsule body textured from the same video
+(`proxy.py`; 45-55° cross-fade), and the silhouette is only the fallback for a player
+with no pose. The eval-only `side` angle (80-95°) is carried by the proxy alone and is
+not in `ANGLES`. Angles a fixed camera
 cannot carry at all (more than `MAX_OFF` from the real one, e.g. a baseline camera
 facing a camera behind the arc) are not rendered.
 

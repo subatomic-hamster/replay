@@ -643,6 +643,20 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Highlights P@5 is unchanged (Q1 .4, Q3 .2). The ceilings are .6 and .4, and the gap is unknown outcomes plus no block detector, not ranking.
 - Needs: web deploy for the hoop tap, APK for "Watch it", and a re-process for the label fix.
 
+## Score round 4: blocks measured, phone "Watch it" (2026-10-22, D-96)
+
+- **Basketball block detector: not shipped.**
+  - The ball is only seen in the box around the hoop.
+  - At the rim, a block's ball path looks like a layup's.
+  - Pose contests read the same for a block and a contested make.
+  - The best rule found 0 of the 2 truth blocks and 4 false ones across Q1, Q3, 3x3 and park dev (numbers in D-96).
+  - Stats, highlights, moments and Review already take `block` events once a detector can make them.
+- Park dev now has a full tracking and pose run (data stays on the box) on a ground plane from people's heights.
+- **Phone Review "Watch it":** it plays on the TV when a TV is showing the game; otherwise the clip plays on the card.
+  - `tv/play` now says whether a TV is watching.
+  - The TV's Watch sends the `/tv/state` heartbeat every 10 s. Nothing sent it before, so Alexa's "clip that" could not work either.
+- Needs: web deploy and APK; the API redeploy for `tv/play`'s `tv` answer.
+
 ## Demo walk round 6: reel, Play on the TV, every stage on a fresh upload (2026-10-22, D-93)
 
 - Demo script rewritten for the real demo (docs/demo-script.md):
@@ -684,8 +698,9 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - A 240-frame POV: 20.2 s -> 4.3 s after the blur, blend and mask-cache fixes.
 - Proxy for the demo scenario: the fixed shot of a CC BY 3.0 3x3 game (Honza Nový), lens-corrected, with hand landmarks (docs/test-data.md 3.1b).
 - Evidence: web-build Playwright `ANGLES-real` on the 3x3 proxy and Nottingham (angles row, Tier B cut, virtual wing, POV and Up, Free view, moment link) passes.
+- Posed body proxy (`avatars/proxy.py`): past 45° from the real camera each cutout hands over to 15 capsules on the scene's joints, standing on the tracked foot, height fitted to the mask, textured from the real pixels now, else the nearest frame that saw that spot, else the part's mean colour, else the kit colour. A side view (80–95°, eval only) goes from flat kit shapes to posed people in their own colours (3x3 pl_0004, Nottingham pl_0010). Wing, courtside and POV frames are mostly unchanged; their players are within 45°. Cost: ~5 s atlas per play; 43 ms/frame on the 3x3 wing, 74–84 ms/frame side, ~20 ms/frame unchanged otherwise. Unit test `render/tests/test_proxy.py`.
 - Not done:
-  - no articulated proxy, so wide angles become silhouettes;
+  - the proxy and cutout can stand ~0.3 m apart, so they ghost in the 45–55° hand-over; the proxy's head reads as a mannequin's;
   - a POV under the basket looks at stand-in walls;
   - an outdoor clip gets plain stand-in walls;
   - the stylized avatar renderer is kept for camera paths only;

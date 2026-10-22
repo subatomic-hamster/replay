@@ -15,7 +15,7 @@ Texturing is view-dependent, per pixel of the virtual image:
 2. **History**: else the part's texture atlas: a cylinder map per part (angle round
    the part, measured from the player's facing so the front stays the front, x
    position along it), filled from every frame of the play where that texel was seen
-   (`build_atlas`), the nearest such frame in time.
+   (`build`), the nearest such frame in time.
 3. **Never seen**: the part's mean seen colour (sleeves stay skin, shorts stay shorts),
    else the kit colour, shaded by a fixed light.
 
@@ -178,7 +178,49 @@ class Proxy:
             # stand where the cutout and its shadow stand (the tracked foot point): the
             # lift's root can sit a metre off, which would also sample the wrong pixels
             j = j + np.r_[foot[f] - (j[3, :2] + j[6, :2]) / 2, 0.0]
+        zs = q.get("zs")
+        if zs is not None and f < len(zs):
+            j = j * [1.0, 1.0, zs[f]]
         return capsules(j, fwd, q["h"])
+
+    def fit_heights(self, masks, n: int) -> None:
+        """Scale each pose's height so its head meets the top of the person's mask in the
+        real camera (the lift often crouches people): the proxy then covers the person
+        there, and samples their pixels, not the floor's. Per frame, a 15-frame running
+        median, within 0.75-1.6."""
+        for pid, q in self.players.items():
+            foot, js = self.feet.get(pid), q["j"]
+            raw = np.full(len(js), np.nan)
+            for f in range(min(n, len(js))):
+                got = masks.get(pid, f)
+                if got is None or foot is None or not np.isfinite(foot[f, 0]) \
+                        or not np.isfinite(js[f, 10, 2]):  # fmt: skip
+                    continue
+                (x0, y0), m = got
+                rows = np.nonzero(m.any(1))[0]
+                if len(rows) == 0:
+                    continue
+                top = rows[0]
+                xs = np.nonzero(m[top])[0]
+                px = np.array([[x0 + xs.mean(), y0 + top]])
+                und = distortion.undistort_points(px, self.k1, self.src_size)[0]
+                d = self.real.r.T @ np.linalg.solve(self.real.k, [und[0], und[1], 1.0])
+                c = self.cam
+                g = np.r_[foot[f], 0.0]
+                nrm = np.r_[(g - c)[:2], 0.0]  # vertical plane through the foot
+                denom = d @ nrm
+                if abs(denom) < 1e-9:
+                    continue
+                z_top = (c + d * ((g - c) @ nrm / denom))[2]
+                head_top = js[f, 10, 2] + 0.07 * q["h"]
+                raw[f] = z_top / max(head_top, 0.3)
+            ok = np.isfinite(raw)
+            if ok.sum() < 3:
+                continue
+            sm = np.array([np.nanmedian(raw[max(0, f - 7): f + 8]) if np.isfinite(
+                raw[max(0, f - 7): f + 8]).any() else np.nan for f in range(len(raw))])  # fmt: skip
+            sm = np.where(np.isfinite(sm), sm, np.nanmedian(raw))
+            q["zs"] = np.clip(sm, 0.75, 1.6)
 
     def _src_px(self, p: np.ndarray) -> np.ndarray:
         return distortion.distort_points(self.real.project(p), self.k1, self.src_size)
@@ -335,6 +377,7 @@ def build(doc: dict, joints, real: View, k1: float, src_size, tints, video, h, m
 
     px = Proxy(doc, joints, real, k1, src_size, tints)
     px.feet = feet or {}
+    px.fit_heights(masks, n)
     for f, (_, frame) in enumerate(read_window(video, h["t_start"], n)):
         px.observe(f, frame, masks)
     px.finish()

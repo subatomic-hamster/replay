@@ -5,7 +5,16 @@
 import { useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { clamp, type MediaHandle, type MediaProps } from "../playback/media";
 
-export function Media({ src, muted, loop, onEnded, onError, ref }: MediaProps) {
+export function Media({
+  src,
+  muted,
+  loop,
+  onEnded,
+  onError,
+  onReady,
+  onBuffering,
+  ref,
+}: MediaProps) {
   const video = useRef<HTMLVideoElement>(null);
   const wantPlay = useRef(false);
   const tries = useRef(0);
@@ -117,6 +126,14 @@ export function Media({ src, muted, loop, onEnded, onError, ref }: MediaProps) {
         timeRef.current = e.currentTarget.currentTime;
       }}
       onEnded={onEnded}
+      onLoadedData={() => {
+        onReady?.();
+        onBuffering?.(false);
+      }}
+      onWaiting={() => onBuffering?.(true)}
+      onPlaying={() => onBuffering?.(false)}
+      onSeeked={() => onBuffering?.(false)}
+      onCanPlay={() => onBuffering?.(false)}
       onError={(e) =>
         onError?.(e.currentTarget.error?.message || "Playback failed")
       }

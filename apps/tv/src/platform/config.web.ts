@@ -32,3 +32,6 @@ export const saveApiKey = (value: string) => save("replay.apiKey", value);
 /** Watch positions (resume.ts), as JSON. */
 export const loadResume = () => load("replay.resume");
 export const saveResume = (value: string) => save("replay.resume", value);
+/** Home's last games list (Home.tsx), as JSON: Home draws it at once on the next start. */
+export const loadHomeCache = () => load("replay.home");
+export const saveHomeCache = (value: string) => save("replay.home", value);

@@ -1,10 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 320x180 Android TV launcher banner: ink background, amber play mark. -->
+<!-- 320x180 TV launcher banner in the app's tokens (theme.ts): Floor, a Scoreboard play mark
+     and the "Replay" wordmark in Chalk strokes (no font needed). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="320dp"
     android:height="180dp"
     android:viewportWidth="320"
     android:viewportHeight="180">
-    <path android:fillColor="#090B0E" android:pathData="M0,0h320v180h-320z" />
-    <path android:fillColor="#FFB020" android:pathData="M130,50 L130,130 L200,90 Z" />
+    <path android:fillColor="#121A23" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#F0B44C" android:pathData="M30,62 L30,118 L78,90 Z" />
+    <path
+        android:strokeColor="#ECEFF2"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M96,110 V70 H110 Q122,70 122,81 Q122,92 110,92 H96 M108,92 L122,110
+            M151,70 H131 V110 H151 M131,90 H147
+            M160,110 V70 H172 Q184,70 184,81 Q184,92 172,92 H160
+            M193,70 V110 H211
+            M218,110 L231,70 L244,110 M222.5,97 H239.5
+            M252,70 L265,90 L278,70 M265,90 V110" />
+    <path android:fillColor="#F0B44C" android:pathData="M96,128 h182 v4 h-182 z" />
 </vector>

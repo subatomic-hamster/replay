@@ -12,7 +12,7 @@ import type {
 import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
 import { color, px, safe, sp, type } from "../theme";
-import { Chip, Hint, SlideIn, T } from "../ui";
+import { Chip, Hint, SlideIn, Spinner, T } from "../ui";
 import { QrCode } from "./QrCode";
 
 const JOBS: { id: PhoneJob; label: string; title: string; body: string }[] = [
@@ -141,7 +141,9 @@ export function PhonePanel({
                 Phone handoff needs the web address set on the server
               </T>
             ) : (
-              <View style={styles.placeholder} testID="phone-loading" />
+              <View style={styles.placeholder} testID="phone-loading">
+                <Spinner />
+              </View>
             )}
           </View>
           <View style={styles.side}>
@@ -186,6 +188,8 @@ const styles = StyleSheet.create({
     height: px(440),
     borderRadius: px(12),
     backgroundColor: "rgba(255, 255, 255, 0.06)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   side: { flex: 1, marginLeft: sp(8) },
   gap: { marginTop: sp(2) },

@@ -108,3 +108,15 @@ export function shortDate(iso?: string | null): string {
 /** "41 min" (at least 1) */
 export const minutes = (s?: number | null) =>
   s ? `${Math.max(1, Math.round(s / 60))} min` : "";
+
+/** Each game's key art as Home last listed it: the player and the angles blur it behind
+ *  their spinner while they load, so opening a game never shows an empty screen. */
+const arts = new Map<string, string>();
+export function rememberArt(gs: GameLike[]) {
+  for (const g of gs) {
+    const a = g.hero_url || g.thumb_url;
+    if (a) arts.set(g.id, a);
+  }
+}
+export const artFor = (gameId: string): string | null =>
+  arts.get(gameId) ?? null;

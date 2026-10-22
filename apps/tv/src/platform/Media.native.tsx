@@ -8,7 +8,16 @@ import { StyleSheet } from "react-native";
 import Video, { ViewType, type VideoRef } from "react-native-video";
 import { clamp, type MediaHandle, type MediaProps } from "../playback/media";
 
-export function Media({ src, muted, loop, onEnded, onError, ref }: MediaProps) {
+export function Media({
+  src,
+  muted,
+  loop,
+  onEnded,
+  onError,
+  onReady,
+  onBuffering,
+  ref,
+}: MediaProps) {
   const video = useRef<VideoRef>(null);
   const [paused, setPaused] = useState(true);
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
@@ -71,6 +80,13 @@ export function Media({ src, muted, loop, onEnded, onError, ref }: MediaProps) {
       // transformed or clipped by its parent, a TextureView can.
       viewType={ViewType.TEXTURE}
       progressUpdateInterval={100}
+      // A source swap keeps the last frame on the TextureView (PlayerSurface spins over
+      // it) instead of a shutter; the first load is covered by PlayerSurface's backdrop.
+      hideShutterView
+      shutterColor="transparent"
+      // ExoPlayer STATE_READY: the frame is there (also after each buffer).
+      onReadyForDisplay={onReady}
+      onBuffer={({ isBuffering }) => onBuffering?.(isBuffering)}
       style={StyleSheet.absoluteFill}
       onLoad={(e) => {
         const s = state.current;
@@ -98,7 +114,12 @@ export function Media({ src, muted, loop, onEnded, onError, ref }: MediaProps) {
       onError={({ error }) => {
         state.current.paused = true;
         setPaused(true);
-        onError?.(error.errorString ?? error.localizedDescription ?? error.error ?? "Playback failed");
+        onError?.(
+          error.errorString ??
+            error.localizedDescription ??
+            error.error ??
+            "Playback failed",
+        );
       }}
     />
   );

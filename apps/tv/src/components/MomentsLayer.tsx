@@ -3,14 +3,14 @@
 // (All N, Scores, each player, Your bookmarks). Left/Right walk (the line marks the focused
 // card's time), Select jumps there and closes, Up goes to the chips and from the chips
 // closes the layer, Back closes. Owns the remote while it is open (input stack).
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { fmtDuration } from "../../../../packages/tv-core/src/display";
 import type { Moment } from "../../../../packages/tv-core/src/types";
 import { useDpad, type DpadAction } from "../input";
 import { nearestIndex } from "../playback/seek";
 import { color, px, radius, safe, sp, type } from "../theme";
-import { Chip, Focusable, SlideIn, T } from "../ui";
+import { Chip, Focusable, SlideIn, Spinner, T } from "../ui";
 import { TIMELINE_H } from "./Timeline";
 
 const CARD_W = px(336);
@@ -64,6 +64,7 @@ export function MomentsLayer({
   moments,
   t,
   empty,
+  loading,
   onCue,
   onJump,
   onClose,
@@ -74,6 +75,8 @@ export function MomentsLayer({
   t: number;
   /** What to say when there are none ("No moments in this game", "Getting ready…"). */
   empty: string;
+  /** The moments are still being read: a spinner instead of `empty`. */
+  loading?: boolean;
   onCue: (m: Moment | null) => void;
   onJump: (m: Moment) => void;
   onClose: () => void;
@@ -136,13 +139,13 @@ export function MomentsLayer({
   );
   useDpad(onAction);
 
-  return (
-    <SlideIn
-      from="below"
-      style={styles.layer}
-      testID="moments-layer"
-      dataSet={{ zone }}
-    >
+  // The player re-renders this layer with every clock tick (30 a second while the game
+  // plays), so the chips and the row are memoised on what they draw, and the row mounts
+  // only the cards around the visible ones (absolutely placed at their slot, so nothing
+  // shifts): on a Fire TV Stick every card of a long game re-rendering under the video
+  // was 84 % janky frames.
+  const chipRow = useMemo(
+    () => (
       <View style={styles.chips}>
         {(moments.length ? filters : []).map((f, k) => (
           <Chip
@@ -155,66 +158,100 @@ export function MomentsLayer({
           />
         ))}
       </View>
+    ),
+    [moments.length, filters, zone, ci, filter],
+  );
+  const first = Math.max(0, i - (SHOWN - 1));
+  const cardRow = useMemo(() => {
+    const lo = Math.max(0, first - 1);
+    const hi = Math.min(list.length, first + SHOWN + 2);
+    return (
+      <View
+        style={[styles.row, { transform: [{ translateX: -first * PITCH }] }]}
+      >
+        {list.slice(lo, hi).map((m, n) => (
+          <MomentCard
+            key={m.id}
+            m={m}
+            at={(lo + n) * PITCH}
+            on={zone === "cards" && lo + n === i}
+          />
+        ))}
+      </View>
+    );
+  }, [list, first, i, zone]);
+
+  return (
+    <SlideIn
+      from="below"
+      style={styles.layer}
+      testID="moments-layer"
+      dataSet={{ zone }}
+    >
+      {chipRow}
       {list.length === 0 ? (
-        <T style={[type.body, styles.empty]} testID="moments-empty">
-          {empty}
-        </T>
+        loading ? (
+          <View style={styles.spin}>
+            <Spinner testID="moments-loading" />
+          </View>
+        ) : (
+          <T style={[type.body, styles.empty]} testID="moments-empty">
+            {empty}
+          </T>
+        )
       ) : (
-        <View
-          style={[
-            styles.row,
-            {
-              transform: [
-                { translateX: -Math.max(0, i - (SHOWN - 1)) * PITCH },
-              ],
-            },
-          ]}
-        >
-          {list.map((m, k) => {
-            const on = zone === "cards" && k === i;
-            return (
-              <View key={m.id} style={styles.slot}>
-                <Focusable
-                  focused={on}
-                  testID="moment-card"
-                  dataSet={{
-                    momentId: m.id,
-                    kind: m.kind,
-                    t: m.t,
-                    focused: on ? "true" : "false",
-                  }}
-                >
-                  <View style={styles.thumb}>
-                    {m.thumb_url ? (
-                      <Image
-                        source={{ uri: m.thumb_url }}
-                        style={StyleSheet.absoluteFill}
-                        resizeMode="cover"
-                      />
-                    ) : null}
-                    <View style={styles.time}>
-                      <T style={styles.timeText}>{fmtDuration(m.t)}</T>
-                    </View>
-                  </View>
-                </Focusable>
-                <T
-                  style={[
-                    type.meta,
-                    styles.label,
-                    on && { color: color.chalk },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {m.label}
-                </T>
-              </View>
-            );
-          })}
-        </View>
+        cardRow
       )}
     </SlideIn>
   );
 }
+
+const MomentCard = memo(function MomentCard({
+  m,
+  at,
+  on,
+}: {
+  m: Moment;
+  at: number;
+  on: boolean;
+}) {
+  return (
+    <View style={[styles.slot, { left: at }]}>
+      <Focusable
+        focused={on}
+        clip={false}
+        lift={false}
+        testID="moment-card"
+        dataSet={{
+          momentId: m.id,
+          kind: m.kind,
+          t: m.t,
+          focused: on ? "true" : "false",
+        }}
+      >
+        <View style={styles.thumb}>
+          {m.thumb_url ? (
+            <Image
+              source={{ uri: m.thumb_url }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              resizeMethod="resize"
+            />
+          ) : null}
+          <View style={styles.time}>
+            <T style={styles.timeText}>{fmtDuration(m.t)}</T>
+          </View>
+        </View>
+      </Focusable>
+      <T
+        style={[type.meta, styles.label, on && { color: color.chalk }]}
+        numberOfLines={1}
+      >
+        {m.label}
+      </T>
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   layer: {
@@ -224,9 +261,17 @@ const styles = StyleSheet.create({
     bottom: safe.y + TIMELINE_H + sp(4),
   },
   chips: { flexDirection: "row", marginLeft: px(8), marginBottom: sp(1) },
-  row: { flexDirection: "row" },
-  slot: { width: CARD_W + px(16), marginRight: sp(3) },
-  thumb: { width: CARD_W, height: THUMB_H, backgroundColor: color.bench },
+  // the card (ring box included) plus its label line
+  row: { height: THUMB_H + px(16) + sp(1) + px(34) },
+  slot: { position: "absolute", top: 0, width: CARD_W + px(16) },
+  spin: { height: THUMB_H, justifyContent: "center", marginLeft: sp(4) },
+  thumb: {
+    width: CARD_W,
+    height: THUMB_H,
+    borderRadius: radius.card,
+    backgroundColor: color.bench,
+  },
+  round: { borderRadius: radius.card },
   time: {
     position: "absolute",
     left: sp(1),

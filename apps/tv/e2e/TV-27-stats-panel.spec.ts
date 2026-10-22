@@ -38,7 +38,8 @@ test("TV-27 Stats panel: right third, video plays on, box score and shots, revie
     "Auto-detected",
   );
   await expect(page.getByTestId("stats-score")).toBeVisible();
-  await expect(page.getByTestId("box-score-row")).toHaveCount(4);
+  // the players who took a shot (the fourth has none: an all-zero row says nothing)
+  await expect(page.getByTestId("box-score-row")).toHaveCount(3);
   await expect(page.getByTestId("box-score-row").first()).toContainText(
     "Marcus",
   );

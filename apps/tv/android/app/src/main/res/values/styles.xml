@@ -1,12 +1,16 @@
 <resources>
 
     <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!-- Dark, not DayNight: Fire OS runs in "day", which gave every framework surface
+         (window, colorBackground, dialogs) a white default. -->
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
         <!-- The app's floor colour (theme.ts), not DayNight's white: the launch window
              showed a white screen for 2-4 s before the first React frame on a Fire TV. -->
         <item name="android:windowBackground">#121A23</item>
+        <item name="android:colorBackground">#121A23</item>
+        <item name="colorPrimaryDark">#121A23</item>
     </style>
 
 </resources>

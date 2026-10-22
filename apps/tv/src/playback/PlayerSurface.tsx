@@ -2,14 +2,27 @@
 // itself is platform/Media (<video> on web, react-native-video on Fire TV); this layer is
 // plain RN and shared: the 16:9 viewport, the D-6 follow-cam crop transform, the shared
 // media clock, and the overlay layer above the video.
-import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { Animated, StyleSheet, View } from "react-native";
-import { createClock, type Clock } from "../../../../packages/tv-core/src/clock";
-import { cropRectAt, cropTransform } from "../../../../packages/tv-core/src/follow";
+import {
+  createClock,
+  type Clock,
+} from "../../../../packages/tv-core/src/clock";
+import {
+  cropRectAt,
+  cropTransform,
+} from "../../../../packages/tv-core/src/follow";
 import type { CropPath } from "../../../../packages/tv-core/src/types";
 import { Media } from "../platform/Media";
-import { color, font, px } from "../theme";
-import { T } from "../ui";
+import { color, px, type } from "../theme";
+import { Backdrop, Busy, Spinner, T } from "../ui";
 import type { MediaHandle } from "./media";
 
 export interface PlayerHandle {
@@ -36,16 +49,42 @@ interface Props {
   aspect?: number;
   /** Overlays, laid out over the untransformed viewport. */
   children?: ReactNode;
+  /** The picture blurred behind the spinner until the first frame (a game's hero). */
+  poster?: string | null;
   ref?: Ref<PlayerHandle>;
 }
 
-export function PlayerSurface({ src, crop, muted, loop, aspect, children, ref }: Props) {
+/** A stall shorter than this shows no spinner (a seek on a warm buffer). */
+const BUFFER_SHOW_MS = 400;
+
+export function PlayerSurface({
+  src,
+  crop,
+  muted,
+  loop,
+  aspect,
+  children,
+  poster,
+  ref,
+}: Props) {
   const media = useRef<MediaHandle>(null);
   const [clock, setClock] = useState<Clock | null>(null);
   const size = useRef({ w: 0, h: 0 });
   // Keyed by src, so a swap to another source clears it without an effect.
-  const [failed, setFailed] = useState<{ src: string; message: string } | null>(null);
+  const [failed, setFailed] = useState<{ src: string; message: string } | null>(
+    null,
+  );
   const error = failed?.src === src ? failed.message : null;
+  // Loading: until the first source shows a frame, its poster blurred with a spinner; a
+  // later source swap (way, angle, broadcast) or a stall spins over the frozen frame.
+  const [readySrc, setReadySrc] = useState<string | null>(null);
+  const [everReady, setEverReady] = useState(false);
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    if (!stalled) return;
+    const t = setTimeout(() => setStalled(false), 30_000); // never spin forever on a lost event
+    return () => clearTimeout(t);
+  }, [stalled]);
   const [anim] = useState(() => ({
     tx: new Animated.Value(0),
     ty: new Animated.Value(0),
@@ -100,7 +139,11 @@ export function PlayerSurface({ src, crop, muted, loop, aspect, children, ref }:
     let raf = 0;
     const apply = () => {
       const { w, h } = size.current;
-      const { tx, ty, sx, sy } = cropTransform(cropRectAt(crop, clock.now()), w, h);
+      const { tx, ty, sx, sy } = cropTransform(
+        cropRectAt(crop, clock.now()),
+        w,
+        h,
+      );
       anim.tx.setValue(tx + (w / 2) * (sx - 1));
       anim.ty.setValue(ty + (h / 2) * (sy - 1));
       anim.sx.setValue(sx);
@@ -119,7 +162,10 @@ export function PlayerSurface({ src, crop, muted, loop, aspect, children, ref }:
       testID="player-surface"
       style={[styles.surface, aspect ? { aspectRatio: aspect } : null]}
       onLayout={(e) => {
-        size.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height };
+        size.current = {
+          w: e.nativeEvent.layout.width,
+          h: e.nativeEvent.layout.height,
+        };
       }}
     >
       <Animated.View
@@ -142,17 +188,38 @@ export function PlayerSurface({ src, crop, muted, loop, aspect, children, ref }:
           muted={muted}
           loop={loop}
           onError={(message) => setFailed({ src, message })}
+          onReady={() => {
+            setReadySrc(src);
+            setEverReady(true);
+            setStalled(false);
+          }}
+          onBuffering={setStalled}
         />
       </Animated.View>
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {children}
       </View>
       {error ? (
-        <View style={[StyleSheet.absoluteFill, styles.error]} pointerEvents="none" testID="player-error">
-          <T style={{ fontSize: font.h2 }}>Video unavailable</T>
-          <T style={{ color: color.dim }} numberOfLines={2}>
+        <View
+          style={[StyleSheet.absoluteFill, styles.center]}
+          pointerEvents="none"
+          testID="player-error"
+        >
+          <Backdrop art={poster} dim={0.7} />
+          <T style={type.title}>Video unavailable</T>
+          <T style={[type.meta, styles.dim]} numberOfLines={2}>
             {error}
           </T>
+        </View>
+      ) : !everReady ? (
+        <Busy art={poster} testID="player-loading" />
+      ) : readySrc !== src || stalled ? (
+        <View
+          style={[StyleSheet.absoluteFill, styles.center]}
+          pointerEvents="none"
+          testID="player-buffering"
+        >
+          <Spinner delay={BUFFER_SHOW_MS} />
         </View>
       ) : null}
     </View>
@@ -167,7 +234,9 @@ export function useClockTime(clock: Clock | null, step = 1 / 30): number {
   const [t, setT] = useState(0);
   useEffect(() => {
     if (!clock) return;
-    return clock.subscribe((v) => setT((prev) => (Math.abs(v - prev) >= step ? v : prev)));
+    return clock.subscribe((v) =>
+      setT((prev) => (Math.abs(v - prev) >= step ? v : prev)),
+    );
   }, [clock, step]);
   return t;
 }
@@ -179,10 +248,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "#000",
   },
-  error: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: px(48),
-    backgroundColor: color.scrim,
-  },
+  center: { alignItems: "center", justifyContent: "center", padding: px(48) },
+  dim: { color: color.bleacher, marginTop: px(16), textAlign: "center" },
 });

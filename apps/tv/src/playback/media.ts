@@ -22,7 +22,12 @@ export interface MediaProps {
   onEnded?: () => void;
   /** The source failed to load or play. */
   onError?: (message: string) => void;
+  /** The current source has a picture to show (its first frame, or after a buffer). */
+  onReady?: () => void;
+  /** Playback is stalled waiting for data (true) or has the data again (false). */
+  onBuffering?: (buffering: boolean) => void;
   ref?: Ref<MediaHandle>;
 }
 
-export const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+export const clamp = (v: number, lo: number, hi: number) =>
+  Math.min(Math.max(v, lo), hi);

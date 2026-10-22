@@ -7,17 +7,20 @@
 // (Fire TV convention; E-14 on the web).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
-import { api } from "../api";
+import { api, apiBase } from "../api";
 import { Avatar } from "../components/Avatar";
 import {
   hasFeature,
   minutes,
   progressOf,
+  rememberArt,
   shortDate,
   stageWords,
   watchable,
   type GameLike,
 } from "../gameState";
+import type { Profile } from "../../../../packages/tv-core/src/profiles";
+import { loadHomeCache, saveHomeCache } from "../platform/config";
 import { fmtDuration } from "../../../../packages/tv-core/src/display";
 import { useDpad, type DpadAction } from "../input";
 import { navigate, type Route } from "../nav";
@@ -113,15 +116,56 @@ const clamp = (i: number, n: number) => Math.max(0, Math.min(n - 1, i));
 const rowShift = (i: number, shown: number, pitch: number) =>
   -Math.max(0, i - (shown - 1)) * pitch;
 
+/** The last lists Home showed, for this API address: kept in memory between screens and
+ *  on the device between starts, so Home draws at once (and its art comes from the image
+ *  cache) while the fresh list loads behind it. */
+interface Shelf {
+  base: string;
+  games: GameLike[];
+  people: Profile[];
+}
+let shelf: Shelf | null = (() => {
+  try {
+    const s = JSON.parse(loadHomeCache() || "null") as Shelf | null;
+    return s && Array.isArray(s.games) ? s : null;
+  } catch {
+    return null;
+  }
+})();
+const shelved = () => (shelf?.base === apiBase() ? shelf : null);
+
+/** Fetch the key art and card frames of the first games into the image cache (disk), so
+ *  focus moving along the row or a game opening finds them there. */
+const PREFETCH = 8;
+function prefetchArt(gs: GameLike[]) {
+  for (const g of gs.slice(0, PREFETCH))
+    for (const u of new Set([g.hero_url, g.thumb_url]))
+      if (u) Image.prefetch(u).catch(() => {});
+}
+
 export function Home() {
-  const { data, error, reload } = useAsync(
-    () => api.listGames() as Promise<GameLike[]>,
-    [],
-  );
-  const { data: people } = useAsync(
+  const {
+    data: fresh,
+    error,
+    reload,
+  } = useAsync(() => api.listGames() as Promise<GameLike[]>, []);
+  const { data: freshPeople } = useAsync(
     () => api.listProfiles().catch(() => []),
     [],
   );
+  const [cached] = useState(shelved);
+  const data = fresh ?? cached?.games ?? null;
+  const people = freshPeople ?? cached?.people ?? null;
+  useEffect(() => {
+    if (!fresh) return;
+    rememberArt(fresh);
+    prefetchArt(order(fresh));
+    shelf = { base: apiBase(), games: fresh, people: freshPeople ?? [] };
+    saveHomeCache(JSON.stringify(shelf));
+  }, [fresh, freshPeople]);
+  useEffect(() => {
+    if (cached) rememberArt(cached.games);
+  }, [cached]);
   const games = useMemo(() => order(data ?? []), [data]);
   const players = useMemo(() => people ?? [], [people]);
   const [zone, setZone] = useState<Zone | null>(null);
@@ -220,7 +264,14 @@ export function Home() {
   );
   useDpad(onAction);
 
-  if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
+  if (error)
+    return (
+      <ApiErrorBanner
+        error={error}
+        onRetry={reload}
+        art={game?.hero_url || game?.thumb_url}
+      />
+    );
   if (!data) return <Loading />;
 
   const lifted = z === "players";
@@ -397,6 +448,9 @@ function GameCard({ game: g, focused }: { game: GameLike; focused: boolean }) {
               source={{ uri: art }}
               style={[StyleSheet.absoluteFill, working && { opacity: 0.3 }]}
               resizeMode="cover"
+              // decode at the card's size, not the frame's 1920x1080 (8 MB a card):
+              // more cards stay decoded in memory and focus moves never wait on a decode
+              resizeMethod="resize"
             />
           ) : null}
           {working ? (

@@ -16,8 +16,8 @@ import type {
 } from "../../../../packages/tv-core/src/types";
 import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
-import { color, face, px, safe, sp, type } from "../theme";
-import { Chip, T } from "../ui";
+import { color, face, px, safe, sp, teamColorMap, type } from "../theme";
+import { Chip, Spinner, T } from "../ui";
 import { CourtView, courtSize } from "./CourtView";
 
 export const PANEL_W = px(640);
@@ -41,7 +41,8 @@ export function StatsPanel({
   onOpen: (to: StatsExit) => void;
   onPlayPause: () => void;
 }) {
-  const [stats, setStats] = useState<Stats | null>(null);
+  // undefined while loading, null when the stats could not be read
+  const [stats, setStats] = useState<Stats | null | undefined>(undefined);
   const [queue, setQueue] = useState<number | null>(null);
   const [focus, setFocus] = useState<StatsExit | null>(null);
   useEffect(() => {
@@ -93,19 +94,31 @@ export function StatsPanel({
   );
   useDpad(onAction);
 
-  const rows = [...(stats?.box_score ?? [])]
-    .sort((a, b) => (b.points ?? 0) - (a.points ?? 0) || b.makes - a.makes)
+  const box = stats?.box_score ?? [];
+  // Players who took a shot, the most points, then makes, then attempts first. When no shot
+  // went in (auto-detection found none), a column of zeros says nothing: the score and the
+  // Pts column give way to one honest line.
+  const rows = box
+    .filter((r) => r.attempts > 0 || r.makes > 0 || (r.points ?? 0) > 0)
+    .sort(
+      (a, b) =>
+        (b.points ?? 0) - (a.points ?? 0) ||
+        b.makes - a.makes ||
+        b.attempts - a.attempts,
+    )
     .slice(0, ROWS);
-  const hasPts = rows.some((r) => r.points !== undefined);
+  const made = box.some((r) => r.makes > 0 || (r.points ?? 0) > 0);
+  const hasPts = made && rows.some((r) => r.points !== undefined);
   const name = (pid: string, fallback?: string | null) =>
     roster.find((p) => p.id === pid)?.name ??
     fallback ??
     `Player ${pid.replace(/^p/, "")}`;
   // The score: points by team, when the box score has them.
+  const ink = teamColorMap(game.teams.map((tm) => tm.color_hex));
   const teams = hasPts
     ? game.teams.map((tm) => ({
         ...tm,
-        pts: (stats?.box_score ?? [])
+        pts: box
           .filter(
             (r) =>
               (r.team ?? roster.find((p) => p.id === r.player_id)?.team) ===
@@ -116,6 +129,15 @@ export function StatsPanel({
     : [];
   const court = game.sport_ui?.court;
   const [cw] = courtSize(court, game.court.variant);
+
+  if (stats === undefined) {
+    return (
+      <View style={[styles.panel, styles.loading]} testID="stats-panel">
+        <T style={[type.title, styles.loadingTitle]}>Stats</T>
+        <Spinner testID="stats-loading" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.panel} testID="stats-panel">
@@ -134,12 +156,27 @@ export function StatsPanel({
             <View key={tm.id} style={styles.team}>
               {i > 0 ? <T style={[styles.big, styles.dim]}> – </T> : null}
               <View
-                style={[styles.swatch, { backgroundColor: tm.color_hex }]}
+                testID="team-swatch"
+                dataSet={{ color: ink.get(tm.color_hex) ?? tm.color_hex }}
+                style={[
+                  styles.swatch,
+                  { backgroundColor: ink.get(tm.color_hex) ?? tm.color_hex },
+                ]}
               />
               <T style={styles.big}>{tm.pts}</T>
             </View>
           ))}
         </View>
+      ) : null}
+
+      {!made ? (
+        <T style={[type.body, styles.none]} testID="stats-no-makes">
+          {stats === null
+            ? "The stats could not be loaded. Close and open Stats to try again."
+            : rows.length
+              ? "No made shots detected yet"
+              : "No shots detected in this game"}
+        </T>
       ) : null}
 
       {panels.has("box_score") && rows.length ? (
@@ -247,6 +284,9 @@ const styles = StyleSheet.create({
     paddingBottom: safe.y,
     backgroundColor: "rgba(29, 40, 52, 0.94)", // Bench, a little video through it
   },
+  loading: { alignItems: "center", justifyContent: "center" },
+  loadingTitle: { position: "absolute", top: safe.y, left: PAD },
+  none: { color: color.bleacher, marginTop: sp(2) },
   dim: { color: color.bleacher },
   score: { flexDirection: "row", alignItems: "center", marginTop: sp(2) },
   team: { flexDirection: "row", alignItems: "center" },

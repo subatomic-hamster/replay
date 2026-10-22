@@ -3,7 +3,7 @@
 // hash marks (4 px wide; 20 px tall for scores, 12 px for other plays, a small diamond for
 // bookmarks; Floor on the played side so they read without colour). Elapsed time on the
 // left, remaining on the right, in Figures. While seeking, a 400 px preview frame (a crop
-// of the storyboard sprite, or the moment's own thumb when the seek snapped to one) rides
+// of the storyboard sprite, or the moment's own thumb when the seek stopped at one) rides
 // above the playhead with a Scoreboard readout (`×8`, `+2:00`) beside it.
 import { Image, StyleSheet, View } from "react-native";
 import { fmtDuration } from "../../../../packages/tv-core/src/display";
@@ -25,14 +25,14 @@ const LABEL_H = px(48);
 const PREVIEW_BOTTOM = TIMELINE_H + sp(1);
 
 export interface SeekView {
-  /** The raw seek point. */
+  /** The seek point: a stop (seek.ts nextStop), or the raw point while scrubbing. */
   target: number;
   /** Hold seeks: the distance from where the seek started, and the current step (s). */
   delta: number;
   step: number;
   /** Rew/FF: ×speed in a direction; null for a hold seek. */
   scrub: { dir: 1 | -1; speed: number } | null;
-  /** The moment within ±3 s the preview snapped to. */
+  /** The moment whose start the seek stopped at (its thumb and label show). */
   snapped: Moment | null;
 }
 
@@ -48,7 +48,7 @@ interface Props {
 export function Timeline({ duration, t, moments, seek, storyboard }: Props) {
   const X = (s: number) =>
     duration > 0 ? Math.max(0, Math.min(1, s / duration)) * LINE_W : 0;
-  const shown = seek ? (seek.snapped?.t ?? seek.target) : t;
+  const shown = seek ? seek.target : t;
   const x = X(shown);
   return (
     <View

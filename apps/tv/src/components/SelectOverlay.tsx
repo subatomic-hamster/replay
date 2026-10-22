@@ -2,8 +2,11 @@
 // percentages of the player surface, which is exactly the video's rendered rect.
 import { StyleSheet, View } from "react-native";
 import { inkOn } from "../../../../packages/tv-core/src/display";
-import type { Player, TrackPlayer } from "../../../../packages/tv-core/src/types";
-import { color, font, px } from "../theme";
+import type {
+  Player,
+  TrackPlayer,
+} from "../../../../packages/tv-core/src/types";
+import { color, font, px, teamColorMap } from "../theme";
 import { T } from "../ui";
 
 interface Props {
@@ -17,7 +20,13 @@ interface Props {
 
 const pct = (v: number) => `${(v * 100).toFixed(3)}%` as const;
 
-export function SelectOverlay({ players, roster, focusId, spotlight, showBoxes = true }: Props) {
+export function SelectOverlay({
+  players,
+  roster,
+  focusId,
+  spotlight,
+  showBoxes = true,
+}: Props) {
   if (players.length === 0) {
     if (!showBoxes) return null;
     return (
@@ -27,17 +36,33 @@ export function SelectOverlay({ players, roster, focusId, spotlight, showBoxes =
     );
   }
   const focused = players.find((p) => p.id === focusId);
+  // in team order, so the drawn pair keeps which team is the darker one
+  const ink = teamColorMap(
+    [...roster]
+      .sort((a, b) => (a.team ?? 0) - (b.team ?? 0))
+      .map((r) => r.color_hex),
+  );
 
   return (
     <>
       {spotlight && focused ? (
         <View style={StyleSheet.absoluteFill} testID="spotlight-overlay">
           {/* Four dim panels around the box — portable to every renderer, no masks. */}
-          <View style={[styles.dim, { left: 0, top: 0, width: "100%", height: pct(focused.bb[1]) }]} />
           <View
             style={[
               styles.dim,
-              { left: 0, top: pct(focused.bb[1] + focused.bb[3]), width: "100%", bottom: 0 },
+              { left: 0, top: 0, width: "100%", height: pct(focused.bb[1]) },
+            ]}
+          />
+          <View
+            style={[
+              styles.dim,
+              {
+                left: 0,
+                top: pct(focused.bb[1] + focused.bb[3]),
+                width: "100%",
+                bottom: 0,
+              },
             ]}
           />
           <View
@@ -68,7 +93,8 @@ export function SelectOverlay({ players, roster, focusId, spotlight, showBoxes =
       {showBoxes &&
         players.map((p) => {
           const info = roster.find((r) => r.id === p.id);
-          const team = info?.color_hex ?? color.dot;
+          const team =
+            (info?.color_hex && ink.get(info.color_hex)) || color.dot;
           const isFocused = p.id === focusId;
           return (
             <View

@@ -119,6 +119,9 @@ export function DoMoreLayer({
                   <Focusable
                     focused={on}
                     round={view === "chips" ? radius.chip : radius.card}
+                    // text and avatars need no clip (cheaper over the video)
+                    clip={view === "thumbs"}
+                    lift={false}
                     testID={t.id}
                     dataSet={{
                       focused: on ? "true" : "false",

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app icon (Fire TV's App Library shows it on a tile; the old one was React Native's
+     template icon, so Replay was there but unrecognisable): Floor, a Scoreboard play mark
+     over a court-line timeline. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <path android:fillColor="#121A23" android:pathData="M16,0 H80 Q96,0 96,16 V80 Q96,96 80,96 H16 Q0,96 0,80 V16 Q0,0 16,0 Z" />
+    <path android:fillColor="#F0B44C" android:pathData="M36,24 L36,64 L70,44 Z" />
+    <path android:fillColor="#3A4856" android:pathData="M18,74 h60 v5 h-60 z" />
+    <path android:fillColor="#F0B44C" android:pathData="M18,74 h36 v5 h-36 z" />
+</vector>

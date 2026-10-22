@@ -19,6 +19,7 @@ import {
   ApiErrorBanner,
   Focusable,
   Hint,
+  Spinner,
   T,
   styles as ui,
   useAsync,
@@ -112,6 +113,11 @@ export function AddGame() {
         <T style={[type.display, styles.head]}>Add a game</T>
         <T style={[type.body, styles.sub]}>Which sport?</T>
         <View style={styles.tiles}>
+          {sports ? null : (
+            <View style={styles.tileSpin}>
+              <Spinner testID="add-loading" />
+            </View>
+          )}
           {(sports ?? []).map((s, i) => (
             <View
               key={s.id}
@@ -129,7 +135,12 @@ export function AddGame() {
             </View>
           ))}
         </View>
-        {busy ? <T style={styles.sub}>Creating the game…</T> : null}
+        {busy ? (
+          <View style={styles.busyRow} testID="add-creating">
+            <Spinner small delay={0} />
+            <T style={[type.body, styles.busyText]}>Creating the game</T>
+          </View>
+        ) : null}
         <View style={styles.foot}>
           <Hint k="Back">Home</Hint>
         </View>
@@ -213,6 +224,9 @@ const styles = StyleSheet.create({
     marginLeft: -px(8),
   },
   tileSlot: { marginRight: sp(3), marginBottom: sp(3) },
+  tileSpin: { height: px(216), justifyContent: "center", marginLeft: sp(4) },
+  busyRow: { flexDirection: "row", alignItems: "center" },
+  busyText: { color: color.bleacher, marginLeft: sp(2) },
   tile: {
     width: px(360),
     height: px(200),

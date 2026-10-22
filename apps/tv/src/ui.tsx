@@ -4,6 +4,7 @@
 // spatial algorithm. A focused thing scales 1.06 with a 4 px Chalk ring (150 ms ease-out).
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   Image,
@@ -182,6 +183,8 @@ export function Focusable({
   focused,
   children,
   round = radius.card,
+  clip = true,
+  lift = true,
   style,
   testID,
   dataSet,
@@ -190,6 +193,13 @@ export function Focusable({
   children: ReactNode;
   /** The content's corner radius (design px already applied). */
   round?: number;
+  /** Clip the content to the rounded corners. Off for content that rounds itself (an
+   *  Image with borderRadius, plain text): over playing video a rounded clip is redrawn
+   *  with every video frame, and on a Fire TV Stick that alone made most frames janky. */
+  clip?: boolean;
+  /** The focused card's shadow. Off over playing video: on Fire OS 7 it drew as a pale
+   *  rectangle around the ring and was redrawn with every video frame. */
+  lift?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
   dataSet?: DataSet;
@@ -206,14 +216,14 @@ export function Focusable({
           ...focusRing(focused),
           transform: [{ scale }],
         },
-        focused && styles.shadow,
+        focused && lift && styles.shadow,
         style,
       ]}
     >
       <View
         style={{
           borderRadius: round,
-          overflow: "hidden",
+          overflow: clip ? "hidden" : "visible",
           backgroundColor: color.bench,
         }}
       >
@@ -467,6 +477,9 @@ export function Hero({
       : fallback && fallback !== failed
         ? fallback
         : null;
+  // The last art that finished loading stays underneath until the new one has loaded, so
+  // moving between cards cross-fades instead of flashing Floor.
+  const [under, setUnder] = useState<string | null>(null);
   return (
     <View
       style={StyleSheet.absoluteFill}
@@ -475,12 +488,22 @@ export function Hero({
       pointerEvents="none"
     >
       <View style={styles.art}>
+        {src && under && under !== src ? (
+          <Image
+            key={under}
+            source={{ uri: under }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+        ) : null}
         {src ? (
           <Image
             key={src}
             source={{ uri: src }}
             style={StyleSheet.absoluteFill}
             resizeMode="cover"
+            fadeDuration={FOCUS_MS}
+            onLoad={() => setUnder(src)}
             onError={() => setFailed(src)}
           />
         ) : null}
@@ -506,13 +529,144 @@ export function Hero({
   );
 }
 
-/** E-22: every screen that fetches renders this instead of a blank screen. */
+// ---------------------------------------------------------------- busy and error states
+// One presentation for anything that waits (Netflix/YouTube style): what the person was
+// just looking at (a game's hero, its frame), blurred and dimmed, with a spinner in the
+// middle; never a blank page with "Loading…". Errors keep the same backdrop with calm
+// words and the way out.
+
+/** The blur is done small: the art is decoded at 1/8 of the screen (Fresco downsamples on
+ *  `resizeMethod="resize"`), blurred there and scaled up 8x, which smooths it further. A
+ *  full-size blur of a 1080p frame takes hundreds of ms on a 32-bit Fire TV. */
+const BLUR_DOWN = 8;
+const SCREEN_W = px(1920);
+const SCREEN_H = px(1080);
+
+/** A full-bleed blurred, dimmed picture of `art`; without art (or while it loads, or if it
+ *  fails) a quiet Bench-to-Floor gradient. */
+export function Backdrop({
+  art,
+  dim = 0.5,
+}: {
+  art?: string | null;
+  /** Floor over the blurred art, 0..1 */
+  dim?: number;
+}) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const src = art && art !== failed ? art : null;
+  const w = SCREEN_W / BLUR_DOWN;
+  const h = SCREEN_H / BLUR_DOWN;
+  return (
+    <View
+      style={[StyleSheet.absoluteFill, styles.backdrop]}
+      pointerEvents="none"
+      testID="backdrop"
+      dataSet={{ art: src ? "true" : "false" }}
+    >
+      <Fade side="bottom" length={SCREEN_H} />
+      {src ? (
+        <View style={[StyleSheet.absoluteFill, styles.center]}>
+          <Image
+            source={{ uri: src }}
+            blurRadius={3}
+            resizeMethod="resize"
+            resizeMode="cover"
+            fadeDuration={FOCUS_MS}
+            onError={() => setFailed(src)}
+            style={{ width: w, height: h, transform: [{ scale: BLUR_DOWN }] }}
+          />
+        </View>
+      ) : null}
+      {src ? (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: color.floor, opacity: dim },
+          ]}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/** The spinner: the platform's own (a native ProgressBar on Fire TV, animated off the JS
+ *  thread), in Chalk. It fades in after `delay` ms, so a quick load never flashes it. */
+export function Spinner({
+  small,
+  delay = 250,
+  testID,
+}: {
+  /** inline, beside text (Settings' check, "Creating the game") */
+  small?: boolean;
+  delay?: number;
+  testID?: string;
+}) {
+  // Android draws only its two named sizes (a number left a clipped speck on Fire OS):
+  // large 36 dp = 72 px at 1080p, small 20 dp = 40 px. The web gets the same pixels.
+  const size =
+    Platform.OS === "web" ? px(small ? 40 : 72) : small ? "small" : "large";
+  // Mounted after the delay, not faded in: a ProgressBar that starts at alpha 0 never drew
+  // on Fire OS once the fade (native driver) brought it up.
+  const [shown, setShown] = useState(!delay);
+  useEffect(() => {
+    if (!delay) return;
+    const t = setTimeout(() => setShown(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+  const box = typeof size === "number" ? size : px(small ? 40 : 72);
+  return (
+    <View
+      style={{ width: box, height: box, justifyContent: "center" }}
+      testID={testID}
+    >
+      {shown ? <ActivityIndicator size={size} color={color.chalk} /> : null}
+    </View>
+  );
+}
+
+/** Something is loading: the blurred backdrop of `art` with the spinner centred. Fills its
+ *  parent (a screen, the player). */
+export function Busy({
+  art,
+  testID = "busy",
+  dim,
+}: {
+  art?: string | null;
+  testID?: string;
+  dim?: number;
+}) {
+  return (
+    <View
+      style={[StyleSheet.absoluteFill, styles.center]}
+      testID={testID}
+      dataSet={{ state: "loading" }}
+      pointerEvents="none"
+    >
+      <Backdrop art={art} dim={dim} />
+      <Spinner />
+    </View>
+  );
+}
+
+/** A screen that is still loading. `art`: what was on screen before (a game's hero). */
+export function Loading({ art }: { art?: string | null }) {
+  return (
+    <View style={styles.fill}>
+      <Busy art={art} />
+    </View>
+  );
+}
+
+/** E-22: every screen that fetches renders this instead of a blank screen: the same
+ *  backdrop as loading, calm words, and Try again / Settings. */
 export function ApiErrorBanner({
   error,
   onRetry,
+  art,
 }: {
   error: Error;
   onRetry: () => void;
+  art?: string | null;
 }) {
   // Right reaches Settings: a wrong API address must be fixable from here.
   const [onSettings, setOnSettings] = useState(false);
@@ -533,30 +687,46 @@ export function ApiErrorBanner({
     ),
   );
   return (
-    <View style={styles.safe} testID="api-error">
-      <T style={type.title}>Could not reach the Replay API.</T>
-      <T style={{ color: color.bleacher, marginTop: sp(1) }}>{error.message}</T>
-      <View style={{ flexDirection: "row", marginTop: sp(4) }}>
-        <Pill label="Retry" focused={!onSettings} testID="api-error-retry" />
-        <Pill
-          label="Settings"
-          focused={onSettings}
-          testID="api-error-settings"
-        />
+    <View style={[styles.fill, styles.center]} testID="api-error">
+      <Backdrop art={art} dim={0.7} />
+      <View style={styles.message}>
+        <T style={[type.title, styles.centerText]}>Replay can't connect</T>
+        <T style={[type.body, styles.calm]}>
+          Check the TV's internet, or the server address in Settings.
+        </T>
+        <T
+          style={[type.meta, styles.calm, styles.detail]}
+          numberOfLines={2}
+          testID="api-error-detail"
+        >
+          {error.message}
+        </T>
+        <View style={styles.actions}>
+          <Pill
+            label="Try again"
+            focused={!onSettings}
+            testID="api-error-retry"
+          />
+          <Pill
+            label="Settings"
+            focused={onSettings}
+            testID="api-error-settings"
+          />
+        </View>
       </View>
     </View>
   );
 }
 
-export function Loading() {
-  return (
-    <View style={styles.safe}>
-      <T style={{ color: color.bleacher }}>Loading…</T>
-    </View>
-  );
-}
-
 export const styles = StyleSheet.create({
+  fill: { flex: 1, backgroundColor: color.floor },
+  center: { alignItems: "center", justifyContent: "center" },
+  backdrop: { backgroundColor: color.bench, overflow: "hidden" },
+  message: { alignItems: "center", maxWidth: px(1100) },
+  centerText: { textAlign: "center" },
+  calm: { color: color.bleacher, textAlign: "center", marginTop: sp(2) },
+  detail: { marginTop: sp(1) },
+  actions: { flexDirection: "row", marginTop: sp(5), marginLeft: sp(2) },
   /** The old screens' frame (Wave 2/3 move them onto `safe`). */
   screen: { flex: 1, backgroundColor: color.floor, padding: px(64) },
   /** A redesigned screen: Floor, content inside the 96/54 safe zone. */

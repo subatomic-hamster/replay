@@ -23,3 +23,8 @@ export const loadResume = (): string =>
   NativeReplaySettings?.getString("resume") ?? "";
 export const saveResume = (value: string) =>
   NativeReplaySettings?.setString("resume", value);
+/** Home's last games list (Home.tsx), as JSON: Home draws it at once on the next start. */
+export const loadHomeCache = (): string =>
+  NativeReplaySettings?.getString("home") ?? "";
+export const saveHomeCache = (value: string) =>
+  NativeReplaySettings?.setString("home", value);

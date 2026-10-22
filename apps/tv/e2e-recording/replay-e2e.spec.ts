@@ -564,7 +564,7 @@ async function demoBeats(page: Page, phone: Page) {
   await beat(
     page,
     "Tap seek: preview snaps to a moment",
-    "Right taps seek 10 s with a storyboard preview; near a moment it snaps and names it",
+    "Right taps step to the next 10 s grid point or moment start; a moment stop is named",
     async () => {
       const ms = await bbMoments();
       const preview = page.getByTestId("seek-preview");
@@ -577,7 +577,8 @@ async function demoBeats(page: Page, phone: Page) {
           // snapped: the moment's own frame (the moments stage's thumb), named
           const m = byId(ms, id);
           await expect(page.getByTestId("seek-label")).toHaveText(m.label);
-          await expect(preview).toHaveAttribute("data-t", m.t.toFixed(1));
+          // a moment stop is the moment's start
+          await expect(preview).toHaveAttribute("data-t", m.t_start.toFixed(1));
           expect(m.thumb_url).toContain("/moments/");
           await expect(preview.locator("img")).toHaveAttribute(
             "src",
@@ -588,18 +589,21 @@ async function demoBeats(page: Page, phone: Page) {
           await playing(page);
           const t = (await media(page)).t;
           expect(t).toBeGreaterThanOrEqual(m.t_start - 0.1);
-          expect(t).toBeLessThan(m.t + 1.5);
-          return `Right tap → the storyboard preview snapped to “${m.label}” at ${mmss(m.t)}; playback resumed at its start`;
+          expect(t).toBeLessThan(m.t_start + 1.5);
+          return `Right tap → the seek stopped at “${m.label}” (${mmss(m.t_start)}), named on the preview; playback resumed at its start`;
         }
-        // not near a moment: the storyboard sprite's cell for that time, +0:10
+        // a grid point (every 10 s): the storyboard sprite's cell for that time
+        expect(Number(await preview.getAttribute("data-t")) % 10).toBe(0);
         expect(await preview.getAttribute("data-sheet")).toContain(
           "/storyboard/",
         );
-        await expect(page.getByTestId("seek-readout")).toHaveText(/^\+0:1\d$/);
+        await expect(page.getByTestId("seek-readout")).toHaveText(
+          /^\+0:(0\d|10)$/,
+        );
         await expect(preview).toHaveCount(0, { timeout: 5_000 });
         await page.waitForTimeout(800);
       }
-      throw new Error("no tap landed within 3 s of a moment");
+      throw new Error("no tap stopped at a moment");
     },
   );
 

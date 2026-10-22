@@ -28,6 +28,7 @@ import {
   type CameraAction,
   type CameraState,
 } from "../scene/camera";
+import { artFor } from "../gameState";
 import { color, face, px, radius, safe, sp, type } from "../theme";
 import { ApiErrorBanner, Fade, Hint, Loading, T, useAsync } from "../ui";
 
@@ -172,8 +173,11 @@ export function AngleView({
     sceneTime.current = t;
   }, []);
 
-  if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
-  if (!m) return <Loading />;
+  if (error)
+    return (
+      <ApiErrorBanner error={error} onRetry={reload} art={artFor(gameId)} />
+    );
+  if (!m) return <Loading art={artFor(gameId)} />;
   const angle = m.angles[Math.min(index, count - 1)];
   if (!angle) {
     return (
@@ -212,7 +216,13 @@ export function AngleView({
       }}
     >
       <View style={{ width: stageW }}>
-        <PlayerSurface ref={setHandle} src={angle.url} muted loop>
+        <PlayerSurface
+          ref={setHandle}
+          src={angle.url}
+          poster={artFor(gameId)}
+          muted
+          loop
+        >
           {inFree ? (
             <FreeView
               layout={scene}

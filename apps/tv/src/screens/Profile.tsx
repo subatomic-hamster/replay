@@ -41,6 +41,7 @@ import {
   Hint,
   Loading,
   Pill,
+  Spinner,
   T,
   styles as ui,
   useAsync,
@@ -355,7 +356,12 @@ function CardTab({ profile, active, onExit }: TabProps) {
   );
   useDpad(onAction, active);
 
-  if (!card) return <T testID="card-note">{note || "Loading the card…"}</T>;
+  if (!card)
+    return note ? (
+      <T testID="card-note">{note}</T>
+    ) : (
+      <Spinner testID="card-loading" />
+    );
   const png = `${api.profileMediaUrl(card.png)}${version ? `?v=${version}` : ""}`;
   return (
     <View
@@ -495,7 +501,7 @@ function ReelTab({ profile, active, onExit }: TabProps) {
   useDpad(onAction, active);
 
   if (error) return <T testID="reel-note">No reel: {error.message}</T>;
-  if (!reel) return <T>Loading the reel…</T>;
+  if (!reel) return <Spinner testID="reel-loading" />;
   if (!items.length)
     return (
       <T testID="reel-empty">

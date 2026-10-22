@@ -3,19 +3,37 @@
 // passes — D-52). Left/Right pick a player; Back returns to the game.
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { listWindow, type Advice as AdviceDoc } from "../../../../packages/tv-core/src/discovery";
+import {
+  listWindow,
+  type Advice as AdviceDoc,
+} from "../../../../packages/tv-core/src/discovery";
 import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
 import { color, px } from "../theme";
-import { ApiErrorBanner, Hint, Loading, Pill, T, styles as ui, useAsync } from "../ui";
+import {
+  ApiErrorBanner,
+  Hint,
+  Loading,
+  Pill,
+  Spinner,
+  T,
+  styles as ui,
+  useAsync,
+} from "../ui";
 
 const CHIPS = 6;
 
 export function Advice({ gameId }: { gameId: string }) {
-  const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
+  const {
+    data: game,
+    error,
+    reload,
+  } = useAsync(() => api.getGame(gameId), [gameId]);
   const [focus, setFocus] = useState(0);
-  const [byPlayer, setByPlayer] = useState<Record<string, AdviceDoc | string>>({});
+  const [byPlayer, setByPlayer] = useState<Record<string, AdviceDoc | string>>(
+    {},
+  );
   const players = game?.players ?? [];
   const pid = players[focus]?.id;
 
@@ -31,7 +49,8 @@ export function Advice({ gameId }: { gameId: string }) {
     (a: DpadAction) => {
       if (a === "back") navigate({ name: "watch", gameId });
       else if (a === "left" || a === "up") setFocus((i) => Math.max(0, i - 1));
-      else if (a === "right" || a === "down") setFocus((i) => Math.min(players.length - 1, i + 1));
+      else if (a === "right" || a === "down")
+        setFocus((i) => Math.min(players.length - 1, i + 1));
     },
     [gameId, players.length],
   );
@@ -56,9 +75,15 @@ export function Advice({ gameId }: { gameId: string }) {
         ))}
       </View>
       {players.length === 0 ? <T>No players in this game.</T> : null}
-      {typeof doc === "string" ? <T testID="advice-error">No advice: {doc}</T> : null}
+      {typeof doc === "string" ? (
+        <T testID="advice-error">No advice: {doc}</T>
+      ) : null}
       {doc && typeof doc !== "string" ? (
-        <View style={styles.panel} testID="advice-panel" dataSet={{ playerId: doc.player_id, source: doc.source }}>
+        <View
+          style={styles.panel}
+          testID="advice-panel"
+          dataSet={{ playerId: doc.player_id, source: doc.source }}
+        >
           <T style={ui.h2}>{doc.name ?? `#${doc.player_id}`}</T>
           {doc.lines.map((ln, i) => (
             <T key={i} testID="advice-line" style={styles.line}>
@@ -73,7 +98,7 @@ export function Advice({ gameId }: { gameId: string }) {
           </T>
         </View>
       ) : !doc && pid ? (
-        <T style={{ color: color.dim }}>Loading…</T>
+        <Spinner testID="advice-loading" />
       ) : null}
       <Hint>Left/Right pick a player · Back returns to the game</Hint>
     </View>
@@ -82,7 +107,13 @@ export function Advice({ gameId }: { gameId: string }) {
 
 const styles = StyleSheet.create({
   row: { flexDirection: "row", flexWrap: "wrap" },
-  panel: { marginTop: px(24), padding: px(32), borderRadius: px(16), backgroundColor: color.panel, maxWidth: px(1400) },
+  panel: {
+    marginTop: px(24),
+    padding: px(32),
+    borderRadius: px(16),
+    backgroundColor: color.panel,
+    maxWidth: px(1400),
+  },
   line: { marginBottom: px(12) },
   source: { color: color.dim, marginTop: px(12) },
 });

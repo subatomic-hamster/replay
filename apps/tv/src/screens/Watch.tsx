@@ -5,9 +5,10 @@
 //
 // Transport: the title (or the followed player's chip) top-left and the court-line
 // timeline; it shows on any key and hides after 5 s of playback (pausing keeps it).
-// Seeking (Left/Right): a tap moves 10 s, holding accelerates (playback/seek.ts), the video
-// pauses while a storyboard preview rides the playhead, snaps to a moment within 3 s, and
-// playback resumes from the new point after the release. Rew/FF scrub at 2/4/8/16×,
+// Seeking (Left/Right): each tap or repeat goes to the next stop, a 10 s grid (coarser as a
+// hold accelerates) plus every moment's start (playback/seek.ts nextStop); the video
+// pauses while a storyboard preview (a moment's thumb and label at a moment stop) rides
+// the playhead, and playback resumes at the stop after the release. Rew/FF scrub at 2/4/8/16×,
 // Select or Play commits. Prev/Next jump moments (or a reel's plays).
 //
 // Ways to watch: Full game, Highlights (the top hype candidates, ≤13, back to back, or a
@@ -74,7 +75,7 @@ import {
   TIMELINE_H,
   type SeekView,
 } from "../components/Timeline";
-import { etaText } from "../gameState";
+import { artFor, etaText } from "../gameState";
 import { useDpad, type DpadAction } from "../input";
 import { navigate, type Way } from "../nav";
 import { FOLLOWCAM_MODE } from "../platform/config";
@@ -89,8 +90,8 @@ import {
   jumpMoment,
   LINGER_MS,
   nextScrub,
+  nextStop,
   REPEAT_FLOOR_MS,
-  snapTo,
 } from "../playback/seek";
 import { rememberSpot, resumeAt, resumeSpot } from "../resume";
 import {
@@ -121,7 +122,10 @@ interface Reel {
 }
 interface SeekState {
   from: number;
+  /** the stop (or, scrubbing, the raw point) a commit lands on */
   target: number;
+  /** the moment whose start `target` is */
+  snapped: Moment | null;
   wasPlaying: boolean;
   /** when the current hold began (a new tap after a release starts a new hold) */
   holdStart: number;
@@ -208,6 +212,7 @@ export function Watch({
   const [live, setLive] = useState<Game | null>(null);
   const info = live ?? game;
   const [moments, setMoments] = useState<Moment[]>([]);
+  const [momentsRead, setMomentsRead] = useState(false); // Moments spins until then
   const [storyboard, setStoryboard] = useState<Storyboard | null>(null);
   const [rallies, setRallies] = useState<RallyDoc | null>(null);
   const broadcast = broadcastOf(renditions);
@@ -284,7 +289,11 @@ export function Watch({
 
   // ---------------------------------------------------------------- data
   const loadMoments = useCallback(
-    () => api.getMoments(gameId).then(setMoments, () => {}),
+    () =>
+      api
+        .getMoments(gameId)
+        .then(setMoments, () => {})
+        .finally(() => setMomentsRead(true)),
     [gameId],
   );
   useEffect(() => {
@@ -599,17 +608,14 @@ export function Watch({
 
   const publish = useCallback(() => {
     const s = seekRef.current;
-    const snapped =
-      s && !s.scrub ? snapTo(latest.current.moments, s.target) : null;
     setSeekV(
       s
         ? {
             target: s.target,
-            // the readout agrees with the time chip: measured to the snapped moment
-            delta: (snapped?.t ?? s.target) - s.from,
+            delta: s.target - s.from,
             step: s.step,
             scrub: s.scrub,
-            snapped,
+            snapped: s.snapped,
           }
         : null,
     );
@@ -628,6 +634,7 @@ export function Watch({
     const s: SeekState = {
       from: now,
       target: now,
+      snapped: null,
       wasPlaying: queued || !h.paused(),
       holdStart: Date.now(),
       lastStep: 0,
@@ -644,12 +651,11 @@ export function Watch({
     (play?: boolean) => {
       clearLinger();
       const s = seekRef.current;
-      const { handle: h, moments: ms, inReel: land } = latest.current;
+      const { handle: h, inReel: land } = latest.current;
       seekRef.current = null;
       publish();
       if (!s || !h) return;
-      const snapped = s.scrub ? null : snapTo(ms, s.target);
-      h.seek(land(snapped ? snapped.t_start : s.target));
+      h.seek(land(s.target)); // a moment stop's target is its start
       if (play ?? (s.wasPlaying || !!s.scrub)) h.play();
       lastKey.current = Date.now();
     },
@@ -667,6 +673,7 @@ export function Watch({
   const holdSeek = useCallback(
     (dir: 1 | -1) => {
       const now = Date.now();
+      const live = !seekRef.current; // stepping from the playing video, not a stop
       const s = seekRef.current ?? beginSeek();
       if (!s) return;
       if (s.released || s.scrub) {
@@ -679,7 +686,10 @@ export function Watch({
       if (now - s.lastStep < REPEAT_FLOOR_MS) return;
       s.lastStep = now;
       s.step = holdStep(now - s.holdStart);
-      s.target = clamp(s.target + dir * s.step, 0, latest.current.duration);
+      const { moments: ms, duration: d } = latest.current;
+      const stop = nextStop(ms, s.target, dir, s.step, d, live);
+      s.target = stop.t;
+      s.snapped = stop.moment;
       publish();
     },
     [beginSeek, clearLinger, publish],
@@ -700,6 +710,7 @@ export function Watch({
       clearLinger();
       s.released = false;
       s.scrub = nextScrub(s.scrub, dir);
+      s.snapped = null;
       publish();
     },
     [beginSeek, clearLinger, publish],
@@ -1025,8 +1036,12 @@ export function Watch({
     return () => clearTimeout(timer);
   }, [toast]);
 
-  if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
-  if (!game || !info) return <Loading />;
+  // Loading and errors: the game's key art (from Home) blurred behind the spinner / words.
+  if (error)
+    return (
+      <ApiErrorBanner error={error} onRetry={reload} art={artFor(gameId)} />
+    );
+  if (!game || !info) return <Loading art={artFor(gameId)} />;
 
   // ---------------------------------------------------------------- Do more tiles
   const feature = (k: FeatureKey) => info.features?.[k];
@@ -1293,6 +1308,7 @@ export function Watch({
         <PlayerSurface
           key={condensedSrc ? "condensed" : "game"}
           ref={setHandle}
+          poster={artFor(gameId)}
           src={src}
           crop={!onBroadcast && !condensedSrc && source.useCrop ? crop : null}
           muted={!onBroadcast}
@@ -1432,6 +1448,7 @@ export function Watch({
                 ? `Finding the big moments, ${etaText(feature("moments")?.eta_s) || "soon"}`
                 : "No moments in this game yet"
             }
+            loading={!momentsRead}
             onCue={setCue}
             onJump={toMoment}
             onClose={closeLayer}

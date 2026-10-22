@@ -65,7 +65,8 @@ volleyball and pickleball). Chosen on the game's hero, switchable from Up.
 Seek: a tap moves 10 s. Holding steps 10 s, then 30 s after 1 s held, then 1 min after
 3 s, then 2 min (Replay's own curve; the YouTube and Netflix numbers are unverified [U]).
 While seeking, playback pauses and a preview frame rides above the playhead. Release
-resumes from the new point. Near a moment, the preview snaps to it and names it.
+resumes from the new point. Each step goes to the next stop: a grid at the current step
+(0:40, 0:50, …) plus every moment's start, where the preview shows and names the moment.
 Transport hides after 5 s (Media3 `DEFAULT_SHOW_TIMEOUT_MS` [S]).
 
 ## Tokens

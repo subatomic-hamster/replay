@@ -6,7 +6,7 @@
 // ponytail: address and key are typed on the on-screen keyboard; the spec's phone (QR)
 // handoff for them needs a phone page route first.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import {
   apiBase,
   apiKey,
@@ -55,7 +55,7 @@ export function Settings() {
   const test = useCallback((url: string) => {
     const n = ++seq.current;
     const report = (c: Check) => n === seq.current && setCheck(c);
-    setCheck({ state: "checking", text: "Checking…" });
+    setCheck({ state: "checking", text: "Checking" });
     probeApi(url)
       .listGames()
       .then(
@@ -146,6 +146,7 @@ export function Settings() {
         value={check.text}
         valueID="settings-check"
         dataSet={{ state: check.state }}
+        busy={check.state === "checking"}
       />
       <Row i={DONE} focus={at} />
       <T style={styles.note}>
@@ -184,12 +185,15 @@ function Row({
   value,
   valueID,
   dataSet,
+  busy,
 }: {
   i: number;
   focus: number;
   value?: string;
   valueID?: string;
   dataSet?: Record<string, string>;
+  /** a check is running: a spinner before the value */
+  busy?: boolean;
 }) {
   const on = i === focus;
   return (
@@ -199,6 +203,15 @@ function Row({
       style={[styles.row, on && styles.rowOn]}
     >
       <T style={[styles.label, on && styles.ink]}>{ITEMS[i]}</T>
+      {busy ? (
+        <View style={styles.spin}>
+          <ActivityIndicator
+            size={Platform.OS === "web" ? px(40) : "small"}
+            color={on ? color.floor : color.chalk}
+            testID="settings-checking"
+          />
+        </View>
+      ) : null}
       {valueID ? (
         <T
           testID={valueID}
@@ -227,6 +240,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.bench,
   },
   rowOn: { backgroundColor: color.chalk },
+  spin: { marginLeft: "auto", marginRight: sp(2) },
   label: { ...type.body, fontFamily: undefined, fontWeight: "600" },
   ink: { color: color.floor },
   value: {

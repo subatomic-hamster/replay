@@ -524,6 +524,48 @@ def render(
     typer.echo(str(out / rel))
 
 
+@app.command("eval-events")
+def eval_events(
+    out: Annotated[Path, typer.Option("--out", "-o", help="Pipeline output (game) directory")],
+    truth: Annotated[
+        Path, typer.Option(help="replay.playlog.v1 hand annotation (use: evaluation)")
+    ],
+    events: Annotated[
+        Path | None, typer.Option(help="events.json to score (default: the game's)")
+    ] = None,
+    tol_s: float = 1.5,
+    top_k: int = 5,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the full result as JSON")] = False,
+) -> None:
+    """Detected shots, makes, points, score and highlights against a hand annotation (D-90)."""
+    import json
+
+    from . import eventeval, playlog
+
+    log = playlog.load(truth, use="evaluation")
+    if log.use != "evaluation":
+        raise _refuse(ValueError(f"{truth} is not an evaluation play log (use: {log.use})"))
+    r = eventeval.evaluate_dir(out, log, events_path=events, tol_s=tol_s, top_k=top_k)
+    typer.echo(json.dumps(r, indent=1) if as_json else eventeval.report(r))
+
+
+@app.command("notes")
+def notes_cmd(
+    out: Annotated[Path, typer.Option("--out", "-o", help="Pipeline output (game) directory")],
+    path: Annotated[Path, typer.Option("--from", help="Play log: CSV or JSON (docs/playlog.md)")],
+) -> None:
+    """Store the uploader's own play descriptions as the game's notes.json ("Your note" in
+    the app). They never enter events.json: detected events stay detected events."""
+    from . import playlog
+
+    try:
+        log = playlog.load(path, use="notes")
+    except ValueError as exc:
+        raise _refuse(exc) from exc
+    dest = playlog.write_notes(out, log)
+    typer.echo(f"{dest} ({len(log.entries)} notes)")
+
+
 @app.command()
 def sports() -> None:
     """List the installed sport profiles."""

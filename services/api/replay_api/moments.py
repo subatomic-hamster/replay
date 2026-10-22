@@ -172,10 +172,39 @@ def clip_moments(triggers: list[dict], clips: list[dict], game: dict) -> list[di
     return out
 
 
+NOTES_REL = "notes.json"  # = courtcam.playlog.NOTES_REL, written by `courtcam notes`
+NOTE_S = 6.0  # a note covers this much before its time
+
+
+def note_moments(notes: dict | None) -> list[dict]:
+    """The uploader's own play log (D-90, docs/playlog.md) as moments of kind `bookmark`
+    labelled "Your note", source `user`: what the person wrote, beside what the pipeline
+    detected and never merged into it. An evaluation log is never shown."""
+    if not notes or notes.get("use") != "notes":
+        return []
+    out = []
+    for i, e in enumerate(notes.get("entries") or []):
+        if "t" not in e:
+            continue
+        t = float(e["t"])
+        did = {True: "made", False: "missed"}.get(e.get("made"), "")
+        what = " ".join(x for x in (e.get("player"), did, (e.get("type") or "").replace("_", " "))
+                        if x and x != "note")  # fmt: skip
+        text = e.get("note") or what or "note"
+        out.append({
+            "id": f"note{i + 1}", "t": round(t, 3), "t_start": round(max(0.0, t - NOTE_S), 3),
+            "t_end": round(t + 2.0, 3), "kind": "bookmark", "label": f"Your note: {text}",
+            "trigger": "note", "clip_id": None, "source": "user", "confidence": None,
+            "confirmed": True,
+        })  # fmt: skip
+    return out
+
+
 def all_moments(events: list[dict], game: dict, triggers: list[dict] | None = None,
-                clips: list[dict] | None = None) -> list[dict]:  # fmt: skip
-    """Detected moments and the user's clips together, sorted by time."""
+                clips: list[dict] | None = None, notes: dict | None = None) -> list[dict]:  # fmt: skip
+    """Detected moments, the user's clips and the user's notes together, sorted by time."""
     out = moments(events, game) + clip_moments(triggers or [], clips or [], game)
+    out += note_moments(notes)
     out.sort(key=lambda m: (m["t"], m["id"]))
     return out
 
@@ -319,7 +348,7 @@ def write_moments(game_dir: Path, video: Path | None = None, game: dict | None =
     game = game if game is not None else _read(gd / "game.json") or {}
     events = _read(gd / "events.json", "events") or []
     rows = all_moments(events, game, _read(gd / "triggers.json", "triggers"),
-                       _read(gd / "clips.json", "clips"))  # fmt: skip
+                       _read(gd / "clips.json", "clips"), _read(gd / NOTES_REL))  # fmt: skip
     duration = float((game.get("video") or {}).get("duration_s") or 0.0)
     t_hero, why = hero_time(events, game, _read(gd / "hype.json"), duration)
     (gd / THUMB_DIR).mkdir(parents=True, exist_ok=True)

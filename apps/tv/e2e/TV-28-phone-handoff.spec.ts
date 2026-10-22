@@ -13,6 +13,7 @@ import {
 } from "./helpers";
 
 const SHOTS = process.env.REPLAY_TV_SHOTS;
+const JOBS = ["clip", "tag", "review", "search", "reel"];
 
 const qrUrl = (page: Page) =>
   page.getByTestId("phone-qr").getAttribute("data-url");
@@ -46,7 +47,7 @@ test("TV-28 On your phone: a QR per job, the API's phone link for this game and 
   const origin = new URL(page.url()).origin;
   const host = origin.replace(/^https?:\/\//, "");
 
-  for (const job of ["clip", "tag", "review", "search"]) {
+  for (const job of JOBS) {
     if (job !== "clip") await page.keyboard.press("ArrowRight");
     await expect(panel).toHaveAttribute("data-job", job);
     await expect(page.getByTestId(`phone-${job}`)).toHaveAttribute(
@@ -72,16 +73,15 @@ test("TV-28 On your phone: a QR per job, the API's phone link for this game and 
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/phone-${job}.png` });
   }
   await page.keyboard.press("ArrowRight"); // the last job stays
-  await expect(panel).toHaveAttribute("data-job", "search");
+  await expect(panel).toHaveAttribute("data-job", "reel");
 
   // Back through the jobs: the cached links, no new mint.
-  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+  for (let i = 0; i < JOBS.length - 1; i++)
+    await page.keyboard.press("ArrowLeft");
   await expect(panel).toHaveAttribute("data-job", "clip");
   await expect.poll(() => qrUrl(page)).toContain("job=clip");
   const sent = await mints(page);
-  expect(sent.map((c) => c.body)).toEqual(
-    ["clip", "tag", "review", "search"].map((job) => ({ job, t })),
-  );
+  expect(sent.map((c) => c.body)).toEqual(JOBS.map((job) => ({ job, t })));
 
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
@@ -92,7 +92,7 @@ test("TV-28 On your phone: a QR per job, the API's phone link for this game and 
   await menuTo(page, "nav-phone");
   await page.keyboard.press("Enter");
   await expect.poll(() => qrUrl(page)).toContain("job=clip");
-  expect(await mints(page)).toHaveLength(4);
+  expect(await mints(page)).toHaveLength(JOBS.length);
 });
 
 test("TV-28 On your phone: no web address on the server, or an error, says so (no QR)", async ({

@@ -76,4 +76,9 @@ test("TV-27 Stats panel: right third, video plays on, box score and shots, revie
   await expect(page.getByTestId("review-item")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("watch")).toBeVisible();
+  // Back lands where Review was opened from: the Stats panel, its answers counted in.
+  await expect(page.getByTestId("stats-review")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("stats-review")).toHaveCount(0);
+  await expect(page.getByTestId("watch")).toBeVisible();
 });

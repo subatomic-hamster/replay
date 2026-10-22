@@ -124,6 +124,9 @@ export function createFollowCam(
   pid: string,
   aspect = 16 / 9,
   teamOf: (id: string) => number | undefined = () => undefined,
+  /** The ids are people (game.tracks.people, D-89): another id is someone else, never a
+   *  new track of ours, so no hand-off (it would move the follow to them in a crossing). */
+  people = false,
 ): FollowCam {
   const wPerH = 16 / 9 / aspect;
   const hCap = Math.min(1, 1 / wPerH);
@@ -178,7 +181,7 @@ export function createFollowCam(
    * as often a teammate: then it holds and widens rather than guess (D-82).
    */
   function handoff(ps: TrackPlayer[], t: number): TrackPlayer | null {
-    if (!lastBox) return null;
+    if (!lastBox || people) return null;
     const gap = t - lastSeen;
     if (gap < 0 || gap > HANDOFF_MAX_GAP_S) return null;
     gapPrev ??= tracks.playersAt(lastSeen);

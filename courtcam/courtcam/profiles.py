@@ -91,6 +91,13 @@ class TrackingCfg(_Cfg):
     # > 0: a merge link must also be within running reach, merge_reach_m + max_speed_mps
     # x gap (identity.merge_groups); 0 = merge_max_dist_m whatever the gap
     merge_reach_m: float = 0.0
+    # > 0: identity.split_appearance cuts a tracklet where the person in it changes (the
+    # tracker handed the id on) by more than this `app_distance` over ~1.5 s each side
+    appearance_cut: float = 0.0
+    # > 0 (with appearance_cut): a game with at most this many people on court at once
+    # is solved as that many identities, every piece of track assigned to one of them
+    # by look under a no-two-places-at-once rule (identity.roster_pieces, D-89)
+    roster_max: int = 0
     smooth_window: int = 5
     # Seated officials and the bench: alive this long without leaving a circle this
     # wide (p90 radius) is not a player. See court.stationary.
@@ -151,6 +158,73 @@ class ShotCfg(_Cfg):
     # make/miss from what happens next (events.label_makes): an inbound by the other team
     # within `made_window_s` of the shot is a make, a rebound is a miss.
     made_window_s: float = 6.0
+    # a free throw (events._free_throw): the shooter within this of the free-throw spot,
+    # the players' median speed under this for the 2 s before the release. Nottingham Q1
+    # (CC BY): free throws peak at 0.31-0.59 m/s, live-ball shots 0.83 and up; 0.7 is
+    # the midpoint, picked on Q1 only and then checked on Q3 (FTs 0.22-0.54, shots >= 0.78)
+    ft_radius_m: float = 1.0
+    ft_still_mps: float = 0.7
+    # ball shots on a full court (events._team_by_hoop): a shot's team is its basket's,
+    # the two baskets' teams voted by the shooters within team_window_s
+    team_by_hoop: bool = False
+    team_window_s: float = 600.0
+
+
+class BallCfg(_Cfg):
+    """The ball at the hoop (`courtcam.ball`, D-90). Sizes are in rim diameters (the
+    rim's width in pixels = 1), `v` grows downward from the rim centre."""
+
+    enabled: bool = False
+    # a ball-like blob: OpenCV hue (0-180) and saturation of a leather/rubber basketball,
+    # area in rim diameters squared (ball 0.24 m / rim 0.45 m: ~0.22, more when blurred).
+    # The hue range wraps through 180 (lo > hi): an orange ball in shadow against a dark
+    # wall reads hue 170-176 (Nottingham, the ball leaving the net).
+    hue: tuple[float, float] = (165.0, 28.0)
+    min_sat: float = 45.0
+    area: tuple[float, float] = (0.08, 0.7)
+    min_fill: float = 0.45
+    max_aspect: float = 2.3
+    diff: float = 25.0  # grey levels (max over BGR) from the running background
+    bg_s: float = 1.1  # running background memory
+    max_frame_change: float = 0.15  # more of the frame than this changing: occlusion, skip
+    # snap each projected rim onto the painted rim (`ball.refine`): red/orange hue range
+    # (wrapping through 180 when lo > hi) and saturation of a painted steel rim
+    refine: bool = True
+    rim_hue: tuple[float, float] = (165.0, 14.0)
+    rim_min_sat: float = 90.0
+    # a visit to the rim: samples with |u| <= rim_box[0] and rim_box[1] <= v <= rim_box[2]
+    rim_box: tuple[float, float, float] = (2.0, -2.2, 0.6)
+    visit_gap_s: float = 0.6
+    min_samples: int = 2
+    # a visit counts if the ball came down into the box (a sample within descent_s before
+    # it at least descent_v higher) or stayed for settle_samples (rolling on the rim)
+    descent_s: float = 0.8
+    descent_v: float = 0.5
+    settle_samples: int = 6
+    after_s: float = 1.0  # how long after a visit its make may still show in the net
+    # make (`ball._made`): crossing the plane plane_v under the rim downward between two
+    # samples at most cross_dt apart, within cross_u of the middle, then a sample within
+    # drop_s at least fall_v lower under the crossing (the ball leaving the net)
+    plane_v: float = 0.3
+    cross_dt: float = 0.2
+    cross_u: float = 0.55
+    fall_v: float = 0.3
+    # a crossing in a frame with more blobs than this at the rim is a body, not the ball
+    # (set on the 3x3 proxy's rim-out at 10.1 s; Nottingham unchanged from 2 to off)
+    cross_max_blobs: int = 3
+    drop_s: float = 0.7
+
+
+class ScoringCfg(_Cfg):
+    """What a basket is worth and when a game ends. Full-court rules by default; pickup
+    half court is often 1s and 2s (`inside: 1, outside: 2`) or 2s and 3s, played to
+    `to` points (win by `win_by`). `plays.score_timeline` reads it."""
+
+    inside: int = 2  # a make from inside the arc
+    outside: int = 3  # from outside it
+    free_throw: int = 1
+    to: int | None = None  # game to N points: the score restarts at 0-0 after a win
+    win_by: int = 1
 
 
 class PossessionCfg(_Cfg):
@@ -297,6 +371,8 @@ class Profile(_Cfg):
     tracking: TrackingCfg = Field(default_factory=TrackingCfg)
     events: list[str] = Field(default_factory=list)
     shot: ShotCfg = Field(default_factory=ShotCfg)
+    ball: BallCfg = Field(default_factory=BallCfg)
+    scoring: ScoringCfg = Field(default_factory=ScoringCfg)
     rally: RallyCfg = Field(default_factory=RallyCfg)
     possession: PossessionCfg = Field(default_factory=PossessionCfg)
     pose: PoseCfg = Field(default_factory=PoseCfg)

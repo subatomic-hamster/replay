@@ -40,6 +40,7 @@ import type {
   ReviewQuestion,
   SearchResult,
   TapResult,
+  ReelExport,
   Trigger,
   VerticalExport,
   VerticalRequest,
@@ -174,6 +175,12 @@ export interface ReplayApi {
     body: VerticalRequest,
   ): Promise<VerticalExport>;
   getVertical(gameId: string, vid: string): Promise<VerticalExport>;
+  /** The game's highlight reel (16:9 or 9:16); asking again is the same reel. */
+  exportGameReel(
+    gameId: string,
+    aspect: ReelExport["aspect"],
+  ): Promise<ReelExport>;
+  getGameReel(gameId: string, rid: string): Promise<ReelExport>;
   getReviewQueue(gameId: string): Promise<ReviewQuestion[]>;
   /** Send one review answer: the option already names its route (D-48). */
   answerReview(option: ReviewOption, text?: string): Promise<void>;
@@ -846,6 +853,14 @@ export function createHttpApi(
       }),
     getVertical: (gameId, vid) =>
       req<VerticalExport>(`/games/${gameId}/exports/vertical/${vid}`),
+    exportGameReel: (gameId, aspect) =>
+      req<ReelExport>(`/games/${gameId}/exports/reel`, {
+        method: "POST",
+        json: { aspect },
+        idempotent: true, // the reel's id hashes its aspect and inputs
+      }),
+    getGameReel: (gameId, rid) =>
+      req<ReelExport>(`/games/${gameId}/exports/reel/${rid}`),
     getReviewQueue: (gameId) =>
       req<{ questions: ReviewQuestion[] }>(
         `/games/${gameId}/review/queue`,

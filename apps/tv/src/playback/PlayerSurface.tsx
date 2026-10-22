@@ -41,7 +41,7 @@ export interface PlayerHandle {
 }
 
 /** D-82 client follow-cam: the camera, whether it follows (zoom and ring) or eases back
- *  to the wide shot with no ring (D-86), and the ring's words and team colour. */
+ *  to the wide shot with no ring (D-89), and the ring's words and team colour. */
 export interface Follow {
   cam: FollowCam;
   pid: string;

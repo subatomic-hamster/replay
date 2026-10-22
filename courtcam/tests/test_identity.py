@@ -311,3 +311,110 @@ def test_stitch_joins_a_break_only_when_the_roster_says_it_is_one_person():
     tracks, teams = [*tracks, extra], np.array([0, 0, 0, 1, 0])
     groups = _stitch(tracks, [[0], [1], [2], [3], [4]], teams, profile)
     assert sorted(groups) == [[0], [1], [2], [3], [4]]
+
+
+# --- D-89: appearance cuts and small rosters (synthetic descriptors) -----------------
+
+
+def _look(bin_: int) -> np.ndarray:
+    """A `body_hist`-shaped descriptor with all mass in one bin of each half."""
+    from courtcam.identity import BODY_BINS
+
+    n = int(np.prod(BODY_BINS))
+    d = np.zeros(2 * n)
+    d[bin_] = d[n + bin_] = 1.0
+    return d
+
+
+def test_split_appearance_cuts_where_the_person_changes_for_good():
+    from courtcam.identity import split_appearance
+
+    tr = _track(7, 0.0, 6.0, (0.0, 5.0), (3.0, 5.0))  # 90 samples
+    idx = np.arange(0, 90, 7)[:12]  # 12 clear samples
+    swap = np.stack([_look(0)] * 6 + [_look(5)] * 6)  # the tracker handed the id on
+    same = np.stack([_look(0)] * 12)
+    pieces, src, desc = split_appearance([tr, tr], [(idx, swap), (idx, same)], cut=0.18)
+    assert src == [0, 0, 1]
+    assert pieces[0].tracklet.t_end < pieces[1].tracklet.t_start  # cut at sample 6
+    assert pieces[1].tracklet.frames[0] == tr.tracklet.frames[idx[6]]
+    assert len(pieces[0].tracklet.frames) + len(pieces[1].tracklet.frames) == 90
+    assert np.allclose(desc[0], _look(0)) and np.allclose(desc[1], _look(5))
+
+
+def test_stitch_refuses_a_lane_the_newcomer_does_not_look_like():
+    """The roster says someone continues the lane; appearance says whether it is them."""
+    from courtcam.identity import _stitch
+
+    profile = MERGE.model_copy(
+        update={
+            "players": MERGE.players.model_copy(update={"max": 4}),
+            "tracking": MERGE.tracking.model_copy(
+                update={"appearance_weight": 1.0, "appearance_max": 0.15}
+            ),
+        }
+    )
+    partner = _track(1, 0.0, 10.0, (0.0, 2.0), (1.0, 2.0))
+    before = _track(2, 0.0, 5.0, (-2.0, 3.0), (-2.0, 3.0))
+    after = _track(3, 5.2, 10.0, (1.5, 3.0), (1.0, 3.0))
+    far = _track(4, 0.0, 10.0, (0.0, 10.0), (0.0, 11.0))
+    tracks, teams = [partner, before, after, far], np.array([0, 0, 0, 1])
+    alike = np.stack([_look(1), _look(0), _look(0), _look(2)])
+    assert sorted(_stitch(tracks, [[0], [1], [2], [3]], teams, profile, alike)) == [
+        [0],
+        [1, 2],
+        [3],
+    ]
+    unlike = np.stack([_look(1), _look(0), _look(5), _look(2)])
+    assert sorted(_stitch(tracks, [[0], [1], [2], [3]], teams, profile, unlike)) == [
+        [0],
+        [1],
+        [2],
+        [3],
+    ]
+
+
+def _series(track: CourtTrack, looks: list[tuple[float, int]], every: int = 7):
+    """`body_series` for a synthetic track: a sample every `every` frames, wearing
+    `looks` = [(from time, look bin), ...]."""
+    idx = np.arange(0, len(track.tracklet.times), every)
+    t = track.tracklet.times[idx]
+    bins = [
+        max(b for s, b in looks if s <= x) if any(s <= x for s, _ in looks) else looks[0][1]
+        for x in t
+    ]
+    return idx, np.stack([_look(b) for b in bins])
+
+
+def test_roster_cuts_a_swap_and_solves_two_people_as_two_ids():
+    from courtcam.identity import roster_pieces, roster_size
+
+    # Two people, looks 0 and 3. The tracker follows person 0 then swaps to person 1 at
+    # 5 s (track 1); person 1 is on track 2 until then, person 0 comes back on track 3.
+    swap = _track(1, 0.0, 10.0, (0.0, 5.0), (2.0, 5.0))
+    other = _track(2, 0.0, 4.9, (2.0, 5.0), (2.0, 5.0))
+    back = _track(3, 5.2, 10.0, (0.5, 5.0), (0.0, 5.0))
+    tracks = [swap, other, back]
+    series = [
+        _series(swap, [(0.0, 0), (5.0, 3)]),
+        _series(other, [(0.0, 3)]),
+        _series(back, [(0.0, 0)]),
+    ]
+    assert roster_size(tracks) == 2
+    pieces, src, groups, protos = roster_pieces(tracks, series, 2, PROFILE)
+    assert len(groups) == 2  # two people, nothing left over
+    spans = sorted(sorted((src[i], round(pieces[i].tracklet.t_start)) for i in g) for g in groups)
+    assert spans == [[(0, 0), (2, 5)], [(0, 5), (1, 0)]]  # (tracklet, start s)
+
+    # Every box labelled with those looks gives the same two people; a box nobody
+    # looks like (the last second of track 3) is left out rather than given to anyone.
+    from courtcam.identity import box_covers, roster_label
+
+    dense = [
+        _series(swap, [(0.0, 0), (5.0, 3)], every=1),
+        _series(other, [(0.0, 3)], every=1),
+        _series(back, [(0.0, 0), (9.0, 6)], every=1),
+    ]
+    pieces, src, groups = roster_label(tracks, dense, box_covers(tracks), protos)
+    spans = sorted(sorted((src[i], round(pieces[i].tracklet.t_start)) for i in g) for g in groups)
+    assert spans == [[(0, 0), (2, 5)], [(0, 5), (1, 0)]]
+    assert max(pieces[i].tracklet.t_end for i in groups[0] + groups[1] if src[i] == 2) < 9.0

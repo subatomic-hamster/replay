@@ -116,7 +116,8 @@ export function Review({ gameId }: { gameId: string }) {
       } else if (a === "select" && row === 0 && options[focus]) {
         if (options[focus].text_field) setTyping(options[focus]);
         else answer(options[focus]);
-      } else if (a === "back") navigate({ name: "watch", gameId });
+      } else if (a === "back")
+        navigate({ name: "watch", gameId, panel: "stats" });
     },
     [current, focus, answer, gameId, row, heatmap.length, linkable],
   );

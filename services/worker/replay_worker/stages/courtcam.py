@@ -217,6 +217,7 @@ def run_game(ctx: Ctx, item: str | None) -> None:
         chunk_s=10,
         url_template=P.TRACKS_TEMPLATE,
         chunks=len(list((gd / "tracks").glob("*.json"))),
+        people=bool(players) and all(p.solved for p in players),
     )
     for stage in P.STAGES:
         game.stages[stage] = "done"
@@ -319,7 +320,7 @@ STAGES = [
         VERSION,
         run_events,
         inputs=(PLAYERS, "calib.json", WIDE, "audio.json", "poses"),
-        outputs=("events.json",),
+        outputs=("events.json", "ball.json"),  # ball.json: courtcam.ball (D-90)
         params=("sport",),
         after=("identity", "audio", "pose"),
     ),

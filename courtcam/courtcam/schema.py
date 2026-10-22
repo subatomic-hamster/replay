@@ -59,6 +59,8 @@ class TracksRef(_Model):
     chunk_s: int = 10
     url_template: str = "tracks/{chunk:05d}.json"
     chunks: int = 0
+    # every id is one person for the whole clip (D-89): a follow never moves to another id
+    people: bool = False
 
 
 class CropPathsRef(_Model):

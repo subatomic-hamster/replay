@@ -84,6 +84,8 @@ export interface Game extends TvReadiness {
     chunk_s: number;
     url_template: string;
     chunks: number;
+    /** Every id is one person for the whole clip (D-89): a follow never moves to another id. */
+    people?: boolean;
   };
   croppaths: { rate_hz: number; url_template: string };
   events_url: string;
@@ -399,7 +401,7 @@ export interface PublicConfig {
 }
 
 /** What a phone page (apps/web `/p/:id`) is opened for. */
-export type PhoneJob = "clip" | "tag" | "review" | "search";
+export type PhoneJob = "clip" | "tag" | "review" | "search" | "reel";
 
 /** POST /games/{id}/phone-link: `url` = `{web_base}/p/{id}?job=..&t=..#k=<token>`, null
  *  when the server has no web base. `expires_at`: epoch seconds. */

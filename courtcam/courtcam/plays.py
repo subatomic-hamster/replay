@@ -154,11 +154,15 @@ def build_plays(events: list[Event], grammars: list[dict[str, Any]], sport: str)
     return plays
 
 
-def score_timeline(events: list[Event], user: Iterable[ScoreEntry] = ()) -> list[ScoreEntry]:
+def score_timeline(
+    events: list[Event], user: Iterable[ScoreEntry] = (), *, to: int | None = None, win_by: int = 1
+) -> list[ScoreEntry]:
     """The running score: every made shot with `points` (basketball) or `point` with a
     `winner_side` adds `points` (unset: 1, rally scoring; 0: a side-out rally the
     receivers won) to its team; a user entry sets the score outright from its time on,
-    and later automatic entries add on top of it."""
+    and later automatic entries add on top of it. With `to` (pickup: game to 11 or 21,
+    `profile.scoring`), the entry that wins a game shows the final score and the next
+    basket starts the next game from 0-0."""
     items: list[tuple[float, int, Any]] = []
     for e in events:
         if e.type == "shot" and e.made and e.points and e.team in (0, 1):
@@ -176,6 +180,8 @@ def score_timeline(events: list[Event], user: Iterable[ScoreEntry] = ()) -> list
             out.append(ScoreEntry(t=x.t, scores=tuple(running), event_id=x.event_id, source="user"))
         else:
             team, pts, eid = x
+            if to and max(running) >= to and abs(running[0] - running[1]) >= win_by:
+                running = [0, 0]  # the previous basket won the game
             running[team] += pts
             out.append(ScoreEntry(t=round(t, 3), scores=tuple(running), event_id=eid))
     return out

@@ -1,0 +1,54 @@
+{
+  "schema": "replay.playlog.v1",
+  "use": "evaluation",
+  "label": "hand annotation (ground truth for evaluation)",
+  "source": "hand annotation by the Replay agents, 2026-10-22: hoop zooms at 8 fps over the whole cut, then 15-30 fps around every ball near the rim. Never shown in the app, never pipeline output.",
+  "clip": {
+    "id": "cc3x3_usti",
+    "file": "/workspace/wt/replay-angles-data/src/cc3x3/cbf3x3_shot_rect.mp4",
+    "game_id": "g_cc3x3",
+    "duration_s": 15.68,
+    "attribution": "\"ČBF 3x3 Tour 22.6. Ústí nad Labem\" by Honza Nový, https://commons.wikimedia.org/wiki/File:%C4%8CBF_3x3_Tour_22.6._%C3%9Ast%C3%AD_nad_Labem.webm, licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Cut to 58.7-74.4 s and lens-corrected (re-encoded). This file holds facts read from the video, not the video.",
+    "notes": "3x3 half court, one basket, camera about 0.8 m high looking at it from beyond the arc (docs/test-data.md 3.1b). 3x3 scoring: 1 inside the arc, 2 outside. Shooters' spots for shot 2 are off frame, so its points are unknown."
+  },
+  "teams": {
+    "red": { "name": "red shirts" },
+    "blue": { "name": "light blue shirts" }
+  },
+  "entries": [
+    {
+      "t": 0.5,
+      "t_rim": 1.75,
+      "type": "shot",
+      "team": "red",
+      "player": "red #7",
+      "made": true,
+      "points": 1,
+      "confidence": "high",
+      "note": "contested close shot goes high off the hand, drops through the rim 1.7-1.8, out of the net 1.9-2.0"
+    },
+    {
+      "t": 5.0,
+      "type": "note",
+      "note": "a pass caught beside the rim at rim height: not a shot"
+    },
+    {
+      "t": 9.7,
+      "t_rim": 10.1,
+      "type": "shot",
+      "made": false,
+      "confidence": "high",
+      "note": "shooter off frame; the ball hits the right side of the rim at 10.1 and bounces up and out to the right; a white-shirted player then stands in front of the rim 10.4-11.5"
+    },
+    {
+      "t": 13.9,
+      "t_rim": 14.4,
+      "type": "shot",
+      "team": "blue",
+      "made": true,
+      "points": 1,
+      "confidence": "high",
+      "note": "close jumper, rolls on the rim 14.4-15.0, through the net 15.1-15.3"
+    }
+  ]
+}

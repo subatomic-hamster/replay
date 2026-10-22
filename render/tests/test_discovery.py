@@ -227,9 +227,16 @@ def test_hype_fuses_crowd_noise_and_arms_up(tmp_path):
     doc = hype.hype_series(load_game(gd))
     assert doc["schema"] == "replay.hype.v1" and len(doc["values"]) == 48
     assert all(0.0 <= v <= 1.0 for v in doc["values"])
-    assert doc["sources"] == {"audio": "audio.json", "arms_up": "poses", "speed": "tracks"}
+    assert doc["sources"] == {"audio": "audio.json", "arms_up": "poses", "speed": "tracks",
+                              "plays": "events.json"}  # fmt: skip
+    comps = doc["components"]
+    roar = slice(2 * 12 + 1, 2 * 14)  # 12.5-13.5 s at 2 Hz
+    assert min(comps["audio"][roar]) >= 0.3 and min(comps["arms_up"][roar]) >= 0.3
+    assert max(doc["values"][roar]) > max(doc["values"][2 * 10 : 2 * 12])  # the cheer adds
+    # the toy's two makes are the highlights, the three (19 s) first (D-90)
     top = doc["candidates"][0]
-    assert 11.5 <= top["t"] <= 15.0 and {"audio", "arms_up"} <= set(top["reasons"])
+    assert 19.0 <= top["t"] <= 22.5 and "plays" in top["reasons"]
+    assert any(9.0 <= c["t"] <= 14.0 for c in doc["candidates"][1:])
     quiet = doc["values"][: 2 * 5]  # nothing happens in the first 5 s
     assert max(quiet) < 0.2
     # arms up during e1's shot (6-10 s) is the shot, not a celebration

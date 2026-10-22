@@ -8,7 +8,8 @@
 // paused underneath; the scene starts at its time and hands its own time back on exit.
 // Virtual POV (Tier C `pov:<pid>`, one per tracked player): one slot in the Left/Right
 // cut, the key player's first; Up on it switches to the next player's eyes. It is a
-// stylized 3D reconstruction, and the bug says so.
+// virtual view (the real players' cutouts on a reconstructed court, D-88), and the bug
+// says so.
 // Back: Free view → the angle → the game (Watch resumes it where it was).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
@@ -310,7 +311,7 @@ export function AngleView({
               </T>
               {pov ? (
                 <T style={[type.meta, styles.honesty]} testID="pov-honesty">
-                  Virtual POV: a stylized 3D reconstruction from tracked poses,
+                  Virtual POV: the real players placed on a reconstructed court,
                   not a camera
                 </T>
               ) : null}

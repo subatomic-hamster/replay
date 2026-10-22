@@ -53,6 +53,7 @@ function screen(r: Route) {
           initialWay={r.way}
           initialPlay={r.play}
           initialCard={r.card}
+          initialPanel={r.panel}
           q={r.q}
         />
       );

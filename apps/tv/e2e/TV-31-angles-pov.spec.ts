@@ -35,7 +35,7 @@ test("TV-31 Player POV: chips of the play's players, Up switches, honest label, 
     "Virtual POV · Jordan",
   );
   await expect(page.getByTestId("pov-honesty")).toContainText(
-    "stylized 3D reconstruction",
+    "reconstructed court, not a camera",
   );
   await expect
     .poll(async () => (await media(page)).src)

@@ -1,6 +1,13 @@
 // Phone uploader (I1, I2, I3, I5, W7-from-phone). Touch/mouse, not D-pad — these pages
 // never run on the TV.
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { api, type ReplayApi } from "../api/client";
 import { API_BASE } from "../config";
 import { navigate, useLocation } from "../router";
@@ -35,7 +42,11 @@ export function UploadCreate() {
           api
             .createGame(title.trim(), sport)
             // Carry upload_url forward so a page change does not lose it.
-            .then((r) => navigate(`/upload/${r.id}?upload=${encodeURIComponent(r.upload_url)}`))
+            .then((r) =>
+              navigate(
+                `/upload/${r.id}?upload=${encodeURIComponent(r.upload_url)}`,
+              ),
+            )
             .catch((err: Error) => setFailure(err.message))
             .finally(() => setBusy(false));
         }}
@@ -66,7 +77,11 @@ export function UploadCreate() {
             </label>
           ))}
         </fieldset>
-        <button type="submit" data-testid="create-game" disabled={busy || !title.trim()}>
+        <button
+          type="submit"
+          data-testid="create-game"
+          disabled={busy || !title.trim()}
+        >
           Create game
         </button>
         {failure ? (
@@ -81,14 +96,19 @@ export function UploadCreate() {
 
 /** `/upload/:id` — upload the file (S-03) and manage the roster afterwards (S-26). */
 export function UploadFile({ gameId }: { gameId: string }) {
-  const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
+  const {
+    data: game,
+    error,
+    reload,
+  } = useAsync(() => api.getGame(gameId), [gameId]);
   const [pct, setPct] = useState<number | null>(null);
   const [done, setDone] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const { params } = useLocation();
   // API assumption: on a reload the create response is gone, so fall back to the
   // conventional local endpoint.
-  const uploadUrl = params.get("upload") ?? `${API_BASE}/games/${gameId}/upload`;
+  const uploadUrl =
+    params.get("upload") ?? `${API_BASE}/games/${gameId}/upload`;
   const inputRef = useRef<HTMLInputElement>(null);
 
   const start = useCallback(
@@ -148,7 +168,9 @@ export function UploadFile({ gameId }: { gameId: string }) {
         Calibrate
       </button>
 
-      {game && game.players.length > 0 ? <Roster game={game} onChange={reload} /> : null}
+      {game && game.players.length > 0 ? (
+        <Roster game={game} onChange={reload} />
+      ) : null}
     </div>
   );
 }
@@ -162,13 +184,20 @@ function Roster({ game, onChange }: { game: Game; onChange: () => void }) {
     <section className="roster">
       <h2>Roster</h2>
       {game.players.map((p) => (
-        <div key={p.id} className="roster-row" data-testid="roster-row" data-player-id={p.id}>
+        <div
+          key={p.id}
+          className="roster-row"
+          data-testid="roster-row"
+          data-player-id={p.id}
+        >
           <span className="swatch" style={{ backgroundColor: p.color_hex }} />
           <input
             data-testid={`roster-name-${p.id}`}
             value={draft[p.id] ?? p.name ?? ""}
             placeholder={p.id}
-            onChange={(e) => setDraft((d) => ({ ...d, [p.id]: e.target.value }))}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, [p.id]: e.target.value }))
+            }
           />
           <button
             type="button"
@@ -268,7 +297,9 @@ export function Calibrate({
   const [dragging, setDragging] = useState<string | null>(null);
   // A drag moves a point; a tap (no movement) selects it, so the next frame tap or
   // "Not visible" acts on that point instead of the walk cursor.
-  const dragFrom = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const dragFrom = useRef<{ x: number; y: number; moved: boolean } | null>(
+    null,
+  );
   const [selected, setSelected] = useState<string | null>(null);
   // Points taken off by "Not visible" on a selection: the walk must not ask for them again.
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -298,8 +329,12 @@ export function Calibrate({
   // The walk cursor is the first landmark at or after `step` that is neither placed nor
   // skipped. In the manual walk that is just `names[step]`; after a proposal is applied
   // it jumps over the proposed points to whatever the proposal left out.
-  const pendingFrom = (list: readonly string[], from: number, pts: object, skip: string[]) =>
-    list.filter((n, i) => i >= from && !(n in pts) && !skip.includes(n));
+  const pendingFrom = (
+    list: readonly string[],
+    from: number,
+    pts: object,
+    skip: string[],
+  ) => list.filter((n, i) => i >= from && !(n in pts) && !skip.includes(n));
 
   const submit = useCallback(
     (pts: Record<string, [number, number]>) => {
@@ -317,7 +352,11 @@ export function Calibrate({
         .then((r) =>
           setResult(
             r.ok
-              ? { ok: true, px: r.reprojection_error_px, residuals: r.residuals_px }
+              ? {
+                  ok: true,
+                  px: r.reprojection_error_px,
+                  residuals: r.residuals_px,
+                }
               : { ok: false, msg: r.error ?? "invalid points" },
           ),
         )
@@ -345,7 +384,8 @@ export function Calibrate({
         (r) => {
           if (!live) return;
           setAuto(r);
-          if (r.status !== "done" && r.status !== "failed") timer = window.setTimeout(poll, 1200);
+          if (r.status !== "done" && r.status !== "failed")
+            timer = window.setTimeout(poll, 1200);
         },
         () => live && setAuto({ status: "failed", ok: false }),
       );
@@ -360,22 +400,32 @@ export function Calibrate({
   }, [gid, sportId, client]);
 
   /** Image-space pixel for a pointer position, clamped to the frame (E-07). */
-  const pointAt = useCallback((clientX: number, clientY: number): [number, number] | null => {
-    const img = imgRef.current;
-    if (!img) return null;
-    const r = img.getBoundingClientRect();
-    const w = img.naturalWidth || r.width;
-    const h = img.naturalHeight || r.height;
-    return [
-      Math.max(0, Math.min(w, Math.round(((clientX - r.left) / r.width) * w))),
-      Math.max(0, Math.min(h, Math.round(((clientY - r.top) / r.height) * h))),
-    ];
-  }, []);
+  const pointAt = useCallback(
+    (clientX: number, clientY: number): [number, number] | null => {
+      const img = imgRef.current;
+      if (!img) return null;
+      const r = img.getBoundingClientRect();
+      const w = img.naturalWidth || r.width;
+      const h = img.naturalHeight || r.height;
+      return [
+        Math.max(
+          0,
+          Math.min(w, Math.round(((clientX - r.left) / r.width) * w)),
+        ),
+        Math.max(
+          0,
+          Math.min(h, Math.round(((clientY - r.top) / r.height) * h)),
+        ),
+      ];
+    },
+    [],
+  );
 
   if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
   if (!game || !profile) return <div className="screen phone">Loading…</div>;
 
-  const next: string | undefined = selected ?? pendingFrom(names, step, marks, skipped)[0];
+  const next: string | undefined =
+    selected ?? pendingFrom(names, step, marks, skipped)[0];
   const placed = Object.keys(marks);
   // The API owns the threshold (it scales with the clicked court's pixel span, because
   // 5 px is unreachable by hand on a 2560-px panorama — courtcam.calibrate). A 200 is a
@@ -384,7 +434,9 @@ export function Calibrate({
   // The homography now votes an outlying click out of the fit rather than letting it
   // poison the error (courtcam.calibrate), so the number alone no longer says which
   // point is wrong — the per-landmark residuals do.
-  const worst = Object.entries(result?.residuals ?? {}).sort((a, b) => b[1] - a[1])[0];
+  const worst = Object.entries(result?.residuals ?? {}).sort(
+    (a, b) => b[1] - a[1],
+  )[0];
 
   const dropWeak = (name: string) =>
     setWeak((w) => {
@@ -429,15 +481,28 @@ export function Calibrate({
 
   const proposal = auto?.status === "done" ? auto.proposal : undefined;
   const pending =
-    taken === "none" && (auto === null || auto.status === "queued" || auto.status === "running");
+    taken === "none" &&
+    (auto === null || auto.status === "queued" || auto.status === "running");
   // Only draw the proposal while the user has not started clicking — once they have,
   // their points are the truth and two sets of dots would be a lie about which is which.
   const offering = !!proposal && taken === "none" && placed.length === 0;
   const dots: [string, [number, number], number][] = offering
-    ? Object.entries(proposal.landmarks_px).map(([n, p]) => [n, p, proposal.confidence[n] ?? 0])
+    ? Object.entries(proposal.landmarks_px).map(([n, p]) => [
+        n,
+        p,
+        proposal.confidence[n] ?? 0,
+      ])
     : [
-        ...placed.map((n): [string, [number, number], number] => [n, marks[n], 1]),
-        ...Object.keys(weak).map((n): [string, [number, number], number] => [n, weak[n], 0]),
+        ...placed.map((n): [string, [number, number], number] => [
+          n,
+          marks[n],
+          1,
+        ]),
+        ...Object.keys(weak).map((n): [string, [number, number], number] => [
+          n,
+          weak[n],
+          0,
+        ]),
       ];
 
   /** Take the proposal: confident points become the calibration, weak ones stay hollow. */
@@ -446,7 +511,8 @@ export function Calibrate({
     const strong: Record<string, [number, number]> = {};
     const hollow: Record<string, [number, number]> = {};
     for (const [n, p] of Object.entries(proposal.landmarks_px)) {
-      ((proposal.confidence[n] ?? 0) >= MIN_CONFIDENCE ? strong : hollow)[n] = p;
+      ((proposal.confidence[n] ?? 0) >= MIN_CONFIDENCE ? strong : hollow)[n] =
+        p;
     }
     setMarks(strong);
     marksRef.current = strong;
@@ -575,7 +641,11 @@ export function Calibrate({
         ) : null}
       </div>
 
-      <p className="calib-prompt" data-testid="calib-prompt" data-target={next ?? ""}>
+      <p
+        className="calib-prompt"
+        data-testid="calib-prompt"
+        data-target={next ?? ""}
+      >
         {selected
           ? `Tap where ${selected.replace(/_/g, " ")} really is, or "Not visible" if it is off the frame.`
           : next
@@ -596,11 +666,15 @@ export function Calibrate({
           const w = img?.naturalWidth || 1;
           const h = img?.naturalHeight || 1;
           const hollow = conf < MIN_CONFIDENCE;
-          const at = { left: `${(p[0] / w) * 100}%`, top: `${(p[1] / h) * 100}%` };
+          const at = {
+            left: `${(p[0] / w) * 100}%`,
+            top: `${(p[1] / h) * 100}%`,
+          };
           // A proposed point can sit off the frame (an invented corner); its 44 px handle
           // is kept fully inside the frame so it can still be tapped and marked "Not
           // visible". The dot itself stays where the point really is.
-          const pin = (v: number, max: number) => `clamp(22px, ${(v / max) * 100}%, 100% - 22px)`;
+          const pin = (v: number, max: number) =>
+            `clamp(22px, ${(v / max) * 100}%, 100% - 22px)`;
           const handleAt = { left: pin(p[0], w), top: pin(p[1], h) };
           return (
             <span key={name} style={{ display: "contents" }}>
@@ -617,7 +691,9 @@ export function Calibrate({
                 }}
                 title={name.replace(/_/g, " ")}
               >
-                {names.indexOf(name) + 1}
+                {/* numbered in the full list: a proposal can hold optional points the
+                    walk has not reached, which would otherwise all read "0" */}
+                {[...required, ...optional].indexOf(name) + 1 || "•"}
               </span>
               {adjust ? (
                 <button
@@ -630,13 +706,21 @@ export function Calibrate({
                   onPointerDown={(e) => {
                     e.preventDefault();
                     e.currentTarget.setPointerCapture(e.pointerId);
-                    dragFrom.current = { x: e.clientX, y: e.clientY, moved: false };
+                    dragFrom.current = {
+                      x: e.clientX,
+                      y: e.clientY,
+                      moved: false,
+                    };
                     setDragging(name);
                   }}
                   onPointerMove={(e) => {
                     const from = dragFrom.current;
                     if (dragging !== name || !from) return;
-                    if (!from.moved && Math.hypot(e.clientX - from.x, e.clientY - from.y) < 5) return;
+                    if (
+                      !from.moved &&
+                      Math.hypot(e.clientX - from.x, e.clientY - from.y) < 5
+                    )
+                      return;
                     from.moved = true;
                     moveHandle(name, e.clientX, e.clientY);
                   }}
@@ -706,7 +790,8 @@ export function Calibrate({
         </p>
         {worst ? (
           <p className="calib-worst" data-testid="calib-worst">
-            worst point: {worst[0].replace(/_/g, " ")} · {worst[1].toFixed(1)} px
+            worst point: {worst[0].replace(/_/g, " ")} · {worst[1].toFixed(1)}{" "}
+            px
           </p>
         ) : null}
         <button
@@ -772,7 +857,6 @@ export function Calibrate({
   );
 }
 
-
 /** `/upload/:id/status` — I3 (S-07, S-08). */
 export function UploadStatus({
   gameId,
@@ -803,7 +887,10 @@ export function UploadStatus({
     };
   }, [gameId, nonce, client]);
 
-  if (failure) return <ApiErrorBanner error={failure} onRetry={() => setNonce((n) => n + 1)} />;
+  if (failure)
+    return (
+      <ApiErrorBanner error={failure} onRetry={() => setNonce((n) => n + 1)} />
+    );
 
   return (
     <div className="screen phone">
@@ -823,7 +910,9 @@ export function UploadStatus({
               data-testid={`stage-${s}`}
               data-state={state}
               data-progress={frac ?? ""}
-              style={frac != null ? ({ "--p": frac } as CSSProperties) : undefined}
+              style={
+                frac != null ? ({ "--p": frac } as CSSProperties) : undefined
+              }
             >
               <span className="stage-name">{s}</span>
               <span className="stage-state">

@@ -8,6 +8,8 @@
 // Tag: the game's players; link one to a profile or name a new one.
 // Review: the review queue as cards with the TV's answers.
 // Search: this game's plays; a hit plays its window right here.
+// Reel: the game's highlight reel (your clips, then the top plays), 16:9 or 9:16, rendered
+// on the server, then a link to save or share it.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isExpired, phoneApi, phoneToken, type PhoneApi } from "../api/phone";
 import type { Game, Moment, Player } from "../api/types";
@@ -19,10 +21,12 @@ import { highlightQueries } from "../../../../packages/tv-core/src/display";
 import {
   exportPending,
   fmtClock,
+  momentClip,
   nudgeTrim,
   optionTestId,
   TRIM_STEP_S,
   type PlayClip,
+  type ReelExport,
   type ReviewOption,
   type ReviewQuestion,
   type SearchHit,
@@ -31,13 +35,14 @@ import {
 } from "../../../../packages/tv-core/src/discovery";
 import type { Profile } from "../../../../packages/tv-core/src/profiles";
 
-const JOBS = ["clip", "tag", "review", "search"] as const;
+const JOBS = ["clip", "tag", "review", "search", "reel"] as const;
 type Job = (typeof JOBS)[number];
 const LABEL: Record<Job, string> = {
   clip: "Clip",
   tag: "Tag",
   review: "Review",
   search: "Search",
+  reel: "Reel",
 };
 
 const EXPIRED = "This link has expired. Scan the code on the TV again.";
@@ -47,7 +52,8 @@ const PAD_S = 5;
 const NEAR_S = 10;
 /** How far the trim handles reach past the starting window. */
 const REACH_S = 10;
-const POLL_MS = 1000;
+/** The 9:16 render takes tens of seconds; poll gently (D-87: shared Lambda concurrency). */
+const POLL_MS = 3000;
 
 type Win = { t_start: number; t_end: number };
 /** A panel's error → its message; a 401 also flips the whole page to "expired". */
@@ -97,7 +103,7 @@ export function PhonePage({ gameId }: { gameId: string }) {
   if (!game || !moments) return <div className="screen phone">Loading…</div>;
 
   const props: JobProps = { api, game, moments, fail };
-  // All four stay mounted (hidden), so switching tabs keeps a search or a half-done trim.
+  // All the jobs stay mounted (hidden), so switching tabs keeps a search or a half-done trim.
   return (
     <div
       className="screen phone phone-jobs"
@@ -136,6 +142,14 @@ export function PhonePage({ gameId }: { gameId: string }) {
         data-testid="phone-search"
       >
         <SearchJob {...props} />
+      </section>
+      <section
+        role="tabpanel"
+        aria-label="Highlight reel"
+        hidden={job !== "reel"}
+        data-testid="phone-reel"
+      >
+        <ReelJob {...props} />
       </section>
       <nav className="phone-tabs" role="tablist" aria-label="What to do">
         {JOBS.map((j) => (
@@ -223,6 +237,8 @@ function nearestMoment(moments: Moment[], t: number | null): Moment | null {
 }
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
+/** "p12" → "12": the TV calls an unnamed player "Player 12"; the phone matches it. */
+const trackNo = (pid: string) => pid.replace(/^p/, "");
 
 function ClipJob({
   api,
@@ -238,7 +254,7 @@ function ClipJob({
   const moment = moments.find((m) => m.id === momentId) ?? null;
   const at = t ?? 0;
   const base: Win = moment
-    ? { t_start: moment.t_start, t_end: moment.t_end }
+    ? momentClip(moment, dur)
     : {
         t_start: r1(Math.max(0, at - PAD_S)),
         t_end: r1(dur ? Math.min(dur, at + PAD_S) : at + PAD_S),
@@ -463,14 +479,113 @@ function ClipJob({
   );
 }
 
+// ---------------------------------------------------------------- Reel
+
+function ReelJob({ api, game, fail }: JobProps) {
+  const [aspect, setAspect] = useState<ReelExport["aspect"]>("16:9");
+  const [reel, setReel] = useState<ReelExport | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // The render takes a while: poll until it lands.
+  useEffect(() => {
+    if (!reel || !exportPending(reel)) return;
+    const timer = setTimeout(() => {
+      api
+        .getGameReel(game.id, reel.id)
+        .then(setReel, (e) => setNote(`Reel failed: ${fail(e)}`));
+    }, POLL_MS);
+    return () => clearTimeout(timer);
+  }, [reel, api, game.id, fail]);
+
+  const make = () => {
+    setBusy(true);
+    setNote("");
+    api
+      .exportGameReel(game.id, aspect)
+      .then(setReel, (e) => setNote(`Not started: ${fail(e)}`))
+      .finally(() => setBusy(false));
+  };
+  const failed = reel?.status === "failed" || reel?.status === "error";
+  const done = reel?.status === "done" && reel.url ? reel : null;
+
+  return (
+    <>
+      <p className="dim">
+        Your clips first, then the game's top plays, in one video.
+      </p>
+      <div className="segmented" role="radiogroup" aria-label="Shape">
+        {(["16:9", "9:16"] as const).map((a) => (
+          <button
+            key={a}
+            type="button"
+            role="radio"
+            aria-checked={aspect === a}
+            data-testid={`reel-aspect-${a === "16:9" ? "wide" : "tall"}`}
+            onClick={() => {
+              setAspect(a);
+              setReel(null);
+              setNote("");
+            }}
+          >
+            {a === "16:9" ? "16:9 wide" : "9:16 tall"}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="wide-btn"
+        data-testid="reel-make"
+        disabled={busy || exportPending(reel)}
+        onClick={make}
+      >
+        {busy ? "Starting…" : "Make the highlight reel"}
+      </button>
+      {note ? (
+        <p role="status" className="error" data-testid="reel-note">
+          {note}
+        </p>
+      ) : null}
+      {reel && !done ? (
+        <p
+          data-testid="reel-status"
+          data-state={reel.status}
+          className={failed ? "error" : undefined}
+        >
+          {failed
+            ? `The reel did not render${reel.error ? `: ${reel.error}` : ""}.`
+            : "Rendering the reel…"}
+        </p>
+      ) : null}
+      {done?.url ? (
+        <ShareLink
+          url={done.url}
+          title={`${game.title} highlights`}
+          tall={aspect === "9:16"}
+          label={
+            done.duration_s
+              ? `Download reel (${Math.round(done.duration_s)} s)`
+              : "Download reel"
+          }
+          testId="reel-link"
+        />
+      ) : null}
+    </>
+  );
+}
+
 function ShareLink({
   url,
   title,
   tall,
+  label,
+  testId = "clip-link",
 }: {
   url: string;
   title: string;
   tall: boolean;
+  label?: string;
+  testId?: string;
 }) {
   const abs = new URL(url, window.location.href).href;
   return (
@@ -481,9 +596,9 @@ function ShareLink({
         download
         target="_blank"
         rel="noreferrer"
-        data-testid="clip-link"
+        data-testid={testId}
       >
-        {tall ? "Download 9:16 clip" : "Open clip"}
+        {label ?? (tall ? "Download 9:16 clip" : "Open clip")}
       </a>
       {typeof navigator.share === "function" ? (
         <button
@@ -525,7 +640,7 @@ function PlayerThumb({
       style={{ borderColor: color }}
       data-thumb={thumb ? "true" : "false"}
     >
-      {thumb ? <img src={thumb} alt="" /> : `#${player.id}`}
+      {thumb ? <img src={thumb} alt="" /> : trackNo(player.id)}
     </span>
   );
 }
@@ -539,7 +654,7 @@ function TagJob({ api, game, moments, fail }: JobProps) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const list = [...(profiles ?? []), ...made];
-  const label = (p: Player) => p.name ?? `Player #${p.id}`;
+  const label = (p: Player) => p.name ?? `Player ${trackNo(p.id)}`;
 
   const tag = async (pid: string, profile: Profile | null) => {
     setBusy(true);
@@ -664,7 +779,7 @@ function ReviewJob({ api, game, moments, fail }: JobProps) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const name = (pid: string) =>
-    game.players.find((p) => p.id === pid)?.name ?? `#${pid}`;
+    game.players.find((p) => p.id === pid)?.name ?? `Player ${trackNo(pid)}`;
 
   const answer = (opt: ReviewOption, value?: string) => {
     setBusy(true);

@@ -74,6 +74,12 @@ test("TV-22 Do more → Watch switches ways; Back leaves the Watch row first", a
     .poll(async () => (await media(page)).t)
     .toBeGreaterThanOrEqual(11.4);
 
+  // Back steps out of the reel into the full game (the transport first), not to Home.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("watch")).toHaveAttribute("data-way", "full");
+  await expect(page.getByTestId("way-indicator")).toHaveCount(0);
+
   await menuTo(page, "way-full");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("way-indicator")).toHaveCount(0);

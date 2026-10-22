@@ -14,6 +14,9 @@ at `RATE_HZ`:
   and contest), blocks and overhead contacts, where raised arms are the play itself.
 * **speed** — a burst of the fast players' speed over its own 30 s baseline (jumping,
   running to a teammate). Weak on its own: a fast break looks the same, so it weighs least.
+* **plays** (D-90) — the detected plays themselves (`events.json`): a make by its points,
+  a block, a steal. A quiet gym with a good camera is all plays; a loud one adds the
+  cheer on top. Nottingham Q1 (CC BY): top-5 precision 0.2 -> 0.4 (docs/decisions.md D-90).
 
 Candidates are local maxima of the fused series, at least `MIN_GAP_S` apart, each mapped
 to the play that ended just before the peak (the cheer follows the play), else a window
@@ -32,7 +35,12 @@ from .gamedata import Game, read_json
 
 RATE_HZ = 2.0
 GRID_HZ = 10.0
-WEIGHTS = {"audio": 0.85, "arms_up": 0.6, "speed": 0.35}
+WEIGHTS = {"audio": 0.85, "arms_up": 0.6, "speed": 0.35, "plays": 0.9}
+# D-90: what the detected play is worth on its own, by points scored (a free throw is
+# rarely a highlight), and a block or steal; held for PLAY_HOLD_S from the play's key time
+PLAY_VALUE = {1: 0.25, 2: 0.7, 3: 0.9}
+NOTABLE_VALUE = {"block": 0.7, "steal": 0.6}
+PLAY_HOLD_S = 3.0
 LOUDNESS_WITH_HYPE = 0.4  # raw loudness's share of the audio cue when courtcam's ran
 CANDIDATE_MIN = 0.4
 MIN_GAP_S = 8.0
@@ -155,6 +163,26 @@ def speed_score(game: Game) -> np.ndarray:
     return np.clip((fast - base - 1.0) / 2.5, 0.0, 1.0)
 
 
+def play_score(grid: np.ndarray, events: list[dict]) -> np.ndarray:
+    """Per grid sample: the best detected play in the last PLAY_HOLD_S — a make by its
+    points (`PLAY_VALUE`, 2 when unknown), a block or steal (`NOTABLE_VALUE`)."""
+    out = np.zeros(len(grid))
+    for e in events:
+        if e.get("dismissed"):
+            continue
+        kind = e.get("type")
+        if kind == "shot" and e.get("made"):
+            v = PLAY_VALUE.get(int(e.get("points") or 2), PLAY_VALUE[2])
+        elif kind in NOTABLE_VALUE:
+            v = NOTABLE_VALUE[kind]
+        else:
+            continue
+        tk = float(e.get("t_key") or 0.0)
+        m = (grid >= tk) & (grid <= tk + PLAY_HOLD_S)
+        out[m] = np.maximum(out[m], v)
+    return out
+
+
 def candidates(t: np.ndarray, hype: np.ndarray, comps: dict, game: Game) -> list[dict]:
     """Greedy peaks >= CANDIDATE_MIN, >= MIN_GAP_S apart, best first."""
     peak = (hype >= CANDIDATE_MIN) & (hype >= np.r_[hype[1:], 0]) & (hype > np.r_[0, hype[:-1]])
@@ -190,7 +218,7 @@ def hype_series(game: Game) -> dict:
     """`hype.json` (`replay.hype.v1`) for a loaded game."""
     dur = game.duration or (float(game.tracks.t[-1]) if len(game.tracks.t) else 0.0)
     grid = np.arange(0.0, dur, 1.0 / GRID_HZ)
-    sources: dict[str, str | None] = {"audio": None, "arms_up": None, "speed": None}
+    sources: dict[str, str | None] = {"audio": None, "arms_up": None, "speed": None, "plays": None}
     comps = {k: np.zeros(len(grid)) for k in WEIGHTS}
     loud = loudness(game.dir)
     if loud is not None:
@@ -214,6 +242,9 @@ def hype_series(game: Game) -> dict:
     if len(game.tracks.t) >= 3:
         comps["speed"] = np.interp(grid, game.tracks.t, speed_score(game), left=0.0, right=0.0)
         sources["speed"] = "tracks"
+    comps["plays"] = play_score(grid, game.events)
+    if comps["plays"].any():
+        sources["plays"] = "events.json"
     keep = np.ones(len(grid))
     for k, w in WEIGHTS.items():
         keep *= 1.0 - w * comps[k]
@@ -234,5 +265,6 @@ def hype_series(game: Game) -> dict:
         "sources": sources,
         "weights": WEIGHTS,
         "candidates": candidates(t_out, values, pub, game),
-        "method": "heuristic: noisy-or of audio loudness, arms-up poses, speed bursts",
+        "method": "heuristic: noisy-or of audio loudness, arms-up poses, speed bursts, "
+        "detected makes/blocks/steals",
     }

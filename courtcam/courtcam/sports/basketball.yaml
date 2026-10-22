@@ -13,7 +13,18 @@ court:
   # routinely is). Any of these present in a landmarks.json is folded into the
   # homography fit; the uploader still only asks for `landmarks` above.
   landmarks_optional:
-    [key_nl, key_nr, ft_nl, ft_nr, key_fl, key_fr, ft_fl, ft_fr, centre_l, centre_r]
+    [
+      key_nl,
+      key_nr,
+      ft_nl,
+      ft_nr,
+      key_fl,
+      key_fr,
+      ft_fl,
+      ft_fr,
+      centre_l,
+      centre_r,
+    ]
   margin_m: 1.0
   # D-23: plain-language glossary handed to the vision model by `courtcam autocalib`.
   # Nothing else reads these; they are prose for a model, not geometry.
@@ -74,9 +85,10 @@ court:
     centre_r: where the half-way line meets the `r` sideline.
 # `max` is a *concurrency* cap — the most players selectable at any one instant, not the
 # size of the roster over the clip. Substitutions push the total above it.
-players: {min: 2, max: 10}
+players: { min: 2, max: 10 }
 team_rule: jersey_color
-detection: {classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25}
+detection:
+  { classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25 }
 tracking:
   oncourt_min_fraction: 0.6
   min_lifetime_s: 1.0
@@ -87,6 +99,16 @@ tracking:
   # seconds, at the cost of more identity switches — which the tag UI corrects.
   merge_max_gap_s: 5.0
   merge_max_dist_m: 7.0
+  # D-89: cut tracklets where the tracker handed the id to someone else, and gate merges
+  # and stitches by body appearance. CC BY Nottingham game, 120 random 30 s follows: the
+  # ring on another kit 22.2 % -> 16.0 % of the time, on the right kit 59.6 % -> 61.1 %.
+  appearance_cut: 0.22
+  appearance_weight: 1.0
+  appearance_max: 0.18
+  # D-89: up to 6 on court at once (pickup, 1v1 to 3v3) is solved as that many people.
+  # CC BY 2v2 park clip, 4 people, 120 s vs a hand-checked GT: 21 ids -> 4, the ring on
+  # the right person 47 % -> 83 % of a 30 s follow (someone else 29 % -> 17 %).
+  roster_max: 6
   smooth_window: 5
 # Order matters: `possession` reads the shots (rebound vs steal, make vs miss).
 events: [shot, possession, hype]
@@ -127,6 +149,14 @@ shot:
   release_max_s: 1.0
   hoop_from_camera: true
   confirm_mad_floor: 0.5
+  # D-90: on a full court every shot at a basket is one team's (until half time)
+  team_by_hoop: true
+# D-90: watch the ball around every rim in frame (courtcam.ball); each visit is a shot and
+# its path through (or off) the rim is the make/miss. Replaces the pose + rim-burst shots.
+ball: { enabled: true }
+# What a basket is worth (full-court rules). Pickup half court: e.g. {inside: 1,
+# outside: 2, to: 11} or {inside: 2, outside: 3, to: 21}; `to` restarts the score after a win.
+scoring: { inside: 2, outside: 3, free_throw: 1 }
 # `zoom` divides the court's *pixel* width (calib.court_polygon_px, clipped to the
 # frame) to get the follow-cam window, not the frame width — so the same number means
 # the same framing on a tight 720p clip and on a 2560x960 whole-court panorama, and the
@@ -134,11 +164,11 @@ shot:
 # on basketball_kennesawwide_240s.mp4 that is a 1039x584 window and a median on-court
 # player 124 px tall, i.e. 1/4.7 of the crop height (samples/real/RESULTS.md). Floor is
 # croppath.MIN_CROP_W, cap is the frame width.
-followcam: {zoom: 2.4, lead_s: 0.3, stiffness: 7.0}
+followcam: { zoom: 2.4, lead_s: 0.3, stiffness: 7.0 }
 query_vocab:
-  shots: {type: shot}
-  makes: {type: shot, made: true}
-  misses: {type: shot, made: false}
+  shots: { type: shot }
+  makes: { type: shot, made: true }
+  misses: { type: shot, made: false }
 sport_ui:
   chips: ["All shots", "Makes", "Misses", "Top plays"]
   review: [shot_chart, heatmap, box_score]
@@ -147,6 +177,6 @@ synth:
   view: sideline
   floor: "#CD9F6E"
   apron: "#7A4A2A"
-  ball: {radius_m: 0.12, color: "#E0702A"}
+  ball: { radius_m: 0.12, color: "#E0702A" }
   team_colors: ["#1F4FA0", "#E8E8E8"]
   contact_sound_hz: 160

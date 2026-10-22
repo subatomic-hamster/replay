@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { GAME_ID, mockCalls } from "./helpers";
+import { momentClip } from "../../../packages/tv-core/src/discovery";
 
 // S-55..S-59: the "On your phone" page the TV's QR opens, `/p/:id?job=..&t=..#k=<token>`,
 // at phone size against the mock API. The mock reads the token like the API does: any
@@ -322,6 +323,57 @@ test("S-59 Search: this game's plays; a hit plays its window on the phone", asyn
     "Marcus scores",
   );
   await expect(page.getByTestId("phone-search-interpretation")).toBeVisible();
+});
+
+test("S-60 Reel: the highlight reel, 9:16, rendered on the server, then a download link", async ({
+  page,
+}) => {
+  await open(page, "job=reel");
+  await expect(page.getByTestId("phone-reel")).toBeVisible();
+  await expect(page.getByTestId("phone-tab-reel")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.getByTestId("reel-aspect-tall").click();
+  await page.getByTestId("reel-make").click();
+  await expect(page.getByTestId("reel-status")).toHaveText(
+    "Rendering the reel…",
+  );
+  await expect(page.getByTestId("reel-make")).toBeDisabled();
+  await expect(page.getByTestId("reel-link")).toHaveText(
+    "Download reel (18 s)",
+    { timeout: 10_000 },
+  );
+  await expect(page.getByTestId("reel-link")).toHaveAttribute(
+    "href",
+    /reel=r_/,
+  );
+  expect(await calls(page, "POST", `/games/${GAME_ID}/exports/reel`)).toEqual([
+    {
+      method: "POST",
+      path: `/games/${GAME_ID}/exports/reel`,
+      body: { aspect: "9:16" },
+    },
+  ]);
+  await phoneFriendly(page);
+});
+
+test("S-60 a moment too short to share starts as its build-up and finish", () => {
+  // a steal: a 0.5 s window at 91.2 s
+  expect(momentClip({ t: 91.2, t_start: 91.2, t_end: 91.7 }, 241)).toEqual({
+    t_start: 86.2,
+    t_end: 93.2,
+  });
+  // a shot's own 5 s window stays
+  expect(momentClip({ t: 12.9, t_start: 9.9, t_end: 14.9 }, 241)).toEqual({
+    t_start: 9.9,
+    t_end: 14.9,
+  });
+  // clamped to the video
+  expect(momentClip({ t: 1, t_start: 1, t_end: 1.5 }, 2.5)).toEqual({
+    t_start: 0,
+    t_end: 2.5,
+  });
 });
 
 test("S-59 screenshots of the four tabs at 390x844", async ({ page }) => {

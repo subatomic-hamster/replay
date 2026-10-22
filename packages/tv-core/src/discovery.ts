@@ -15,8 +15,9 @@ export interface Rendition {
 }
 
 /** The directed broadcast rendition, or null (no rendition → Watch stays on wide). */
-export const broadcastOf = (rs: Rendition[] | null | undefined): Rendition | null =>
-  rs?.find((r) => r.kind === "broadcast") ?? null;
+export const broadcastOf = (
+  rs: Rendition[] | null | undefined,
+): Rendition | null => rs?.find((r) => r.kind === "broadcast") ?? null;
 
 // ---------------------------------------------------------------- commentary (M7)
 
@@ -42,11 +43,16 @@ export interface Commentary {
 export const CAPTION_S = 3;
 
 /** Every line of the game, in time order. */
-export const commentaryLines = (c: Commentary | null | undefined): CommentaryLine[] =>
+export const commentaryLines = (
+  c: Commentary | null | undefined,
+): CommentaryLine[] =>
   (c?.plays ?? []).flatMap((p) => p.lines).sort((a, b) => a.t - b.t);
 
 /** The line being spoken at media time `t` (latest start wins), or null. */
-export function captionAt(lines: CommentaryLine[], t: number): CommentaryLine | null {
+export function captionAt(
+  lines: CommentaryLine[],
+  t: number,
+): CommentaryLine | null {
   let hit: CommentaryLine | null = null;
   for (const ln of lines) {
     const t0 = ln.audio_t ?? ln.t;
@@ -110,7 +116,10 @@ export const triggerLabel = (t: TriggerType | undefined): string =>
   (t && TRIGGER_LABEL[t]) ?? "Clip";
 
 /** "by Marcus · about Jordan", from the clip's attribution and the current roster. */
-export function attributionText(clip: PlayClip, name: (pid: string) => string): string {
+export function attributionText(
+  clip: PlayClip,
+  name: (pid: string) => string,
+): string {
   const a = clip.attribution ?? {};
   const parts: string[] = [];
   if (a.by_player_id) parts.push(`by ${name(a.by_player_id)}`);
@@ -122,8 +131,11 @@ export function attributionText(clip: PlayClip, name: (pid: string) => string): 
 
 /** First index of a `size`-row window that keeps `index` visible (a 1080p list scrolls
  *  by moving this window, not by native scrolling — focus is app state). */
-export const listWindow = (index: number, count: number, size: number): number =>
-  Math.max(0, Math.min(index - Math.floor(size / 2), count - size));
+export const listWindow = (
+  index: number,
+  count: number,
+  size: number,
+): number => Math.max(0, Math.min(index - Math.floor(size / 2), count - size));
 
 /** m:ss.s — trim handles move in half seconds, so whole seconds are not enough. */
 export function fmtClock(s: number): string {
@@ -146,9 +158,42 @@ export function nudgeTrim(
   const r = (v: number) => Math.round(v * 1000) / 1000;
   const end = duration > 0 ? duration : Number.MAX_SAFE_INTEGER;
   if (edge === "start") {
-    return { t_start: r(Math.min(Math.max(0, win.t_start + delta), win.t_end - MIN_CLIP_S)), t_end: win.t_end };
+    return {
+      t_start: r(
+        Math.min(Math.max(0, win.t_start + delta), win.t_end - MIN_CLIP_S),
+      ),
+      t_end: win.t_end,
+    };
   }
-  return { t_start: win.t_start, t_end: r(Math.max(Math.min(end, win.t_end + delta), win.t_start + MIN_CLIP_S)) };
+  return {
+    t_start: win.t_start,
+    t_end: r(
+      Math.max(Math.min(end, win.t_end + delta), win.t_start + MIN_CLIP_S),
+    ),
+  };
+}
+
+/** A moment's window shorter than this is too short to share as a clip (a steal or a
+ *  rebound is 0.5 s): it starts CLIP_LEAD_S before the key time and ends CLIP_TAIL_S after. */
+export const SHORT_MOMENT_S = 3;
+export const CLIP_LEAD_S = 5;
+export const CLIP_TAIL_S = 2;
+
+/** The clip a moment starts as: its own window, or the build-up and the finish around its
+ *  key time when that window is too short; within [0, duration]. */
+export function momentClip(
+  m: { t: number; t_start: number; t_end: number },
+  duration: number,
+): { t_start: number; t_end: number } {
+  if (m.t_end - m.t_start >= SHORT_MOMENT_S)
+    return { t_start: m.t_start, t_end: m.t_end };
+  const r = (v: number) => Math.round(v * 10) / 10;
+  return {
+    t_start: r(Math.max(0, Math.min(m.t_start, m.t - CLIP_LEAD_S))),
+    t_end: r(
+      Math.min(duration || Infinity, Math.max(m.t_end, m.t + CLIP_TAIL_S)),
+    ),
+  };
 }
 
 // ---------------------------------------------------------------- hype (D-45)
@@ -187,7 +232,9 @@ export const PEAK_LEAD_S = 3;
 /** Where "Hype peak" seeks from `now`: the next candidate's lead-in, wrapping to the
  *  first; null when the game has no candidates. */
 export function nextPeak(cands: HypeCandidate[], now: number): number | null {
-  const targets = cands.map((c) => Math.max(0, c.t - PEAK_LEAD_S)).sort((a, b) => a - b);
+  const targets = cands
+    .map((c) => Math.max(0, c.t - PEAK_LEAD_S))
+    .sort((a, b) => a - b);
   if (!targets.length) return null;
   // the 0.25 s margin: pressing again right after a jump moves on to the next peak
   return targets.find((t) => t > now + 0.25) ?? targets[0];
@@ -212,7 +259,8 @@ export interface Rally {
 
 export interface JobStatus {
   /** "missing": it was done but the file is gone; the UI offers to render again, as "none" */
-  status: "none" | "missing" | "queued" | "running" | "done" | "failed" | "error";
+  status:
+    "none" | "missing" | "queued" | "running" | "done" | "failed" | "error";
   url: string | null;
   job_id?: string | null;
   error?: string | null;
@@ -235,7 +283,9 @@ export function rallyOrder(doc: RallyDoc, by: "time" | "longest"): Rally[] {
   if (by === "time") return byTime;
   const rank = new Map(doc.longest.map((id, i) => [id, i]));
   return [...byTime].sort(
-    (a, b) => (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9) || b.duration_s - a.duration_s,
+    (a, b) =>
+      (rank.get(a.id) ?? 1e9) - (rank.get(b.id) ?? 1e9) ||
+      b.duration_s - a.duration_s,
   );
 }
 
@@ -243,7 +293,11 @@ export function rallyOrder(doc: RallyDoc, by: "time" | "longest"): Rally[] {
 export function rallyAtCondensed(rallies: Rally[], t: number): Rally | null {
   let hit: Rally | null = null;
   for (const r of rallies) {
-    if (r.condensed_t != null && r.condensed_t <= t + 0.05 && (!hit || r.condensed_t >= (hit.condensed_t ?? 0))) {
+    if (
+      r.condensed_t != null &&
+      r.condensed_t <= t + 0.05 &&
+      (!hit || r.condensed_t >= (hit.condensed_t ?? 0))
+    ) {
       hit = r;
     }
   }
@@ -270,9 +324,18 @@ export interface VerticalExport extends JobStatus {
   size?: [number, number];
 }
 
+/** POST/GET /games/{id}/exports/reel: the game's highlight reel (the user's clips, then
+ *  the top plays, ≤ 90 s) as one MP4. The id hashes the aspect and the plan's inputs. */
+export interface ReelExport extends JobStatus {
+  id: string;
+  aspect: "16:9" | "9:16";
+  duration_s?: number | null;
+}
+
 /** Still rendering: poll again. */
-export const exportPending = (e: { status: string } | null | undefined): boolean =>
-  !!e && (e.status === "queued" || e.status === "running");
+export const exportPending = (
+  e: { status: string } | null | undefined,
+): boolean => !!e && (e.status === "queued" || e.status === "running");
 
 // ---------------------------------------------------------------- review queue (D-48)
 
@@ -298,7 +361,10 @@ export interface ReviewQuestion {
 }
 
 export const optionTestId = (label: string) =>
-  `review-action-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  `review-action-${label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
 
 // ---------------------------------------------------------------- search + advice (M7)
 

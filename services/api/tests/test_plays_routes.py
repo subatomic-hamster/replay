@@ -109,6 +109,25 @@ def test_user_clips_are_bookmark_moments(client: TestClient):
     assert times == sorted(times)
 
 
+def test_uploader_notes_are_your_note_moments(client: TestClient):
+    """D-90: `courtcam notes` (notes.json) shows as "Your note" moments, source user; an
+    evaluation play log in the same place never does."""
+    gid = _seed(client)
+    d = client.app_settings.games_dir / gid
+    notes = {"schema": "replay.playlog.v1", "use": "notes", "label": "Your notes",
+             "source": "user", "entries": [
+                 {"t": 12.5, "type": "shot", "player": "Sam", "made": True, "points": 2},
+                 {"t": 20.0, "type": "note", "note": "great hustle play"}]}  # fmt: skip
+    (d / "notes.json").write_text(json.dumps(notes))
+    ms = {m["id"]: m for m in client.get(f"/games/{gid}/moments").json()}
+    a, b = ms["note1"], ms["note2"]
+    assert (a["kind"], a["label"], a["source"], a["t"]) == (
+        "bookmark", "Your note: Sam made shot", "user", 12.5)  # fmt: skip
+    assert b["label"] == "Your note: great hustle play" and b["trigger"] == "note"
+    (d / "notes.json").write_text(json.dumps({**notes, "use": "evaluation"}))
+    assert not [m for m in client.get(f"/games/{gid}/moments").json() if m["id"].startswith("note")]
+
+
 def test_voice_subject_follows_the_roster_and_clips_trim(client: TestClient):
     gid = _seed(client)
     clips = client.get(f"/games/{gid}/clips").json()["clips"]

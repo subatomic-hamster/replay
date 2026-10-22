@@ -7,7 +7,8 @@ export type ReplayTier = "A" | "B" | "C";
 
 export interface ReplayAngle {
   /** Tier A: `wide`, `follow:<pid>`, `tight:<pid>`; Tier B: `broadcast_high`, `orbit`,
-   *  `push_in`, `reverse`; Tier C: `3d:<kind>` and `pov:<pid>` (a virtual POV). */
+   *  `push_in`, `reverse`; Tier C (virtual views): `3d:<kind>` (wing, courtside,
+   *  baseline) and `pov:<pid>` (a virtual POV). */
   id: string;
   tier: ReplayTier;
   label: string;
@@ -48,7 +49,8 @@ export interface ReplaySummary {
 const TIER_BADGE: Record<ReplayTier, string> = {
   A: "Real video",
   B: "2.5D",
-  C: "3D",
+  // image-based since D-86: the real players' pixels on a reconstructed court, any camera
+  C: "Virtual view",
 };
 
 export const tierBadge = (tier: ReplayTier): string => TIER_BADGE[tier] ?? tier;

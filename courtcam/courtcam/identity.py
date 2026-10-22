@@ -32,6 +32,13 @@ class PlayerTrack:
     color_hex: str
     track: CourtTrack
     members: tuple[int, ...]  # local track ids that were merged in
+    # (tracker id, t_start, t_end) of every piece: a tracker id cut by `split_appearance`
+    # can be in two players, so the id alone does not say which part is whose
+    spans: tuple[tuple[int, float, float], ...] = ()
+    # one person for the whole clip, box by box (`roster_label`): where no box is theirs
+    # the id has none, so `tracks/` bridges only short gaps and the TV never hands the
+    # follow to another id (D-89)
+    solved: bool = False
 
     @property
     def t_start(self) -> float:
@@ -317,6 +324,450 @@ def split_switches(
     return out, np.asarray(out_teams, dtype=int)
 
 
+# --- appearance switches (D-89) ---------------------------------------------
+
+APP_EVERY_S = 0.5
+"""`body_series` sampling period. Real-footage check (no labels needed): `body_hist`
+tells two samples of one tracklet 1 s apart from two people in the same frame at ROC AUC
+0.90 on the CC BY basketball game and 0.94 on the volleyball clip (0.88 / 0.89 for people
+within two box heights of each other). Over a whole tracklet it was 0.53: the tracker
+swaps people inside a tracklet, which is what `split_appearance` undoes."""
+APP_WINDOW = 3
+"""Samples each side of a candidate cut (about 1.5 s): a cut needs a sustained change."""
+
+
+def body_series(
+    video: str,
+    tracks: list[CourtTrack],
+    every_s: float = APP_EVERY_S,
+    max_cover: float = JERSEY_MAX_COVER,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """(sample indices, `body_hist` per sample) of each tracklet, one sample per
+    `every_s` (0: every box). Samples another box covers by more than `max_cover` are
+    left out: they show whoever stands in front. One decode pass, like
+    `sample_appearance`."""
+    wanted: dict[int, list[tuple[int, int]]] = {}
+    for i, tr in enumerate(tracks):
+        t = tr.tracklet
+        last = -np.inf
+        for j, s in enumerate(t.times.tolist()):
+            if s - last >= every_s - 1e-6:
+                wanted.setdefault(int(t.frames[j]), []).append((i, j))
+                last = s
+    boxes_at: dict[int, list[tuple[int, np.ndarray]]] = {}
+    for i, tr in enumerate(tracks):
+        for f, b in zip(tr.tracklet.frames.tolist(), tr.tracklet.boxes, strict=True):
+            if int(f) in wanted:
+                boxes_at.setdefault(int(f), []).append((i, b))
+    got: list[list[tuple[int, np.ndarray]]] = [[] for _ in tracks]
+    cap = cv2.VideoCapture(str(video))
+    try:
+        fh = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1
+        fw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1
+        for frame_idx, frame in _grab_frames(cap, sorted(wanted)):
+            for i, j in wanted[frame_idx]:
+                box = tracks[i].tracklet.boxes[j]
+                others = np.asarray([b for k, b in boxes_at[frame_idx] if k != i]).reshape(-1, 4)
+                bx, by, bw, bh = (int(round(v)) for v in box)
+                if _cover((bx, by, max(bw, 1), max(bh, 1)), others) > max_cover:
+                    continue
+                crop = frame[max(0, by) : min(fh, by + bh), max(0, bx) : min(fw, bx + bw)]
+                if crop.shape[0] >= 4 and crop.shape[1] >= 4:
+                    got[i].append((j, body_hist(crop)))
+    finally:
+        cap.release()
+    bdim = 2 * int(np.prod(BODY_BINS))
+    return [
+        (
+            np.asarray([j for j, _ in g], dtype=int),
+            np.asarray([d for _, d in g]).reshape(-1, bdim),
+        )
+        for g in got
+    ]
+
+
+def _clear_every(
+    track: CourtTrack, series: tuple[np.ndarray, np.ndarray], cover: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """What `body_series` would have sampled from a denser series: the clear samples
+    (cover <= `JERSEY_MAX_COVER`), one per `APP_EVERY_S`."""
+    idx, d = series
+    times = track.tracklet.times
+    keep, last = [], -np.inf
+    for n, j in enumerate(idx.tolist()):
+        if cover[j] <= JERSEY_MAX_COVER and times[j] - last >= APP_EVERY_S - 1e-6:
+            keep.append(n)
+            last = times[j]
+    return idx[keep], d[keep].reshape(-1, d.shape[1])
+
+
+def _cut_points(desc: np.ndarray, cut: float, window: int = APP_WINDOW) -> list[int]:
+    """Sample positions k where the mean of the `window` samples before and the mean of
+    the `window` after differ by more than `cut` (`app_distance`), strongest first, at
+    least `window` apart."""
+    n = len(desc)
+    score = np.zeros(n)
+    for k in range(window, n - window + 1):
+        a = desc[k - window : k].mean(axis=0)
+        b = desc[k : k + window].mean(axis=0)
+        score[k] = app_distance(a, b)
+    cuts: list[int] = []
+    for k in np.argsort(-score):
+        if score[k] <= cut:
+            break
+        if all(abs(int(k) - c) >= window for c in cuts):
+            cuts.append(int(k))
+    return sorted(cuts)
+
+
+def split_appearance(
+    tracks: list[CourtTrack],
+    series: list[tuple[np.ndarray, np.ndarray]],
+    cut: float,
+    window: int = APP_WINDOW,
+) -> tuple[list[CourtTrack], list[int], list[np.ndarray]]:
+    """Cut tracklets where the person in the box changes for good (the tracker handed the
+    id to someone else, often a teammate the jersey cannot tell apart). Returns the
+    pieces, the index of the tracklet each came from, and each piece's mean `body_hist`
+    (a piece without clear samples gets its tracklet's)."""
+    out: list[CourtTrack] = []
+    src: list[int] = []
+    desc: list[np.ndarray] = []
+    bdim = 2 * int(np.prod(BODY_BINS))
+    for i, (tr, (idx, d)) in enumerate(zip(tracks, series, strict=True)):
+        t = tr.tracklet
+        whole = d.mean(axis=0) if len(d) else np.full(bdim, 1.0 / (bdim // 2))
+        ks = _cut_points(d, cut, window) if len(d) >= 2 * window else []
+        bounds = [0, *(int(idx[k]) for k in ks), len(t.frames)]
+        for lo, hi in zip(bounds, bounds[1:], strict=False):
+            if hi - lo < 2:
+                continue
+            piece = Tracklet(
+                t.track_id, t.frames[lo:hi], t.times[lo:hi], t.boxes[lo:hi], t.confs[lo:hi]
+            )
+            out.append(CourtTrack(piece, tr.court_m[lo:hi], tr.inside_fraction))
+            src.append(i)
+            mine = (idx >= lo) & (idx < hi)
+            desc.append(d[mine].mean(axis=0) if mine.any() else whole)
+    return out, src, desc
+
+
+# --- small rosters: K identities (D-89) -------------------------------------
+
+ROSTER_STEP_S = 0.5
+ROSTER_SHARE = 0.25
+"""K = the most people on court at once for at least this share of the clip's live time
+(occlusion hides one for a while; a ghost box adds one for a moment)."""
+ROSTER_ROUNDS = 3
+
+
+def roster_size(tracks: list[CourtTrack], step_s: float = ROSTER_STEP_S) -> int:
+    if not tracks:
+        return 0
+    t0 = min(t.tracklet.t_start for t in tracks)
+    t1 = max(t.tracklet.t_end for t in tracks)
+    ts = np.arange(t0, t1 + 1e-9, step_s)
+    live = np.zeros(len(ts), dtype=int)
+    for t in tracks:
+        live += (ts >= t.tracklet.t_start) & (ts <= t.tracklet.t_end)
+    live = live[live > 0]
+    k = 0
+    for c in range(1, int(live.max()) + 1):
+        if np.mean(live >= c) >= ROSTER_SHARE:
+            k = c
+    return k
+
+
+ROSTER_SWITCH = 0.5
+"""Viterbi cost of the person in one tracklet changing (`app_distance` units): a swap
+must out-look this over a few samples, a single odd crop never does."""
+
+
+ROSTER_MARGIN = 0.08
+"""How much worse than its best look a piece's person may look (`app_distance`)."""
+ROSTER_EXTRA_S = 3.0
+"""A piece that looks like none of the roster is kept as its own player if it lasts."""
+
+
+def _app_matrix(x: np.ndarray, protos: np.ndarray) -> np.ndarray:
+    """`app_distance` of every row of `x` to every prototype, vectorised."""
+    n = x.shape[1] // 2
+    rx, rp = np.sqrt(np.clip(x, 0, None)), np.sqrt(np.clip(protos, 0, None))
+    return 1.0 - 0.5 * (rx[:, :n] @ rp[:, :n].T + rx[:, n:] @ rp[:, n:].T)
+
+
+def _viterbi(cost: np.ndarray, switch: float) -> np.ndarray:
+    """Cheapest label path through `cost` (samples x labels) with `switch` per change."""
+    acc, back = cost[0].copy(), np.zeros(cost.shape, dtype=int)
+    for i in range(1, len(cost)):
+        stay, jump = acc, acc.min() + switch
+        back[i] = np.where(stay <= jump, np.arange(cost.shape[1]), int(acc.argmin()))
+        acc = np.minimum(stay, jump) + cost[i]
+    path = np.empty(len(cost), dtype=int)
+    path[-1] = int(acc.argmin())
+    for i in range(len(cost) - 1, 0, -1):
+        path[i - 1] = back[i, path[i]]
+    return path
+
+
+def roster_pieces(
+    tracks: list[CourtTrack],
+    series: list[tuple[np.ndarray, np.ndarray]],
+    k: int,
+    profile: Profile,
+) -> tuple[list[CourtTrack], list[int], list[list[int]], np.ndarray | None]:
+    """Solve a game of `k` people as `k` identities (D-89).
+
+    Looks: seeded from the `k` tracklets alive together for longest (different people by
+    construction), refined by k-means over every `body_hist` sample. Each tracklet's
+    samples are labelled with a person by Viterbi (`ROSTER_SWITCH` per change) and the
+    tracklet is cut where the label changes: that undoes the tracker's swaps with the
+    roster's looks, not only with a local before/after test. Pieces are then placed,
+    longest first, on their best-looking person who is free then (no two pieces of one
+    person at once, nobody faster than a sprint between pieces); a piece nobody can
+    take (a ghost box, a duplicate, a passer-by) stays on its own. Looks are re-estimated
+    from the placement and everything is labelled again (`ROSTER_ROUNDS`).
+
+    Returns the pieces, the tracklet each came from, the groups (`k` people, then one
+    group per leftover piece) and the people's looks (None: no seeds to solve from)."""
+    cfg = profile.tracking
+    s = np.asarray([t.tracklet.t_start for t in tracks])
+    e = np.asarray([t.tracklet.t_end for t in tracks])
+    best, seeds = -1.0, np.zeros(0, dtype=int)
+    for t in np.arange(s.min(), e.max() + 1e-9, ROSTER_STEP_S):
+        alive = np.flatnonzero((s <= t) & (e >= t))
+        if len(alive) < k:
+            continue
+        top = alive[np.argsort(-np.minimum(e[alive], t + 60))][:k]
+        if (together := float(min(e[top].min(), t + 60) - t)) > best:
+            best, seeds, t_seed = together, top, t
+    if sum(len(series[i][1]) > 0 for i in seeds) < k:
+        return tracks, list(range(len(tracks))), [[i] for i in range(len(tracks))], None
+    looks = []
+    for i in seeds:  # the seed's samples from the moment all k are together
+        idx, d = series[i]
+        w = tracks[i].tracklet.times[idx] >= t_seed - 1e-6
+        looks.append(d[w].mean(axis=0) if w.any() else d.mean(axis=0))
+    protos = np.stack(looks)
+    allx = np.concatenate([d for _, d in series if len(d)])
+    for _ in range(5):
+        lab = _app_matrix(allx, protos).argmin(axis=1)
+        protos = np.stack(
+            [allx[lab == p].mean(axis=0) if (lab == p).any() else protos[p] for p in range(k)]
+        )
+    for _ in range(ROSTER_ROUNDS):
+        pieces, src, costs, samples = [], [], [], []
+        for i, (tr, (idx, d)) in enumerate(zip(tracks, series, strict=True)):
+            t = tr.tracklet
+            path = _viterbi(_app_matrix(d, protos), ROSTER_SWITCH) if len(d) else np.zeros(0, int)
+            change = [j for j in range(1, len(path)) if path[j] != path[j - 1]]
+            bounds = [0, *(int(idx[j]) for j in change), len(t.frames)]
+            for lo, hi in zip(bounds, bounds[1:], strict=False):
+                if hi - lo < 2:
+                    continue
+                piece = Tracklet(
+                    t.track_id, t.frames[lo:hi], t.times[lo:hi], t.boxes[lo:hi], t.confs[lo:hi]
+                )
+                pieces.append(CourtTrack(piece, tr.court_m[lo:hi], tr.inside_fraction))
+                src.append(i)
+                mine = (idx >= lo) & (idx < hi)
+                samples.append(d[mine])
+                costs.append(_app_matrix(d[mine], protos).mean(axis=0) if mine.any() else None)
+        ps = np.asarray([p.tracklet.t_start for p in pieces])
+        pe = np.asarray([p.tracklet.t_end for p in pieces])
+        owner = np.full(len(pieces), -1)
+        # best-seen first (most clear samples, then longest): a long piece seen once in a
+        # crowd must not take a slot from the person a well-seen piece clearly shows
+        for i in sorted(range(len(pieces)), key=lambda i: (-len(samples[i]), ps[i] - pe[i])):
+            c = costs[i]
+            # a piece with no clear look goes to whoever was last seen nearest
+            order = (
+                np.argsort(c)
+                if c is not None
+                else np.argsort(
+                    [_roster_gap(i, np.flatnonzero(owner == p), pieces, ps, pe) for p in range(k)]
+                )
+            )
+            for p in order:
+                # only a near-tie may go to its second choice: a second box on someone
+                # already placed is a duplicate, not the next most similar person
+                if c is not None and c[p] > min(c.min() + ROSTER_MARGIN, cfg.appearance_max * 2):
+                    break
+                if _roster_fits(i, np.flatnonzero(owner == p), pieces, ps, pe, cfg):
+                    owner[i] = p
+                    break
+        protos = np.stack(
+            [
+                np.concatenate(
+                    [samples[i] for i in np.flatnonzero(owner == p)] or [protos[p][None]]
+                )
+                .reshape(-1, protos.shape[1])
+                .mean(axis=0)
+                for p in range(k)
+            ]
+        )
+    # A leftover that looks like someone placed is that person seen twice (a second box
+    # on them, a long handover): its stretches where they are free join them, the rest
+    # is dropped. A leftover that looks like nobody is someone else if it lasts.
+    own = owner.tolist()
+    for i in np.flatnonzero(owner < 0):
+        c, t = costs[i], pieces[i].tracklet
+        if c is None or c.min() > cfg.appearance_max * 2:
+            own[i] = -1 if pe[i] - ps[i] >= ROSTER_EXTRA_S else -2
+            continue
+        own[i], p = -2, int(c.argmin())
+        free = np.ones(len(t.times), dtype=bool)
+        for j in np.flatnonzero(owner == p):
+            free &= (t.times < ps[j]) | (t.times > pe[j])
+        edges = np.flatnonzero(np.diff(np.r_[0, free.astype(int), 0]))
+        for lo, hi in zip(edges[::2], edges[1::2], strict=True):
+            if hi - lo < 2:
+                continue
+            sub = Tracklet(
+                t.track_id, t.frames[lo:hi], t.times[lo:hi], t.boxes[lo:hi], t.confs[lo:hi]
+            )
+            pieces.append(CourtTrack(sub, pieces[i].court_m[lo:hi], pieces[i].inside_fraction))
+            src.append(src[i])
+            ps, pe = np.r_[ps, sub.t_start], np.r_[pe, sub.t_end]
+            mine = [j for j, o in enumerate(own) if o == p]
+            own.append(
+                p
+                if _roster_fits(len(pieces) - 1, np.asarray(mine, dtype=int), pieces, ps, pe, cfg)
+                else -2
+            )
+    own = np.asarray(own)
+    groups = [sorted(np.flatnonzero(own == p).tolist(), key=lambda i: ps[i]) for p in range(k)]
+    return pieces, src, groups + [[int(i)] for i in np.flatnonzero(own == -1)], protos
+
+
+def _roster_gap(
+    i: int, mine: np.ndarray, tracks: list[CourtTrack], s: np.ndarray, e: np.ndarray
+) -> float:
+    """Court metres from piece `i` to the nearest-in-time piece of a person (inf: none)."""
+    if not len(mine):
+        return np.inf
+    j = min(mine, key=lambda j: min(abs(s[i] - e[j]), abs(s[j] - e[i])))
+    a = tracks[j].court_m[-1] if e[j] <= s[i] else tracks[j].court_m[0]
+    b = tracks[i].court_m[0] if e[j] <= s[i] else tracks[i].court_m[-1]
+    return float(np.linalg.norm(a - b))
+
+
+def _roster_fits(
+    i: int, mine: np.ndarray, tracks: list[CourtTrack], s: np.ndarray, e: np.ndarray, cfg
+) -> bool:
+    """Piece `i` joins a person's pieces `mine`: no overlap (beyond the handover slack)
+    and each neighbour in time within sprinting reach."""
+    for j in mine:
+        if s[i] < e[j] - cfg.merge_overlap_s and s[j] < e[i] - cfg.merge_overlap_s:
+            return False
+    before = [j for j in mine if e[j] <= s[i] + cfg.merge_overlap_s]
+    after = [j for j in mine if s[j] >= e[i] - cfg.merge_overlap_s]
+    near = []
+    if before:
+        j = max(before, key=lambda j: e[j])
+        near.append((tracks[j].court_m[-1], tracks[i].court_m[0], s[i] - e[j]))
+    if after:
+        j = min(after, key=lambda j: s[j])
+        near.append((tracks[i].court_m[-1], tracks[j].court_m[0], s[j] - e[i]))
+    return all(
+        float(np.linalg.norm(b - a)) <= cfg.merge_max_dist_m + cfg.max_speed_mps * max(g, 0.0)
+        for a, b, g in near
+    )
+
+
+TRACKS_MAX_GAP_S = 0.3
+"""`tracks/` bridges a solved player's gaps up to this long (a box the labelling left
+out); longer, the id has no box. Unsolved players are interpolated across every gap
+(D-89: on the full games that kept the ring on the right kit longer). CC BY 2v2 proxy,
+1000 picks: 0.3 s 93.7 % right while visible / 6.4 % wrong, 1 s 94.2 / 9.9, no cap
+95.3 / 12.5."""
+
+BOX_SWITCH = 0.6
+"""`roster_label` Viterbi cost of a tracklet's person changing, with a sample per box
+(~15 Hz). Swept 0.3 / 0.6 / 1.2 on the CC BY 2v2 proxy: within 1 point of each other."""
+BOX_NOBODY = 0.35
+"""Look cost of "nobody" (a box on no one of the roster): above a clear look of anyone.
+0.25 / 0.35 / 1.0 on the proxy: within a point."""
+BOX_MAX_CLASH = 0.05
+"""Share of labelled boxes that met another box of the same person in one frame above
+which `roster_label` gives up: people who look alike (one kit) would trade boxes frame
+by frame, where the pieces' no-two-places rule keeps them apart."""
+
+
+def box_covers(tracks: list[CourtTrack]) -> list[np.ndarray]:
+    """Per tracklet, per box: the largest share of it another box covers (`_cover`)."""
+    at: dict[int, list[tuple[int, int]]] = {}
+    for i, tr in enumerate(tracks):
+        for j, f in enumerate(tr.tracklet.frames.tolist()):
+            at.setdefault(int(f), []).append((i, j))
+    out = [np.zeros(len(tr.tracklet.frames)) for tr in tracks]
+    for here in at.values():
+        boxes = np.asarray([tracks[i].tracklet.boxes[j] for i, j in here]).reshape(-1, 4)
+        for n, (i, j) in enumerate(here):
+            x, y, w, h = boxes[n]
+            out[i][j] = _cover((x, y, max(w, 1), max(h, 1)), np.delete(boxes, n, axis=0))
+    return out
+
+
+def roster_label(
+    tracks: list[CourtTrack],
+    looks: list[tuple[np.ndarray, np.ndarray]],
+    covers: list[np.ndarray],
+    protos: np.ndarray,
+) -> tuple[list[CourtTrack], list[int], list[list[int]]] | None:
+    """Label every sampled box with one of the roster's people or nobody (D-89).
+
+    `looks` has a `body_hist` per box, covered ones too: a covered box's look is blended
+    toward "anyone" by its cover, so it keeps its tracklet's person unless the look says
+    otherwise. Viterbi along each tracklet (`BOX_SWITCH` per change, `BOX_NOBODY` for
+    nobody); then one box per person per frame, the best-looking. A piece is a run of
+    one person's boxes in a tracklet; a box between two people's runs or on nobody is
+    left out, so the ring shows no box there rather than the wrong person.
+    Returns the pieces, the tracklet each came from, and `len(protos)` groups; None when
+    more than `BOX_MAX_CLASH` of the boxes clashed."""
+    k = len(protos)
+    at: dict[int, list[tuple[int, int]]] = {}
+    for i, (idx, _) in enumerate(looks):
+        for n, j in enumerate(idx.tolist()):
+            at.setdefault(int(tracks[i].tracklet.frames[j]), []).append((i, n))
+    labs, costs = [], []
+    for (idx, d), cov in zip(looks, covers, strict=True):
+        c = _app_matrix(d.reshape(-1, protos.shape[1]), protos)
+        w = np.clip(cov[idx], 0, 1)[:, None]
+        c = (1 - w) * c + w * c.min(axis=1, keepdims=True, initial=1.0)
+        c = np.hstack([c, np.full((len(c), 1), BOX_NOBODY)])
+        labs.append(_viterbi(c, BOX_SWITCH) if len(c) else np.zeros(0, dtype=int))
+        costs.append(c)
+    clash = 0
+    for here in at.values():
+        for p in range(k):
+            mine = [(i, n) for i, n in here if labs[i][n] == p]
+            for i, n in sorted(mine, key=lambda m: costs[m[0]][m[1], p])[1:]:
+                labs[i][n] = k
+                clash += 1
+    if clash > BOX_MAX_CLASH * max(sum(int((lab < k).sum()) for lab in labs), 1):
+        return None
+    pieces: list[CourtTrack] = []
+    src: list[int] = []
+    groups: list[list[int]] = [[] for _ in range(k)]
+    for i, ((idx, _), lab) in enumerate(zip(looks, labs, strict=True)):
+        t, tr = tracks[i].tracklet, tracks[i]
+        edges = np.flatnonzero(np.diff(lab)) + 1
+        for a, b in zip([0, *edges], [*edges, len(lab)], strict=True):
+            if lab[a] == k or b - a < 2:
+                continue
+            lo, hi = int(idx[a]), int(idx[b - 1]) + 1
+            piece = Tracklet(
+                t.track_id, t.frames[lo:hi], t.times[lo:hi], t.boxes[lo:hi], t.confs[lo:hi]
+            )
+            groups[int(lab[a])].append(len(pieces))
+            pieces.append(CourtTrack(piece, tr.court_m[lo:hi], tr.inside_fraction))
+            src.append(i)
+    for g in groups:
+        g.sort(key=lambda n: pieces[n].tracklet.t_start)
+    return pieces, src, groups
+
+
 # --- net side ---------------------------------------------------------------
 
 NET_WINDOW_S = 60.0
@@ -474,14 +925,16 @@ def merge_groups(
     return sorted(out, key=lambda g: starts[g[0]])
 
 
-def _concat(tracks: list[CourtTrack], group: list[int]) -> CourtTrack:
+def _concat(tracks: list[CourtTrack], group: list[int], interleave: bool = False) -> CourtTrack:
     """One track from a time-ordered group; where two members overlap (a handover),
-    the later member's samples before the earlier one's end are dropped."""
+    the later member's samples before the earlier one's end are dropped. `interleave`:
+    members never share a frame (`roster_label`), so a member inside another's hole
+    fills it instead."""
     members = [tracks[i] for i in group]
     keep, last = [], -np.inf
     for m in members:
         k = m.tracklet.times > last
-        keep.append(k)
+        keep.append(np.ones_like(k) if interleave else k)
         if k.any():
             last = float(m.tracklet.times[k][-1])
     tl = [m.tracklet for m in members]
@@ -493,6 +946,12 @@ def _concat(tracks: list[CourtTrack], group: list[int]) -> CourtTrack:
         confs=np.concatenate([t.confs[k] for t, k in zip(tl, keep, strict=True)]),
     )
     court = np.concatenate([m.court_m[k] for m, k in zip(members, keep, strict=True)])
+    if interleave:
+        o = np.argsort(merged.times, kind="stable")
+        merged = Tracklet(
+            merged.track_id, merged.frames[o], merged.times[o], merged.boxes[o], merged.confs[o]
+        )
+        court = court[o]
     lifetime = sum(t.lifetime_s for t in tl) or 1.0
     frac = sum(m.inside_fraction * (t.lifetime_s or 1.0) for m, t in zip(members, tl, strict=True))
     return CourtTrack(merged, court, frac / lifetime)
@@ -540,8 +999,18 @@ STITCH_SLACK_S = 1.0
 off by about a second of running at either end of the break."""
 
 
+def _group_desc(tracks: list[CourtTrack], group: list[int], body: np.ndarray) -> np.ndarray:
+    """A merged player's appearance: its pieces' `body_hist`, weighted by lifetime."""
+    w = np.asarray([max(tracks[i].tracklet.lifetime_s, 0.1) for i in group])
+    return (body[group] * w[:, None]).sum(axis=0) / w.sum()
+
+
 def _stitch(
-    tracks: list[CourtTrack], groups: list[list[int]], teams: np.ndarray, profile: Profile
+    tracks: list[CourtTrack],
+    groups: list[list[int]],
+    teams: np.ndarray,
+    profile: Profile,
+    body: np.ndarray | None = None,
 ) -> list[list[int]]:
     """Chain whole players into one when the roster says they must be one person.
 
@@ -555,8 +1024,13 @@ def _stitch(
 
     The stitched player's box is interpolated across the gap (`court.resample`), so a
     stitch whose gap would take the frame past `players.max` boxes is refused.
+
+    With `body` (piece descriptors) and `tracking.appearance_weight` > 0, a stitch to a
+    lane whose appearance differs by more than `appearance_max` is refused: the roster
+    argument says *someone* continues the lane, not who.
     """
     cfg = profile.tracking
+    use_app = body is not None and cfg.appearance_weight > 0
     per_team = -(-profile.players.max // max(1, len(np.unique(teams))))
     lanes: list[list[int]] = []  # each lane is a list of group indices, in time order
     start = [tracks[g[0]].tracklet.t_start for g in groups]
@@ -582,6 +1056,14 @@ def _stitch(
                 if d > reach or d >= best_d:
                     continue
                 if gap > 0 and not _fits((ends[ln[-1]], s), alive, profile.players.max):
+                    continue
+                if use_app and (
+                    app_distance(
+                        _group_desc(tracks, groups[gi], body),  # type: ignore[arg-type]
+                        _group_desc(tracks, groups[ln[-1]], body),  # type: ignore[arg-type]
+                    )
+                    > cfg.appearance_max
+                ):
                     continue
                 best, best_d = ln, d
         if best is None:
@@ -614,21 +1096,55 @@ def identify(
             tracks, teams = split_switches(tracks, lab, teams, clear=clear)
         if len(tracks) != n:  # the pieces need their own appearance (team colours)
             hists, colors, body = sample_appearance(video, tracks)
-    groups = merge_groups(tracks, teams, profile, body)
+    cfg = profile.tracking
+    roster, groups, labelled = 0, [], False
+    if cfg.appearance_cut > 0:  # D-89: undo the tracker's swaps, then link by look too
+        roster = roster_size(tracks) if cfg.roster_max > 0 else 0
+        if 0 < roster <= cfg.roster_max:
+            # every box's look, covered ones too; the piece solve reads the clear ones at
+            # its own pace (`APP_EVERY_S`) for the people's looks, then every box is labelled
+            looks = body_series(video, tracks, every_s=0.0, max_cover=1.0)
+            covers = box_covers(tracks)
+            series = [_clear_every(tracks[i], d, covers[i]) for i, d in enumerate(looks)]
+            pieces, src, groups, protos = roster_pieces(tracks, series, roster, profile)
+            boxwise = None if protos is None else roster_label(tracks, looks, covers, protos)
+            if boxwise is None:
+                tracks = pieces
+            else:
+                tracks, src, groups = boxwise
+                groups = [g for g in groups if g]
+                labelled = True
+        else:
+            series = body_series(video, tracks)
+            tracks, src, pieces = split_appearance(tracks, series, cfg.appearance_cut)
+            body = np.asarray(pieces)
+        teams = teams[src]
+        colors = None if colors is None else colors[src]
     colours = team_colors(teams, profile, colors)
-    polygon = profile.template(variant).polygon
-    merged = [
-        (g, c) for g in groups if not bystander(c := _concat(tracks, g), polygon, profile.tracking)
-    ]
-    # `players.max` caps *merged* players, not raw tracklets (§4.4 step 5 applied after
-    # step 6): a player broken into six tracklets should still beat a bystander with one
-    # long one. Score is the merged lifetime weighted by time spent on court, and the cap
-    # is on how many are alive at once. Ids follow the score of the stitched players.
-    merged.sort(key=lambda gc: gc[1].score, reverse=True)
-    merged = _cap_concurrent(merged, profile.players.max, profile.tracking.merge_overlap_s)
-    groups = _stitch(tracks, [g for g, _ in merged], teams, profile)
+    if not (0 < roster <= cfg.roster_max):
+        groups = merge_groups(tracks, teams, profile, body)
+        polygon = profile.template(variant).polygon
+        merged = [
+            (g, c)
+            for g in groups
+            if not bystander(c := _concat(tracks, g), polygon, profile.tracking)
+        ]
+        # `players.max` caps *merged* players, not raw tracklets (§4.4 step 5 applied
+        # after step 6): a player broken into six tracklets should still beat a bystander
+        # with one long one. Score is the merged lifetime weighted by time spent on court,
+        # and the cap is on how many are alive at once. Ids follow the score of the
+        # stitched players.
+        merged.sort(key=lambda gc: gc[1].score, reverse=True)
+        merged = _cap_concurrent(merged, profile.players.max, profile.tracking.merge_overlap_s)
+        # ponytail: no re-identification across gaps longer than _stitch's. A mutual-best,
+        # margin-gated relink over these descriptors was built and measured (D-89): it
+        # made 4-5 links per game and the ring sat on the right kit slightly less often.
+        # Upgrade path: a stronger cue (jersey numbers, a licence-clean re-ID model).
+        groups = _stitch(tracks, [g for g, _ in merged], teams, profile, body)
     merged = sorted(
-        ((g, _concat(tracks, g)) for g in groups), key=lambda gc: gc[1].score, reverse=True
+        ((g, _concat(tracks, g, labelled)) for g in groups),
+        key=lambda gc: gc[1].score,
+        reverse=True,
     )
     players: list[PlayerTrack] = []
     for n, (group, track) in enumerate(merged, start=1):
@@ -639,7 +1155,16 @@ def identify(
                 team=team,
                 color_hex=colours[team],
                 track=track,
-                members=tuple(tracks[i].track_id for i in group),
+                members=tuple(dict.fromkeys(tracks[i].track_id for i in group)),
+                spans=tuple(
+                    (
+                        tracks[i].track_id,
+                        round(tracks[i].tracklet.t_start, 3),
+                        round(tracks[i].tracklet.t_end, 3),
+                    )
+                    for i in group
+                ),
+                solved=labelled,
             )
         )
     return players
@@ -675,6 +1200,8 @@ def write_players(path, players: list[PlayerTrack], meta: dict) -> Path:
                         "team": p.team,
                         "color_hex": p.color_hex,
                         "members": list(p.members),
+                        "spans": [list(s) for s in p.spans],
+                        "solved": p.solved,
                         **track_json(p.track),
                     }
                     for p in players
@@ -695,6 +1222,8 @@ def read_players(path: Path) -> tuple[list[PlayerTrack], dict]:
             color_hex=d["color_hex"],
             track=track_from_json(d),
             members=tuple(d.get("members", ())),
+            spans=tuple((int(s[0]), float(s[1]), float(s[2])) for s in d.get("spans", ())),
+            solved=bool(d.get("solved", False)),
         )
         for d in raw["players"]
     ]

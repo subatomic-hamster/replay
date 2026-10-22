@@ -50,7 +50,7 @@ export function Advice({ gameId }: { gameId: string }) {
 
   const onAction = useCallback(
     (a: DpadAction) => {
-      if (a === "back") navigate({ name: "watch", gameId });
+      if (a === "back") navigate({ name: "watch", gameId, panel: "stats" });
       else if (a === "left" || a === "up") setFocus((i) => Math.max(0, i - 1));
       else if (a === "right" || a === "down")
         setFocus((i) => Math.min(players.length - 1, i + 1));

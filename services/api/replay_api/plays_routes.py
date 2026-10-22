@@ -182,9 +182,10 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
         """Recomputed from the current events (corrections to makes and points count) plus
         the user's own score entries."""
         storage = ctx(request).storage
-        game_or_404(request, game_id)
+        game = game_or_404(request, game_id)
         user = _user_scores(storage, game_id)
-        score = adapter.score_timeline(live_events(events_of(storage, game_id)), user)
+        score = adapter.score_timeline(live_events(events_of(storage, game_id)), user,
+                                       game.get("sport"))  # fmt: skip
         return {
             "schema": "replay.score.v1",
             "score": score,

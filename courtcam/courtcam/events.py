@@ -34,6 +34,7 @@ class Signals:
     poses: dict[str, tuple[np.ndarray, np.ndarray]] = field(default_factory=dict)
     size: tuple[int, int] = (1, 1)  # frame (W, H), to un-normalize keypoints
     has_audio: bool = False
+    ball: dict[str, Any] | None = None  # ball.json (courtcam.ball), when the profile watches it
 
     def kp_px(self, pid: str, t0: float, t1: float) -> tuple[np.ndarray, np.ndarray]:
         """(times, keypoints in px) of one player inside [t0, t1]."""
@@ -180,7 +181,9 @@ def detect_shots(
     player in range of the rim — confirmed by a motion burst at the hoop ROI after it. The
     shooter is that player and the spot (so 2 vs 3 points) is where they stood at release.
     Without poses (the M1 heuristic): a motion burst in the rim ROI while a foot point is
-    within `shot.rim_radius_m`, credited to the nearest player."""
+    within `shot.rim_radius_m`, credited to the nearest player.
+    With the ball watched (`ball:` in the profile, D-90) both give way to `_ball_shots`:
+    every visit of the ball to a rim is a shot and its path says make or miss."""
     signals = signals or Signals()
     zones = _two_pt_zones(profile, calib)
     rim_m = calib.get("rim_m")
@@ -190,6 +193,8 @@ def detect_shots(
     cfg = profile.shot
     labeler = labeler or HeuristicLabeler()
     rim = np.asarray(rim_m, dtype=np.float64)
+    if signals.ball and signals.ball.get("hoops"):
+        return _ball_shots(video, players, profile, calib, signals, labeler, zones)
     if signals.poses:
         top = rim_top_px(calib, profile) if cfg.hoop_from_camera else None
         found = _pose_shots(video, players, signals, _rims(profile, calib), profile, fps, top)
@@ -266,6 +271,146 @@ def _shot_event(video, labeler, cfg, zones, t_key, shooter, t_rel, conf) -> Even
         team=shooter.team,
         points=_points(candidate.court, zones),
     )
+
+
+FT_FROM_RIM_M = 4.225  # FIBA: free-throw line 5.8 m from the baseline, rim centre 1.575 m
+FT_FLIGHT_S = 0.9  # release to rim on a free throw (Nottingham: 0.85-0.95 s)
+
+
+def _releases(players: list[PlayerTrack], signals: Signals, cfg) -> list[tuple[float, PlayerTrack]]:
+    """(time, player) of every short both-arms-up (not the X) in the poses: a release, a
+    contest or a rebound reach."""
+    out = []
+    for p in players:
+        ts, kp = signals.kp_px(p.player_id, -np.inf, np.inf)
+        if not len(ts):
+            continue
+        up = arms_up(kp, up_min=cfg.release_up_min) & ~x_pose(kp)
+        out += [(b, p) for a, b in _runs(ts, up, 0.15) if b - a <= cfg.release_max_s]
+    return sorted(out, key=lambda r: r[0])
+
+
+def _shooter(t_rim, rim, players, rels, cfg) -> tuple[PlayerTrack | None, float]:
+    """Who shot the ball that reached `rim` at `t_rim`, and when they let go: the latest
+    release in range of the rim 0.15-2.5 s before (of two arms-up within 0.5 s, the one
+    farther from the rim: the shooter, not the contest); else whoever stood nearest the
+    rim half a second before."""
+    cands = []
+    for t, p in rels:
+        if t_rim - 2.5 <= t <= t_rim - 0.15 and p.t_start <= t <= p.t_end:
+            d = float(np.linalg.norm(p.track.court_at(t) - rim))
+            if d <= cfg.max_range_m:
+                cands.append((t, p, d))
+    if cands:
+        last = max(c[0] for c in cands)
+        t, p, _ = max((c for c in cands if c[0] >= last - 0.5), key=lambda c: c[2])
+        return p, t
+    t = t_rim - 0.5
+    near = [(float(np.linalg.norm(p.track.court_at(t) - rim)), p) for p in players
+            if p.t_start <= t <= p.t_end]  # fmt: skip
+    near = [x for x in near if x[0] <= cfg.max_range_m]
+    return (min(near, key=lambda x: x[0])[1], t) if near else (None, t)
+
+
+def _ft_spot(rim, profile, calib) -> np.ndarray:
+    tpl = profile.template(calib.get("variant"))
+    toward = 1.0 if rim[1] < tpl.size[1] / 2 else -1.0
+    return np.array([rim[0], rim[1] + toward * FT_FROM_RIM_M])
+
+
+def _ft_shooter(t_rim, rim, players, profile, calib) -> PlayerTrack | None:
+    """The player on the free-throw spot `FT_FLIGHT_S` before the ball reached the rim,
+    if everybody was still (`_free_throw`), else None."""
+    t = t_rim - FT_FLIGHT_S
+    ft = _ft_spot(rim, profile, calib)
+    near = [(float(np.linalg.norm(p.track.court_at(t) - ft)), p) for p in players
+            if p.t_start <= t <= p.t_end]  # fmt: skip
+    if not near:
+        return None
+    d, p = min(near, key=lambda x: x[0])
+    return p if _free_throw(p.track.court_at(t), rim, t, players, profile, calib) else None
+
+
+def _free_throw(spot, rim, t_rel, players, profile, calib) -> bool:
+    """The shooter on the free-throw spot and everybody else still for the 2 s before."""
+    ft = _ft_spot(rim, profile, calib)
+    if np.linalg.norm(np.asarray(spot) - ft) > profile.shot.ft_radius_m:
+        return False
+    times, speed = court_activity(players, rate_hz=5.0, smooth_s=1.0, max_speed_mps=8.0)
+    m = (times >= t_rel - 2.0) & (times <= t_rel - 0.3)
+    return bool(m.any() and speed[m].max() <= profile.shot.ft_still_mps)
+
+
+def _ball_shots(video, players, profile, calib, signals, labeler, zones) -> list[Event]:
+    """One shot per arrival of the ball at a rim (`ball.arrivals`): made from the ball's
+    path, shooter from the poses (`_shooter`), points from where they stood — the
+    free-throw spot with everyone still is a free throw — valued by `profile.scoring`."""
+    from . import ball as ball_mod
+
+    cfg, sc = profile.shot, profile.scoring
+    rels = _releases(players, signals, cfg) if signals.poses else []
+    out: list[Event] = []
+    hoop_of: list[int] = []
+    for a in ball_mod.arrivals(signals.ball, profile.ball):
+        rim = np.asarray(signals.ball["hoops"][a.hoop]["rim_m"], dtype=np.float64)
+        # a free throw first: somebody on the spot with everybody still is the shooter,
+        # whoever the poses saw (the players lined up on the lane raise their arms too)
+        shooter, t_rel = _ft_shooter(a.t, rim, players, profile, calib), a.t - FT_FLIGHT_S
+        ft = shooter is not None
+        if not ft:
+            shooter, t_rel = _shooter(a.t, rim, players, rels, cfg)
+        spot = shooter.track.court_at(t_rel) if shooter else None
+        court = (round(float(spot[0]), 3), round(float(spot[1]), 3)) if spot is not None else None
+        ft = ft or (spot is not None and _free_throw(spot, rim, t_rel, players, profile, calib))
+        if ft:
+            points = sc.free_throw
+        else:
+            zone = _points(court, zones)
+            points = None if zone is None else (sc.inside if zone == 2 else sc.outside)
+        cand = ShotCandidate(a.t, shooter.player_id if shooter else None, court, a.confidence)
+        label = labeler.label(video, cand)
+        if not label.get("is_shot", True):
+            continue
+        made = a.made if label.get("made") is None else label["made"]
+        out.append(
+            Event(
+                id="",
+                type="shot",
+                t_start=round(max(0.0, a.t - cfg.pre_s), 3),
+                t_key=a.t,
+                t_end=round(a.t + cfg.post_s, 3),
+                made=made,
+                player_id=label.get("shooter_player_id", cand.player_id),
+                court=court,
+                confidence=round(float(label.get("confidence", a.confidence)), 3),
+                source=getattr(labeler, "source", "heuristic"),
+                confirmed=False,
+                team=shooter.team if shooter else None,
+                points=points,
+                cause="free_throw" if ft else None,
+            )
+        )
+        hoop_of.append(a.hoop)
+    if cfg.team_by_hoop and len(signals.ball.get("hoops") or []) == 2:
+        _team_by_hoop(out, hoop_of, cfg.team_window_s)
+    return out
+
+
+def _team_by_hoop(shots: list[Event], hoop_of: list[int], window_s: float) -> None:
+    """Full court: each team shoots at one basket (until the teams change ends at half
+    time), so every shot at a basket is the same team's. Within `window_s` of each shot,
+    the shooters' teams vote which way round the two baskets go (team 0 at basket 0 and
+    team 1 at basket 1, or crossed) and the shot takes its basket's team. A tie leaves the
+    shooter's own team. Fixes a shooter picked from the wrong team near the rim, and
+    kits the identity stage cannot tell apart, as long as most shooters are right."""
+    own = [(s.t_key, s.team, g) for s, g in zip(shots, hoop_of, strict=True) if s.team in (0, 1)]
+    for s, h in zip(shots, hoop_of, strict=True):
+        votes = [0, 0]
+        for t, team, g in own:
+            if abs(t - s.t_key) <= window_s:
+                votes[int((team + g) % 2)] += 1
+        if votes[0] != votes[1]:
+            s.team = int((h + (0 if votes[0] > votes[1] else 1)) % 2)
 
 
 def hoop_roi(

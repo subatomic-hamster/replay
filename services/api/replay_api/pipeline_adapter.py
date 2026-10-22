@@ -710,10 +710,20 @@ def trigger_subject(sport: str, transcript: str | None, roster: dict[str, str]) 
     return subject_from_transcript(transcript or "", roster, load_profile(sport).triggers)
 
 
-def score_timeline(events: list[dict], user: list[dict]) -> list[dict]:
-    """The running score from made shots / won points, with user entries applied."""
+def score_timeline(events: list[dict], user: list[dict], sport: str | None = None) -> list[dict]:
+    """The running score from made shots / won points, with user entries applied; games
+    to N (`scoring.to` of the sport's profile) restart at 0-0 after a win (D-90)."""
     from courtcam.plays import score_timeline as timeline
+    from courtcam.profiles import load_profile
     from courtcam.schema import Event, ScoreEntry
+
+    to, win_by = None, 1
+    if sport:
+        try:
+            sc = load_profile(sport).scoring
+            to, win_by = sc.to, sc.win_by
+        except (FileNotFoundError, ValueError, KeyError):  # an unknown sport scores plainly
+            pass
 
     evs = []
     for e in events:
@@ -721,5 +731,5 @@ def score_timeline(events: list[dict], user: list[dict]) -> list[dict]:
             evs.append(Event.model_validate(e))
         except ValueError:  # a bookmark or another API-only event type: not scoring
             continue
-    entries = timeline(evs, [ScoreEntry.model_validate(u) for u in user])
+    entries = timeline(evs, [ScoreEntry.model_validate(u) for u in user], to=to, win_by=win_by)
     return [s.model_dump(mode="json") for s in entries]

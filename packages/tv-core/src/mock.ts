@@ -47,6 +47,7 @@ import type {
   Rendition,
   ReviewOption,
   ReviewQuestion,
+  ReelExport,
   Trigger,
   VerticalExport,
 } from "./discovery";
@@ -1279,6 +1280,25 @@ export const mockApi: ReplayApi = {
     return delay<VerticalExport>({
       ...spec,
       ...jobState(`vertical:${gameId}/${vid}`, `/mock/wide.mp4?export=${vid}`),
+    });
+  },
+
+  exportGameReel(gameId, aspect) {
+    log("POST", `/games/${gameId}/exports/reel`, { aspect });
+    needGame(gameId);
+    // the API hashes the aspect and the plan's inputs; the mock's inputs never change
+    const rid = `r_${hex12(`${gameId}|${aspect}`)}`;
+    startJob(`reel:${gameId}/${rid}`);
+    return mockApi.getGameReel(gameId, rid);
+  },
+
+  getGameReel(gameId, rid) {
+    const aspect = rid === `r_${hex12(`${gameId}|9:16`)}` ? "9:16" : "16:9";
+    return delay<ReelExport>({
+      id: rid,
+      aspect,
+      duration_s: 18,
+      ...jobState(`reel:${gameId}/${rid}`, `/mock/wide.mp4?reel=${rid}`),
     });
   },
 

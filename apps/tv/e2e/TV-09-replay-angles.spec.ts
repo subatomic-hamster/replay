@@ -69,7 +69,7 @@ test("TV-09 cycleAngle wraps both ways; tier badges", () => {
   expect([tierBadge("A"), tierBadge("B"), tierBadge("C")]).toEqual([
     "Real video",
     "2.5D",
-    "3D",
+    "Virtual view",
   ]);
 });
 
@@ -121,10 +121,12 @@ test("TV-09 Left/Right cut angles at the same time and play state, wrapping", as
   await expectAngle(page, "Orbit", "2.5D", "4 / 5");
   // the players' virtual POVs share one slot: the key player's, Up for the next player
   await cut(page, "ArrowRight", "pov:p1", t0);
-  await expectAngle(page, "Virtual POV · Marcus", "3D", "5 / 5");
-  await expect(page.getByTestId("pov-honesty")).toContainText("reconstruction");
+  await expectAngle(page, "Virtual POV · Marcus", "Virtual view", "5 / 5");
+  await expect(page.getByTestId("pov-honesty")).toContainText(
+    "reconstructed court",
+  );
   await cut(page, "ArrowUp", "pov:p2", t0);
-  await expectAngle(page, "Virtual POV · Jordan", "3D", "5 / 5");
+  await expectAngle(page, "Virtual POV · Jordan", "Virtual view", "5 / 5");
   await cut(page, "ArrowRight", "wide", t0); // wraps forward
   await expectAngle(page, "Wide", "Real video", "1 / 5");
   await expect(page.getByTestId("pov-honesty")).toHaveCount(0);

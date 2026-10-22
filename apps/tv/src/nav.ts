@@ -19,6 +19,8 @@ export type Route =
       /** reopen the player card on this player, paused (Back from its View profile);
        *  `resume`: the card's Back plays on, as it was when the card first opened */
       card?: { pid: string; resume: boolean };
+      /** reopen the Stats panel (Back from Review or Tips, which it opened) */
+      panel?: "stats";
     }
   | { name: "review"; gameId: string }
   | { name: "clips" | "search" | "advice"; gameId: string }

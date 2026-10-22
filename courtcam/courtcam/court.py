@@ -169,11 +169,19 @@ def on_court(
     return sorted(kept[: cfg.max_candidates], key=lambda c: c.tracklet.t_start)
 
 
-def resample(track: CourtTrack, times: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def resample(
+    track: CourtTrack, times: np.ndarray, max_gap_s: float = np.inf
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Boxes (px), court metres and confidence sampled on `times`, restricted to the
-    tracklet's own lifetime. Returns (boxes, court, conf) with NaN outside it."""
+    tracklet's own lifetime and to gaps between its samples of at most `max_gap_s`.
+    Returns (boxes, court, conf) with NaN elsewhere."""
     t = track.tracklet
     live = (times >= t.t_start) & (times <= t.t_end)
+    if np.isfinite(max_gap_s) and live.any():
+        k = np.clip(np.searchsorted(t.times, times[live]), 1, len(t.times) - 1)
+        gap = t.times[k] - t.times[k - 1]
+        on = np.isclose(t.times[k], times[live]) | np.isclose(t.times[k - 1], times[live])
+        live[np.flatnonzero(live)] = on | (gap <= max_gap_s)
     boxes = np.full((len(times), 4), np.nan)
     court = np.full((len(times), 2), np.nan)
     conf = np.full(len(times), np.nan)

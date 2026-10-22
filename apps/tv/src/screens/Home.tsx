@@ -62,10 +62,13 @@ const AVATARS_SHOWN = 8;
 /** How far the rows slide up when the Players row takes focus. */
 const PLAYERS_LIFT = px(360);
 
-/** Processing games first (they are what changes), then the rest in the API's order. */
+/** Processing games first (they are what changes), then the rest in the API's order. A
+ *  game still waiting for its upload goes last: an abandoned Add game would otherwise sit
+ *  in front of every real game (its phone page and Add game follow it anyway). */
 const order = (gs: GameLike[]) => [
-  ...gs.filter((g) => g.status !== "ready"),
+  ...gs.filter((g) => g.status !== "ready" && g.status !== "created"),
   ...gs.filter((g) => g.status === "ready"),
+  ...gs.filter((g) => g.status === "created"),
 ];
 
 function actionsFor(g: GameLike): Action[] {

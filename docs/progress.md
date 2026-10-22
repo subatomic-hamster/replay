@@ -547,3 +547,30 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
 - Tests: TV-35 (8 cases) pass. Box gate: ruff clean, API 308 passed / 1 skipped, web Playwright 115, TV Playwright 124, tsc and eslint clean.
 - Fire TV: new APK installed; the live CC BY game opens and plays, Do more shows (Angles: "No replay angles for this game"), no JS errors in logcat.
 - Not done: network errors are not retried; Retry-After is unreadable cross-origin without an expose header. Needs a new APK and web deploy, no Lambda change.
+
+## Follow accuracy (2026-10-22, D-89)
+
+- Back takes the follow ring off at once. The ring and camera run on the native driver (Fire TV jank while following: 6.6-14 % vs 30-34 % JS-driven). The chip no longer says "Lost sight of" right after Select on a paused picture. Do more chips run to the screen edge.
+- courtcam cuts tracklets where the person changes (body look) and gates merges by look. Kit check, 120 follows × 30 s:
+  - Nottingham: ring on the wrong kit 22 % -> 16 %.
+  - Volleyball (local only): 20 % -> 14 %.
+- Games with up to 6 people on court are solved as that many people. On the new CC BY 2v2 park proxy with a hand-checked GT (4 people, 120 s): 21 ids -> 4, and the ring on the right person 47 % -> 83 % of a 30 s follow. The tracks' boxes sit about 3 px from the person: no lag in the data.
+- Tests: courtcam 23 identity tests (synthetic swaps, roster), full suite green. TV Playwright subset 52 passed, tsc and eslint clean.
+- Needs: reprocessing the live game (new courtcam version), a new APK. Not done: same-kit teammates in a full game (needs numbers or a licence-clean re-ID model), and display lag measured on the device.
+- Round 3: small games are labelled box by box, and a box that is no one's has no id. On the 2v2 proxy (1000 follows × 30 s, scored while the person is on screen): ring on the right person 89.9 % -> 93.7 %, on someone else or no one 17.5 % -> 6.4 %. `game.json` `tracks.people` turns off the TV's hand-off to another id. With it on, the hand-off doubled the wrong time. DINOv2 crops and the detector's raw boxes were measured and not kept. The 95 % / near-0 target is not met: about 4 points are boxes on no one (merged or part boxes).
+
+## Score and highlights from the ball (2026-10-22, D-90)
+
+- Hand annotations as evaluation truth: `samples/truth/nottingham_q1.json` and `nottingham_q3.json` (CC BY; Q3 is the hold-out), plus `cc3x3_usti.json` (CC BY 3x3 proxy, 3 shots). Each is checked against the in-arena scoreboard. Score a game with `courtcam eval-events -o GAME --truth FILE`.
+- Shots and makes now come from the ball at the rim (`courtcam/ball.py`: classical CV, no model). Also new: team by basket on a full court, free throws from a still scene, points by `profile.scoring` (pickup `to: N` restarts the score).
+  - Q1: shots P/R 0.24/0.40 -> 0.90/0.90; make/miss 0/1 -> 8/9; score error 7 -> 2.
+  - Q3 hold-out: shots P/R 0.14/0.38 -> 0.80/1.0; make/miss 0/1 -> 7/8; FTs 1/4 -> 4/4; score error 1 -> 2. The baseline's 1 was luck.
+- Highlights: the hype meter adds the detected makes, blocks and steals. Q1 top-5 precision 0.2 -> 0.4, made field goals in the top 5 1/3 -> 2/3. Q3 has a single made field goal, which was missed, so 0 -> 0.
+- Play logs (docs/playlog.md): CSV or JSON. `courtcam notes -o GAME --from FILE` stores the uploader's notes; the moments API shows them as "Your note: …" (source user), never mixed into events or score.
+- The 2v2 park proxy was not scored: the ball is not found at its far rim (sky behind, heads across it). Filming guidance is in D-90.
+- Events stage 43-47 s per 240 s 1080p30 on hfbox CPU. No new model or dependency.
+- Needs: reprocessing the live game (new courtcam version) for the score and highlights to change on the TV. Not done:
+  - a miss and its put-back within 1 s merge into one shot;
+  - a camera re-aim reads as a shot;
+  - a notes upload route in the API (CLI only);
+  - a per-game scoring override.

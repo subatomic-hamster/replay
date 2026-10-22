@@ -40,6 +40,12 @@ const JOBS: { id: PhoneJob; label: string; title: string; body: string }[] = [
     title: "Find a play",
     body: "Type or say what you want to see in this game.",
   },
+  {
+    id: "reel",
+    label: "Highlight reel",
+    title: "Get the highlight reel",
+    body: "Your clips and the top plays in one video, wide or tall, to save and share.",
+  },
 ];
 
 /** Re-mint this long before the token runs out (a scan takes a moment). */

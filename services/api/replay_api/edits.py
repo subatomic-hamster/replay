@@ -242,7 +242,11 @@ def _apply_score(gd: Path, ov: dict) -> None:
         if ev_path.is_file()
         else []
     )
+    game_p = gd / "game.json"
+    sport = (
+        json.loads(game_p.read_text(encoding="utf-8")).get("sport") if game_p.is_file() else None
+    )
     doc = {"schema": "replay.score.v1",
-           "score": score_timeline([e for e in events if not e.get("dismissed")], user)}  # fmt: skip
+           "score": score_timeline([e for e in events if not e.get("dismissed")], user, sport)}  # fmt: skip
     if not path.is_file() or json.loads(path.read_text(encoding="utf-8")) != doc:
         _write(path, doc)

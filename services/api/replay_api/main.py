@@ -561,7 +561,9 @@ def _register_routes(app: FastAPI) -> None:
             pr._load(storage, game_id, pr.TRIGGERS_REL),
             pr._load(storage, game_id, pr.CLIPS_REL),
         )
-        for m in moments_mod.all_moments(_events(storage, game_id), game, *clips):
+        notes_p = storage.path(game_id, moments_mod.NOTES_REL)  # the uploader's own (D-90)
+        notes = json.loads(notes_p.read_text()) if notes_p.is_file() else None
+        for m in moments_mod.all_moments(_events(storage, game_id), game, *clips, notes):
             rel = thumbs.get(m["id"])
             if rel is None and m["kind"] == "bookmark":  # grabbed when the bookmark was made
                 own = f"{moments_mod.THUMB_DIR}/{m['id']}.jpg"

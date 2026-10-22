@@ -21,6 +21,10 @@ async function viaReview(page: Page) {
   await expect
     .poll(async () => (await media(page)).ready, { timeout: 15_000 })
     .toBeGreaterThanOrEqual(2);
+  // Back from Review lands on the Stats panel it came from; Back again closes it.
+  await expect(page.getByTestId("stats-panel")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("stats-panel")).toHaveCount(0);
 }
 
 test("TV-29 a sub-screen's Back resumes at the same time and play state; Home offers Resume", async ({

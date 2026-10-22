@@ -63,6 +63,28 @@ test("ANGLES real game: Angles row, a Tier B cut, Player POV, Up, Free view", as
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("watch")).toBeVisible();
 
+  // a virtual view (Tier C, image-based): the wing camera, when the play has one
+  await menuTo(page, "nav-replays");
+  await page.keyboard.press("Enter");
+  if (await page.getByTestId("angle-3d:wing").count()) {
+    await menuTo(page, "angle-3d:wing");
+    await page.keyboard.press("Enter");
+    await expect(replay(page)).toHaveAttribute("data-tier", "C");
+    await expect(page.getByTestId("replay-tier-badge")).toHaveText(
+      "Virtual view",
+    );
+    await expect
+      .poll(async () => (await media(page)).ready, { timeout: 30_000 })
+      .toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(1500);
+    await page.keyboard.press("Enter");
+    await shot(page, "02b-virtual-wing");
+    await page.keyboard.press("Escape");
+  } else {
+    await page.keyboard.press("Escape");
+  }
+  await expect(page.getByTestId("watch")).toBeVisible();
+
   // Player POV: the key player's chip first, then another player's eyes with Up
   await menuTo(page, "action-pov");
   await page.keyboard.press("Enter");

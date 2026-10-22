@@ -8,7 +8,8 @@ tier: 1
 court:
   template: volleyball_indoor.json
   variants: [indoor]
-  landmarks: [corner_nl, corner_nr, corner_fl, corner_fr, net_post_l, net_post_r]
+  landmarks:
+    [corner_nl, corner_nr, corner_fl, corner_fr, net_post_l, net_post_r]
   landmarks_optional: [attack_nl, attack_nr, attack_fl, attack_fr]
   # D-23: prose for the vision model used by `courtcam autocalib`, not geometry.
   orientation_hint: |-
@@ -47,26 +48,38 @@ court:
   # keeps a server 1.5 m behind the end line; revisit on real footage.
   margin_m: 2.0
 # `max` is the concurrency cap (D-21): six a side.
-players: {min: 2, max: 12}
+players: { min: 2, max: 12 }
 team_rule: net_side
 teams:
   colors: ["#2B7A3D", "#7A2B6E"]
-detection: {classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25}
+detection:
+  { classes: [person], stride: 2, model: yolo11n.pt, imgsz: 960, conf: 0.25 }
 tracking:
   oncourt_min_fraction: 0.6
   min_lifetime_s: 1.0
   merge_max_gap_s: 3.0
   merge_max_dist_m: 3.0
+  # D-89 (see basketball.yaml). Local-only volleyball clip, 120 random 30 s follows: the
+  # ring on the other side's kit 19.6 % -> 13.6 %, on the right kit 59.8 % -> 66.2 %.
+  appearance_cut: 0.22
+  appearance_weight: 1.0
+  appearance_max: 0.18
   smooth_window: 5
 events: [rally, block, hype]
 # audio fusion on: twelve mostly-still players defeat the motion segmenter (synthetic
 # only, seed 7: rally recall 0.40 inside motion rallies, 0.60 with silence splits and
 # audio-only rallies; no real volleyball footage)
-rally: {min_duration_s: 2.0, max_gap_s: 1.5, expected_contact_hz: [0.5, 2.0],
-        audio_fusion: true, audio_only_min_contacts: 2,
-        # point winner = the side serving next; the server stands alone behind the end
-        # line (synthetic: 13/15 points right vs 9/15 from the first-contact team)
-        server_behind_line: true, server_min_depth_m: 0.0}
+rally: {
+    min_duration_s: 2.0,
+    max_gap_s: 1.5,
+    expected_contact_hz: [0.5, 2.0],
+    audio_fusion: true,
+    audio_only_min_contacts: 2,
+    # point winner = the side serving next; the server stands alone behind the end
+    # line (synthetic: 13/15 points right vs 9/15 from the first-contact team)
+    server_behind_line: true,
+    server_min_depth_m: 0.0,
+  }
 # M4 play grammars (courtcam.plays): the rally (serve -> point), a block (front-row
 # jump at the net + contact sound) and an attack (pass -> set -> spike: three
 # consecutive same-side contacts, each credited to the nearest-moving player by pose).
@@ -75,11 +88,11 @@ plays:
     start: [serve]
     end: [point]
     member: [contact, block]
-    roles: {serve: server, contact: hitter, block: blocker}
+    roles: { serve: server, contact: hitter, block: blocker }
   - name: block
     start: [block]
     end: [block]
-    roles: {block: blocker}
+    roles: { block: blocker }
   - name: attack
     kind: sequence
     match: [contact]
@@ -87,10 +100,10 @@ plays:
     max_step_s: 2.5
     roles: [passer, setter, attacker]
 # Guess: the court is wider than pickleball's, so a little more zoom than its 1.2.
-followcam: {zoom: 1.6, lead_s: 0.3, stiffness: 7.0}
+followcam: { zoom: 1.6, lead_s: 0.3, stiffness: 7.0 }
 query_vocab:
-  rallies: {type: rally}
-  "longest rallies": {type: rally, sort: duration_desc, limit: 10}
+  rallies: { type: rally }
+  "longest rallies": { type: rally, sort: duration_desc, limit: 10 }
 sport_ui:
   chips: ["Rallies", "Longest rallies", "Bookmarks"]
   review: [heatmap]
@@ -99,7 +112,7 @@ synth:
   view: baseline
   floor: "#D9822B"
   apron: "#2F6DA8"
-  ball: {radius_m: 0.105, color: "#F2E9C9"}
+  ball: { radius_m: 0.105, color: "#F2E9C9" }
   serve_height_m: 2.6
   # pass, set, attack: a side keeps the ball for up to three touches
   touch_heights_m: [0.8, 2.6, 3.0]

@@ -15,6 +15,7 @@ import {
 } from "../../../../packages/tv-core/src/retry";
 import type {
   PlayClip,
+  ReelExport,
   ReviewQuestion,
   SearchResult,
   TapResult,
@@ -25,7 +26,7 @@ import type { Game, Moment, QueryResult } from "./types";
 import { API_BASE, MOCK_API } from "../config";
 
 export const PHONE_HEADER = "X-Replay-Phone-Token";
-const SAFE_POSTS = /\/(search|query|exports\/vertical)$/;
+const SAFE_POSTS = /\/(search|query|exports\/vertical|exports\/reel)$/;
 
 /** Everything the phone page calls; nothing else is reachable with a phone token. */
 export type PhoneApi = Pick<
@@ -37,6 +38,8 @@ export type PhoneApi = Pick<
   | "trimClip"
   | "exportVertical"
   | "getVertical"
+  | "exportGameReel"
+  | "getGameReel"
   | "listProfiles"
   | "createProfile"
   | "linkProfile"
@@ -113,6 +116,10 @@ export function phoneHttpApi(apiBase: string, token: string): PhoneApi {
       req<VerticalExport>(
         `${g(id)}/exports/vertical/${encodeURIComponent(vid)}`,
       ),
+    exportGameReel: (id, aspect) =>
+      req<ReelExport>(`${g(id)}/exports/reel`, "POST", { aspect }),
+    getGameReel: (id, rid) =>
+      req<ReelExport>(`${g(id)}/exports/reel/${encodeURIComponent(rid)}`),
     listProfiles: () =>
       req<{ profiles: Profile[] }>("/profiles").then((r) => r.profiles),
     createProfile: (body) => req<Profile>("/profiles", "POST", body),

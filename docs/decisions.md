@@ -559,3 +559,159 @@ Measured on real games:
 - **Measured** (web build, `apps/tv/e2e-evidence/WATCHOPEN-requests.spec.ts`, local API without `replay_render` so hype and rallies 503 as on Lambda): before, 11 requests and peak 7 in flight, all 7 API reads leaving at ~310 ms. After, 11 requests and peak 4: game, renditions and moments at 367 ms, storyboard and 2 tracks chunks at 432 ms, then replays, commentary, hype and rallies at 539 ms after the first frame.
 - **Tests.** TV-35: retry unit tests (Retry-After honoured, cap, our 503 vs a Lambda 503, a POST sent once), the in-flight cap (10 requests, peak 4, in order), hype and rallies asked once per game, two e2e runs through the real HTTP client with routed 429s (recovers to "Connected · 2 games"; past the cap shows "Not reachable" within ~7 s), and the mock Watch order. The mock API never goes through fetch, so the throttle e2e uses routed 429s instead of the mock's ApiError.
 - Client-only: needs a new APK and web deploy, no Lambda change.
+
+## D-88 (2026-10-22) — Virtual views are image-based: real players' pixels on the court plane, not avatars
+
+- **Ask:** "map every player's position onto a 3D plane and render images over dynamic models, not a direct 3D redraw". The stylized Tier C avatars (capsules in kit colours) read as a game, not as the people who played.
+- **What Tier C renders now** (`render/replay_render/avatars/imageview.py`, through `tierb.render_angle(views=, hide=, tints=, label_fn=)`):
+  - Each tracked person stands at their tracked foot point on the court plane. They are drawn from the real video: the SAM 2.1 cutout on an upright billboard through the foot point, over the court plate (floor and backdrop). Hoops and net are template geometry.
+  - The 3D scene (`scene/<play>.json`, joints from MotionBERT or the analytic lift) only steers the cameras: the play centre, the key player, and each POV's eyes and heading.
+- **Graceful degradation, per player and frame:**
+  - A cutout shows its real pixels up to 35° from the real camera's view of that player. Between 35° and 75° it fades to a silhouette in the player's kit colour, shaded by its own light; past 75° it is all silhouette. It is mirrored when seen from behind (`tierb.seen_weight`, `_silhouette`).
+  - It fades out closer than 3 m from the camera (a POV brushing past someone).
+  - Plate texels the camera never saw (the scene package's seen mask) and everything past the plate are flat median colours: a floor to the horizon and walls round the floor box, culled from outside. Nothing that was not filmed is drawn as detail.
+- **Angles:**
+  - `wing`: raised, 25–45° round from the real camera, turning toward the middle of the court.
+  - `courtside`: 1.7 m high, 7.5 m out, 10–18° off.
+  - `baseline`: only when its mean angle from the real camera is at most 60° (`MAX_OFF`). A sideline or behind-the-arc camera does not get one.
+  - `pov_<pid>`: the key player and the 5 nearest them. Their own cutout is hidden and the view never looks up more than 20°, so a player under the rim does not stare into the sky.
+  - Tier B keeps `broadcast_high`, `orbit` and `push_in`. Overhead and reverse are gone: a flat cutout cannot carry them.
+- **Labels:** every frame is burned "VIRTUAL VIEW", plus "real players' pixels on a reconstructed court". Manifest labels are "Virtual wing / courtside / baseline" and "Virtual POV · <name>". The TV badge for Tier C is "Virtual view", and the POV line reads "the real players placed on a reconstructed court, not a camera".
+- **Stage:** `tierc` now also reads the wide video, plate, segments, calibration and tracks, and runs after `segment` and `plate`. Ids stay `3d:<kind>` / `pov:<pid>`. The stylized renderer (`avatars.render`) is kept for its camera paths and as a research view; it is no longer shipped.
+- **Proxy clip (demo scenario: a few players, half court, distinct shirts):**
+  - Source: the fixed GoPro shot (58.7–74.4 s) of "ČBF 3x3 Tour 22.6. Ústí nad Labem" (CC BY 3.0, Honza Nový, Wikimedia Commons).
+  - Lens-corrected before upload: division k1 = −0.5 from the straight near boundary line (0.9–1.6 px rms after), zoom 1.16.
+  - Hand-read landmarks: key, free-throw corners, rim and rim top (6.6 px reprojection). The camera came out 0.76 m high, 13.1 m from the baseline.
+  - Only the key and rim geometry: a 3x3 court has no 14 m half-way line, so depth far from the key is extrapolated.
+- **Speed:** a 240-frame 1280x720 POV on the basketball game first took 20.2 s and now takes 4.3 s, about the stylized renderer's 3–4 s.
+  - Half the time was full-size Gaussian blurs of big contact shadows; those are now blurred at 1/k size.
+  - Whole-frame planes were blended in numpy floats; that is now one `cv2.blendLinear` call.
+  - The npz masks were decompressed again on every frame; `segment.Masks` now keeps each array after its first read.
+  - Tier B gets the same speed-up.
+- **Not done:**
+  - No articulated proxy (bone quads textured from the frame). Wide angles become silhouettes rather than re-posed pixels.
+  - Free view (the 2.5D scene package) was already image-based and is unchanged; its envelope keeps it near the real camera.
+
+## D-89 (2026-10-22) — Follow accuracy: no ring after Back, ring on the native driver, tracks cut by look, small games solved as their people
+
+(Assigned as D-86; that number was taken in this file by the Cloud API entry, so this is D-89.)
+
+- **Back takes the ring off at once.** Following is the only time the ring shows. Back hides it on the same render (a layout effect zeroes its opacity; the frame loop keeps it at 0), while the camera still eases back to the wide shot. TV-01 and TV-25 check opacity 0 right after Back, with the camera still zoomed.
+- **Ring and camera on the native driver.** On a TV build every animated value starts a 0-length native-driver animation, so `setValue` goes straight to the UI thread. The ring is four bars scaled by transforms (no layout). Fire TV gfxinfo while following: 14.4 / 6.9 / 6.6 % janky frames with the native driver, 30-34 % with the same ring driven from JS.
+- **"Lost sight of" no longer shows right after Select on a paused picture.** `lost` counts from when the camera started looking (first step or a seek), not from minus infinity. Unit test in core.spec; TV-25 adds the pick-again path (a scripted gap past the hand-off reach: the chip says so, Select opens the picker on the nearest player).
+- **The tracker's swaps are cut by look (`tracking.appearance_cut`).** A `body_hist` sample every 0.5 s of each tracklet (skipping samples another box covers by more than half). A tracklet is cut where the mean look of the 1.5 s before and after differs by more than 0.22. Merges and stitches are refused above 0.18. Measured with 120 random 30 s follows per game on the kit colour (a lower bound on wrong-person time):
+  - CC BY Nottingham basketball: ring on another kit 22.2 % -> 16.0 %, on the right kit 59.6 % -> 61.1 %.
+  - Local-only volleyball: 19.6 % -> 13.6 %, and 59.8 % -> 66.2 %.
+  - Tried and dropped: a margin-gated relink over the same looks (4-5 links per game, slightly worse), and a 1-3 s cap on how far an exported track interpolates across a gap (less right-kit time).
+- **Small games are solved as K people (`tracking.roster_max`, basketball 6).** K is the most people on court at once for a quarter of the clip. Looks are seeded from the K tracklets alive together for longest and refined by k-means. Each tracklet's samples are labelled with a person by Viterbi (0.5 per change) and cut where the label changes. Pieces are placed best-seen first on their best look, with:
+  - no two pieces of one person at once, nobody faster than a sprint between pieces;
+  - a second choice only within 0.08 of the best.
+  - A leftover that looks like someone already placed is a second box on them: its free stretches join them, the rest is dropped. A leftover that looks like nobody stays its own player if it lasts 3 s.
+- **Measured against a hand-checked identity GT** (`samples/truth/basketball_2v2park_identity.json`: a CC BY 2v2 park clip, 4 people, 120 s at 10 Hz; `docs/evidence/D89-tracking/gt_eval.py`). 200 random picks, each followed 30 s:
+
+  | config         | ids   | purity   | ring on the right person | on someone else | no box |
+  | -------------- | ----- | -------- | ------------------------ | --------------- | ------ |
+  | before (live)  | 16    | 0.43     | 51.6 %                   | 31.8 %          | 16.6 % |
+  | look cuts only | 21    | 0.42     | 46.7 %                   | 29.0 %          | 24.3 % |
+  | K people       | **4** | **0.97** | **82.7 %**               | 17.2 %          | 0.1 %  |
+
+  Box lag in the data: the matched box centre sits a median 3 px from the person at 1080p, 3 px _ahead_ along their motion, so the tracks themselves do not lag. The detector (yolo11m, stride 2) matches 95-97 % of the GT boxes, so the detector was not changed.
+
+- **Limits.**
+  - The look is body colour. Teammates in one kit cannot be told apart, so K-people mode stays off on full games. It does not trigger on Nottingham (estimate 14) or volleyball (11), and those games are unchanged.
+  - The GT is about 5 % wrong or ambiguous where two people overlap (100-entry spot check).
+  - The proxy clip has no visible court lines, so it was scored on a ground plane fitted to people's heights (`ground_plane.py`), not a court fit.
+  - Lag on the TV beyond the data is the camera spring (by design) plus display latency, which was not measured on the device.
+
+- **Round 3: every box labelled, not every piece (`identity.roster_label`).** When K-people mode solves the roster, every tracklet box gets a `body_hist` (covered ones too). Each box is labelled with one of the K looks or "nobody" by Viterbi along its tracklet (`BOX_SWITCH` 0.6 per change at ~15 Hz). A covered box's look is blended toward its best match by its cover, so it keeps its tracklet's person. Then one box per person per frame, the best-looking. A box between two people's runs, or on nobody, has no id: the ring shows nothing there rather than the wrong person.
+  - If more than 5 % of the labelled boxes clash (two boxes, one person, one frame), the looks are not distinct, as with one kit. The piece solve stays.
+  - Solved players (`players.json` `solved`) bridge gaps of at most 0.3 s in `tracks/` (`TRACKS_MAX_GAP_S`). Other players still interpolate across every gap.
+  - `game.json` `tracks.people` tells the TV the ids are people, so the follow-cam never hands the follow to another id. With the gaps and the hand-off left on, a simulation of `follow.ts` on the proxy made 155 hand-offs and doubled wrong-person time (6.4 % -> 12.3 %).
+- **The score is now "right while visible".** The person is on screen (in the GT) 92 % of the followed time, so plain "ring on the right person" cannot pass about 92 %. The table gives the share of the visible time with the ring on them, and wrong / no box over all the time. 1000 picks, each followed 30 s. The GT was fixed by eye: A was missing for 1 s at 40.2-41.1 while he stood next to the camera.
+
+  | config                                | ids   | right while visible | on someone else / no one | no box |
+  | ------------------------------------- | ----- | ------------------- | ------------------------ | ------ |
+  | before (live)                         | 16    | 51.5 %              | 31.5 %                   | 21.3 % |
+  | K people, pieces (round 2)            | 4     | 89.9 %              | 17.5 %                   | 0.1 %  |
+  | K people, every box, gaps 0.3 s (now) | **4** | **93.7 %**          | **6.4 %**                | 7.6 %  |
+  | same, gaps bridged without limit      | 4     | 95.1 %              | 12.6 %                   | 0.1 %  |
+  | perfect labels (oracle, 0.3 s; GT v1) | 4     | 97.4 %              | 1.9 %                    | 8.6 %  |
+
+  Of the 6.4 % still wrong, 3.7 points are boxes on no one: two people merged into one box, part of a person, someone at the frame edge. 2.2 points are on another person, short bursts in crossings.
+
+- **Measured and not kept.**
+  - DINOv2-small (Apache-2.0) embeddings of the body crop instead of the colour histogram, nearest look with looks from the first 10 s: 69 % of clear boxes right vs 95 % for the colour histogram. It sees pose and background more than clothes.
+  - The detector's own boxes instead of BoT-SORT's Kalman estimate (ultralytics reports the filtered state): GT match 95.2 % vs 95.3 %.
+  - Cutting tracklets on the uncovered gap around a label change, sampling every 0.25 s instead of 0.5 s, more label rounds: all within a point.
+  - A size gate (box much shorter or wider than the person's usual) and a ghost gate (covered and low confidence): each traded right and wrong about one for one, for example 91.0 % / 4.0 %.
+- **Not built.** SAM 2 mask propagation through crossings: what is left is short bursts, and a crossing-only SAM 2 pass is a GPU job per game. "Who's who" seeding: on the proxy the automatic looks already give the 4 people as 4 ids, and anchors from one pick each were worse (93 % of boxes vs 97 %, a 4 s look is less typical than the whole game's). Naming the 4 ids is the player card's Edit name.
+- **Display lag on the Fire TV.** A screen recording while following on the live game (about 4 fps) shows the ring on the runner in motion frames. The ring box is read at the same clock time as the camera and has no spring of its own. This is a visual check, not a number.
+
+## D-90 (2026-10-22) — Shots, makes and score from the ball at the rim; highlights from detected plays; play logs for truth and notes
+
+(Assigned as D-87; that number was taken in this file by the client-retry entry, so this is D-90.)
+
+**Problem.** On the live CC BY game the score never moved and Highlights were mostly wrong. Shots came from a pose release plus a pixel burst at the rim; make/miss from what happened next (inbound vs rebound). Measured against a hand annotation, the Nottingham Q1 clip had 17 detected shots for 10 real ones, 1 of 4 makes labelled at all, and a final score of 0-0 for a true 3-4.
+
+**Ground truth first.** `samples/truth/nottingham_q1.json` and `nottingham_q3.json` (`replay.playlog.v1`, `use: evaluation`, label "hand annotation (ground truth for evaluation)"). Each shot was read frame by frame from hoop zooms at 10-30 fps. The in-arena scoreboard and both shot-clock repeaters, read at 1 fps, are an independent check: every make in the files moves the board. They hold facts read from the CC BY video plus its attribution, not frames. They are never shown in the app. Q3 was annotated before any change was measured on it and is the hold-out.
+
+**Harness.** `courtcam eval-events -o GAME --truth FILE [--json]` (`courtcam/eventeval.py`) reports:
+
+- shots: precision and recall within 1.5 s of the rim time; a detection of a shot that does not count (after the whistle) is neutral;
+- make/miss accuracy, and make precision and recall;
+- points on made shots;
+- team agreement under the better of the two team mappings;
+- final-score error (absolute, summed over both teams);
+- highlights: precision@5 (a top-5 candidate window holds a made field goal, block or steal) and made field goals inside the top 5.
+
+**Changes, each measured on Q1.**
+
+1. **Ball at the rim (`courtcam/ball.py`).** A COCO detector is no use here: YOLO11x `sports ball` found the ball in 3 of 91 full frames. Classical CV in a box around each rim the calibrated camera projects is enough. Per frame, it keeps ball-coloured, ball-sized blobs that moved against a running background, in rim units. Details:
+   - The hue range wraps through red: a ball in shadow reads hue 170-176.
+   - Phase-correlation registration absorbs camera shake, which had made the rim itself a "ball".
+   - The projected rim is snapped onto the painted rim: the far rim projected 15 px high.
+   - Each visit to the rim is a shot. A visit needs the ball to come down into the box, or to stay for 6 frames (rolling on the rim), so a pass across does not count.
+   - Make = the ball crosses the plane 0.3 rim below the rim downward, within 0.55 rim of its middle, then is seen lower in a cone under that point within 0.7 s.
+   - First version (a mouth-then-net column test): P 0.889, R 0.8, make/miss 0.875. Plane crossing: 9/9 labelled shots on the clip's source file.
+2. **Team by basket.** On a full court (two rims), every shot at a basket belongs to the team the shooters there mostly belong to, voted within 10 min. Two shooters had been picked from the wrong team near the rim. Team agreement went from 7/8 to 9/9 and the score error from 6 to 2. `shot.team_by_hoop`.
+3. **Free throws.**
+   - Someone on the free-throw spot 0.9 s before the ball reaches the rim, with the players' median speed under 0.7 m/s for the 2 s before, is a free-throw shooter. This applies whoever the poses picked.
+   - The 0.7 threshold was picked on Q1 only: FTs peak at 0.31-0.59 m/s, live shots at 0.83 and above. A first try at 1.2 m/s called two live shots free throws (score error 2 -> 3), so it was not kept.
+   - Q3 afterwards: FTs 0.22-0.54, shots 0.78 and above.
+4. **Points by `profile.scoring`** (`inside`, `outside`, `free_throw`, `to`, `win_by`). With `to`, the score restarts after a win (pickup: e.g. `{inside: 1, outside: 2, to: 11}`). The API's live score recompute (`GET /games/{id}/score`, the score written after edits) reads the same profile setting. This is a per-sport setting; a per-game override is not built.
+5. **Highlights (`replay_render/hype.py`).** A `plays` cue joins the noisy-or: a detected make by its points (3: 0.9, 2: 0.7, FT: 0.25), a block or a steal, held 3 s. The cheer still adds on top. The top-5 candidates now lead with makes.
+
+**Result** (baseline = the live pipeline's events on the same clip: runner copy for Q1; for Q3 the current pipeline with the ball off and hype without plays):
+
+| clip                  | shots P / R    | FTs found | make/miss acc (labelled) | makes P / R    | team agree | final score error  | highlight P@5 | FG makes in top 5 |
+| --------------------- | -------------- | --------- | ------------------------ | -------------- | ---------- | ------------------ | ------------- | ----------------- |
+| Q1 baseline           | 0.235 / 0.40   | 0/2       | 0.0 (1 of 4)             | — / 0.0        | —          | 7 (0-0 vs 3-4)     | 0.2           | 1/3               |
+| Q1 after              | 0.90 / 0.90    | 2/2       | 0.889 (9 of 9)           | 1.0 / 0.75     | 9/9        | 2 (3-2 vs 3-4)     | 0.4           | 2/3               |
+| Q3 hold-out baseline  | 0.136 / 0.375  | 1/4       | 0.0 (1 of 3)             | 0.0 / 0.0      | 2/3        | 1 (2-2 vs 2-3)     | 0.0           | 0/1               |
+| **Q3 hold-out after** | **0.80 / 1.0** | **4/4**   | **0.875 (8 of 8)**       | **1.0 / 0.75** | **8/8**    | **2 (0-3 vs 2-3)** | 0.0           | 0/1               |
+| 3x3 proxy baseline    | 1.0 / 1.0      | —         | 0.5 (2 of 3)             | — / 0.0        | 1/3        | 2 (0-0 vs 1-1)     | no candidates | 0/2               |
+| 3x3 proxy after       | 0.75 / 1.0     | —         | 1.0 (3 of 3)             | 0.667 / 1.0    | 1/3        | 4 (0-4 vs 1-1)     | 0.5 (top 2)   | 1/2               |
+
+The 3x3 proxy (docs/test-data.md 3.1b, `samples/truth/cc3x3_usti.json`) is a 15.7 s half-court clip with 3 shots, scored with 3x3 rules (1s and 2s). Read it as a small check, not a benchmark.
+
+- Before any change was measured on it, the ball path found all 3 shots and both makes, but called the 10.1 s rim-out a make. A rebounder's arm and head moved down under the rim, about 5 blobs a frame. `ball.cross_max_blobs: 3` (a crossing frame with more blobs at the rim is a body) fixed it and changed nothing on Nottingham. That makes the proxy's make/miss row tuned, not held out.
+- The same body also opens a second rim visit at 11.0 s: the false shot. Its score is worse than the baseline's. The false shot and both real makes went to one team, at 2 points each, because the shooters' spots were placed outside the arc: the court there is extrapolated past the key.
+
+The Q3 baseline's score error of 1 is luck: it got there from one wrong make and missed every real one. After, Q3's red score is exact (three free throws). The one miss is dark's lay-up at 156 s. A ball-coloured blob moves up and down inside the rim box for 1 s after the ball arrives, probably the shooter's arm or head; this was not checked frame by frame. No downward crossing through the middle was seen. Q3 has one made field goal, so P@5 has little to find there. Its top 5 are arms-up candidates, and free-throw makes stay below the candidate floor by design.
+
+**What it costs.** The ball scan is one decode pass inside the events stage, numpy/OpenCV only. Events stage 43-47 s for a 240 s 1080p30 clip on hfbox CPU (the scan is most of it). The scan alone took 15.6 s on the 120 s 1080p24 proxy with one rim. No model, no new dependency, no licence change.
+
+**Play logs (`courtcam/playlog.py`, docs/playlog.md).** One format (`replay.playlog.v1`: CSV `t,team,player,type,result,points,note`, or JSON) with two uses:
+
+- `use: evaluation`: truth for `eval-events`, never shown.
+- `use: notes`: `courtcam notes -o GAME --from FILE` writes `notes.json`, which the API's moments show as "Your note: …" (kind `bookmark`, source `user`). They are never merged into `events.json`, the score or stats. An evaluation log copied into place is ignored.
+
+**Second demo proxy (CC BY 2v2 park, docs/test-data.md 3.1c).** Not scored. The game is played at the far basket. Its rim is 25 px wide (Nottingham's are 17 px), seen against bright sky and foliage, and the players' heads cross it for long stretches. With the rim hand-placed (`calib.hoops_px`, new), the ball scan found one rim visit in 120 s, so the detector does not carry over to this clip. The cause was not isolated; the likely ones are the background and the occlusion. No hand annotation was made, so there are no numbers. For the demo, film so the rim is in front of a plain wall or fence, not the sky, with the camera high enough that heads stay below the rim. That is how Nottingham is shot. Without that, expect few shots, and the score has to come from the user (score corrections, or a play log as notes).
+
+**Limits.**
+
+- A camera re-aim mid-clip (Q1 236 s) still reads as one rim visit (a false shot).
+- A miss and its put-back within 1 s merge into one visit: Q1 36.0 + 36.95.
+- A ball falling off the near or far side of the rim crosses the middle of the picture.
+- Team by basket needs most shooters right. Nottingham's identity teams (D-89) are good enough, but two same-colour kits would not be.
+- All thresholds come from one venue (two clips, one camera). The hold-out shows they carry within that venue, not that they generalise to a phone at a park.

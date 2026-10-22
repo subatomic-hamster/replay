@@ -167,6 +167,19 @@ test("follow-cam: hands off only when unambiguous, never across teams or into a 
   ).toBe("p1");
   // someone on court nearby all along (a screen): another player, hold
   expect(after(() => [at("p2", 0.53)])).toBe("p1");
+  // ids that are people (game.tracks.people, D-89): the new id is someone else, hold
+  const cam = createFollowCam(
+    fakeTracks((t) => [
+      ...(t < 5 ? [at("p1", 0.5)] : []),
+      ...from(5.2, at("p9", 0.51))(t),
+    ]),
+    "p1",
+    16 / 9,
+    (id) => team[id],
+    true,
+  );
+  run(cam, 0, 6);
+  expect(cam.current().id).toBe("p1");
 });
 
 test("follow-cam: a gap holds the spot and widens slowly; Back eases to exactly wide", () => {

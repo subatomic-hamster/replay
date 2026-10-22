@@ -1,0 +1,223 @@
+{
+  "schema": "replay.playlog.v1",
+  "use": "evaluation",
+  "label": "hand annotation (ground truth for evaluation)",
+  "source": "hand annotation by the Replay agents, 2026-10-22, the same way as nottingham_q1.json. Hold-out clip: nothing in the detectors was tuned on it. Never shown in the app, never pipeline output.",
+  "clip": {
+    "id": "nottingham_q3",
+    "file": "/workspace/wt/replay-env/samples-cc/basketball_nottingham_widecam/basketball_nottingham_widecam_q3_240s.mp4",
+    "duration_s": 242.75,
+    "attribution": "\"25th October 2015 - Nottingham Wildcats vs Barking Abbey Crusaders wide angle cam view only\" by Super League Basketball (video (c) Peter Kaloczy), https://www.youtube.com/watch?v=aH6PRcV4DHE, licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Segment cut to 240 s (source 3000-3240 s), otherwise unmodified. This file holds facts read from the video, not the video.",
+    "notes": "Q3, the camera re-aimed since Q1. Board read on the right wall (the left board is too blurred for two-digit scores). Teams swapped ends at half time."
+  },
+  "teams": {
+    "dark": {
+      "name": "Nottingham Wildcats",
+      "side": "home",
+      "attacks": "right"
+    },
+    "red": {
+      "name": "Barking Abbey Crusaders",
+      "side": "guests",
+      "attacks": "left"
+    }
+  },
+  "scoreboard": [
+    { "t": 0.0, "scores": { "dark": 30, "red": 27 } },
+    { "t": 116.5, "scores": { "dark": 30, "red": 28 } },
+    { "t": 159.0, "scores": { "dark": 32, "red": 28 } },
+    { "t": 217.5, "scores": { "dark": 32, "red": 29 } },
+    { "t": 225.5, "scores": { "dark": 32, "red": 30 } }
+  ],
+  "entries": [
+    {
+      "t": 8.15,
+      "t_rim": 9.4,
+      "type": "shot",
+      "hoop": "left",
+      "team": "red",
+      "made": false,
+      "points": 3,
+      "confidence": "medium",
+      "note": "long jumper from the far side (feet ~px 742,570); off the front/right of the rim. 3 vs 2 uncertain"
+    },
+    {
+      "t": 9.8,
+      "type": "rebound",
+      "hoop": "left",
+      "team": "dark",
+      "offensive": false,
+      "confidence": "medium"
+    },
+    {
+      "t": 12.2,
+      "type": "foul",
+      "team": "red",
+      "confidence": "medium",
+      "note": "GUESTS team fouls 1->2 on the board"
+    },
+    {
+      "t": 35.0,
+      "type": "foul",
+      "hoop": "right",
+      "team": "red",
+      "confidence": "low",
+      "note": "from the clocks only (stopped 35-52 s), GUESTS team fouls 2->3"
+    },
+    {
+      "t": 59.7,
+      "type": "block",
+      "hoop": "right",
+      "team": "red",
+      "player": "red #12",
+      "confidence": "low",
+      "note": "contest of a dark drive; ball never seen at the rim"
+    },
+    {
+      "t": 61.8,
+      "type": "turnover",
+      "hoop": "right",
+      "team": "dark",
+      "confidence": "medium",
+      "note": "loose in a scramble under the right basket"
+    },
+    {
+      "t": 88.65,
+      "t_rim": 89.35,
+      "type": "shot",
+      "hoop": "left",
+      "team": "red",
+      "made": false,
+      "points": 2,
+      "counts": false,
+      "confidence": "high",
+      "note": "fouled in the act, passes right of the rim without touching it (no attempt when fouled and missed)"
+    },
+    {
+      "t": 89.5,
+      "type": "foul",
+      "hoop": "left",
+      "team": "dark",
+      "confidence": "medium",
+      "note": "shooting foul; two free throws for red"
+    },
+    {
+      "t": 113.15,
+      "t_rim": 114.25,
+      "type": "free_throw",
+      "hoop": "left",
+      "team": "red",
+      "made": true,
+      "points": 1,
+      "confidence": "high"
+    },
+    {
+      "t": 122.7,
+      "t_rim": 123.9,
+      "type": "free_throw",
+      "hoop": "left",
+      "team": "red",
+      "made": false,
+      "points": 1,
+      "confidence": "medium",
+      "note": "off the right edge of the rim/board and away (board stays 30-28)"
+    },
+    {
+      "t": 131.5,
+      "t_rim": 131.8,
+      "type": "shot",
+      "hoop": "right",
+      "team": "dark",
+      "made": false,
+      "points": 2,
+      "confidence": "high",
+      "note": "close-range shot; bounces twice on the rim and out"
+    },
+    {
+      "t": 133.3,
+      "type": "rebound",
+      "hoop": "right",
+      "team": "red",
+      "offensive": false,
+      "confidence": "medium"
+    },
+    {
+      "t": 138.5,
+      "t_rim": 139.5,
+      "type": "shot",
+      "hoop": "left",
+      "team": "red",
+      "made": false,
+      "points": 2,
+      "confidence": "high",
+      "note": "jumper from the free-throw line / top of the key"
+    },
+    {
+      "t": 140.0,
+      "type": "rebound",
+      "hoop": "left",
+      "team": "dark",
+      "offensive": false,
+      "confidence": "medium"
+    },
+    {
+      "t": 153.5,
+      "type": "note",
+      "hoop": "right",
+      "team": "dark",
+      "confidence": "high",
+      "note": "NOT a shot: high lob entry pass at hoop height"
+    },
+    {
+      "t": 155.8,
+      "t_rim": 156.05,
+      "type": "shot",
+      "hoop": "right",
+      "team": "dark",
+      "player": "dark #6",
+      "made": true,
+      "points": 2,
+      "confidence": "high",
+      "note": "post layup contested by red #15; bounces twice, rolls, drops through 157.2-157.4"
+    },
+    {
+      "t": 180.85,
+      "type": "shot",
+      "hoop": "left",
+      "team": "red",
+      "made": false,
+      "points": 2,
+      "counts": false,
+      "confidence": "low",
+      "note": "fouled in the act, ball ~1 m below the rim: not an attempt"
+    },
+    {
+      "t": 181.2,
+      "type": "foul",
+      "hoop": "left",
+      "team": "dark",
+      "confidence": "medium",
+      "note": "shooting foul; dead ball 181-231 s, two free throws for red"
+    },
+    {
+      "t": 214.05,
+      "t_rim": 214.95,
+      "type": "free_throw",
+      "hoop": "left",
+      "team": "red",
+      "made": true,
+      "points": 1,
+      "confidence": "high"
+    },
+    {
+      "t": 223.75,
+      "t_rim": 224.6,
+      "type": "free_throw",
+      "hoop": "left",
+      "team": "red",
+      "made": true,
+      "points": 1,
+      "confidence": "high"
+    }
+  ]
+}

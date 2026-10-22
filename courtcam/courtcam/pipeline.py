@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 
 from . import audio as audio_mod
+from . import ball as ball_mod
 from . import calibrate as calib_mod
 from . import croppath, detect, distortion, identity
 from . import events as events_mod
@@ -354,7 +355,8 @@ def stage_tracks(
         times = times[times <= info.duration_s + 1e-6]
         rows: list[list[tuple[str, np.ndarray, np.ndarray, float]]] = [[] for _ in times]
         for p in players:
-            boxes, court, conf = resample(p.track, times)
+            gap = identity.TRACKS_MAX_GAP_S if p.solved else np.inf
+            boxes, court, conf = resample(p.track, times, gap)
             for i in range(len(times)):
                 if np.isfinite(boxes[i]).all():
                     rows[i].append((p.player_id, boxes[i], court[i], float(conf[i])))
@@ -522,6 +524,10 @@ def stage_events(
 ) -> list[Event]:
     progress("events", 0.0)
     players, _ = identity.read_players(out_dir / "_work" / "players.json")
+    sig = signals(out_dir, info)
+    # D-90: the ball at the hoop (ball.json), for make/miss from the ball's own path
+    sig.ball = ball_mod.run(out_dir / WIDE_REL, out_dir, profile, calib,
+                            progress=lambda f: progress("events", 0.8 * f))  # fmt: skip
     found = events_mod.detect_events(
         out_dir / WIDE_REL,
         players,
@@ -529,7 +535,7 @@ def stage_events(
         calib,
         fps=info.fps,
         labeler=labeler,
-        signals=signals(out_dir, info),
+        signals=sig,
     )
     write_json(out_dir / "events.json", Events(events=found), indent=1)
     progress("events", 1.0)
@@ -586,7 +592,9 @@ def stage_plays(out_dir: Path, profile: Profile, info: VideoInfo, *, progress: P
     clips = triggers_mod.apply(trig, plays, profile.triggers, info.duration_s)
     write_json(out_dir / "plays.json", Plays(plays=plays), indent=1)
     write_json(out_dir / "clips.json", Clips(clips=clips), indent=1)
-    write_json(out_dir / "score.json", Score(score=plays_mod.score_timeline(found)), indent=1)
+    sc = profile.scoring
+    score = plays_mod.score_timeline(found, to=sc.to, win_by=sc.win_by)
+    write_json(out_dir / "score.json", Score(score=score), indent=1)
     progress("plays", 1.0)
     return plays
 
@@ -721,8 +729,13 @@ def run(
 
     if "tracks" in requested:
         n_chunks = stage_tracks(out_dir, info, progress=report)
+        ps, _ = identity.read_players(out_dir / "_work" / "players.json")
         game.tracks = TracksRef(
-            rate_hz=10, chunk_s=10, url_template=TRACKS_TEMPLATE, chunks=n_chunks
+            rate_hz=10,
+            chunk_s=10,
+            url_template=TRACKS_TEMPLATE,
+            chunks=n_chunks,
+            people=bool(ps) and all(p.solved for p in ps),
         )
         _mark(out_dir, game, "tracks")
     if "crops" in requested:

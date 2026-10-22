@@ -38,6 +38,7 @@ import {
   commentaryLines,
   rallyAtCondensed,
   rallyOrder,
+  type Hype,
   type RallyDoc,
 } from "../../../../packages/tv-core/src/discovery";
 import { fmtDuration } from "../../../../packages/tv-core/src/display";
@@ -204,6 +205,20 @@ function mergeSegs(segs: Seg[]): Seg[] {
   return out;
 }
 
+/** The Highlights reel: the top hype plays, merged where they overlap. The tile counts
+ *  these, so "Top N plays" is what plays. */
+function topReel(hype: Hype | null | undefined): Seg[] {
+  return mergeSegs(
+    [...(hype?.candidates ?? [])]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, REEL_MAX)
+      .map((c) => ({
+        t_start: c.t_start ?? Math.max(0, c.t - 3),
+        t_end: c.t_end ?? c.t + 1,
+      })),
+  );
+}
+
 export function Watch({
   gameId,
   initialMode,
@@ -212,11 +227,14 @@ export function Watch({
   initialWay,
   initialPlay,
   initialCard,
+  initialPanel,
   q,
 }: {
   gameId: string;
   /** reopen the player card (Back from its View profile), paused */
   initialCard?: { pid: string; resume: boolean };
+  /** reopen the Stats panel (Back from Review or Tips) */
+  initialPanel?: "stats";
   initialMode?: string;
   initialPid?: string;
   initialT?: number;
@@ -263,7 +281,9 @@ export function Watch({
   const [mode, setMode] = useState<Mode>(
     initialMode === "select" || initialMode === "follow" ? initialMode : "wide",
   );
-  const [layer, setLayer] = useState<Layer>(initialCard ? "player" : null);
+  const [layer, setLayer] = useState<Layer>(
+    initialCard ? "player" : (initialPanel ?? null),
+  );
   const [layerT, setLayerT] = useState(0); // media time when the layer opened
   const [chrome, setChrome] = useState(true);
   const [way, setWay] = useState<Way>(
@@ -509,9 +529,10 @@ export function Watch({
             pid,
             vw / vh,
             (id) => rosterRef.current.find((p) => p.id === id)?.team,
+            !!game?.tracks.people,
           )
         : null,
-    [tracks, pid, vw, vh],
+    [tracks, pid, vw, vh, game?.tracks.people],
   );
   /** The roster id of the player being followed now (null when not following), for
    *  anything that shows who it is (the player card). The camera may be on a later track
@@ -573,14 +594,7 @@ export function Watch({
           );
           return;
         }
-        const top = [...(hype?.candidates ?? [])]
-          .sort((a, b) => b.score - a.score)
-          .slice(0, REEL_MAX)
-          .map((c) => ({
-            t_start: c.t_start ?? Math.max(0, c.t - 3),
-            t_end: c.t_end ?? c.t + 1,
-          }));
-        play("Highlights", top);
+        play("Highlights", topReel(hype));
         return;
       }
       // Condensed: the rendition when it exists; else the rallies back to back, and ask
@@ -1060,6 +1074,8 @@ export function Watch({
           else if (mode === "select") endSelect(null);
           else if (mode !== "wide") setMode("wide");
           else if (chrome) setChrome(false);
+          // out of Highlights or Condensed into the full game, where the reel was
+          else if (way !== "full") startWay("full");
           else leave("library");
           break;
         case "bookmark":
@@ -1104,6 +1120,8 @@ export function Watch({
       openCard,
       cam,
       startSelect,
+      way,
+      startWay,
     ],
   );
   useDpad(onAction, !tagging && !linking && layer === null && !angle);
@@ -1229,7 +1247,7 @@ export function Watch({
   );
   const followTint =
     (followName?.color_hex && ink.get(followName.color_hex)) || color.accent;
-  const nHype = hype?.candidates.length ?? 0;
+  const nHype = topReel(hype).length;
   const hasRallies =
     (rallies?.n ?? 0) > 0 || rallies?.condensed.status === "done";
   const wayTiles: Tile[] = [
@@ -1243,7 +1261,7 @@ export function Watch({
     ...tile(q ? null : "highlights", nHype > 0 || !!q, {
       id: "way-highlights",
       label: "Highlights",
-      sub: q ? `“${q}”` : `Top ${Math.min(REEL_MAX, nHype)} plays`,
+      sub: q ? `“${q}”` : `Top ${nHype} play${nHype === 1 ? "" : "s"}`,
       on: way === "highlights",
       run: () => startWay("highlights"),
     }),
@@ -1318,7 +1336,7 @@ export function Watch({
           return {
             id: `angle-${a.id}`,
             label: p ? povLabel(p) : a.label,
-            sub: p ? "3D reconstruction" : tierBadge(a.tier),
+            sub: tierBadge(a.tier),
             art: frame,
             run: () => openAngle(play.play_id, i),
           };

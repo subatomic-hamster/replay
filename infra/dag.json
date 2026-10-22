@@ -319,6 +319,16 @@
   "default": false
  },
  {
+  "name": "reel",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
   "name": "tierc_scene",
   "after": [
    "highlights",

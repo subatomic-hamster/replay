@@ -343,31 +343,34 @@ def run(
         try:
             from courtcam.pipeline import STAGES  # type: ignore
             from replay_worker import run as run_worker  # type: ignore
-            from replay_worker.stages import load_registry  # type: ignore
         except Exception as exc:  # noqa: BLE001
             log.warning("replay_worker unavailable (%s); running courtcam directly", exc)
         else:
             _prepare_for_courtcam(Path(out_dir), game)
-            defaults = [n for n, s in load_registry().items() if s.default]
-            stages = [*defaults, *extra_stages] if extra_stages else None
+            cfg = {
+                "source": str(input_path),
+                "sport": game.get("sport", "basketball"),
+                "variant": court.get("variant"),
+                "landmarks_px": court.get("landmarks_px") or None,
+                "detector": detector,
+                "title": game.get("title"),
+                "game_id": game.get("id"),
+                "recorded_at": game.get("recorded_at"),
+            }
+            # voice triggers ("Replay, clip that"): in the run config, so the triggers
+            # stage's cache key changes with it (courtcam would also read the env var)
+            if os.environ.get("COURTCAM_ASR_MODEL"):
+                cfg["asr_model"] = os.environ["COURTCAM_ASR_MODEL"]
             run_worker(
                 Path(out_dir),
-                {
-                    "source": str(input_path),
-                    "sport": game.get("sport", "basketball"),
-                    "variant": court.get("variant"),
-                    "landmarks_px": court.get("landmarks_px") or None,
-                    "detector": detector,
-                    "title": game.get("title"),
-                    "game_id": game.get("id"),
-                    "recorded_at": game.get("recorded_at"),
-                },
-                stages=stages,
+                cfg,
                 # one CPU task at a time keeps the reported stage order monotonic (D-17)
                 cpu_workers=1,
                 # the worker's own `game` bookkeeping stage is not a status-page stage
                 progress=lambda s, f: progress(s, f) if s in STAGES else None,
             )
+            if extra_stages:
+                _run_extras(run_worker, Path(out_dir), cfg, extra_stages)
             return _pipeline_keys(Path(out_dir) / "game.json")
     if pipeline != "fake":
         try:
@@ -391,6 +394,19 @@ def run(
             )
             return _pipeline_keys(Path(out_dir) / "game.json")
     return _run_fake(input_path, out_dir, fake_dir, progress, fake_delay_s)
+
+
+def _run_extras(run_worker, out_dir: Path, cfg: dict, extra: tuple[str, ...]) -> None:
+    """The opt-in stages (REPLAY_WORKER_STAGES), after the default run: one that fails
+    (condensed on a game with no plays, a model that is missing) is logged in
+    `_work/worker.jsonl` and leaves the game ready without that feature, never failed.
+    `moments` reruns with them, so the hero uses the hype candidates when `hype` ran."""
+    for stage in extra:
+        try:
+            run_worker(out_dir, cfg, stages=[stage, "moments"], cpu_workers=1)
+        except Exception as exc:  # noqa: BLE001 - the game itself is done
+            log.warning("opt-in stage %s failed (%s); the game stays ready without it",
+                        stage, exc)  # fmt: skip
 
 
 def render_player(game_dir: Path, player_id: str, progress: Progress, pipeline: str) -> str | None:

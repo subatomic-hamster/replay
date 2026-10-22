@@ -90,6 +90,70 @@ def test_condensed_game_cuts_dead_time(tmp_path):
 
 
 @needs_ffmpeg
+def test_condensed_basketball_cuts_to_the_plays(tmp_path):
+    """No rallies: each shot / turnover from LEAD_S before it, counted PLAY n / N."""
+    gd = make_toy_game(tmp_path / "g_toy", duration=24.0)
+    events = load_game(gd).events
+    plays = condensed.play_list(events)
+    want = [e for e in events if e["type"] in condensed.PLAY_TYPES]
+    assert plays and len(plays) == len(want)
+    first = min(want, key=lambda e: e["t_key"])
+    assert plays[0]["t_start"] == max(0.0, first["t_start"] - condensed.LEAD_S)
+    doc = condensed.render_condensed(gd, size=(320, 180), crf=32)
+    assert doc["unit"] == "play" and doc["n"] == len(plays)
+    _, dur = _probe(gd / condensed.REL)
+    assert 0 < dur <= 24.0 and dur == pytest.approx(doc["condensed_s"], abs=0.15)
+
+
+def _with_user_clips(gd):
+    clip = {"id": "c_0001", "trigger_id": "tr_0001", "t_start": 0.0, "t_end": 3.0,
+            "attribution": {"owner_player_id": None}}  # fmt: skip
+    (gd / "clips.json").write_text(json.dumps({"clips": [clip]}))
+    trig = [{"id": "tr_0001", "type": "voice", "t": 7.5, "transcript": "Replay, clip that"},
+            {"id": "tr_0002", "type": "gesture", "t": 23.0}]  # fmt: skip
+    (gd / "triggers.json").write_text(json.dumps({"triggers": trig}))
+
+
+def test_reel_plan_puts_the_users_clips_first(tmp_path):
+    from itertools import combinations
+
+    from replay_render import reel
+
+    gd = make_toy_game(tmp_path / "g_toy", duration=24.0, video=False)
+    _with_user_clips(gd)
+    segs = reel.plan(load_game(gd))
+    got = [(s["kind"], s["tag"], s["t_start"], s["t_end"]) for s in segs]
+    assert got[0] == ("clip", "YOUR CLIP (VOICE)", 0.0, 3.0)
+    # the X sign found no play: the 8 s before it; it wins over the 19 s shot it covers
+    assert ("clip", "YOUR CLIP (X SIGN)", 15.0, 23.0) in got
+    assert [s["t_end"] for s in segs if s["kind"] == "top"] == [11.0]  # the 9 s shot
+    assert all(reel._overlap(a, b) <= 0.5 for a, b in combinations(segs, 2))
+    assert [s["t_start"] for s in segs] == sorted(s["t_start"] for s in segs)
+
+
+@needs_ffmpeg
+def test_reel_renders_9x16_with_dips_between_segments(tmp_path):
+    from replay_render import reel
+
+    gd = make_toy_game(tmp_path / "g_toy", duration=24.0)
+    _with_user_clips(gd)
+    out = gd / reel.DIR / "r_test.mp4"
+    doc = reel.render_reel(gd, {"id": "r_test", "aspect": "9:16"}, out)
+    streams, dur = _probe(out)
+    assert (streams["video"]["width"], streams["video"]["height"]) == (720, 1280)
+    assert streams["audio"]["codec_name"] == "aac"
+    assert dur == pytest.approx(doc["duration_s"], abs=0.15)
+    plan = json.loads(out.with_suffix(".plan.json").read_text())
+    assert plan["schema"] == reel.SCHEMA and plan["segments"][1]["reel_t"] > 0
+    cap = cv2.VideoCapture(str(out))
+    ok, first = cap.read()  # the reel opens on the dip from black
+    cap.set(cv2.CAP_PROP_POS_MSEC, 2500)
+    ok2, mid = cap.read()
+    cap.release()
+    assert ok and ok2 and first.mean() < 15 and mid.mean() > 40
+
+
+@needs_ffmpeg
 def test_vertical_export_follows_the_key_player(tmp_path):
     gd = make_toy_game(tmp_path / "g_toy", duration=24.0)
     game = load_game(gd)

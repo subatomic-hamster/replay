@@ -66,9 +66,10 @@ every existing route and test. Cloud mode is `REPLAY_STORAGE=s3` + `REPLAY_JOBS=
     `DELETE /profiles/{pid}/links/{g}/{player_id}`
   - `GET /games/{g}` and its `/moments`, `/storyboard`, `/plays`, `/triggers`, `/clips`,
     `/score`, `/stats`, `/renditions`, `/review/queue`, `/exports/vertical`,
-    `/exports/vertical/{vid}`
+    `/exports/vertical/{vid}`, `/exports/reel`, `/exports/reel/{rid}`
   - `POST /games/{g}/triggers` (make a clip), `PATCH /games/{g}/clips/{cid}` (trim),
-    `POST /games/{g}/exports/vertical` (9:16 aspect)
+    `POST /games/{g}/exports/vertical` (9:16 aspect), `POST /games/{g}/exports/reel`
+    (highlight reel)
   - `PATCH /games/{g}/players/{player_id}` (name, merge), `PATCH /games/{g}/events/{eid}`
     (review answers)
   - `POST /games/{g}/search`, `POST /games/{g}/query` (search's fallback)
@@ -98,7 +99,7 @@ every existing route and test. Cloud mode is `REPLAY_STORAGE=s3` + `REPLAY_JOBS=
 
 - `GET /config` (public, no key, local and cloud): `{"web_base": str | null}` from
   `REPLAY_PUBLIC_WEB_BASE`, trailing slash stripped. Nothing secret.
-- `POST /games/{id}/phone-link` (X-Replay-Key) `{"job": "clip"|"tag"|"review"|"search",
+- `POST /games/{id}/phone-link` (X-Replay-Key) `{"job": "clip"|"tag"|"review"|"search"|"reel",
 "t": number|null}` -> `{"url", "token", "expires_at"}`. `url` =
   `{web_base}/p/{id}?job={job}[&t={t}]#k={token}` (t without trailing zeros), null when
   `REPLAY_PUBLIC_WEB_BASE` is unset; `expires_at` is unix seconds. 404 unknown game, 422
@@ -126,8 +127,22 @@ every existing route and test. Cloud mode is `REPLAY_STORAGE=s3` + `REPLAY_JOBS=
 
 ### Media
 
-`GET /media/games/{id}/{path}` -> 302 to a presigned S3 GET (1 h) in cloud mode.
+`GET /media/games/{id}/{path}[?v=<etag>]` -> 302 to a presigned S3 GET in cloud mode.
 Video elements follow redirects and keep Range support.
+
+Caching (2026-10-22): the presigned URL is signed at the start of the current hour
+(`REPLAY_MEDIA_SIGN_WINDOW_S`, default 3600) and valid for two windows, so every request
+in that hour gets the same URL. The 302 says `Cache-Control: public, max-age=<seconds left
+in the window>`, so the TV's HTTP stack and browsers skip the Lambda hop while it holds.
+The API names images (thumb, hero, moment thumbs, storyboard sheets, calibration frame)
+with `?v=<first 16 chars of the S3 ETag>`: a re-process that changes a picture changes
+its URL (the TV's image cache is keyed by URL), and the version also shifts the signing
+time by up to 10 min, so the S3 URL differs too. S3 answers versioned images with
+`Cache-Control: public, max-age=7200, immutable` (`response-cache-control`, signed into
+the URL, so existing objects need no re-upload) and everything else (video, JSON) with
+`no-cache` (revalidated with the ETag, never served stale; a stable URL with no header
+would let browsers cache heuristically). `REPLAY_MEDIA_SIGN_WINDOW_S=0` restores a fresh
+URL per request and `Cache-Control: no-store` on the 302.
 
 ### Jobs and the remote worker
 
@@ -154,6 +169,44 @@ so the TV can play the mezzanine (`watchable`) and scrub before the run ends. It
 tmux session and takes the GPU lock through the worker as today. Its log never holds a
 presigned query (security token, signature): `httpx`/`httpcore` log at WARNING, the runner
 logs `GET`/`PUT` with the URL path only, and HTTP errors name the path only.
+
+### Highlight reel (local and cloud, 2026-10-22)
+
+One shareable MP4 of a game: the user's clips first (voice "Replay, clip that", the X
+sign, phone taps, bookmarks), then the top plays (hype candidates by score, else the
+replay-angle highlight selection), overlaps over half dropped, at most 90 s, in game
+order, a 0.3 s dip to black at each join, a caption per segment (from the events only)
+and a tag `YOUR CLIP (VOICE) 2/5` / `TOP PLAY 3/5`; the game title is the caption's
+second line (it carries the CC BY attribution on the real game). Rendered by the worker's
+`reel` stage (`replay_render.reel`); in cloud mode by the hfbox runner (job kind
+`reel:<rid>`, `params.stage = "reel"`).
+
+- `POST /games/{id}/exports/reel` `{"aspect": "16:9" | "9:16"}` (default 16:9; key or
+  phone token) -> `{id, aspect, created_at, status, url, job_id?, error?}`. `id` =
+  `r_` + 12 hex of a hash of the aspect and the files the plan reads (game, events, plays,
+  hype, clips, triggers): asking again before anything changed is the same reel (200 with
+  its status), a new clip or an edit is a new reel (202, `status: "queued"`). 1280x720 or
+  720x1280, H.264 + AAC.
+- `GET /games/{id}/exports/reel` -> `{game_id, reels: [...]}`, newest first.
+- `GET /games/{id}/exports/reel/{rid}` -> `status` `queued | running | done | failed |
+missing | none`; when `done`: `url` (under `/media`, the download), `duration_s` and
+  `segments: [{t_start, t_end, kind: "clip" | "top", tag, caption, player_id, ref,
+reel_t}]` (`reel_t` = where it starts in the reel). 404 for an unknown or malformed id.
+- Phone: `POST /games/{id}/phone-link {"job": "reel"}` -> `{web_base}/p/{id}?job=reel#k=..`;
+  the phone page POSTs the reel and polls `GET .../exports/reel/{rid}` until `done`, then
+  offers `url`.
+
+### The user's clips as moments (2026-10-22)
+
+`GET /games/{id}/moments` also lists every trigger (`triggers.json`: voice, gesture, tap)
+as a moment of the existing kind `bookmark`, id = the trigger id (`tr_...`), label
+`Your clip (voice)` / `Your clip (X sign)` / `Your clip` (`, <name>` when the voice named
+a tagged player), `t_start`/`t_end` = its clip (the play it resolved to), `t` = that play's
+end; a trigger with no play covers the 8 s before it. Voice and gesture keep `source:
+"heuristic"` and the detector's `confidence` (they are detected); a tap is `source:
+"user"`, `confirmed: true`. Additive keys: `trigger: "voice" | "gesture" | "tap"` and
+`clip_id` (null when unresolved). Thumbs come from the `moments` stage like any moment.
+No TV contract change is required; a client that wants a distinct icon reads `trigger`.
 
 ### Cloud-mode gaps (documented, not hidden)
 

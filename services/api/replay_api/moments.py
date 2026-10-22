@@ -6,6 +6,9 @@ and the API's `/games/{id}/moments` and `/games/{id}/storyboard` routes.
   label built only from what the event says (a shot whose `made` is unknown is "Shot",
   never a basket) plus the player's name when the roster has one. No jersey numbers: no
   stage reads them yet, so `player.number` is never set.
+* `clip_moments(triggers, clips, game)`: the user's clips ("Replay, clip that", the X
+  sign, phone taps) as moments of kind `bookmark` with an extra `trigger` key;
+  `all_moments` merges both.
 * `write_storyboard(video, game_dir)`: one 320x180 frame every 2 s (letterboxed to 16:9),
   tiled 10x10 per JPEG sheet, plus `storyboard/manifest.json`. One ffmpeg decode pass.
 * `write_moments(game_dir, video)`: `moments.json` (the labels at run time and which
@@ -121,6 +124,58 @@ def moments(events: list[dict], game: dict) -> list[dict]:
         if p:
             m["player"] = {k: p[k] for k in ("id", "name", "color_hex") if p.get(k) is not None}
         out.append(m)
+    out.sort(key=lambda m: (m["t"], m["id"]))
+    return out
+
+
+CLIP_WORDS = {"voice": "Your clip (voice)", "gesture": "Your clip (X sign)", "tap": "Your clip"}
+UNRESOLVED_S = 8.0  # a trigger that found no play: the seconds before it
+
+
+def clip_moments(triggers: list[dict], clips: list[dict], game: dict) -> list[dict]:
+    """ "Replay, clip that" (voice), the crossed-arms X (gesture) and phone taps, as moments
+    of kind `bookmark` (the user's own), id = the trigger id. The range is the clip's
+    (the play the trigger resolved to) and `t` its play's end; a trigger that resolved to
+    no play covers the `UNRESOLVED_S` before it. Voice and gesture are detected, so they
+    keep source `heuristic` and the detector's confidence; `trigger` says which it was."""
+    players = {p["id"]: p for p in game.get("players") or []}
+    by_trigger = {c.get("trigger_id"): c for c in clips}
+    out = []
+    for tr in triggers:
+        if "t" not in tr or not tr.get("id"):
+            continue
+        c = by_trigger.get(tr["id"])
+        t = float(tr["t"])
+        if c:
+            a, b = float(c["t_start"]), float(c["t_end"])
+            key = max(a, b - 1.0)  # courtcam pads a clip 1 s past its play
+        else:
+            a, b, key = max(0.0, t - UNRESOLVED_S), t, max(0.0, t - 1.0)
+        kind_ = tr.get("type") or "tap"
+        text = CLIP_WORDS.get(kind_, "Your clip")
+        subject = players.get(tr.get("subject_player_id") or "")
+        if subject and subject.get("name"):
+            text = f"{text}, {subject['name']}"
+        m = {
+            "id": tr["id"], "t": round(key, 3), "t_start": round(a, 3), "t_end": round(b, 3),
+            "kind": "bookmark", "label": text, "trigger": kind_,
+            "clip_id": c["id"] if c else None,
+            "source": "user" if kind_ == "tap" or tr.get("source") == "user" else "heuristic",
+            "confidence": tr.get("confidence"), "confirmed": kind_ == "tap",
+        }  # fmt: skip
+        owner = players.get(tr.get("by_player_id") or "") or subject
+        if owner:
+            m["player"] = {
+                k: owner[k] for k in ("id", "name", "color_hex") if owner.get(k) is not None
+            }
+        out.append(m)
+    return out
+
+
+def all_moments(events: list[dict], game: dict, triggers: list[dict] | None = None,
+                clips: list[dict] | None = None) -> list[dict]:  # fmt: skip
+    """Detected moments and the user's clips together, sorted by time."""
+    out = moments(events, game) + clip_moments(triggers or [], clips or [], game)
     out.sort(key=lambda m: (m["t"], m["id"]))
     return out
 
@@ -263,7 +318,8 @@ def write_moments(game_dir: Path, video: Path | None = None, game: dict | None =
     video = Path(video) if video else gd / WIDE_REL
     game = game if game is not None else _read(gd / "game.json") or {}
     events = _read(gd / "events.json", "events") or []
-    rows = moments(events, game)
+    rows = all_moments(events, game, _read(gd / "triggers.json", "triggers"),
+                       _read(gd / "clips.json", "clips"))  # fmt: skip
     duration = float((game.get("video") or {}).get("duration_s") or 0.0)
     t_hero, why = hero_time(events, game, _read(gd / "hype.json"), duration)
     (gd / THUMB_DIR).mkdir(parents=True, exist_ok=True)

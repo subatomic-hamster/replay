@@ -61,8 +61,9 @@ def test_rally_browser_and_condensed_game(client, tmp_path, monkeypatch):
     monkeypatch.setenv("REPLAY_GPU_LOCK", str(tmp_path / "gpu.lock"))
     gid = ready_game(client, client.app_settings)
     body = client.get(f"/games/{gid}/rallies").json()
-    assert body["n"] == 0 and body["condensed"]["status"] == "none"
-    assert client.post(f"/games/{gid}/condensed").status_code == 409
+    # basketball has no rallies: the condensed game is its shots and turnovers
+    assert body["n"] >= 1 and body["condensed"]["status"] == "none"
+    assert {r["kind"] for r in body["rallies"]} <= {"shot", "turnover", "block"}
     gd = client.app_settings.games_dir / gid
     doc = json.loads((gd / "events.json").read_text())
     doc["events"].append({"id": "r_1", "type": "rally", "t_start": 2.0, "t_key": 2.0,
@@ -110,6 +111,43 @@ def test_vertical_export_renders_once(client, tmp_path, monkeypatch):
         vid
     ]
     assert client.get(f"/games/{gid}/exports/vertical/../../x").status_code == 404
+
+
+def test_highlight_reel_renders_once_per_plan(client, tmp_path, monkeypatch):
+    """POST /exports/reel queues one render per plan (aspect + the files the plan reads);
+    asking again is the same reel; a new clip makes a new one."""
+    pytest.importorskip("replay_render")
+    pytest.importorskip("replay_worker")
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("needs ffmpeg")
+    monkeypatch.setenv("REPLAY_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("REPLAY_GPU_LOCK", str(tmp_path / "gpu.lock"))
+    gid = ready_game(client, client.app_settings)
+    r = client.post(f"/games/{gid}/exports/reel", json={})
+    assert r.status_code == 202, r.text
+    rid = r.json()["id"]
+    assert r.json()["aspect"] == "16:9" and r.json()["job_id"]
+    assert client.post(f"/games/{gid}/exports/reel", json={}).json()["id"] == rid  # in flight
+    assert client.app.state.jobs.wait_idle(120)
+    got = client.get(f"/games/{gid}/exports/reel/{rid}").json()
+    assert got["status"] == "done", got
+    assert got["url"].endswith(f"/media/games/{gid}/exports/reel/{rid}.mp4")
+    assert client.get(got["url"]).status_code == 200
+    segs = got["segments"]
+    assert segs and got["duration_s"] > 0 and segs[0]["reel_t"] == 0.0
+    assert {s["kind"] for s in segs} <= {"top", "clip"}
+    again = client.post(f"/games/{gid}/exports/reel", json={"aspect": "16:9"})
+    assert again.status_code == 200 and again.json()["id"] == rid
+    # a bookmark changes the plan: a new reel, with the user's clip in it
+    client.post(f"/games/{gid}/events", json={"t": 15.0})
+    r2 = client.post(f"/games/{gid}/exports/reel", json={"aspect": "9:16"})
+    assert r2.status_code == 202 and r2.json()["id"] != rid
+    assert client.app.state.jobs.wait_idle(120)
+    got2 = client.get(f"/games/{gid}/exports/reel/{r2.json()['id']}").json()
+    assert got2["status"] == "done" and any(s["kind"] == "clip" for s in got2["segments"])
+    listed = client.get(f"/games/{gid}/exports/reel").json()["reels"]
+    assert [x["id"] for x in listed] == [r2.json()["id"], rid]  # newest first
+    assert client.get(f"/games/{gid}/exports/reel/r_..%2F..%2Fx").status_code == 404
 
 
 def test_hype_is_computed_on_request(client):

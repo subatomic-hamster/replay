@@ -149,6 +149,9 @@ export class CloudStack extends Stack {
         REPLAY_CORS_ORIGINS: webOrigin,
         REPLAY_DATA_DIR: "/tmp/replay",
         REPLAY_PIPELINE: "worker",
+        // the opt-in stages the hfbox runner runs (docs/aws-deploy.md §5): readiness shows
+        // their features as `pending` while a game processes. Keep in step with the runner.
+        REPLAY_WORKER_STAGES: "hype,condensed,replays,scene",
       },
     });
     // The app checks X-Replay-Key / upload tokens / worker key itself; CORS is FastAPI's.

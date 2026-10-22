@@ -206,6 +206,50 @@ def test_media_redirects_to_presigned_s3(cloud, aws):
         assert r.status_code == 404, rel
 
 
+def test_media_redirect_is_cacheable(cloud, aws, monkeypatch):
+    """The 302 target is one URL per hour window (so the TV's and browsers' caches hit),
+    the 302 says how long it holds, versioned images are immutable and the rest is
+    revalidated; a changed image gets a new `?v=` and so a new URL."""
+    gid = _game(cloud)["id"]
+    aws.put_object(Bucket=BUCKET, Key=f"games/{gid}/media/hero.jpg", Body=b"\xff\xd8one")
+    aws.put_object(Bucket=BUCKET, Key=f"games/{gid}/events.json", Body=b"{}")
+    t0 = 1_800_000_000 - 1_800_000_000 % 3600 + 600  # 10 min into an hour window
+    clock = {"t": t0}
+    monkeypatch.setattr("replay_api.cloud._now", lambda: clock["t"])
+    media = TestClient(cloud.app)
+
+    def hop(path: str):
+        r = media.get(path, follow_redirects=False)
+        assert r.status_code == 302, r.text
+        return r.headers["location"], r.headers["cache-control"]
+
+    a, cc = hop(f"/media/games/{gid}/media/hero.jpg")
+    clock["t"] += 1500
+    b, cc2 = hop(f"/media/games/{gid}/media/hero.jpg")
+    assert a == b and "X-Amz-Date=20270115T080000Z" in a  # signed at the window start
+    assert (cc, cc2) == ("public, max-age=3000", "public, max-age=1500")
+    clock["t"] += 1500  # next window: a new URL
+    assert hop(f"/media/games/{gid}/media/hero.jpg")[0] != a
+
+    # the game names the hero with its ETag; that URL's bytes are immutable
+    hero_url = cloud.get(f"/games/{gid}").json()["hero_url"]
+    etag = aws.head_object(Bucket=BUCKET, Key=f"games/{gid}/media/hero.jpg")["ETag"].strip('"')
+    assert hero_url.endswith(f"/media/hero.jpg?v={etag[:16]}")
+    v1, _ = hop(hero_url)
+    got = httpx.get(v1)
+    assert got.content == b"\xff\xd8one" and "immutable" in got.headers["cache-control"]
+    assert v1 == hop(hero_url)[0]
+    aws.put_object(Bucket=BUCKET, Key=f"games/{gid}/media/hero.jpg", Body=b"\xff\xd8two")
+    hero2 = cloud.get(f"/games/{gid}").json()["hero_url"]
+    assert hero2 != hero_url and httpx.get(hop(hero2)[0]).content == b"\xff\xd8two"
+    # unversioned and JSON: revalidated on every use, never served stale
+    plain = httpx.get(hop(f"/media/games/{gid}/events.json")[0])
+    assert plain.status_code == 200 and plain.headers["cache-control"] == "no-cache"
+    # the old behaviour, behind REPLAY_MEDIA_SIGN_WINDOW_S=0
+    cloud.app.state.settings = dataclasses.replace(cloud.app.state.settings, media_sign_window_s=0)
+    assert hop(f"/media/games/{gid}/events.json")[1] == "no-store"
+
+
 def test_json_state_is_never_stale(cloud, aws):
     """Another Lambda instance (here: a direct S3 write) changes game.json between calls."""
     gid = _game(cloud)["id"]
@@ -460,12 +504,54 @@ def test_remote_runner_tv_fields_and_early_push(cloud, cloud_settings, tmp_path,
         hero.status_code == 302 and httpx.get(hero.headers["location"]).content[:2] == b"\xff\xd8"
     )
     sb = cloud.get(game["storyboard_url"]).json()
-    assert sb["count"] == 10 and sb["sheets"][0].endswith(f"/media/games/{gid}/storyboard/0000.jpg")
+    assert sb["count"] == 10 and f"/media/games/{gid}/storyboard/0000.jpg?v=" in sb["sheets"][0]
     ms = cloud.get(f"/games/{gid}/moments").json()
     assert [m["label"] for m in ms if m["kind"] == "score"] == ["Basket, Marcus", "Basket, Alex"]
     assert all(m["thumb_url"] for m in ms)
     phone = {"X-Replay-Upload-Token": _token(cloud, gid)}
     assert TestClient(cloud.app).get(f"/games/{gid}/moments", headers=phone).status_code == 401
+
+
+def test_remote_runner_renders_the_highlight_reel(cloud, cloud_settings, tmp_path, aws,
+                                                  monkeypatch):  # fmt: skip
+    """The phone asks for the reel (phone token); the job waits in S3 for the runner,
+    which runs the worker's `reel` stage and uploads it; the API then serves its URL."""
+    pytest.importorskip("replay_render")
+    pytest.importorskip("replay_worker")
+    import shutil
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("needs ffmpeg")
+    from replay_api import remote_runner as rr
+
+    monkeypatch.setenv("REPLAY_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("REPLAY_GPU_LOCK", str(tmp_path / "gpu.lock"))
+    gid = _game(cloud)["id"]
+    _upload(cloud, gid)
+    assert cloud.post(f"/games/{gid}/calibration", json=CALIB).status_code == 200
+    cloud.post(f"/games/{gid}/process")
+    runner = dataclasses.replace(cloud_settings, storage="local", jobs="local",
+                                 data_dir=tmp_path / "runner")  # fmt: skip
+    link = cloud.post(f"/games/{gid}/phone-link", json={"job": "reel"}).json()
+    assert f"/p/{gid}?job=reel#k=" in link["url"]
+    phone = TestClient(cloud.app, headers={"X-Replay-Phone-Token": link["token"]})
+    with httpx.Client() as http:
+        api = rr.Api(TestClient(cloud.app), WORKER, http, tries=2, backoff_s=0.01)
+        assert rr.run_once(api, runner) is True  # the processing job
+        r = phone.post(f"/games/{gid}/exports/reel", json={"aspect": "16:9"})
+        assert r.status_code == 202, r.text
+        rid, job_id = r.json()["id"], r.json()["job_id"]
+        assert phone.get(f"/games/{gid}/exports/reel/{rid}").json()["status"] == "queued"
+        assert cloud.app.state.jobs.get(job_id)["params"] == {"stage": "reel"}
+        assert rr.run_once(api, runner) is True  # the reel job
+    got = phone.get(f"/games/{gid}/exports/reel/{rid}").json()
+    assert got["status"] == "done" and got["segments"], got
+    assert f"/exports/reel/{rid}.mp4" in got["url"]
+    media = TestClient(cloud.app).get(got["url"], follow_redirects=False)
+    head = httpx.get(media.headers["location"], headers={"Range": "bytes=4-7"})
+    assert head.status_code == 206 and head.content == b"ftyp"
+    assert phone.post(f"/games/{gid}/exports/reel", json={}).json()["status"] == "done"
+    assert cloud.app.state.jobs.get(job_id)["status"] == "done"
 
 
 def _token(cloud, gid: str) -> str:

@@ -211,6 +211,8 @@ def caption_sprite(width: int, caption: str, line2: str) -> np.ndarray:
         else:
             lines.append(wd)
     lines = lines[:2]
+    while line2 and f2.getlength(line2) > max_w:  # long game titles: cut with an ellipsis
+        line2 = line2[:-2].rstrip() + "…"
     lh1, lh2 = round(96 * s), round(60 * s)
     h = pad + lh1 * len(lines) + lh2 + pad
     img = Image.new("RGBA", (width, h), (*PANEL, 0))

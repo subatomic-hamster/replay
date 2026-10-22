@@ -131,6 +131,8 @@ class _Progress:
 # Pushed while the job still runs, so the TV can play (wide.mp4 once ingest is done) and
 # scrub (the storyboard) before the run ends. Everything else waits for the final push.
 EARLY = ("media/", "storyboard/")
+# one-stage jobs the runner takes (cloud.S3Jobs.STAGES)
+STAGE_JOBS = ("reel", "condensed", "vertical")
 
 
 class _EarlyPush:
@@ -228,6 +230,16 @@ def run_job(job: dict, settings: Settings, api: Api, before: dict) -> None:
         p = job.get("params") or {}
         main._autocalib_task(settings, storage, gid, p["sport"], p["variant"],
                              p.get("backend") or "auto")(job_id)  # fmt: skip
+    elif (job.get("params") or {}).get("stage") in STAGE_JOBS:
+        # one worker stage on a processed game (the reel, a condensed or vertical render),
+        # as discovery_routes._submit runs it in local mode
+        from replay_worker import run as run_worker
+        from replay_worker.stages.discovery import standalone
+
+        stage = job["params"]["stage"]
+        prog = _Progress(api)
+        run_worker(storage.game_dir(gid), {}, registry=standalone(stage), stages=[stage],
+                   cpu_workers=1, progress=lambda s, f: prog.progress(job_id, s, f))  # fmt: skip
     else:
         raise ValueError(f"the remote runner does not run {job['kind']!r} jobs")
 

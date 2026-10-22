@@ -134,14 +134,49 @@ credentials. Fetch the key on the laptop into a 0600 file and copy it over:
 scp /tmp/replay-worker-key hfbox:/workspace/wt/replay-env/worker-key && rm /tmp/replay-worker-key
 ssh hfbox 'chmod 600 /workspace/wt/replay-env/worker-key'
 API=$(out ApiUrl)
+ASR=/workspace/wt/replay-env/hf/hub/models--openai--whisper-small/snapshots/973afd24965f72e36ca33b3055d56a652f456b4d
 ssh hfbox "tmux new -d -s replay-runner 'cd /workspace/wt/replay-deploy &&
   source /workspace/wt/replay-env/env.sh &&
   export REPLAY_WORKER_KEY=\$(cat /workspace/wt/replay-env/worker-key) &&
   export REPLAY_DATA_DIR=/workspace/wt/replay-env/runner-data REPLAY_PIPELINE=worker &&
+  export REPLAY_WORKER_STAGES=hype,condensed,replays,scene COURTCAM_ASR_MODEL=$ASR &&
   PYTHONPATH=\$PWD/courtcam:\$PWD/services/api:\$PWD/services/worker:\$PWD/render \
   python -m replay_api.remote_runner --api $API 2>&1 | tee -a /workspace/wt/replay-env/runner.log'"
 ssh hfbox 'tmux capture-pane -pt replay-runner | tail'
 ```
+
+What the two extra variables turn on (2026-10-22):
+
+- `REPLAY_WORKER_STAGES=hype,condensed,replays,scene`: the opt-in worker stages, run one
+  by one after the default run (`pipeline_adapter._run_extras`), each followed by
+  `moments` (the hero then follows the hype candidates). They make the TV's Highlights
+  (`hype.json`), Condensed (`renditions/condensed.mp4`; basketball cuts each shot,
+  turnover or block from 4 s before it), replay Angles (`replays/<play>/manifest.json`:
+  SAM 2.1 masks on the GPU, Tier A and B renders) and Free view
+  (`replays/<play>/scene/`). One that fails is logged in `_work/worker.jsonl` and the
+  game stays ready without that feature. Tier C (`tierc_manifest`) is left out: it was
+  never run on real footage. The Lambda carries the same list (CDK, `REPLAY_WORKER_STAGES`)
+  only so readiness shows those features as `pending` while a game processes; keep both
+  in step.
+- `COURTCAM_ASR_MODEL`: whisper-small (local snapshot, no download) for the "Replay, clip
+  that" voice trigger. It joins the worker run config, so the triggers stage's cache key
+  changes with it. The X gesture needs nothing extra (pose keypoints).
+
+Cost on hfbox: the opt-in stages add a few minutes per game (SAM 2.1 is about 100 s per
+highlight on the shared GPU; three highlights by default). The runner also runs one-stage
+jobs the API queues (`reel`, `condensed`, `vertical`; job `params.stage`).
+
+Restart it only while it is idle (the log's last line is `finished ...`): a runner killed
+mid-job leaves that job `running` in S3. Update its copy first (step 1's rsync to
+`/workspace/wt/replay-deploy/`), then:
+
+```sh
+ssh hfbox 'tmux kill-session -t replay-runner'
+# then the `tmux new -d -s replay-runner ...` command above
+```
+
+Re-process a game (its upload and calibration stay; the worker cache makes the default
+stages hits) with the TV key: `curl -X POST -H "X-Replay-Key: $KEY" $API/games/<id>/process`.
 
 `replay_py` puts only courtcam and services/api on `PYTHONPATH`; without services/worker
 `REPLAY_PIPELINE=worker` logs "replay_worker unavailable" and runs courtcam directly (no

@@ -37,6 +37,9 @@ class Settings:
     public_web_base: str | None = None
     worker_key: str | None = None
     upload_token_secret: str | None = None
+    # cloud /media: a presigned URL stays the same for this long, so clients cache it
+    # (S3Storage.media_redirect); 0 = a fresh URL per request
+    media_sign_window_s: int = 3600
 
     @property
     def cloud(self) -> bool:
@@ -79,5 +82,6 @@ def from_env(**overrides) -> Settings:
         public_web_base=env("REPLAY_PUBLIC_WEB_BASE") or None,
         worker_key=env("REPLAY_WORKER_KEY") or None,
         upload_token_secret=env("REPLAY_UPLOAD_TOKEN_SECRET") or None,
+        media_sign_window_s=int(env("REPLAY_MEDIA_SIGN_WINDOW_S") or 3600),
     )
     return s if not overrides else Settings(**{**s.__dict__, **overrides})

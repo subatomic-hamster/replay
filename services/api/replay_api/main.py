@@ -132,7 +132,7 @@ class QueryIn(BaseModel):
     text: str = Field(min_length=1, max_length=500)
 
 
-PhoneJob = Literal["clip", "tag", "review", "search"]
+PhoneJob = Literal["clip", "tag", "review", "search", "reel"]
 
 
 class PhoneLinkIn(BaseModel):
@@ -517,8 +517,16 @@ def _register_routes(app: FastAPI) -> None:
         index = storage.path(game_id, moments_mod.REL)
         made = json.loads(index.read_text()).get("moments", []) if index.is_file() else []
         thumbs = {m["id"]: m["thumb"] for m in made if m.get("thumb")}
+        if hasattr(storage, "listing"):  # cloud: the thumbs' ETags version their URLs
+            storage.listing(game_id, moments_mod.THUMB_DIR)
         out = []
-        for m in moments_mod.moments(_events(storage, game_id), game):
+        # the user's clips ("Replay, clip that", the X sign, phone taps) are moments too
+        pr = plays_routes
+        clips = (
+            pr._load(storage, game_id, pr.TRIGGERS_REL),
+            pr._load(storage, game_id, pr.CLIPS_REL),
+        )
+        for m in moments_mod.all_moments(_events(storage, game_id), game, *clips):
             rel = thumbs.get(m["id"])
             if rel is None and m["kind"] == "bookmark":  # grabbed when the bookmark was made
                 own = f"{moments_mod.THUMB_DIR}/{m['id']}.jpg"
@@ -535,6 +543,8 @@ def _register_routes(app: FastAPI) -> None:
         if not path.is_file():
             raise HTTPException(404, f"no storyboard for game {game_id} yet")
         doc = json.loads(path.read_text())
+        if hasattr(storage, "listing"):  # cloud: the sheets' ETags version their URLs
+            storage.listing(game_id, moments_mod.STORYBOARD_DIR)
         doc["sheets"] = [storage.url(game_id, s, _base(request)) for s in doc["sheets"]]
         return doc
 
@@ -1013,7 +1023,7 @@ def _register_routes(app: FastAPI) -> None:
     # ---------------------------------------------------------------- media
 
     @app.get("/media/games/{game_id}/{rel_path:path}")
-    def media(request: Request, game_id: str, rel_path: str):
+    def media(request: Request, game_id: str, rel_path: str, v: str = ""):
         storage: LocalStorage = _ctx(request).storage
         if not game_id.replace("_", "").isalnum():
             raise HTTPException(404, "not found")
@@ -1024,7 +1034,12 @@ def _register_routes(app: FastAPI) -> None:
             # /media is open; the raw upload is private (players watch media/wide.mp4)
             if rel is None or rel == SOURCE_REL:
                 raise HTTPException(404, "not found")
-            return RedirectResponse(storage.presign_get(game_id, rel), 302)
+            # the same URL for a whole window, so the redirect and the bytes are cacheable
+            url, fresh_s = storage.media_redirect(
+                game_id, rel, v[:64], _ctx(request).settings.media_sign_window_s
+            )
+            cache = f"public, max-age={fresh_s}" if fresh_s else "no-store"
+            return RedirectResponse(url, 302, headers={"Cache-Control": cache})
         target = storage.resolve_inside(game_id, rel_path)
         if target is None or not target.is_file():
             raise HTTPException(404, "not found")

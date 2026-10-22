@@ -51,6 +51,9 @@ PHONE_ROUTES = (
     ("GET", "/games/{g}/review/queue"),
     ("GET", "/games/{g}/exports/vertical"),
     ("GET", "/games/{g}/exports/vertical/{id}"),
+    ("GET", "/games/{g}/exports/reel"),
+    ("GET", "/games/{g}/exports/reel/{id}"),
+    ("POST", "/games/{g}/exports/reel"),  # the highlight reel (16:9 or 9:16)
     ("POST", "/games/{g}/triggers"),  # make a clip at t
     ("PATCH", "/games/{g}/clips/{id}"),  # trim
     ("POST", "/games/{g}/exports/vertical"),  # aspect: the 9:16 share render

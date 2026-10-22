@@ -19,12 +19,16 @@ boto3 is imported here only: local mode never imports this module.
 from __future__ import annotations
 
 import dataclasses
+import datetime
+import hashlib
 import json
 import mimetypes
 import posixpath
 import secrets
 import sqlite3
+import threading
 import time
+from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -39,8 +43,37 @@ from .providers.profiles import LocalProfiles, _Tx
 from .providers.storage import LocalStorage
 
 STUB_SUFFIXES = (".mp4", ".mov", ".m4v", ".webm", ".wav", ".mp3", ".m4a", ".aac")
+# Files whose /media URL carries `?v=<etag>` (S3Storage.url), so their bytes may be cached
+# as immutable: a re-process that changes one changes its URL.
+VERSIONED_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
 MAX_PULL_BYTES = 64 << 20
 GET_TTL_S = 3600
+_SIGN_LOCK = threading.Lock()
+
+
+def _now() -> float:  # the /media signing clock (tests move it)
+    return time.time()
+
+
+@contextmanager
+def _signing_clock(t: float):
+    """botocore signs at `t` instead of now. Older botocore (no `get_current_datetime`)
+    keeps signing at now: the URL is then fresh per request, as before."""
+    import botocore.auth as A
+
+    if not hasattr(A, "get_current_datetime"):
+        yield
+        return
+    at = datetime.datetime.fromtimestamp(t, datetime.UTC)
+    real = A.get_current_datetime
+    A.get_current_datetime = lambda remove_tzinfo=True: (
+        at.replace(tzinfo=None) if remove_tzinfo else at
+    )
+    try:
+        yield
+    finally:
+        A.get_current_datetime = real
+
 
 # {"pulled": {game_id: {rel, ...}}, "touched": {game_id, ...}} for the current request
 _scope: ContextVar[dict | None] = ContextVar("replay_s3_scope", default=None)
@@ -109,6 +142,8 @@ class S3Storage(LocalStorage):
         # game_id -> rel -> (etag, local size, local mtime_ns) as last pulled / pushed
         # ponytail: unlocked; Lambda serves one request at a time per instance
         self.seen: dict[str, dict[str, tuple[str, int, int]]] = {}
+        # game_id -> rel -> ETag of every object a listing or push has shown (for `url`)
+        self.etags: dict[str, dict[str, str]] = {}
 
     def key(self, game_id: str, rel: str = "") -> str:
         return f"games/{game_id}/{rel}"
@@ -131,12 +166,48 @@ class S3Storage(LocalStorage):
         super().write_json(game_id, rel, data)
         self._push(game_id, rel)
 
-    def presign_get(self, game_id: str, rel: str, ttl_s: int = GET_TTL_S) -> str:
+    def presign_get(self, game_id: str, rel: str, ttl_s: int = GET_TTL_S, *,
+                    signed_at: float | None = None, cache: str | None = None) -> str:  # fmt: skip
         params = {"Bucket": self.bucket, "Key": self.key(game_id, rel)}
         ctype = mimetypes.guess_type(rel)[0]
         if ctype:  # whatever the uploader sent, a <video> needs video/mp4
             params["ResponseContentType"] = ctype
-        return self.s3.generate_presigned_url("get_object", Params=params, ExpiresIn=ttl_s)
+        if cache:  # S3 answers with this Cache-Control (signed into the URL)
+            params["ResponseCacheControl"] = cache
+        if signed_at is None:
+            return self.s3.generate_presigned_url("get_object", Params=params, ExpiresIn=ttl_s)
+        with _SIGN_LOCK, _signing_clock(signed_at):
+            return self.s3.generate_presigned_url("get_object", Params=params, ExpiresIn=ttl_s)
+
+    def media_redirect(self, game_id: str, rel: str, version: str = "", window_s: int = 3600,
+                       now: float | None = None) -> tuple[str, int]:  # fmt: skip
+        """(presigned GET, seconds it stays this URL) for `GET /media`. The URL is signed at
+        the start of the current `window_s` window and valid for two windows, so every
+        request in a window gets the same URL and clients can cache both the redirect and
+        the bytes. A `version` (the /media URL's `?v=`, an S3 ETag) shifts the signing time
+        by up to 10 min, so a changed object never shares a cached URL with the old one;
+        versioned bytes are immutable, the rest are revalidated (ETag) on every use.
+        `window_s` 0: a fresh URL per request, no caching (the old behaviour)."""
+        now = _now() if now is None else now
+        if window_s <= 0:
+            return self.presign_get(game_id, rel), 0
+        start = now - now % window_s
+        left = max(1, int(start + window_s - now))
+        immutable = bool(version) and rel.lower().endswith(VERSIONED_SUFFIXES)
+        if version:
+            start -= int(hashlib.sha256(version.encode()).hexdigest()[:8], 16) % 600
+        ttl = 2 * window_s
+        cache = f"public, max-age={ttl}, immutable" if immutable else "no-cache"
+        return self.presign_get(game_id, rel, ttl, signed_at=start, cache=cache), left
+
+    def url(self, game_id: str, rel: str, base: str) -> str:
+        """`/media` URL; images whose ETag this instance has listed get `?v=<etag>` (a
+        re-process that changes the picture changes its URL: no stale cached thumbs)."""
+        out = super().url(game_id, rel, base)
+        etag = self.etags.get(game_id, {}).get(rel.lstrip("/"))
+        if etag and rel.lower().endswith(VERSIONED_SUFFIXES):
+            out += "?v=" + etag.strip('"')[:16]
+        return out
 
     def presign_put(self, game_id: str, rel: str, ttl_s: int) -> str:
         params = {"Bucket": self.bucket, "Key": self.key(game_id, rel)}
@@ -154,6 +225,7 @@ class S3Storage(LocalStorage):
                 r = o["Key"][len(root) :]
                 if not rel or r == rel or r.startswith(rel.rstrip("/") + "/"):
                     out[r] = (o["ETag"], o["Size"])
+        self.etags.setdefault(game_id, {}).update({r: e for r, (e, _) in out.items()})
         return out
 
     # ---- mirror
@@ -202,6 +274,7 @@ class S3Storage(LocalStorage):
             )["ETag"]
         st = p.stat()
         self.seen.setdefault(game_id, {})[rel] = (etag, st.st_size, st.st_mtime_ns)
+        self.etags.setdefault(game_id, {})[rel] = etag
 
     def flush(self, game_id: str) -> None:
         """Upload what changed locally since the last pull/push; delete what was removed."""
@@ -260,6 +333,8 @@ class S3Jobs:
     """
 
     KINDS = ("process", "autocalib")
+    # one-stage worker jobs (discovery_routes._submit): params {"stage": ...}, any kind name
+    STAGES = ("reel", "condensed", "vertical")
 
     def __init__(self, storage: S3Storage):
         self.s3, self.bucket = storage.s3, storage.bucket
@@ -273,7 +348,7 @@ class S3Jobs:
 
     def submit(self, kind: str, game_id: str, fn=None, params: dict | None = None) -> dict:
         del fn  # the runner rebuilds the task from kind + params
-        if kind not in self.KINDS:
+        if kind not in self.KINDS and (params or {}).get("stage") not in self.STAGES:
             raise NotConfiguredError(f"{kind} jobs do not run in cloud mode yet")
         job_id = f"j_{game_id}_{secrets.token_hex(6)}"
         job = {

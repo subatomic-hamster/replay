@@ -73,6 +73,42 @@ def test_tap_resolves_to_the_play_that_just_ended(client: TestClient):
     assert r.status_code == 404
 
 
+def test_user_clips_are_bookmark_moments(client: TestClient):
+    """ "Replay, clip that", the X sign and phone taps reach the TV's Moments row as the
+    user's own (`bookmark`) moments, over the clip's range."""
+    gid = _seed(client)
+    d = client.app_settings.games_dir / gid
+    doc = json.loads((d / "triggers.json").read_text())
+    doc["triggers"].append({"id": "tr_0002", "type": "gesture", "t": 17.0, "t_start": 16.0,
+                            "by_player_id": "p1", "confidence": 0.8, "source": "auto"})  # fmt: skip
+    (d / "triggers.json").write_text(json.dumps(doc))
+    tap = client.post(f"/games/{gid}/triggers", json={"t": 18.0}).json()["trigger"]
+    ms = {m["id"]: m for m in client.get(f"/games/{gid}/moments").json()}
+    voice, x, mine = ms["tr_0001"], ms["tr_0002"], ms[tap["id"]]
+    assert (voice["kind"], voice["label"], voice["trigger"]) == (
+        "bookmark",
+        "Your clip (voice)",
+        "voice",
+    )
+    assert (voice["t_start"], voice["t_end"], voice["t"], voice["clip_id"]) == (
+        0.0,
+        8.0,
+        7.0,
+        "c_0001",
+    )
+    assert voice["source"] == "heuristic" and voice["confirmed"] is False
+    # no clip for the gesture in clips.json: the 8 s before it
+    assert (x["label"], x["t_start"], x["t_end"], x["player"]["id"]) == (
+        "Your clip (X sign)",
+        9.0,
+        17.0,
+        "p1",
+    )
+    assert (mine["label"], mine["source"], mine["t_start"]) == ("Your clip", "user", 7.0)
+    times = [m["t"] for m in client.get(f"/games/{gid}/moments").json()]
+    assert times == sorted(times)
+
+
 def test_voice_subject_follows_the_roster_and_clips_trim(client: TestClient):
     gid = _seed(client)
     clips = client.get(f"/games/{gid}/clips").json()["clips"]

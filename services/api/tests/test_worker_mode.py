@@ -46,31 +46,38 @@ def test_worker_mode_passes_the_game_and_filters_progress(tmp_path, monkeypatch)
     json.dumps(cfg)  # the cache key needs a JSON-able config
     assert stages == [("detect", 0.5)]
     assert set(keys) >= {"video", "players", "tracks", "croppaths", "events_url"}
-    assert seen["stages"] is None  # no opt-in: the worker's own default DAG
+    assert seen.get("stages") is None  # no opt-in: the worker's own default DAG
+    assert "asr_model" not in cfg  # no voice triggers unless COURTCAM_ASR_MODEL is set
 
 
-def test_worker_stages_env_adds_opt_in_stages_to_the_defaults(tmp_path, monkeypatch):
+def test_worker_stages_env_runs_opt_in_stages_after_the_defaults(tmp_path, monkeypatch):
+    """Each opt-in stage runs after the default run, with `moments` (the hero follows
+    hype); one that fails leaves the game ready. The ASR model joins the run config."""
     from replay_api.config import from_env
-    from replay_worker.stages import load_registry
 
-    monkeypatch.setenv("REPLAY_WORKER_STAGES", " replays, scene ,")
-    assert from_env().worker_stages == ("replays", "scene")
-    seen = {}
+    monkeypatch.setenv("REPLAY_WORKER_STAGES", " replays, condensed, scene ,")
+    monkeypatch.setenv("COURTCAM_ASR_MODEL", "openai/whisper-small")
+    assert from_env().worker_stages == ("replays", "condensed", "scene")
+    calls = []
 
     def fake_run(game_dir, cfg, **kw):
-        seen.update(kw)
+        calls.append((kw.get("stages"), cfg.get("asr_model")))
+        if kw.get("stages") and kw["stages"][0] == "condensed":
+            raise RuntimeError("no plays to condense")
         (game_dir / "game.json").write_text((FAKE_GAME / "game.json").read_text())
         return []
 
     monkeypatch.setattr(worker, "run", fake_run)
     game = {"id": "g_abc", "sport": "basketball", "court": {"landmarks_px": CALIB["landmarks_px"]}}
-    adapter.run(
+    keys = adapter.run(
         tmp_path / "source.mp4",
         tmp_path,
         game,
         lambda s, f: None,
         pipeline="worker",
-        extra_stages=("replays", "scene"),
+        extra_stages=("replays", "condensed", "scene"),
     )
-    defaults = [n for n, s in load_registry().items() if s.default]
-    assert defaults and seen["stages"] == [*defaults, "replays", "scene"]
+    assert "video" in keys
+    asr = "openai/whisper-small"
+    assert calls == [(None, asr), (["replays", "moments"], asr), (["condensed", "moments"], asr),
+                     (["scene", "moments"], asr)]  # fmt: skip

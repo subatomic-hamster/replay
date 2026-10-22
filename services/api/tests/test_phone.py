@@ -127,6 +127,22 @@ BODIES = {
 }
 
 
+def test_phone_link_for_the_highlight_reel(tv, anon, phone_settings):
+    gid = ready_game(tv, phone_settings)
+    link = _link(tv, gid, "reel")
+    assert link["url"] == f"https://replay.example/p/{gid}?job=reel#k={link['token']}"
+    ph = _ph(link["token"])
+    assert anon.get(f"/games/{gid}/exports/reel", headers=ph).json() == {
+        "game_id": gid,
+        "reels": [],
+    }
+    assert (
+        anon.post(f"/games/{gid}/exports/reel", headers=ph, json={"aspect": "4:3"}).status_code
+        == 422
+    )
+    assert anon.get(f"/games/{gid}/exports/reel/r_000000000000", headers=ph).status_code == 404
+
+
 def test_every_allowed_route_opens(tv, anon, phone_settings):
     gid = ready_game(tv, phone_settings)
     pid = tv.post("/profiles", json={"name": "Alex"}).json()["profile_id"]

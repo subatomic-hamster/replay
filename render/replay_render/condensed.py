@@ -7,6 +7,10 @@ every rally (+ `PRE_ROLL_S` before the serve, `POST_ROLL_S` after the point) out
 wide camera back to back and draws the broadcast package's look on it: a rally counter
 (RALLY n / N, shots, length), the score bug when score.json has points, and an optional
 provenance label. Writes `renditions/condensed.mp4` and `condensed.json`.
+
+Sports without rallies (basketball) cut `play_list(events)` instead: each shot, turnover
+or block from `LEAD_S` before it, counted as PLAY n / N; `condensed.json` then has
+`"unit": "play"` and those plays under `rallies`.
 """
 
 from __future__ import annotations
@@ -77,6 +81,30 @@ def rally_list(events: list[dict], plays: list[dict]) -> list[dict]:
     return out
 
 
+LEAD_S = 4.0  # basketball: kept before a shot / turnover starts (the attack building up)
+PLAY_TYPES = ("shot", "turnover", "block")
+
+
+def play_list(events: list[dict]) -> list[dict]:
+    """Basketball and other sports without rallies: every decisive moment (a shot, a
+    turnover, a block) from `LEAD_S` before it starts to its end. Bringing the ball up,
+    dead balls and stoppages are what gets cut. Same keys as `rally_list`."""
+    evs = sorted((e for e in events if not e.get("dismissed") and e.get("type") in PLAY_TYPES),
+                 key=lambda e: e["t_key"])  # fmt: skip
+    out = []
+    for e in evs:
+        a = max(0.0, float(e.get("t_start", e["t_key"])) - LEAD_S)
+        b = max(float(e.get("t_end", e["t_key"])), float(e["t_key"]))
+        out.append(
+            {"id": f"r{len(out) + 1}", "n": len(out) + 1, "event_id": e["id"],
+             "play_id": None, "t_start": round(a, 3), "t_end": round(b, 3),
+             "duration_s": round(b - a, 2), "shots": None, "shots_source": None,
+             "kind": e["type"], "player_id": e.get("player_id"),
+             "confidence": e.get("confidence"), "confirmed": bool(e.get("confirmed"))}
+        )  # fmt: skip
+    return out
+
+
 def browser(rallies: list[dict], duration_s: float) -> dict:
     """The rally browser document (`replay.rallies.v1`)."""
     total = sum(r["duration_s"] for r in rallies)
@@ -121,8 +149,8 @@ def condensed_offsets(rallies: list[dict], segs: list[tuple[float, float]]) -> N
 class Counter:
     """RALLY n / N with shots and length: a panel in the package's style, top right."""
 
-    def __init__(self, pkg: Package):
-        self.pkg = pkg
+    def __init__(self, pkg: Package, word: str = "RALLY"):
+        self.pkg, self.word = pkg, word
         self._cache: dict = {}
 
     def sprite(self, n: int, total: int, line2: str) -> np.ndarray:
@@ -135,7 +163,7 @@ class Counter:
             get_font(str(FONT_SEMI), s(30)),
             get_font(str(FONT_SEMI), s(28)),
         )
-        head, tot = f"RALLY {n}", f" / {total}"
+        head, tot = f"{self.word} {n}", f" / {total}"
         w = max(round(f_big.getlength(head) + f_tot.getlength(tot)), round(f_sub.getlength(line2)))
         w += s(48)
         h1, h2, stripe = s(62), s(40), s(10)
@@ -159,6 +187,8 @@ class Counter:
 
 def _line2(r: dict) -> str:
     parts = [f"{r['shots']} SHOTS"] if r["shots"] is not None else []
+    if r.get("kind"):  # a basketball play: what it ended in
+        parts = [r["kind"].upper()]
     return "  ·  ".join([*parts, f"{r['duration_s']:.1f} S"])
 
 
@@ -174,8 +204,11 @@ def render_condensed(
     gd = Path(game_dir)
     game = load_game(gd)
     rallies = rally_list(game.events, game.plays)
+    word = "RALLY"
+    if not rallies:  # basketball: the plays that ended in a shot or a turnover
+        rallies, word = play_list(game.events), "PLAY"
     if not rallies:
-        raise ValueError(f"{gd}: no rallies in events.json (net sports only)")
+        raise ValueError(f"{gd}: no rallies, shots or turnovers in events.json")
     segs = segments(rallies, game.duration)
     condensed_offsets(rallies, segs)
     out = Path(out_path) if out_path else gd / REL
@@ -184,7 +217,7 @@ def render_condensed(
     wide = Cameras(game, fps, size[0]).live("wide")
     teams = graphics_plan(game, [], Rules())["teams"]
     pkg = Package(size[0], size[1], teams)
-    counter = Counter(pkg)
+    counter = Counter(pkg, word)
     show_score = bool(game.score) and not game.score_provisional
 
     def window(i: int, t: float) -> np.ndarray:
@@ -210,6 +243,7 @@ def render_condensed(
     )  # fmt: skip
     doc = browser(rallies, game.duration)
     doc.update(
+        unit=word.lower(),
         game_id=game.game.get("id") or gd.name,
         video=REL if out == gd / REL else str(out),
         pre_roll_s=PRE_ROLL_S,

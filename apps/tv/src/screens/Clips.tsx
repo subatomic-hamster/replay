@@ -42,7 +42,8 @@ import {
 const ACTIONS = ["Save trim", "Share 9:16", "Reset"] as const;
 const actionId = (a: string) => `trim-${a.split(" ")[0].toLowerCase()}`;
 const CONTEXT_S = 5;
-const POLL_MS = 1000;
+// a 9:16 render takes about a minute: no need to ask the API every second (D-87)
+const POLL_MS = 3000;
 const VISIBLE = 5;
 
 type Win = { t_start: number; t_end: number };

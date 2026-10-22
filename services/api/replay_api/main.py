@@ -41,6 +41,7 @@ from . import moments as moments_mod
 from . import pipeline_adapter as adapter
 from . import stats as stats_mod
 from .config import Settings, from_env
+from .narrate import grounding
 from .narrate import routes as narrate_routes
 from .profiles import routes as profile_routes
 from .providers.index import LocalIndex
@@ -168,6 +169,24 @@ def _game_or_404(request: Request, game_id: str) -> dict:
     if game is None:
         raise HTTPException(404, f"game {game_id} not found")
     return game
+
+
+def _relabel(m: dict, game: dict) -> dict:
+    """A replay manifest's player names from the live roster, so a rename shows at once:
+    each angle's `player_id`, the title's `label_template` + `label_player`."""
+    roster = grounding.roster(game)
+
+    def name(pid: str) -> str:
+        return roster.get(pid) or grounding.id_label(pid)
+
+    for a in m.get("angles") or []:
+        kind, _, pid = str(a.get("id") or "").partition(":")
+        pid = a.get("player_id") or (pid if kind in ("follow", "tight", "pov") else None)
+        if pid:  # (manifests before `player_id`: the id says whose angle it is)
+            a["label"] = f"{a['label'].split(' · ')[0]} · {name(pid)}"
+    if m.get("label_template") and m.get("label_player"):
+        m["label"] = m["label_template"].format(player=name(m["label_player"]))
+    return m
 
 
 def _events(storage: LocalStorage, game_id: str) -> list[dict]:
@@ -787,7 +806,9 @@ def _register_routes(app: FastAPI) -> None:
 
         # D-61: recorded in edits.json, then applied to game.json, tracks, crops and
         # events (a merge rewrites ids there: no alias map for every client to learn)
-        gd = ctx.storage.game_dir(game_id)
+        # D-86: only the files this rewrites (a merge renumbers tracks, crops, events)
+        merged_rels = ("tracks", "crops", EVENTS_REL) if body.merge_into is not None else ()
+        gd = ctx.storage.game_dir_with(game_id, edits.REL, *merged_rels)
         if body.name is not None:
             edits.patch(gd, "game.json", player_id, {"name": body.name, "tagged": True})
         if body.merge_into is not None:
@@ -835,7 +856,7 @@ def _register_routes(app: FastAPI) -> None:
         fields = {**body, "confirmed": bool(body.get("confirmed", True))}
         if changed:
             fields["source"] = "user"
-        gd = ctx.storage.game_dir(game_id)
+        gd = ctx.storage.game_dir_with(game_id, edits.REL, EVENTS_REL, "score.json")
         anchor = {"type": event.get("type"), "t_key": event.get("t_key")}
         edits.patch(gd, EVENTS_REL, event_id, fields, anchor)  # D-61: survives re-runs
         edits.apply(gd, (EVENTS_REL, "score.json"))
@@ -858,7 +879,7 @@ def _register_routes(app: FastAPI) -> None:
             "source": "user",
             "confirmed": True,
         }
-        gd = ctx.storage.game_dir(game_id)
+        gd = ctx.storage.game_dir_with(game_id, edits.REL, EVENTS_REL)
         edits.add(gd, EVENTS_REL, event)
         edits.apply(gd, (EVENTS_REL,))
         _bookmark_frame(ctx, game_id, event)
@@ -909,12 +930,12 @@ def _register_routes(app: FastAPI) -> None:
     @app.get("/games/{game_id}/replays")
     def list_replays(request: Request, game_id: str):
         """Every highlight with a rendered angle set (replays/<play>/manifest.json)."""
-        _game_or_404(request, game_id)
+        game = _game_or_404(request, game_id)
         storage: LocalStorage = _ctx(request).storage
         out = []
         for path in sorted(storage.path(game_id, REPLAYS_REL).glob("*/manifest.json")):
             try:
-                m = json.loads(path.read_text())
+                m = _relabel(json.loads(path.read_text()), game)
             except ValueError:
                 log.warning("skipping malformed replay manifest %s", path)
                 continue
@@ -937,12 +958,12 @@ def _register_routes(app: FastAPI) -> None:
     @app.get("/games/{game_id}/replays/{play_id}")
     def get_replay(request: Request, game_id: str, play_id: str):
         """One manifest (replay.replay_manifest.v1) with absolute media URLs."""
-        _game_or_404(request, game_id)
+        game = _game_or_404(request, game_id)
         storage: LocalStorage = _ctx(request).storage
         path = storage.resolve_inside(game_id, f"{REPLAYS_REL}/{play_id}/manifest.json")
         if path is None or not path.is_file():
             raise HTTPException(404, f"no replay {play_id} for game {game_id}")
-        m = json.loads(path.read_text())
+        m = _relabel(json.loads(path.read_text()), game)
         base = _base(request)
         for a in m.get("angles") or []:
             a["url"] = storage.url(game_id, a["url"], base)

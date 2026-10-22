@@ -28,6 +28,14 @@ class LocalStorage:
     def path(self, game_id: str, rel: str) -> Path:
         return self.game_dir(game_id) / rel
 
+    def game_dir_with(self, game_id: str, *rels: str) -> Path:
+        """The game folder with only `rels` (files or folders) current. The cloud mirror
+        pulls just those (one LIST and the changed GETs each), where `game_dir` pulls the
+        whole game, every image included: ~17 s on a fresh Lambda instance (D-86)."""
+        for rel in rels:
+            self.path(game_id, rel)
+        return self.games_dir / game_id
+
     def resolve_inside(self, game_id: str, rel: str) -> Path | None:
         """Resolved path under the game dir, or None if it escapes it (traversal guard)."""
         root = self.game_dir(game_id).resolve()

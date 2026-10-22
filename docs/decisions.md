@@ -490,7 +490,8 @@ Measured on real games:
 
 - **Opening it.** While following a player, the remote's Menu (≡; `m` on the web build) opens that player's card and pauses the game. Back (or Menu again) closes it and resumes playback if it was playing. Everywhere else Menu still opens Do more (D-81's "alias of Up"). Do more → Follow player → **Player details** opens the same card from the D-pad, for the followed player or the focused select marker, so nothing needs the Menu key (redesign principle 2). Menu does not open a picker when nobody is followed: picking is the follow flow's job, and a second picker would be a second way to do one thing.
 - **Contents** (components/PlayerCard.tsx, the right third like the Stats panel): avatar (the linked profile's photo, else initials) ringed in the drawn team colour, the name or "Player 7", the team, the stat line, then Edit name, Follow / Stop following, Their moments (N) (Moments filtered to them) and View profile (only when a profile is linked). There is no jersey number: nothing in the pipeline reads one.
-- **Stat line = the game's events** (tv-core `statLine`, from events.json, dismissed events left out), not the `/stats` route. That route is shot-shaped, and counting on the client works against an API that is already deployed. The stats shown follow the event types the game has, never the sport's name (§4.8). Shot events give Pts, FG, Reb, Stl and Blk. Rally events give Kills, Aces, Blk, Serves and Touches. A stat whose events credit nobody in this game is listed as "Not detected in this game: …", never shown as 0. Assists and digs are always listed that way, because no detector makes them. Pts and FG need a detected make somewhere in the game; without one the card shows Shots and says made or missed is not detected. A kill is a rally the player's side won where they made the last credited contact; an ace is the same with the serve as the only contact. Both need rallies with a known winner and credited contacts.
+- **Stat line = the game's events** (tv-core `statLine`, from events.json, dismissed events left out), not the `/stats` route. That route is shot-shaped, and counting on the client works against an API that is already deployed. The stats shown follow the event types the game has, never the sport's name (§4.8). Shot events give Pts, FG, Reb, Stl and Blk. Rally events give Kills, Aces, Blk, Serves and Touches. A stat whose events credit nobody in this game is listed on one quiet line, "Not detected yet: …", never shown as 0. On real volleyball today that line names most of them, so it stays one line under the cells rather than empty cells. Assists and digs are always listed that way, because no detector makes them. Pts and FG need a detected make somewhere in the game; without one the card shows Shots and says made or missed is not detected. A kill is a rally the player's side won where they made the last credited contact; an ace is the same with the serve as the only contact. Both need rallies with a known winner and credited contacts.
+- **Back from View profile returns to the card**, not to the game playing: the profile was opened from the card, so one press of Back shows the card again on the same player, paused at the same time and still following (the `profile` route carries a `back` route, and `watch` takes `card`). The card's own Back then resumes as it would have. Players opened from anywhere else still goes Profile → Players → back.
 - **Naming** reuses `PATCH /games/{id}/players/{pid}` (D-61 edits.json). The API now strips the name and refuses a blank one (422). The name is the viewer's own label: nobody is named automatically, an unnamed track stays "Player N" ("Anonymous until named", its track number in the avatar), and nothing here matches faces or voices. A failed save shows its error on the card and keeps the old name.
 - **Real games, honestly:** the CC BY basketball game has shots with unknown outcomes, so its card shows Shots. The local-only volleyball clip (D-76) has blocks credited to players but no contact events and no credited serves, so its card shows Blk and lists kills, aces, serves, touches and digs as not detected.
 
@@ -515,3 +516,46 @@ Measured on real games:
   - Review's box score shows 10 rows plus "and N more players", and untagged tracks read "Player N".
   - Panels and dialogs use the card radius, and badges use the chip radius.
 - **Routed, not done here (other owners' files):** the Do more follow-chip row clips its last chip at the safe edge (it should bleed or slide like Moments). The transport title stays visible at about 30% opacity under an open top layer. Profile's face badge and counter put the fill on the Text, so they keep their old offset. Players and Profile still use `ui.screen`.
+
+## D-86 (2026-10-22) — Cloud API: a route pulls only the files it reads, never the whole game
+
+- **Why.** On S3 (D-80) a Lambda instance mirrors game files on demand. `storage.game_dir(id)` mirrors the whole game: one LIST, then one GET per object, including every moment thumbnail and storyboard sheet. Many routes called it just to read two JSON files. On a fresh instance that cost 8–17 s per request on the live CC BY game:
+  - Review's `/review/queue`: ~17 s, so the TV showed "0 to review" while it waited.
+  - `/hype`: 10.7 s, only to answer 503, because Lambda has no `replay_render`.
+  - `/commentary`: 8.4 s.
+  - Warm, every Watch-open request takes 0.3–0.6 s.
+- **Rule.** `LocalStorage.game_dir_with(id, *rels)` mirrors only the named files or folders (local disk: a no-op), and every route names what it reads:
+  - review queue: events and tracks
+  - hype: `load_game`'s files plus audio, poses and the video
+  - rallies and condensed: events, plays, condensed.json and the rendition
+  - vertical exports: their folder, plus `load_game`'s files and clips to create one
+  - score: edits.json
+  - commentary: game, events, plays, score, and `commentary/` once
+  - search: embeddings
+  - profile careers: each linked game's docs, tracks, hype, clips and media
+  - face match: game, tracks and the video
+- **Writes.** The write routes pull edits.json and only the files they rewrite: player name or link (edits.json; a merge also tracks, crops, events), event answers (plus events, score), bookmarks, taps, trims and score.
+- **Ordering.** `/hype` and `POST /exports/vertical` check for `replay_render` before pulling anything, so the cloud 503 is immediate.
+- **Folder coverage.** `S3Storage._pull` treats a folder already mirrored in this request as covering the files under it: one LIST for all of commentary's audio files, not one per play.
+- **Whole-game pulls kept**, because they need everything:
+  - The hfbox runner (`remote_runner`): it runs pipeline stages and pushes back what changed.
+  - The in-process tasks of local mode (process, render, `_submit`'s stage run): local disk, no pull. In cloud mode their function is dropped and the runner does the work.
+  - `_has` in local mode, and the empty folder made when a game is created.
+- **Tests.** test_cloud (moto S3) fills a game's folders with images and checks nothing is pulled, for every Watch, Stats and Review GET, the vertical exports (list and one) and the five write routes. It also checks that one LIST covers a folder's files. On the old code 12 of these fail.
+- **Needs a Lambda redeploy.** Until then the live API keeps the slow first requests.
+
+## D-87 (2026-10-22) — TV and phone clients: retry throttles, at most 4 requests in flight, Watch extras after the first frame
+
+- **Why.** The account's Lambda concurrency is 10, shared by every TV and phone. A Watch open sent 7 requests at once (peak 7 in flight locally, about 10 with the tracks chunks on Lambda latency), and five opens at once got 429s. We make no AWS change (no quota request, no reserved concurrency); the clients ask less and wait their turn.
+- **Retry (`packages/tv-core/src/retry.ts`, used by the TV client and the phone's `apps/web/src/api/phone.ts`).**
+  - A throttle is a 429, or a 503 with Retry-After or a body matching "rate exceeded / too many requests / throttl". Our API's own 503 ("replay_render is not available") is an answer and is not retried.
+  - Up to 4 tries. The wait is Retry-After (seconds or an HTTP date) plus up to 100 ms of jitter, else 100 ms + random·300·2^attempt. The client stops when the next wait would pass 4 s from the start, and returns the last response, so the screen's existing error shows (the spinner stays up until then).
+  - Only safe-to-repeat requests: GET/HEAD/OPTIONS/PUT/PATCH/DELETE, plus the POSTs the API treats as reads or makes idempotent: search, query, condensed render and vertical export. Other POSTs (upload, clip, tap, bookmark) are sent once.
+  - Not retried: network errors (fetch TypeError). A browser cannot read Retry-After cross-origin unless the response exposes it (`Access-Control-Expose-Headers`); without it the jittered backoff is used. Lambda's own 429 is answered before FastAPI, so exposing it there would mean changing the Function URL's CORS config, which is an AWS change and was not made.
+- **At most 4 in flight** per app (a module-level FIFO). A slot covers one request, not its backoff. Ceiling: a hung request holds its slot until Lambda's 30 s timeout or the browser gives up. Media (mp4, images) does not go through it; the tracks chunks (`/media` JSON, Lambda 302s) do.
+- **Watch open.** Game, renditions and moments load at once. Replays, commentary, hype and rallies wait until the player has a duration (first frame), or 3 s after the game loads, whichever comes first.
+- **"Not available" is remembered.** A 503 from `/hype` or `/rallies` whose message says "not available" is kept per game for the client's lifetime and not asked again. A condensed render clears the rallies entry.
+- **Polling.** Clips' export poll went from 1 s to 3 s. Others are already gated: Watch polls the game every 10 s and Home every 15 s, only while it is processing. Watch's 1 Hz `now` goes to an open pairing WebSocket, not HTTP.
+- **Measured** (web build, `apps/tv/e2e-evidence/WATCHOPEN-requests.spec.ts`, local API without `replay_render` so hype and rallies 503 as on Lambda): before, 11 requests and peak 7 in flight, all 7 API reads leaving at ~310 ms. After, 11 requests and peak 4: game, renditions and moments at 367 ms, storyboard and 2 tracks chunks at 432 ms, then replays, commentary, hype and rallies at 539 ms after the first frame.
+- **Tests.** TV-35: retry unit tests (Retry-After honoured, cap, our 503 vs a Lambda 503, a POST sent once), the in-flight cap (10 requests, peak 4, in order), hype and rallies asked once per game, two e2e runs through the real HTTP client with routed 429s (recovers to "Connected · 2 games"; past the cap shows "Not reachable" within ~7 s), and the mock Watch order. The mock API never goes through fetch, so the throttle e2e uses routed 429s instead of the mock's ApiError.
+- Client-only: needs a new APK and web deploy, no Lambda change.

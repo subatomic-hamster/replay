@@ -67,6 +67,26 @@ def test_replays_listed_in_time_order_and_manifest_urls_resolved(client: TestCli
     assert r.status_code == 206 and r.content == TINY_MP4.read_bytes()[:50]
 
 
+def test_replay_labels_follow_the_live_roster(client: TestClient, settings):
+    """Angle and play titles name players from game.json now: a rename shows at once."""
+    gid = ready_game(client, settings)
+    gd = settings.games_dir / gid
+    _manifest(gd, "pl_0001", 4.0, [("follow_p1", "follow:p1"), ("tierc_pov_p7", "pov:p7")])
+    path = gd / "replays/pl_0001/manifest.json"
+    m = json.loads(path.read_text())
+    m.update(label="Shot · Marcus (make)", label_template="Shot · {player} (make)",
+             label_player="p1")  # fmt: skip
+    m["angles"][0]["label"] = "Follow · Marcus"
+    m["angles"][1].update(label="Virtual POV · Player 7", player_id="p7")
+    path.write_text(json.dumps(m))
+    assert client.patch(f"/games/{gid}/players/p1", json={"name": "Big Marcus"}).status_code == 200
+    m = client.get(f"/games/{gid}/replays/pl_0001").json()
+    assert m["label"] == "Shot · Big Marcus (make)"
+    # an untracked name reads "Player N", as on the TV
+    assert [a["label"] for a in m["angles"]] == ["Follow · Big Marcus", "Virtual POV · Player 7"]
+    assert client.get(f"/games/{gid}/replays").json()["replays"][0]["label"] == m["label"]
+
+
 def test_replay_routes_404_and_traversal(client: TestClient, settings):
     assert client.get("/games/g_nope/replays").status_code == 404
     gid = ready_game(client, settings)

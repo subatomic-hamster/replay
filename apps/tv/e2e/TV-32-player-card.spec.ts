@@ -235,6 +235,106 @@ test("TV-32 Edit name on the card saves through the API and the follow ring and 
   await expect(page.getByTestId("follow-frame")).toContainText("Zoe");
 });
 
+/** Follow p1 (Marcus, linked to a profile) and open the card on them. */
+async function cardOnP1(page: Page) {
+  await openWatch(page);
+  await enterSelectMode(page);
+  await expect.poll(() => focusedBoxId(page)).toBe("p1");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("followcam-active")).toHaveAttribute(
+    "data-player-id",
+    "p1",
+  );
+  await expect.poll(async () => (await video(page))?.paused).toBe(false);
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("player-card")).toHaveAttribute(
+    "data-player-id",
+    "p1",
+  );
+  await expect.poll(async () => (await video(page))?.paused).toBe(true);
+}
+
+test("TV-32 a failed name save says so on the card and keeps the old name", async ({
+  page,
+}) => {
+  await cardOnP1(page);
+  // the API refuses the PATCH the way the real client reports it (status + message)
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __replayMock: {
+        api: { patchPlayer: (...a: unknown[]) => Promise<unknown> };
+        ApiError: new (status: number, msg: string) => Error;
+      };
+    };
+    w.__replayMock.api.patchPlayer = () =>
+      Promise.reject(new w.__replayMock.ApiError(503, "Service Unavailable"));
+  });
+  await page.keyboard.press("Enter"); // Edit name
+  const value = page.getByTestId("player-name-value");
+  await expect(value).toHaveText("Marcus");
+  await page.keyboard.press("Enter"); // A: the name changes
+  await expect(value).not.toHaveText("Marcus");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+  for (let i = 0; i < 2; i++) await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("player-name-key-SAVE")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
+  await page.keyboard.press("Enter");
+
+  const status = page.getByTestId("player-card-status");
+  await expect(status).toHaveText(
+    "Couldn't save the name (503: Service Unavailable)",
+  );
+  await expect(status).toHaveAttribute("data-error", "true");
+  await expect(page.getByTestId("player-card-name")).toHaveText("Marcus");
+  // the card keeps the remote; Back closes it and the ring still says Marcus
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("player-card")).toHaveCount(0);
+  await expect(page.getByTestId("followcam-active")).toContainText(
+    "Following Marcus",
+  );
+});
+
+test("TV-32 View profile from the card: one Back returns to the card, paused where it was; the next Back plays on", async ({
+  page,
+}) => {
+  await cardOnP1(page);
+  const at = (await video(page))?.currentTime ?? -1;
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("player-card-profile")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("profile")).toBeVisible();
+  await expect(page.getByTestId("profile-name")).toHaveText("Marcus");
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("profile")).toHaveCount(0);
+  await expect(page.getByTestId("player-card")).toHaveAttribute(
+    "data-player-id",
+    "p1",
+  );
+  // still following p1 (the chip hides under the card)
+  const watch = page.getByTestId("watch");
+  await expect(watch).toHaveAttribute("data-mode", "follow");
+  await expect(watch).toHaveAttribute("data-followed", "p1");
+  await expect
+    .poll(async () => (await video(page))?.currentTime ?? -1)
+    .toBeCloseTo(at, 0);
+  expect((await video(page))?.paused).toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("player-card")).toHaveCount(0);
+  await expect.poll(async () => (await video(page))?.paused).toBe(false);
+  await expect(page.getByTestId("followcam-active")).toHaveAttribute(
+    "data-player-id",
+    "p1",
+  );
+});
+
 test("TV-32 Player details from Do more while picking; Their moments filters Moments; Menu elsewhere is Do more", async ({
   page,
 }) => {

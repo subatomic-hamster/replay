@@ -9,6 +9,10 @@ import {
   type ReplayApi,
 } from "../../../../packages/tv-core/src/api";
 import { mockUploadApi } from "../../../../packages/tv-core/src/mock";
+import {
+  fetchRetrying,
+  idempotent,
+} from "../../../../packages/tv-core/src/retry";
 import type {
   PlayClip,
   ReviewQuestion,
@@ -21,6 +25,7 @@ import type { Game, Moment, QueryResult } from "./types";
 import { API_BASE, MOCK_API } from "../config";
 
 export const PHONE_HEADER = "X-Replay-Phone-Token";
+const SAFE_POSTS = /\/(search|query|exports\/vertical)$/;
 
 /** Everything the phone page calls; nothing else is reachable with a phone token. */
 export type PhoneApi = Pick<
@@ -56,11 +61,17 @@ export function phoneHttpApi(apiBase: string, token: string): PhoneApi {
   ): Promise<T> {
     const headers: Record<string, string> = { [PHONE_HEADER]: token };
     if (json !== undefined) headers["Content-Type"] = "application/json";
-    const res = await fetch(`${base}${path}`, {
-      method,
-      headers,
-      body: json !== undefined ? JSON.stringify(json) : undefined,
-    });
+    // D-87: a throttled request is tried again when it is safe to repeat (reads, and the
+    // POSTs that are reads or hashed exports)
+    const res = await fetchRetrying(
+      `${base}${path}`,
+      {
+        method,
+        headers,
+        body: json !== undefined ? JSON.stringify(json) : undefined,
+      },
+      idempotent(method) || SAFE_POSTS.test(path),
+    );
     const text = await res.text().catch(() => "");
     if (!res.ok) {
       let detail = text;

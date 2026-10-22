@@ -3,7 +3,7 @@
 // loop (the same frame that moves the follow-cam), through Animated values, so it rides
 // the player without re-rendering the Watch screen.
 //
-// Transforms only (D-85): four bars, each scaled along its length from its top-left
+// Transforms only (D-86): four bars, each scaled along its length from its top-left
 // corner, inside a translated wrapper. A width or height change would re-lay the ring out
 // every frame, and the native driver cannot animate layout props at all.
 import { useMemo } from "react";

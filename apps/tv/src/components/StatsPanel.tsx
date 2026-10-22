@@ -129,6 +129,18 @@ export function StatsPanel({
     : [];
   const court = game.sport_ui?.court;
   const [cw] = courtSize(court, game.court.variant);
+  // The chart takes the height the rest leaves (design px of the 972 inside the safe area:
+  // title, label, two exits and margins ~250; the score 88; the no-makes line 56; the
+  // box score 24 + 40 a row with its header).
+  const chartH = Math.max(
+    200,
+    720 -
+      (teams.length >= 2 ? 88 : 0) -
+      (made ? 0 : 56) -
+      (panels.has("box_score") && rows.length
+        ? 24 + 40 * (rows.length + 1)
+        : 0),
+  );
 
   if (stats === undefined) {
     return (
@@ -213,7 +225,7 @@ export function StatsPanel({
             court={court}
             variant={game.court.variant}
             width={INNER_W}
-            maxHeight={px(240)}
+            maxHeight={px(chartH)}
             testID="shot-chart"
           >
             {(toPx, s) =>
@@ -263,6 +275,7 @@ export function StatsPanel({
             key={x.id}
             label={x.label}
             focused={i === k}
+            active // a line fill: the chip's own Bench fill is the panel's colour
             testID={`stats-${x.id}`}
           />
         ))}

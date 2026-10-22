@@ -52,6 +52,7 @@ function screen(r: Route) {
           initialT={r.t}
           initialWay={r.way}
           initialPlay={r.play}
+          initialCard={r.card}
           q={r.q}
         />
       );
@@ -69,7 +70,12 @@ function screen(r: Route) {
       return <Players from={r.from} />;
     case "profile":
       return (
-        <Profile key={r.profileId} profileId={r.profileId} from={r.from} />
+        <Profile
+          key={r.profileId}
+          profileId={r.profileId}
+          from={r.from}
+          back={r.back}
+        />
       );
     case "settings":
       return <Settings />;

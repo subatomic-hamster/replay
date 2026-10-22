@@ -97,7 +97,11 @@ def _doc(request: Request, pid: str) -> dict:
 
 def _linked(request: Request, doc: dict):
     st = request.app.state
-    return career.load_links(doc["linked"], st.storage.game_dir)
+    # each linked game: what career reads (docs, tracks, hype, clips, the card's frame),
+    # not every image of every game (D-86)
+    return career.load_links(
+        doc["linked"], lambda gid: st.storage.game_dir_with(gid, *career.LINKED_RELS)
+    )
 
 
 def _full(request: Request, doc: dict) -> dict:
@@ -123,7 +127,7 @@ def _set_roster(request: Request, game_id: str, player_id: str, name: str | None
         if profile_id is None
         else {"name": name, "tagged": True, "profile_id": profile_id}
     )
-    gd = request.app.state.storage.game_dir(game_id)
+    gd = request.app.state.storage.game_dir_with(game_id, edits.REL)  # only what it writes
     index.save(edits.apply_game(game, edits.patch(gd, "game.json", player_id, fields)))  # D-61
 
 
@@ -427,7 +431,9 @@ def face_match(request: Request, game_id: str):
         raise HTTPException(503, str(exc)) from exc
 
     def task(job_id: str) -> None:
-        doc = F.match_game(st.storage.game_dir(game_id), face)
+        game = st.index.load(game_id) or {}
+        wide = (game.get("renditions") or {}).get("wide") or "media/wide.mp4"
+        doc = F.match_game(st.storage.game_dir_with(game_id, "game.json", "tracks", wide), face)
         st.storage.write_json(game_id, F.REL, doc)
 
     job = st.jobs.submit("face_match", game_id, task)

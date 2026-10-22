@@ -16,13 +16,17 @@ export type Route =
       way?: Way;
       q?: string;
       play?: string;
+      /** reopen the player card on this player, paused (Back from its View profile);
+       *  `resume`: the card's Back plays on, as it was when the card first opened */
+      card?: { pid: string; resume: boolean };
     }
   | { name: "review"; gameId: string }
   | { name: "clips" | "search" | "advice"; gameId: string }
   | { name: "pair"; gameId?: string }
   /** M10: profiles; `from` is the game to return to on Back (when opened from Watch) */
   | { name: "players"; from?: string }
-  | { name: "profile"; profileId: string; from?: string }
+  /** `back`: where Back goes instead of Players (the player card's game, card open) */
+  | { name: "profile"; profileId: string; from?: string; back?: Route }
   /** The API base (first run opens here when the build has no default) */
   | { name: "settings" }
   /** D-80: pick a sport, show the phone-upload QR, follow the game until it is ready */

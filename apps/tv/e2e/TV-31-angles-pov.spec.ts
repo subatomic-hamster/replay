@@ -115,6 +115,24 @@ test("TV-31 no replays: Angles still there, says so, offers the views there are 
     "true",
   );
   expect(await smallText(page)).toEqual([]);
+  // the frame fills its 16:9 tile edge to edge (one storyboard cell, no text padding
+  // around it): the sprite sits on whole cells of its sheet
+  const sprite = page.getByTestId("angle-recorded").getByTestId("seek-sprite");
+  if (await sprite.count()) {
+    const tile = (await sprite.locator("..").boundingBox())!;
+    const s = (await sprite.boundingBox())!;
+    const cellW = s.width / 10, // 10 columns of 320 x 180 frames
+      cellH = (cellW * 180) / 320;
+    expect(Math.abs(tile.width - cellW)).toBeLessThan(1.5);
+    expect(Math.abs(tile.height - cellH)).toBeLessThan(1.5);
+    for (const [off, cell] of [
+      [tile.x - s.x, cellW],
+      [tile.y - s.y, cellH],
+    ]) {
+      const r = ((off % cell) + cell) % cell;
+      expect(Math.min(r, cell - r)).toBeLessThan(1.5);
+    }
+  }
   await page.keyboard.press("Enter"); // the recorded camera is what is playing
   await expect(page.getByTestId("domore")).toHaveCount(0);
   await expect(page.getByTestId("replay")).toHaveCount(0);

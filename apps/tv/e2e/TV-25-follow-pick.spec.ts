@@ -161,9 +161,14 @@ test("TV-25 pick on the video with the arrows; Select follows at once; Back canc
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("domore")).toHaveCount(0);
 
-  // Back stops following: eases back to the wide shot, still playing, ring stays on p3.
+  // Back stops following: the ring goes at once (not faded out), the camera eases back to
+  // the wide shot, still playing.
   await page.keyboard.press("Escape");
   await expect(watch).toHaveAttribute("data-mode", "wide");
+  expect(
+    await ring.evaluate((el) => Number(getComputedStyle(el).opacity)),
+  ).toBe(0);
+  expect((await transform(page))[0]).toBeGreaterThan(1.05); // still easing out
   await expect.poll(async () => (await transform(page))[0]).toBeCloseTo(1, 3);
   await expect(ring).toHaveAttribute("data-pid", "p3");
   expect((await media(page)).paused).toBe(false);

@@ -500,3 +500,50 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - Radii are consistent, and badge fills are on Views.
 - Tests: new TV-33 (pixel-measured centring and the chip slide). TV suite 109 passed, 3 skipped. Before and after captures were taken on the Fire TV.
 - Left (other owners): the Do more follow-chip row clips its last chip, the ghosted transport title under top layers, Profile badges, and Players/Profile on `ui.screen`.
+
+## Player card on Menu (2026-10-22, D-83)
+
+- Menu (≡, web `m`) while following opens a player card on the right; it pauses the game, and Back resumes it. Elsewhere Menu still opens Do more. Do more → Follow player → Player details opens the card for the focused player.
+- The card shows the avatar (profile photo, initials, or the track number), the name or "Player N", the team swatch, and a "This game" stat line (tv-core `statLine`). Actions: Edit name, Follow / Stop following, Their moments (N), and View profile.
+- The stat line is counted from the game's events.json, by event type. A stat no event credits is listed as "Not detected", never shown as 0.
+- Names save through the existing `PATCH /games/{id}/players/{pid}`. The API now trims names and caps them at 60 characters (needs a Lambda redeploy; the card works on the live API without it).
+- Also fixed:
+  - Review showed "Review queue (0) / Nothing left to review" while its request was in flight. It now says Loading, then shows 32, matching the Stats panel.
+  - Why the request was slow: on a fresh Lambda instance, `/review/queue` pulled the whole game from S3 (`game_dir`, one GET per object), about 17 s against about 2–4 s for `/stats`. It now pulls only events.json and tracks/, like `/stats`. Needs a redeploy. The test_cloud regression test fails on the old route.
+  - Back from View profile (opened from the card) is one press: it returns to the card on the same player, paused at the same time, still following. The card's Back then plays on.
+  - Stats that are not detected collapse into one line, "Not detected yet: …", under the cells. On real volleyball most cells are missing, so the card reads as one count plus that line, not as a broken grid.
+  - The Stats shot chart takes the free height.
+  - Unfocused Stats exits are visible.
+  - Profile badges are on Views.
+  - Players and Profile are in the safe zone.
+- Tests:
+  - TV-32: 7 tests on synthetic fixtures, including a failed name save (the mock answers the PATCH with a 503: the card says "Couldn't save the name (503: Service Unavailable)" and keeps the old name) and the one-press profile Back.
+  - e2e-evidence/PCARD-real: run against a local API on real games, a local-only volleyball clip and the CC BY basketball. It passed twice on each.
+  - Gate: TV 113 passed, web 115, API 288 passed with 1 skipped.
+- Fire TV, live CC BY game:
+  - The card shows Shots 2 / Reb 0 / Stl 1, and D-pad focus moves through the actions.
+  - Back resumes the game.
+  - The new Stats and Review screens were checked on the device.
+- Left:
+  - No jersey numbers in the data.
+  - On real volleyball the pipeline credits blocks only, not contacts or serves.
+  - The name-save error path is untested on the device: making the PATCH fail would take a wrong API key or a cut network.
+
+## Cloud API pulls only what each route reads (2026-10-22, D-86)
+
+- Every API route that read a game on S3 through `game_dir()` mirrored the whole game on a fresh Lambda instance. Each route now names its files (`game_dir_with`): hype, rallies, condensed, vertical exports, score, commentary, search, review queue, profile careers, face match, and the player, event, bookmark, tap, trim and score writes. Commentary's per-play audio checks share one LIST. Whole-game pulls stay only in the hfbox runner and local mode's in-process tasks.
+- Live API before the redeploy:
+  - Warm, a Watch open is 9 requests at 0.3–0.6 s each. `/hype` and `/rallies` answer 503 for this game: no stored hype.json or condensed.json, and Lambda has no `replay_render`.
+  - On fresh instances: `/hype` 10.7 s, `/commentary` 8.4 s, `/review/queue` ~17 s; `/moments` once 1.0 s.
+  - Five Watch opens at once (45 requests) got 429s. The function has no reserved concurrency, so the account's concurrency quota is the limit.
+- Tests: test_cloud adds 19 moto cases (Watch, Stats and Review reads; exports; five writes; folder coverage); 12 of them fail on the old code. API suite 308 passed, 1 skipped; ruff clean.
+- Needs a Lambda redeploy.
+
+## TV/phone clients: throttle retry and fewer requests on open (2026-10-22, D-87)
+
+- TV and phone clients retry a throttled request (429, or a 503 that says throttle) up to 4 times within ~4 s with jittered backoff, honouring Retry-After, only for safe-to-repeat requests. Our own 503 "not available" is not retried, and for `/hype` and `/rallies` it is not asked again that session.
+- At most 4 API requests in flight per app. Watch sends replays, commentary, hype and rallies after the first frame (or 3 s). Clips' export poll is 3 s, not 1 s.
+- Watch open, web build: before 11 requests, peak 7 in flight; after 11 requests, peak 4, with the extras after the first frame (539 ms vs 310 ms).
+- Tests: TV-35 (8 cases) pass. Box gate: ruff clean, API 308 passed / 1 skipped, web Playwright 115, TV Playwright 124, tsc and eslint clean.
+- Fire TV: new APK installed; the live CC BY game opens and plays, Do more shows (Angles: "No replay angles for this game"), no JS errors in logcat.
+- Not done: network errors are not retried; Retry-After is unreadable cross-origin without an expose header. Needs a new APK and web deploy, no Lambda change.

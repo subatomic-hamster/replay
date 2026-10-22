@@ -61,6 +61,12 @@ def _order(lk: Linked) -> tuple:
     return (lk.game.get("recorded_at") or "", lk.game_id, lk.player_id)
 
 
+# what a linked game is read for: its docs (load_docs), tracks (box score, the card's
+# frame box), hype.json, clips.json and media/ (the card's frame)
+LINKED_RELS = ("game.json", "events.json", "plays.json", "score.json", "tracks",
+               "hype.json", "clips.json", "media")  # fmt: skip
+
+
 def load_links(
     links: list[dict], game_dir: Callable[[str], Path]
 ) -> tuple[list[Linked], list[dict]]:

@@ -52,7 +52,8 @@ export function Review({ gameId }: { gameId: string }) {
     error,
     reload,
   } = useAsync(() => api.getGame(gameId), [gameId]);
-  const [queue, setQueue] = useState<ReviewQuestion[]>([]);
+  // null while loading, a string when the request failed: neither is "0 to review"
+  const [queue, setQueue] = useState<ReviewQuestion[] | string | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [focus, setFocus] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -62,10 +63,14 @@ export function Review({ gameId }: { gameId: string }) {
   const [heatFocus, setHeatFocus] = useState(0);
   const panels = useMemo(() => reviewPanels(game), [game]);
   const heatmap = panels.has("heatmap") ? (stats?.heatmap ?? []) : [];
-  const current = queue[0];
+  const current = Array.isArray(queue) ? queue[0] : undefined;
 
   const load = useCallback(() => {
-    api.getReviewQueue(gameId).then(setQueue, () => setQueue([]));
+    api
+      .getReviewQueue(gameId)
+      .then(setQueue, (e: unknown) =>
+        setQueue(e instanceof Error ? e.message : String(e)),
+      );
     api.getStats(gameId).then(setStats, () => setStats(null));
   }, [gameId]);
   useEffect(load, [load]);
@@ -146,7 +151,9 @@ export function Review({ gameId }: { gameId: string }) {
       </T>
 
       <View style={styles.section}>
-        <T style={ui.h2}>Review queue ({queue.length})</T>
+        <T style={ui.h2}>
+          Review queue{Array.isArray(queue) ? ` (${queue.length})` : ""}
+        </T>
         {current ? (
           <View
             testID="review-item"
@@ -185,6 +192,14 @@ export function Review({ gameId }: { gameId: string }) {
               ) : null}
             </View>
           </View>
+        ) : queue === null ? (
+          <T testID="review-loading" style={{ color: color.dim }}>
+            Loading the questions…
+          </T>
+        ) : typeof queue === "string" ? (
+          <T testID="review-error" style={{ color: color.dim }}>
+            Couldn&apos;t load the review queue ({queue})
+          </T>
         ) : (
           <T testID="review-empty">Nothing left to review.</T>
         )}

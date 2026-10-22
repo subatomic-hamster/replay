@@ -265,6 +265,105 @@ def test_json_state_is_never_stale(cloud, aws):
     assert b"bookmark" in edits
 
 
+# D-86: folders no route below reads (moment thumbs, storyboard tiles)
+JUNK = ("moments", "storyboard")
+VID = "v_0123456789ab"
+
+
+def _full_game(cloud: TestClient, aws) -> tuple[str, object]:
+    """A processed game in S3: docs, a track chunk, a vertical export spec, and folders of
+    images (`JUNK`) that a whole-game pull would download, one GET each."""
+    gid = _game(cloud)["id"]
+
+    def put(rel: str, body) -> None:
+        data = body if isinstance(body, bytes) else json.dumps(body).encode()
+        aws.put_object(Bucket=BUCKET, Key=f"games/{gid}/{rel}", Body=data)
+
+    key = f"games/{gid}/game.json"
+    doc = json.loads(aws.get_object(Bucket=BUCKET, Key=key)["Body"].read())
+    put("game.json", {**doc, "status": "ready",
+                      "players": [{"id": "p1", "name": None, "team": 0}]})  # fmt: skip
+    shot = {"id": "e_1", "type": "shot", "t_key": 3.0, "t_start": 2.0, "t_end": 4.0,
+            "confidence": 0.9, "made": None, "player_id": "p1"}  # fmt: skip
+    put("events.json", {"events": [shot]})
+    p1 = {"id": "p1", "bb": [0.4, 0.4, 0.1, 0.3], "ct": [5.0, 5.0]}
+    put("tracks/000000.json", {"frames": [{"t": 3.0, "p": [p1]}]})
+    put(f"exports/vertical/{VID}.json", {"id": VID, "t_start": 2.0, "t_end": 4.0})
+    for d in JUNK:
+        for i in range(10):
+            put(f"{d}/x_{i}.jpg", b"\xff\xd8 jpeg")
+    return gid, put
+
+
+def _pulled_junk(cloud: TestClient, gid: str) -> list[str]:
+    root = cloud.app.state.storage.games_dir / gid
+    return [str(p) for d in JUNK for p in (root / d).glob("x_*.jpg")]
+
+
+# every GET the TV makes when a game opens (Watch, its Stats and Review), the phone's
+# score, condensed and exports reads
+GAME_READS = ["", "/hype", "/rallies", "/condensed", "/score", "/commentary", "/moments",
+              "/storyboard", "/stats", "/review/queue", "/renditions", "/replays",
+              "/exports/vertical"]  # fmt: skip
+
+
+@pytest.mark.parametrize("route", GAME_READS)
+def test_game_reads_pull_only_what_they_read(cloud, aws, route):
+    """A fresh Lambda instance pulled the whole game for /review/queue (~17 s on the TV),
+    and hype, rallies, condensed, score, commentary and the exports did the same (D-86)."""
+    gid, _ = _full_game(cloud, aws)
+    r = cloud.get(f"/games/{gid}{route}")
+    # 503: hype or rallies computed live need replay_render, which Lambda does not have;
+    # 404: this game has no storyboard
+    assert r.status_code in (200, 404, 503), r.text
+    assert r.status_code != 404 or route == "/storyboard", r.text
+    assert _pulled_junk(cloud, gid) == []
+    if route == "/review/queue":
+        assert [q["kind"] for q in r.json()["questions"]][:1] == ["shot_outcome"]
+    if route == "/exports/vertical":
+        assert [e["id"] for e in r.json()["exports"]] == [VID]
+
+
+@pytest.mark.parametrize(
+    ("method", "route", "body"),
+    [
+        ("PATCH", "/players/p1", {"name": "Ana"}),
+        ("PATCH", "/events/e_1", {"made": True}),
+        ("POST", "/events", {"t": 3.0}),
+        ("POST", "/score", {"t": 3.0, "scores": [2, 0]}),
+        ("GET", "/exports/vertical/" + VID, None),
+    ],
+)
+def test_game_writes_pull_only_what_they_change(cloud, aws, method, route, body):
+    gid, _ = _full_game(cloud, aws)
+    r = cloud.request(method, f"/games/{gid}{route}", json=body)
+    assert r.status_code < 300, r.text
+    assert _pulled_junk(cloud, gid) == []
+    if route == "/players/p1":  # the name save reached S3 (edits.json + game.json)
+        edits = aws.get_object(Bucket=BUCKET, Key=f"games/{gid}/edits.json")["Body"].read()
+        assert b"Ana" in edits
+        assert cloud.get(f"/games/{gid}").json()["players"][0]["name"] == "Ana"
+
+
+def test_a_pulled_folder_covers_its_files(cloud, aws):
+    """Commentary asks for every play's audio file: one LIST for the folder, not one each."""
+    gid, _ = _full_game(cloud, aws)
+    st = cloud.app.state.storage
+    from replay_api import cloud as cloud_mod
+
+    calls = []
+    real = st.listing
+    st.listing = lambda g, rel="": calls.append(rel) or real(g, rel)
+    token = cloud_mod.begin()
+    try:
+        st.game_dir_with(gid, "moments")
+        for i in range(10):
+            assert st.path(gid, f"moments/x_{i}.jpg").is_file()
+    finally:
+        cloud_mod.reset(token)
+    assert calls == ["moments"]
+
+
 def test_worker_claim_is_exclusive(cloud, aws):
     gid = _game(cloud)["id"]
     job = cloud.app.state.jobs.submit("process", gid, None)

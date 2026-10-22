@@ -58,7 +58,7 @@ def _load(storage, game_id: str, rel: str) -> list[dict]:
 def _user_scores(storage, game_id: str) -> list[dict]:
     """The user's score entries: edits.json, else (a game corrected before D-61) the
     `source: user` entries still in score.json."""
-    ov = edits.load(storage.game_dir(game_id))
+    ov = edits.load(storage.game_dir_with(game_id, edits.REL))
     if "score" in ov:
         return ov["score"]
     return [s for s in _load(storage, game_id, SCORE_REL) if s.get("source") == "user"]
@@ -120,7 +120,7 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
             "clip_id": None,
         }
         play_id, clip = adapter.resolve_trigger(game["sport"], trigger, plays, duration)
-        gd = storage.game_dir(game_id)
+        gd = storage.game_dir_with(game_id, edits.REL, TRIGGERS_REL, PLAYS_REL, CLIPS_REL)
         if play_id is not None:
             trigger["play_id"], trigger["clip_id"] = play_id, clip["id"]
             bare = {k: v for k, v in trigger.items() if k not in ("play_id", "clip_id")}
@@ -171,7 +171,7 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
         # clients that read it as "edited" (D-61)
         fields = {"t_start": round(body.t_start, 3), "t_end": round(body.t_end, 3),
                   "source": "user", "edited": True}  # fmt: skip
-        gd = storage.game_dir(game_id)
+        gd = storage.game_dir_with(game_id, edits.REL, CLIPS_REL)
         edits.patch(gd, CLIPS_REL, clip_id, fields)
         edits.apply(gd, (CLIPS_REL,))
         clip.update(fields)
@@ -201,7 +201,8 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
         entry = {"t": round(body.t, 3), "scores": list(body.scores), "event_id": body.event_id,
                  "source": "user"}  # fmt: skip
         user = sorted([*_user_scores(storage, game_id), entry], key=lambda s: s["t"])
-        gd = storage.game_dir(game_id)
+        # the score file is recomputed from the events
+        gd = storage.game_dir_with(game_id, edits.REL, SCORE_REL, "events.json")
         edits.record(gd, lambda ov: ov.update(score=user))  # D-61: survives re-runs
         # the file stays the whole timeline (the broadcast renderer reads it as is)
         edits.apply(gd, (SCORE_REL,))

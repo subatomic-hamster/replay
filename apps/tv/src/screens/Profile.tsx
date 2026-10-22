@@ -29,7 +29,7 @@ import {
 import { api } from "../api";
 import { Avatar } from "../components/Avatar";
 import { useDpad, type DpadAction } from "../input";
-import { navigate } from "../nav";
+import { navigate, type Route } from "../nav";
 import {
   PlayerSurface,
   useClockTime,
@@ -61,9 +61,12 @@ interface TabProps {
 export function Profile({
   profileId,
   from,
+  back,
 }: {
   profileId: string;
   from?: string;
+  /** opened from the player card: Back returns to it in one press */
+  back?: Route;
 }) {
   const [profile, setProfile] = useState<ProfileDoc | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -78,12 +81,12 @@ export function Profile({
 
   const onAction = useCallback(
     (a: DpadAction) => {
-      if (a === "back") navigate({ name: "players", from });
+      if (a === "back") navigate(back ?? { name: "players", from });
       else if (a === "left") setTab((i) => Math.max(0, i - 1));
       else if (a === "right") setTab((i) => Math.min(TABS.length - 1, i + 1));
       else if (a === "down" || a === "select") setZone("body");
     },
-    [from],
+    [from, back],
   );
   useDpad(onAction, zone === "tabs");
   const exit = useCallback(() => setZone("tabs"), []);

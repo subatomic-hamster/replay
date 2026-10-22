@@ -27,6 +27,7 @@ import type {
   TracksChunk,
 } from "./types";
 import type { ReplayManifest, ReplaySummary } from "./replays";
+import { fetchRetrying, idempotent } from "./retry";
 import type {
   Advice,
   Commentary,
@@ -550,14 +551,22 @@ export function createHttpApi(
 
   async function req<T>(
     path: string,
-    init?: RequestInit & { json?: unknown },
+    /** `idempotent`: a POST the API makes safe to repeat (a read, a hashed export) */
+    init?: RequestInit & { json?: unknown; idempotent?: boolean },
   ): Promise<T> {
-    const { json, ...rest } = init ?? {};
-    const res = await fetch(`${base}${path}`, {
-      ...rest,
-      headers: { ...headers(json !== undefined), ...(rest.headers as object) },
-      body: json !== undefined ? JSON.stringify(json) : rest.body,
-    });
+    const { json, idempotent: safePost, ...rest } = init ?? {};
+    const res = await fetchRetrying(
+      `${base}${path}`,
+      {
+        ...rest,
+        headers: {
+          ...headers(json !== undefined),
+          ...(rest.headers as object),
+        },
+        body: json !== undefined ? JSON.stringify(json) : rest.body,
+      },
+      idempotent(rest.method) || !!safePost, // D-87: a throttle is tried again
+    );
     if (!res.ok) {
       // The API reports failures as {"detail": "..."} — surface that, not just the code.
       const detail = await res.text().then(
@@ -574,8 +583,28 @@ export function createHttpApi(
     return (text ? JSON.parse(text) : undefined) as T;
   }
 
+  // D-87: a route the server cannot serve at all (503 "... is not available": the cloud
+  // API has no replay_render to compute hype or rallies live) is not asked again while
+  // this client lives; the same error comes back at once. A throttle 503 is not kept.
+  const unavailable = new Map<string, ApiError>();
+  async function reqUnlessUnavailable<T>(path: string): Promise<T> {
+    const known = unavailable.get(path);
+    if (known) throw known;
+    try {
+      return await req<T>(path);
+    } catch (e) {
+      if (
+        e instanceof ApiError &&
+        e.status === 503 &&
+        /not available/i.test(e.message)
+      )
+        unavailable.set(path, e);
+      throw e;
+    }
+  }
+
   async function fetchUrl<T>(url: string): Promise<T> {
-    const res = await fetch(url, { headers: headers(false) });
+    const res = await fetchRetrying(url, { headers: headers(false) }, true);
     if (!res.ok) throw new ApiError(res.status, `GET ${url} → ${res.status}`);
     return (await res.json()) as T;
   }
@@ -721,6 +750,7 @@ export function createHttpApi(
       req<QueryResult>(`/games/${gameId}/query`, {
         method: "POST",
         json: { text },
+        idempotent: true, // a read
       }),
     getStats: (gameId) => req<Stats>(`/games/${gameId}/stats`),
     getTracksChunk: (game, index) =>
@@ -792,9 +822,9 @@ export function createHttpApi(
         method: "POST",
         json: { t },
       }),
-    getHype: (gameId) => req<Hype>(`/games/${gameId}/hype`),
+    getHype: (gameId) => reqUnlessUnavailable<Hype>(`/games/${gameId}/hype`),
     getRallies: (gameId) =>
-      req<RallyDoc>(`/games/${gameId}/rallies`).then((d) => ({
+      reqUnlessUnavailable<RallyDoc>(`/games/${gameId}/rallies`).then((d) => ({
         ...d,
         condensed: {
           ...d.condensed,
@@ -802,11 +832,17 @@ export function createHttpApi(
         },
       })),
     renderCondensed: (gameId) =>
-      req<JobStatus>(`/games/${gameId}/condensed`, { method: "POST" }),
+      // the running or finished job when there is one: safe to repeat. Its doc makes
+      // /rallies servable on the cloud, so ask for that again afterwards
+      req<JobStatus>(`/games/${gameId}/condensed`, {
+        method: "POST",
+        idempotent: true,
+      }).finally(() => unavailable.delete(`/games/${gameId}/rallies`)),
     exportVertical: (gameId, body) =>
       req<VerticalExport>(`/games/${gameId}/exports/vertical`, {
         method: "POST",
         json: body,
+        idempotent: true, // the export's id hashes its spec
       }),
     getVertical: (gameId, vid) =>
       req<VerticalExport>(`/games/${gameId}/exports/vertical/${vid}`),
@@ -823,11 +859,13 @@ export function createHttpApi(
       req<SearchResult>(`/games/${gameId}/search`, {
         method: "POST",
         json: { text, k: 8 },
+        idempotent: true, // a read
       }).catch((e: unknown) => {
         if (e instanceof ApiError && (e.status === 409 || e.status === 503)) {
           return req<QueryResult>(`/games/${gameId}/query`, {
             method: "POST",
             json: { text },
+            idempotent: true,
           }).then((r) => queryAsSearch(text, r));
         }
         throw e;

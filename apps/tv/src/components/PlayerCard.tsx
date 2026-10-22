@@ -198,12 +198,14 @@ export function PlayerCard({
           </View>
         </View>
 
-        <T style={[type.meta, styles.dim, styles.section]}>This game</T>
+        <T style={[type.meta, styles.dim, styles.section]}>
+          This game · auto-detected
+        </T>
         {events === undefined ? (
           <View style={styles.statsBox}>
             <Spinner small testID="player-card-loading" />
           </View>
-        ) : !line?.cells.length ? (
+        ) : !line || (!line.cells.length && !line.missing.length) ? (
           <T style={[type.body, styles.dim]} testID="player-card-no-stats">
             {events === null
               ? "The stats could not be loaded"
@@ -211,36 +213,44 @@ export function PlayerCard({
           </T>
         ) : (
           <>
-            <View style={styles.statsBox}>
-              {line.cells.map((c) => (
-                <View
-                  key={c.label}
-                  style={[
-                    styles.cell,
-                    { width: INNER_W / Math.max(5, line.cells.length) },
-                  ]}
-                  testID={`player-stat-${c.label}`}
-                  dataSet={{ value: c.value }}
-                >
-                  <T style={styles.fig}>{c.value}</T>
-                  <T style={[type.meta, styles.dim]}>{c.label}</T>
-                </View>
-              ))}
-            </View>
+            {line.cells.length ? (
+              <View style={styles.statsBox}>
+                {line.cells.map((c) => (
+                  <View
+                    key={c.label}
+                    style={[
+                      styles.cell,
+                      { width: INNER_W / Math.max(5, line.cells.length) },
+                    ]}
+                    testID={`player-stat-${c.label}`}
+                    dataSet={{ value: c.value }}
+                  >
+                    <T style={styles.fig}>{c.value}</T>
+                    <T style={[type.meta, styles.dim]}>{c.label}</T>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <T style={[type.body, styles.dim]} testID="player-card-no-stats">
+                No stats detected for this player yet
+              </T>
+            )}
             {line.note ? (
               <T style={[type.meta, styles.dim]} testID="player-stat-note">
                 {line.note}
               </T>
             ) : null}
-            <T
-              style={[type.meta, styles.dim]}
-              numberOfLines={2}
-              testID="player-stat-missing"
-            >
-              {line.missing.length
-                ? `Auto-detected. Not detected in this game: ${line.missing.join(", ")}.`
-                : "Auto-detected."}
-            </T>
+            {line.missing.length ? (
+              // one quiet line, however many: most of a rally game's stats on real
+              // footage today (D-83)
+              <T
+                style={[type.meta, styles.dim]}
+                numberOfLines={2}
+                testID="player-stat-missing"
+              >
+                {`Not detected yet: ${line.missing.join(", ")}`}
+              </T>
+            ) : null}
           </>
         )}
 

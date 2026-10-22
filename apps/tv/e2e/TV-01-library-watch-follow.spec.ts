@@ -102,7 +102,7 @@ test("TV-01 Home → player → follow a player → Back → Home", async ({
   await expect(page.getByTestId("domore")).toHaveCount(0);
 
   // Back stops following: the camera eases back to the wide shot (identity transform),
-  // playback goes on, the frame stays on p3 (W4).
+  // playback goes on, the ring is gone (D-86; it remembers p3 for the next Select).
   const leaving = (await video(page))!.currentTime;
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("followcam-active")).toHaveCount(0);
@@ -112,6 +112,7 @@ test("TV-01 Home → player → follow a player → Back → Home", async ({
     "data-pid",
     "p3",
   );
+  await expect(page.getByTestId("follow-frame")).toHaveCSS("opacity", "0");
   await expect(page.getByTestId("watch-title")).toBeAttached();
 
   // Back hides the transport, then Back on bare video goes Home.

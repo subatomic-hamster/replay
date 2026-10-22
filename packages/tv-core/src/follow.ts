@@ -133,6 +133,9 @@ export function createFollowCam(
   let lastT: number | null = null;
   let lastBox: Rect | null = null;
   let lastSeen = -Infinity;
+  // when the camera started looking (first step, or a seek): not yet seen is not lost,
+  // and "lost" counts from here until the first box
+  let looking = 0;
   let gapPrev: TrackPlayer[] | null = null; // who was on court when the gap began
   let bornCache: Map<string, boolean> | null = null; // bornOnUs, per gap
   let held: [number, number] | null = null; // dead-zone anchor
@@ -141,7 +144,7 @@ export function createFollowCam(
     rect: [0, 0, 1, 1],
     box: null,
     id,
-    lost: Infinity,
+    lost: 0,
     last: null,
   };
 
@@ -206,6 +209,7 @@ export function createFollowCam(
   function step(t: number, dt: number, zoom: boolean): FollowView {
     const seek = lastT !== null && Math.abs(t - lastT) > SEEK_S;
     const s = Math.min(Math.max(dt, 0), 0.1);
+    if (lastT === null || seek) looking = t;
     lastT = t;
     if (seek) {
       // The chain before a seek says nothing about the new time: only our id can resume.
@@ -317,7 +321,7 @@ export function createFollowCam(
       rect: [x, y, w, h],
       box,
       id,
-      lost: box ? 0 : t - lastSeen,
+      lost: box ? 0 : t - Math.max(lastSeen, looking),
       last: lastBox,
     };
     return view;

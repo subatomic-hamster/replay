@@ -236,8 +236,8 @@ class S3Storage(LocalStorage):
         rel = rel.strip("/")
         scope = _scope.get()
         done = scope["pulled"].setdefault(game_id, set()) if scope else set()
-        if "" in done or rel in done:
-            return
+        if any(d in ("", rel) or rel.startswith(d + "/") for d in done):
+            return  # this request already mirrored it, or a folder holding it
         listing = self.listing(game_id, rel)
         seen = self.seen.setdefault(game_id, {})
         root = self.games_dir / game_id

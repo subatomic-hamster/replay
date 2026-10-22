@@ -5,6 +5,7 @@
 import {
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -39,8 +40,8 @@ export interface PlayerHandle {
   clock: Clock | null;
 }
 
-/** D-82 client follow-cam: the camera, whether it zooms (follow mode) or only tracks (the
- *  ring stays on the player in the wide shot), and the ring's words and team colour. */
+/** D-82 client follow-cam: the camera, whether it follows (zoom and ring) or eases back
+ *  to the wide shot with no ring (D-86), and the ring's words and team colour. */
 export interface Follow {
   cam: FollowCam;
   pid: string;
@@ -148,6 +149,10 @@ export function PlayerSurface({
   const zoom = useRef(false);
   zoom.current = !!follow?.zoom;
   const cam = follow?.cam ?? null;
+  // Not following: the ring goes on the render that says so, not a frame later.
+  useLayoutEffect(() => {
+    if (!follow?.zoom) ring.opacity.setValue(0);
+  }, [follow?.zoom, ring]);
   useEffect(() => {
     const reset = () => {
       anim.tx.setValue(0);
@@ -203,9 +208,12 @@ export function PlayerSurface({
           ringBox = ringBox.map((a, i) => a + (box[i] - a) * k);
         } else ringBox = [...box];
       } else lost += dt;
-      const on = !!ringBox && lost < RING_GRACE_S;
-      // fade in fast (the ring is the answer to Select), out gently
-      alpha += ((on ? 1 : 0) - alpha) * Math.min(1, dt * (on ? 25 : 6));
+      const on = zoom.current && !!ringBox && lost < RING_GRACE_S;
+      // fade in fast (the ring is the answer to Select), out gently; Back (not following
+      // any more) takes it off at once while the camera eases back out
+      alpha = zoom.current
+        ? alpha + ((on ? 1 : 0) - alpha) * Math.min(1, dt * (on ? 25 : 6))
+        : 0;
       if (ringBox) {
         const [bx, by, bw, bh] = mapBB(
           ringBox as [number, number, number, number],

@@ -37,7 +37,8 @@ def _docs(request: Request, game_id: str):
     game = st.index.load(game_id)
     if game is None:
         raise HTTPException(404, f"game {game_id} not found")
-    gd = st.storage.game_dir(game_id)
+    # what load_docs reads, not the whole game (D-86)
+    gd = st.storage.game_dir_with(game_id, "game.json", "events.json", "plays.json", "score.json")
     if not (gd / "game.json").is_file():
         return game, [], [], []
     _, events, plays, score = C.load_docs(gd)
@@ -53,7 +54,8 @@ def _media(request: Request, game_id: str, rel: str) -> str | None:
 
 def _script(request: Request, game_id: str, llm: bool, only: str | None = None) -> dict:
     game, events, plays, score = _docs(request, game_id)
-    stored = request.app.state.storage.path(game_id, SCRIPT_REL)
+    # the folder once: the script and every play's audio below (one LIST, not one a play)
+    stored = request.app.state.storage.game_dir_with(game_id, "commentary") / SCRIPT_REL
     if stored.is_file() and not llm:
         doc = json.loads(stored.read_text(encoding="utf-8"))
         doc["stored"] = True
@@ -119,7 +121,8 @@ def search(request: Request, game_id: str, body: SearchIn):
     profile = adapter.get_profile(game.get("sport", "")) or {}
     engine = get_query_engine(st.settings.query, merged_vocab(profile.get("query_vocab")))
     filt = engine.query(body.text, game, events)
-    results = S.rank(st.storage.game_dir(game_id), index, q, filt.get("event_ids", []), body.k,
+    results = S.rank(st.storage.game_dir_with(game_id, "embeddings"), index, q,
+                     filt.get("event_ids", []), body.k,
                      query_text=body.text)  # fmt: skip
     return {
         "query": body.text,

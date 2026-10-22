@@ -192,6 +192,20 @@ test("follow-cam: a gap holds the spot and widens slowly; Back eases to exactly 
   expect(cam.current().rect).toEqual([0, 0, 1, 1]);
 });
 
+test("follow-cam: not seen yet is not lost; lost counts from when it started looking", () => {
+  // device: paused right after Select, the chip read "Lost sight of" (lost was Infinity
+  // until the first box)
+  const late = (t: number) => (t < 12 ? [] : [at("p1", 0.3)]);
+  const cam = createFollowCam(fakeTracks(late), "p1");
+  expect(cam.current().lost).toBe(0);
+  cam.step(10, 1 / 60, true);
+  expect(cam.current().lost).toBe(0);
+  run(cam, 10 + 1 / 60, 11);
+  expect(cam.current().lost).toBeCloseTo(1, 1);
+  run(cam, 11, 12.5);
+  expect(cam.current().lost).toBe(0);
+});
+
 test("clock: Play after a pause does not jump by the pause; extrapolation is capped", () => {
   // Drive the clock by hand: a fake wall clock and animation frame.
   let wall = 0;

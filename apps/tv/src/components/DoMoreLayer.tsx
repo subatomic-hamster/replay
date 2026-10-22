@@ -138,7 +138,10 @@ export function DoMoreLayer({
                     <View
                       style={[
                         { width: w, height: h },
-                        view === "chips" ? styles.chip : styles.tile,
+                        // a thumb's art fills the tile edge to edge (no text padding)
+                        view === "chips"
+                          ? styles.chip
+                          : view === "tiles" && styles.tile,
                         t.on && !on && view !== "thumbs" && styles.current,
                         t.pending && { opacity: 0.55 },
                       ]}

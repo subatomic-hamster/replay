@@ -56,6 +56,7 @@ import {
   povOf,
   tierBadge,
   type ReplayManifest,
+  type ReplaySummary,
 } from "../../../../packages/tv-core/src/replays";
 import { createTracksCache } from "../../../../packages/tv-core/src/tracksCache";
 import type {
@@ -142,7 +143,32 @@ interface SeekState {
 }
 
 const POLL_MS = 10_000;
+const EXTRAS_LATEST_MS = 3000;
+
+/** D-87: true once the game is read and its video has a first frame (a duration), or
+ *  EXTRAS_LATEST_MS after the game when the video is slow or fails: then the requests
+ *  the first frame does not need (commentary, hype, rallies, replay angles) go out. */
+function useExtrasReady(game: boolean, handle: PlayerHandle | null) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (ready || !game) return;
+    const t0 = Date.now();
+    const timer = setInterval(() => {
+      if (
+        (handle && handle.duration() > 0) ||
+        Date.now() - t0 >= EXTRAS_LATEST_MS
+      ) {
+        setReady(true);
+        clearInterval(timer);
+      }
+    }, 100);
+    return () => clearInterval(timer);
+  }, [ready, game, handle]);
+  return ready;
+}
 const TOAST_MS = 3000;
+/** A moment this close to a replayed play's window links to its angles. */
+const ANGLES_NEAR_S = 15;
 /** Highlights stay short, like Prime's Rapid Recap. */
 const REEL_MAX = 13;
 const WAY_NAMES: Record<Way, string> = {
@@ -185,9 +211,12 @@ export function Watch({
   initialT,
   initialWay,
   initialPlay,
+  initialCard,
   q,
 }: {
   gameId: string;
+  /** reopen the player card (Back from its View profile), paused */
+  initialCard?: { pid: string; resume: boolean };
   initialMode?: string;
   initialPid?: string;
   initialT?: number;
@@ -201,18 +230,25 @@ export function Watch({
     error,
     reload,
   } = useAsync(() => api.getGame(gameId), [gameId]);
-  const { data: replays } = useAsync(() => api.listReplays(gameId), [gameId]);
+  const [handle, setHandle] = useState<PlayerHandle | null>(null);
+  const extras = useExtrasReady(!!game, handle);
+  // D-87: what the first frame does not need waits for it (`extras`): the open is the
+  // game, renditions and moments, not nine requests at once on a 10-concurrency Lambda
+  const { data: replays } = useAsync(
+    () => (extras ? api.listReplays(gameId) : Promise.resolve(null)),
+    [gameId, extras],
+  );
   const { data: renditions } = useAsync(
     () => api.listRenditions(gameId),
     [gameId],
   );
   const { data: commentary } = useAsync(
-    () => api.getCommentary(gameId),
-    [gameId],
+    () => (extras ? api.getCommentary(gameId) : Promise.resolve(null)),
+    [gameId, extras],
   );
   const { data: hype, error: hypeError } = useAsync(
-    () => api.getHype(gameId),
-    [gameId],
+    () => (extras ? api.getHype(gameId) : Promise.resolve(null)),
+    [gameId, extras],
   );
   // The game re-read while it is processing: readiness, features, the storyboard URL.
   const [live, setLive] = useState<Game | null>(null);
@@ -224,11 +260,10 @@ export function Watch({
   const broadcast = broadcastOf(renditions);
   const lines = useMemo(() => commentaryLines(commentary), [commentary]);
 
-  const [handle, setHandle] = useState<PlayerHandle | null>(null);
   const [mode, setMode] = useState<Mode>(
     initialMode === "select" || initialMode === "follow" ? initialMode : "wide",
   );
-  const [layer, setLayer] = useState<Layer>(null);
+  const [layer, setLayer] = useState<Layer>(initialCard ? "player" : null);
   const [layerT, setLayerT] = useState(0); // media time when the layer opened
   const [chrome, setChrome] = useState(true);
   const [way, setWay] = useState<Way>(
@@ -249,8 +284,11 @@ export function Watch({
   const [tagging, setTagging] = useState<string | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
   /** The player card's player (layer "player"); Moments filtered to one player. */
-  const [cardPid, setCardPid] = useState<string | null>(null);
-  const cardPlaying = useRef(false); // playing when the card opened: Back resumes
+  const [cardPid, setCardPid] = useState<string | null>(
+    initialCard?.pid ?? null,
+  );
+  // playing when the card opened: Back resumes
+  const cardPlaying = useRef(initialCard?.resume ?? false);
   const [momentsOf, setMomentsOf] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const renderAsked = useRef<string | null>(null);
@@ -266,7 +304,7 @@ export function Watch({
    *  open of the full game starts where it was left (resume.ts). */
   const pending = useRef<{ t: number | null; play: boolean } | null>(
     (() => {
-      const play = initialMode !== "select";
+      const play = initialMode !== "select" && !initialCard;
       if (initialT !== undefined) return { t: initialT, play };
       const spot =
         (initialWay ?? "full") === "full" &&
@@ -307,10 +345,13 @@ export function Watch({
   );
   useEffect(() => {
     loadMoments();
+  }, [loadMoments]);
+  useEffect(() => {
+    if (!extras) return;
     Promise.resolve()
       .then(() => api.getRallies(gameId))
       .then(setRallies, () => setRallies(null));
-  }, [gameId, loadMoments]);
+  }, [gameId, extras]);
 
   const processing = !!info && info.status !== "ready";
   useEffect(() => {
@@ -1106,12 +1147,15 @@ export function Watch({
       Math.abs((b.t_start + b.t_end) / 2 - t),
   )[0];
   const nearId = nearestReplay?.play_id;
-  /** The replay whose window holds a moment: Moments → Down opens its angles. */
+  /** The replay nearest a moment, within ANGLES_NEAR_S of its window: Moments → Down
+   *  opens its angles. None near: the moment shows no angles link. */
   const replayOf = useCallback(
-    (m: Moment) =>
-      (replays ?? []).find(
-        (r) => m.t >= r.t_start - 0.5 && m.t <= r.t_end + 0.5,
-      ),
+    (m: Moment) => {
+      const gap = (r: ReplaySummary) =>
+        Math.max(r.t_start - m.t, 0, m.t - r.t_end);
+      const best = [...(replays ?? [])].sort((a, b) => gap(a) - gap(b))[0];
+      return best && gap(best) <= ANGLES_NEAR_S ? best : undefined;
+    },
     [replays],
   );
   const momentHasAngles = useCallback((m: Moment) => !!replayOf(m), [replayOf]);
@@ -1719,10 +1763,24 @@ export function Watch({
                     profileId
                       ? () => {
                           remember(true);
+                          // Back from the profile: this card again, paused here
+                          const following = mode === "follow" && !!pid;
                           navigate({
                             name: "profile",
                             profileId,
                             from: gameId,
+                            back: {
+                              name: "watch",
+                              gameId,
+                              way,
+                              mode: following ? "follow" : undefined,
+                              pid: following ? (pid ?? undefined) : undefined,
+                              t: handle?.currentTime() ?? t,
+                              card: {
+                                pid: cardPid,
+                                resume: cardPlaying.current,
+                              },
+                            },
                           });
                         }
                       : undefined

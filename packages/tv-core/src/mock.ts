@@ -1560,6 +1560,7 @@ export const mockApi: ReplayApi = {
 (globalThis as { __replayMock?: unknown }).__replayMock = {
   api: mockApi,
   games,
+  ApiError, // a spec can make a call fail the way the real client does
 };
 
 /** D-80 phone page client. The token "expired" stands in for a stale QR: every call 401s. */

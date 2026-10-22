@@ -56,12 +56,18 @@ class VerticalIn(BaseModel):
     player_id: str | None = None
 
 
-def _game(request: Request, game_id: str) -> tuple[dict, Path]:
+# what replay_render.gamedata.load_game reads
+GAMEDATA = ("game.json", "calib.json", "tracks", "events.json", "score.json", "plays.json")
+
+
+def _game(request: Request, game_id: str, *rels: str) -> tuple[dict, Path]:
+    """The game and its folder with only `rels` current: on S3 a route pulls what it
+    reads, never the whole game (D-86)."""
     st = request.app.state
     game = st.index.load(game_id)
     if game is None:
         raise HTTPException(404, f"game {game_id} not found")
-    return game, st.storage.game_dir(game_id)
+    return game, st.storage.game_dir_with(game_id, *rels)
 
 
 def _read(path: Path, key: str) -> list[dict]:
@@ -149,8 +155,8 @@ def get_hype(request: Request, game_id: str):
     stored = _stored(request, game_id, HYPE_REL)
     if stored is not None:
         return {**stored, "stored": True}
-    _, gd = _game(request, game_id)
-    gamedata, hype = _render("gamedata"), _render("hype")
+    gamedata, hype = _render("gamedata"), _render("hype")  # cloud: 503 before any pull
+    _, gd = _game(request, game_id, *GAMEDATA, "audio.json", "poses", "media/wide.mp4")
     return {**hype.hype_series(gamedata.load_game(gd)), "stored": False}
 
 
@@ -167,7 +173,7 @@ def _rallies(request: Request, game_id: str) -> tuple[dict, Path]:
         storage = request.app.state.storage
         storage.path(game_id, CONDENSED_REL)  # cloud: mirrors just the rendition's stub
         return stored, storage.games_dir / game_id
-    game, gd = _game(request, game_id)
+    game, gd = _game(request, game_id, "events.json", "plays.json", CONDENSED_DOC, CONDENSED_REL)
     events = _live_events(gd)
     # basketball has no rallies: its condensed game cuts the shots and turnovers
     rallies = cond.rally_list(events, _read(gd / "plays.json", "plays")) or cond.play_list(events)
@@ -197,7 +203,7 @@ def get_rallies(request: Request, game_id: str):
 
 @router.get("/games/{game_id}/condensed")
 def get_condensed(request: Request, game_id: str):
-    _, gd = _game(request, game_id)
+    _, gd = _game(request, game_id, CONDENSED_DOC, CONDENSED_REL)
     out = _condensed_status(request, game_id, gd)
     stored = _read_doc(gd / CONDENSED_DOC)
     if stored:
@@ -233,8 +239,8 @@ def _export(request: Request, game_id: str, gd: Path, vid: str) -> dict:
 
 @router.post("/games/{game_id}/exports/vertical", status_code=202)
 def post_vertical(request: Request, game_id: str, body: VerticalIn, response: Response):
-    _, gd = _game(request, game_id)
-    gamedata, vertical = _render("gamedata"), _render("vertical")
+    gamedata, vertical = _render("gamedata"), _render("vertical")  # 503 before any pull
+    _, gd = _game(request, game_id, *GAMEDATA, "clips.json", VERTICAL_DIR)
     try:
         spec = vertical.resolve(gamedata.load_game(gd), **body.model_dump())
     except KeyError as exc:
@@ -257,14 +263,14 @@ def post_vertical(request: Request, game_id: str, body: VerticalIn, response: Re
 
 @router.get("/games/{game_id}/exports/vertical")
 def list_vertical(request: Request, game_id: str):
-    _, gd = _game(request, game_id)
+    _, gd = _game(request, game_id, VERTICAL_DIR)
     vids = sorted(p.stem for p in (gd / VERTICAL_DIR).glob("v_*.json") if VID.match(p.stem))
     return {"game_id": game_id, "exports": [_export(request, game_id, gd, v) for v in vids]}
 
 
 @router.get("/games/{game_id}/exports/vertical/{vid}")
 def get_vertical(request: Request, game_id: str, vid: str):
-    _, gd = _game(request, game_id)
+    _, gd = _game(request, game_id, VERTICAL_DIR)
     if not VID.match(vid):
         raise HTTPException(404, f"export {vid} not found")
     return _export(request, game_id, gd, vid)
@@ -340,6 +346,6 @@ def get_reel(request: Request, game_id: str, rid: str):
 
 @router.get("/games/{game_id}/review/queue")
 def review_queue(request: Request, game_id: str):
-    game, gd = _game(request, game_id)
+    game, gd = _game(request, game_id, "events.json", "tracks")
     questions = stats_mod.review_queue(game, _live_events(gd), _frames(gd))
     return {"game_id": game_id, "label": "auto-detected", "questions": questions}

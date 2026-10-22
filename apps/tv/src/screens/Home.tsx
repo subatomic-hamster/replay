@@ -268,7 +268,8 @@ export function Home() {
           game &&
           watchable(game)
         ) {
-          navigate({ name: "watch", gameId: game.id });
+          // the hero's Play/Resume: it plays, at the saved spot, even if left paused
+          navigate(actions[0].to);
         }
       } else {
         if (a === "left" || a === "right")

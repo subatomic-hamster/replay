@@ -85,6 +85,20 @@ test("TV-29 a sub-screen's Back resumes at the same time and play state; Home of
   expect((await media(page)).t).toBeGreaterThanOrEqual(t1 - 0.1);
   expect((await media(page)).t).toBeLessThan(t1 + 3);
 
+  // Left paused, the game's card (Select or Play/Pause) still opens it playing, there.
+  await page.keyboard.press("Space");
+  await expect.poll(async () => (await media(page)).paused).toBe(true);
+  const tp = (await media(page)).t;
+  await page.keyboard.press("Escape");
+  await expect(card).toHaveAttribute("data-focused", "true");
+  await page.keyboard.press(" ");
+  await expect
+    .poll(async () => (await media(page)).ready, { timeout: 15_000 })
+    .toBeGreaterThanOrEqual(2);
+  await expect.poll(async () => (await media(page)).paused).toBe(false);
+  expect((await media(page)).t).toBeGreaterThanOrEqual(tp - 0.1);
+  expect((await media(page)).t).toBeLessThan(tp + 3);
+
   // The position survives a reload (settings storage): pause, leave (stored at once,
   // not on the 5 s cadence), reload.
   await page.keyboard.press("Space");

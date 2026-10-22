@@ -1,0 +1,56 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "replay court",
+      "intents": [
+        {
+          "name": "PairIntent",
+          "slots": [{ "name": "code", "type": "AMAZON.FOUR_DIGIT_NUMBER" }],
+          "samples": [
+            "pair code {code}",
+            "pair with code {code}",
+            "pair {code}",
+            "pair with {code}",
+            "the code is {code}",
+            "my code is {code}",
+            "code {code}"
+          ]
+        },
+        {
+          "name": "ExportReelIntent",
+          "slots": [],
+          "samples": [
+            "export a highlight reel",
+            "export the highlight reel",
+            "export my highlight reel",
+            "make a highlight reel",
+            "make me a highlight reel",
+            "make the highlight reel",
+            "share a highlight reel",
+            "share the highlight reel",
+            "send me a highlight reel",
+            "export highlights",
+            "export a reel"
+          ]
+        },
+        {
+          "name": "ClipThatIntent",
+          "slots": [],
+          "samples": [
+            "clip that",
+            "clip it",
+            "clip this",
+            "save that clip",
+            "clip the last play"
+          ]
+        },
+        { "name": "AMAZON.HelpIntent", "samples": [] },
+        { "name": "AMAZON.StopIntent", "samples": [] },
+        { "name": "AMAZON.CancelIntent", "samples": [] },
+        { "name": "AMAZON.NavigateHomeIntent", "samples": [] },
+        { "name": "AMAZON.FallbackIntent", "samples": [] }
+      ],
+      "types": []
+    }
+  }
+}

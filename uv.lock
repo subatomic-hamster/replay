@@ -1380,7 +1380,9 @@ version = "0.1.0"
 source = { editable = "services/api" }
 dependencies = [
     { name = "boto3" },
+    { name = "certifi" },
     { name = "courtcam" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "mangum" },
@@ -1399,7 +1401,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.35" },
+    { name = "certifi" },
     { name = "courtcam", editable = "courtcam" },
+    { name = "cryptography", specifier = ">=42" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mangum", specifier = ">=0.17" },

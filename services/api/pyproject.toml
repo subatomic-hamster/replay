@@ -14,6 +14,9 @@ dependencies = [
     "boto3>=1.35",
     "mangum>=0.17",
     "httpx>=0.27",
+    # docs/alexa.md: Alexa request signatures (x509.verification needs >= 42), certifi roots
+    "cryptography>=42",
+    "certifi",
 ]
 
 [dependency-groups]

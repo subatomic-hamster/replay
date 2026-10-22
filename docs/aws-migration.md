@@ -208,6 +208,23 @@ end; a trigger with no play covers the 8 s before it. Voice and gesture keep `so
 `clip_id` (null when unresolved). Thumbs come from the `moments` stage like any moment.
 No TV contract change is required; a client that wants a distinct icon reads `trigger`.
 
+### Alexa voice relay (2026-10-22, docs/alexa.md)
+
+- `POST /alexa`: the custom skill's endpoint. No `X-Replay-Key`. Amazon's signature is
+  checked instead: cert URL rules, the chain to a certifi root with SAN
+  `echo-api.amazon.com`, SHA-256 over the raw body, and a timestamp within 150 s. The
+  skill id must equal SSM `/replay/alexa-skill-id` (a plain String, looked up on the first
+  verified request, so no redeploy; env `REPLAY_ALEXA_SKILL_ID` in local mode). Any
+  failure is a 400.
+- `POST /tv/pair`, `POST /tv/state`, `GET /tv/commands?after=`,
+  `POST /tv/commands/{id}/ack`: X-Replay-Key. One TV per API key. State is
+  `alexa/{pair,link,tv,commands,acks}.json` in the media bucket (local:
+  `data/alexa/`). Codes last 300 s with 5 tries, commands 60 s, and a heartbeat counts
+  as "watching" for 30 s.
+- `export_reel` also queues the reel job (`POST /exports/reel` logic, job kind
+  `reel:<rid>`) inside the Alexa request. Nothing renders in Lambda.
+- The Lambda zip now carries `cryptography` and `certifi` (services/api dependencies).
+
 ### Cloud-mode gaps (documented, not hidden)
 
 - `/sessions` WebSocket (phone companion query channel): 501 in cloud mode. The QR page

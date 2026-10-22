@@ -27,7 +27,16 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from . import auth, cloud_routes, discovery_routes, edits, plays_routes, providers, readiness
+from . import (
+    alexa_routes,
+    auth,
+    cloud_routes,
+    discovery_routes,
+    edits,
+    plays_routes,
+    providers,
+    readiness,
+)
 from . import moments as moments_mod
 from . import pipeline_adapter as adapter
 from . import stats as stats_mod
@@ -374,6 +383,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessions: dict[str, dict] = {}
     # local mode without a configured secret: tokens last as long as the process
     app.state.token_secret = s.upload_token_secret or secrets.token_urlsafe(32)
+    app.state.alexa = alexa_routes.Store(s, app.state.storage)
+    app.state.alexa_skill_id = s.alexa_skill_id
 
     @app.middleware("http")
     async def require_key(request: Request, call_next):
@@ -384,7 +395,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return JSONResponse({"detail": "missing or invalid X-Replay-Worker-Key"}, 401)
         elif (
             s.api_key
-            and not (path.startswith("/media/") or path in ("/healthz", "/config"))
+            # /alexa: Amazon signs it instead (alexa_verify)
+            and not (path.startswith("/media/") or path in ("/healthz", "/config", "/alexa"))
             and not auth.same(h.get("x-replay-key"), s.api_key)
         ):
             secret, method = app.state.token_secret, request.method
@@ -419,6 +431,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(narrate_routes.router)  # M7: commentary, advice, search
     app.include_router(discovery_routes.router)  # M11: hype, rallies, exports, review
     app.include_router(profile_routes.router)  # M10: profiles, cards, links, opt-in faces
+    app.include_router(alexa_routes.router)  # docs/alexa.md: skill endpoint + TV relay
     return app
 
 

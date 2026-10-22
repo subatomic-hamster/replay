@@ -1,0 +1,31 @@
+{
+  "manifest": {
+    "manifestVersion": "1.0",
+    "publishingInformation": {
+      "locales": {
+        "en-US": {
+          "name": "Replay Court",
+          "summary": "Clip plays and export a highlight reel from the Replay app on your Fire TV.",
+          "description": "Replay Court talks to the Replay app on your Fire TV. Pair it once with the code your TV shows, then say \"clip that\" while you watch a game, or ask for a highlight reel and scan the code on the TV to get it on your phone.",
+          "examplePhrases": [
+            "Alexa, ask replay court to clip that",
+            "Alexa, ask replay court to export a highlight reel",
+            "Alexa, ask replay court to pair code 4829"
+          ],
+          "keywords": ["replay", "highlights", "basketball"]
+        }
+      },
+      "isAvailableWorldwide": false,
+      "distributionCountries": ["US"],
+      "testingInstructions": "Development stage only (hackathon demo). Pair with the 4-digit code from Replay's Settings > Pair with Alexa on the Fire TV."
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "https://a3pd2rqlfcehgeg4dn2gbswnqa0dozxj.lambda-url.us-east-1.on.aws/alexa",
+          "sslCertificateType": "Wildcard"
+        }
+      }
+    }
+  }
+}

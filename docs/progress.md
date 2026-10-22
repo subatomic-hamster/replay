@@ -440,3 +440,22 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - Verified on hfbox, local mode, synthetic clip (`courtcam synth` basketball 30 s, TTS "Replay, clip that"): all features ready in 582 s (SAM replays about 100 s a play). The voice trigger at 24.6 s became a "Your clip (voice)" moment. The X sign was missed with YOLO-pose on the synthetic mannequins (known), and found with ground-truth poses. Reels 18 s in 6 s each, h264/aac 1280x720 and 720x1280; frames checked (tags, captions, 9:16 framing on the shooter). api+worker 288 passed, 1 skipped.
   - Real game (local copy of `g_c8b6186280ac`, runner env): default stages 51 s, hype 9 s (6 candidates), condensed 81 s (28 plays; 241 s cut to 175 s, so not much shorter, because plays cover most of this game). Reels of 28 s, 4 top plays (2 steals, a 3-pt shot and a 2-pt shot), in 8 s each. The 9:16 cut keeps the ball handler in frame. No triggers on this footage, so no user clips. The long game title overflowed the caption; `caption_sprite` now cuts it with an ellipsis (this also fixes the 9:16 export).
   - Left: in the voice segment the caption names the overlapping play ("#P10 · 2-PT SHOT"), not the clip. Tier C stays out. Without `botocore.auth.get_current_datetime` (old botocore), URLs fall back to a fresh signature each time.
+
+## Alexa backend and skill package (2026-10-22)
+
+- `POST /alexa` is the Replay Court custom skill endpoint (dev stage, no account linking). Requests are verified with `cryptography`'s web-PKI verifier plus an RSA-SHA256 check of the raw body, the timestamp within 150 s and the skill id from SSM `/replay/alexa-skill-id`.
+- Intents:
+  - Pair (4-digit code from `POST /tv/pair`, 5 tries) links the Alexa userId to the TV.
+  - ExportReel writes `export_reel` and queues the reel job.
+  - ClipThat writes `clip_that` at the TV's heartbeat time, extrapolated while playing.
+  - Launch, Help, Stop and Fallback give short answers that say the real state.
+- The TV side is `/tv/state` heartbeats, a 1 s `/tv/commands` poll and acks. State is small JSON docs under `alexa/` in S3 (local: `data/alexa/`).
+- The skill package is in `alexa/skill-package` (en-US, invocation "replay court", endpoint = the Function URL with the wildcard-cert option). Runbook and TV contract: docs/alexa.md.
+- Verified on hfbox:
+  - api 286 passed, 1 skipped, including 26 Alexa tests: a self-made CA, valid/bad signature, stale timestamp, wrong or unset skill id, 9 bad cert URLs, wrong SAN, expired cert, missing intermediate, and the pair/command/ack flow in local and moto S3 mode with the SSM skill-id lookup.
+  - Amazon's real echo-api-cert-9..12 chains pass the verifier at their validity dates and are rejected now (expired).
+  - ruff clean.
+- Left:
+  - The user does the console setup and the `put-parameter` (docs/alexa.md §2–3), then a Lambda rebuild and redeploy.
+  - The TV side of the contract (pair panel, heartbeat, poll, `reel` phone job, long-press fallback) goes to the TV agent.
+  - Untested on hardware: the Function URL accepted as a wildcard-cert endpoint, and Fire TV Stick voice reaching a dev skill.

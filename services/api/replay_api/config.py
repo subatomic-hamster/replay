@@ -40,6 +40,9 @@ class Settings:
     # cloud /media: a presigned URL stays the same for this long, so clients cache it
     # (S3Storage.media_redirect); 0 = a fresh URL per request
     media_sign_window_s: int = 3600
+    # docs/alexa.md: the custom skill's id ("amzn1.ask.skill...."); POST /alexa answers
+    # 400 until it is set. Cloud: SSM `{ssm_prefix}alexa-skill-id`, read when first needed.
+    alexa_skill_id: str | None = None
 
     @property
     def cloud(self) -> bool:
@@ -83,5 +86,6 @@ def from_env(**overrides) -> Settings:
         worker_key=env("REPLAY_WORKER_KEY") or None,
         upload_token_secret=env("REPLAY_UPLOAD_TOKEN_SECRET") or None,
         media_sign_window_s=int(env("REPLAY_MEDIA_SIGN_WINDOW_S") or 3600),
+        alexa_skill_id=env("REPLAY_ALEXA_SKILL_ID") or None,
     )
     return s if not overrides else Settings(**{**s.__dict__, **overrides})

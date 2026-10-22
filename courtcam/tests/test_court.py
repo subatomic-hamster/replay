@@ -75,3 +75,47 @@ def test_the_bench_inside_the_margin_is_a_bystander():
     assert sorted(t.track_id for t in kept) == [1, 2]
     verdict = {t.track_id: bystander(t, TEMPLATE.polygon, PROFILE.tracking) for t in kept}
     assert verdict == {1: True, 2: False}
+
+
+def _camera_people(k: np.ndarray, r: np.ndarray, t: np.ndarray):
+    """Six 1.75 m people walking on the half court, boxed as this camera sees them."""
+    out = []
+    for i in range(6):
+        times = np.arange(45) / 15
+        ground = np.c_[-5 + 2 * i + np.sin(times), 3 + i + times]
+        foot, head = ((k @ (r @ np.c_[ground, np.full(45, z)].T + t[:, None])).T for z in (0, 1.75))
+        foot, head = foot[:, :2] / foot[:, 2:], head[:, :2] / head[:, 2:]
+        hgt = foot[:, 1] - head[:, 1]
+        boxes = np.c_[foot[:, 0] - hgt / 6, head[:, 1], hgt / 3, hgt]
+        out.append(Tracklet(i, np.arange(45) * 2, times, boxes, np.full(45, 0.9)))
+    return out
+
+
+def test_a_court_fit_the_people_disagree_with_filters_nobody():
+    """D-94. A camera 3 m up behind the baseline: the true floor homography keeps the
+    people; one that puts the court 30 m away (the people all off it), or one that
+    squeezes the floor 3x (the people on it but a third of their height), is not
+    trusted, and then `on_court` drops nobody for where they stand."""
+    from courtcam.court import fit_check
+
+    size = (1920, 1080)
+    k = np.array([[1000.0, 0, 960], [0, 1000.0, 540], [0, 0, 1]])
+    eye, at = np.array([0.0, -6.0, 3.0]), np.array([0.0, 7.0, 0.0])
+    fwd = (at - eye) / np.linalg.norm(at - eye)
+    right = np.cross(fwd, [0, 0, 1.0])
+    right /= np.linalg.norm(right)
+    r = np.stack([right, np.cross(fwd, right), fwd])  # rows: camera x (right), y (down), z
+    t = -r @ eye
+    h_inv = k @ np.c_[r[:, :2], t]
+    people = _camera_people(k, r, t)
+    good = np.linalg.inv(h_inv)
+    assert fit_check(people, good, PROFILE, TEMPLATE.polygon, image_size=size)["trusted"]
+
+    away = np.array([[1.0, 0, 30.0], [0, 1, 0], [0, 0, 1]]) @ good
+    squeezed = np.diag([1 / 3, 1 / 3, 1.0]) @ good
+    for bad in (away, squeezed):
+        fit = fit_check(people, bad, PROFILE, TEMPLATE.polygon, image_size=size)
+        assert not fit["trusted"], fit
+    assert on_court(people, away, PROFILE, TEMPLATE.polygon) == []
+    kept = on_court(people, away, PROFILE, TEMPLATE.polygon, trusted=False)
+    assert len(kept) == len(people)

@@ -14,7 +14,8 @@
   render the 2.5D scene live (docs/scene-format.md)
 
 None is in the default DAG (the default run must not need render/ or a GPU model):
-`--stages replays` runs the lot. Run-config knobs: `highlights_n` (default 3),
+`--stages replays` runs the lot. Run-config knobs: `highlights_n` (default: about one
+per minute of game, 3 to 10, spread over it; replays.auto_n),
 `segment_fake=1` (elliptical masks from the boxes, no model: CPU tests), `sam_model`.
 Synthetic input (`detector=synthetic`) labels every output SYNTHETIC.
 """
@@ -97,7 +98,7 @@ def run_highlights(ctx: Ctx, item: str | None) -> None:
 
     write_highlights(
         ctx.game_dir,
-        n=int(ctx.cfg.get("highlights_n") or 3),
+        n=int(ctx.cfg.get("highlights_n") or 0) or None,  # None: ~one a minute of game
         synthetic=ctx.cfg.get("detector") == "synthetic",
     )
 

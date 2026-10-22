@@ -710,6 +710,19 @@ def trigger_subject(sport: str, transcript: str | None, roster: dict[str, str]) 
     return subject_from_transcript(transcript or "", roster, load_profile(sport).triggers)
 
 
+def user_notes(text: str) -> dict:
+    """A play log (CSV or JSON, docs/playlog.md) as the game's `notes.json`: always
+    `use: notes`, `source: user`. Raises ValueError for a bad row or an evaluation log
+    (hand-annotated truth is never shown as somebody's notes)."""
+    from courtcam.playlog import parse
+
+    log = parse(text, use="notes")
+    if log.use != "notes":
+        raise ValueError(f"this play log is `use: {log.use}`; only notes can be loaded")
+    log = log.model_copy(update={"label": "Your notes", "source": "user"})
+    return json.loads(log.model_dump_json(by_alias=True, exclude_none=True))
+
+
 def score_timeline(events: list[dict], user: list[dict], sport: str | None = None) -> list[dict]:
     """The running score from made shots / won points, with user entries applied; games
     to N (`scoring.to` of the sport's profile) restart at 0-0 after a win (D-90)."""

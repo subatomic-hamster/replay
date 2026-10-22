@@ -55,6 +55,27 @@ def test_bookmarks():
     assert [c["event_id"] for c in out["clips"]] == ["e_0004"]
 
 
+def test_steals_and_rebounds_by_cause():
+    evs = EVENTS + [
+        {"id": "s1", "type": "possession_change", "cause": "steal", "player_id": "p1",
+         "t_start": 10.0, "t_key": 10.2, "t_end": 10.5},
+        {"id": "r1", "type": "possession_change", "cause": "defensive_rebound",
+         "t_start": 20.0, "t_key": 20.1, "t_end": 20.5},
+    ]  # fmt: skip
+    eng = RuleQueryEngine()
+    steals = eng.query("a steal", GAME, evs)
+    assert steals["interpretation"] == "steals"
+    assert steals["event_ids"] == ["s1"]
+    assert eng.query("Marcus steals", GAME, evs)["interpretation"] == "Marcus — steals"
+    assert steals["clips"][0]["label"] == "Marcus steal"
+    reb = eng.query("rebounds", GAME, evs)
+    assert reb["event_ids"] == ["r1"]
+    assert reb["clips"][0]["label"] == "defensive rebound"
+    # an unnamed player is "Player N", never the raw track id
+    anon = [{**evs[-1], "player_id": "p12"}]
+    assert eng.query("rebounds", GAME, anon)["clips"][0]["label"] == "Player 12 defensive rebound"
+
+
 def test_top_plays_sorted_by_confidence():
     out = run("top plays")
     assert out["interpretation"] == "top plays"

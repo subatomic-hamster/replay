@@ -85,8 +85,28 @@ API's `GET /games/{id}/moments` lists each entry as a moment:
 On the TV they sit under "Your bookmarks", next to your clips. A file that says
 `use: evaluation` in a game directory is ignored.
 
-There is no upload route for notes in the API yet. On the AWS deployment, put the file in
-the game's S3 prefix as `notes.json`, the same place the worker writes `events.json`.
+## Upload your notes (API)
+
+`POST /games/{id}/notes` takes the same CSV or JSON as the request body and stores it as
+the game's `notes.json`. Each upload replaces the earlier notes. It needs the API key
+(`X-Replay-Key`); a phone upload token is not enough.
+
+```sh
+curl -X POST "$API/games/<game_id>/notes" -H "X-Replay-Key: $KEY" \
+  -H "Content-Type: text/csv" --data-binary @my_game.csv
+# -> {"notes": 12, "label": "Your notes"}
+curl "$API/games/<game_id>/notes" -H "X-Replay-Key: $KEY"   # the notes as stored
+```
+
+The route refuses these:
+
+- a body over 1 MB (413);
+- a row it cannot read: the error names the line (400);
+- a log that says `use: evaluation` (400, "only notes can be loaded");
+- a `t` past the end of the video (400).
+
+The notes only ever show as "Your note" moments. Events, score, stats and plays stay as
+detected (D-90, D-92).
 
 ## Score a game against a hand annotation
 

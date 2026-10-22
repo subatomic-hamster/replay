@@ -969,6 +969,8 @@ def _register_routes(app: FastAPI) -> None:
         base = _base(request)
         for a in m.get("angles") or []:
             a["url"] = storage.url(game_id, a["url"], base)
+            if a.get("poster"):
+                a["poster"] = storage.url(game_id, a["poster"], base)
         for key in ("text_url", "audio_url"):
             c = m.get("commentary") or {}
             if c.get(key):

@@ -42,6 +42,8 @@ const HEAT_CHIPS = 3;
 /** Box score rows that fit above the hint on a 1080p screen; a real game tracks more
  *  players than that (the rest are counted, not drawn off the bottom edge). */
 const BOX_ROWS = 10;
+/** "Watch it" starts this long before the question's moment (the shot's build-up). */
+const WATCH_LEAD_S = 4;
 /** "Player 7" for an unnamed track, as on the Moments chips and the Stats panel. */
 const trackName = (pid: string) => `Player ${pid.replace(/^p/, "")}`;
 const titleCase = (v: string) => v.replace(/(^|\s)\S/g, (m) => m.toUpperCase());
@@ -94,10 +96,13 @@ export function Review({ gameId }: { gameId: string }) {
   // M10: an identity question also offers "Link to profile" (after the API's options),
   // which names the player through POST /profiles/{id}/links instead of a review PATCH.
   const linkable = current?.kind === "identity" && !!current.player_id;
+  // D-93: an event question also offers "Watch it": the play from a few seconds before,
+  // and Back comes straight back here to answer (a "Make or miss?" needs eyes on it)
+  const watchable = current?.kind !== "identity" && current?.t != null;
   const onAction = useCallback(
     (a: DpadAction) => {
       const options = current?.options ?? [];
-      const last = options.length - (linkable ? 0 : 1);
+      const last = options.length - (linkable || watchable ? 0 : 1);
       if (a === "up") setRow(0);
       else if (a === "down") setRow(heatmap.length ? 1 : 0);
       else if (a === "left" && row === 0) setFocus((f) => Math.max(0, f - 1));
@@ -113,13 +118,21 @@ export function Review({ gameId }: { gameId: string }) {
         focus === options.length
       ) {
         setLinking(current?.player_id ?? null);
+      } else if (
+        a === "select" &&
+        row === 0 &&
+        watchable &&
+        focus === options.length
+      ) {
+        const t = Math.max(0, (current?.t ?? 0) - WATCH_LEAD_S);
+        navigate({ name: "watch", gameId, t, back: "review" });
       } else if (a === "select" && row === 0 && options[focus]) {
         if (options[focus].text_field) setTyping(options[focus]);
         else answer(options[focus]);
       } else if (a === "back")
         navigate({ name: "watch", gameId, panel: "stats" });
     },
-    [current, focus, answer, gameId, row, heatmap.length, linkable],
+    [current, focus, answer, gameId, row, heatmap.length, linkable, watchable],
   );
   useDpad(onAction, !typing && !linking);
 
@@ -189,6 +202,13 @@ export function Review({ gameId }: { gameId: string }) {
                   label="Link to profile…"
                   focused={row === 0 && focus === current.options.length}
                   testID="review-link-profile"
+                />
+              ) : null}
+              {watchable ? (
+                <Pill
+                  label="Watch it"
+                  focused={row === 0 && focus === current.options.length}
+                  testID="review-watch"
                 />
               ) : null}
             </View>

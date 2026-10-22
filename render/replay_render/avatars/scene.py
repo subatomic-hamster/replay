@@ -40,6 +40,8 @@ G = 9.81
 BALL_R_M = 0.12
 HOLD_S = 0.7  # ball shown in the shooter's hands this long before the release
 PALETTE = ("#C0392B", "#2E86C1", "#7F8C8D")
+KIT_STEP, KIT_MIN_SCORE = 3, 0.3  # shirt colour: every 3rd frame, confident torso keypoints
+KIT_FAR = 30.0  # Lab distance from both kits that makes a shirt neither team's (referee)
 YOLO_POSE = Path("/workspace/wt/replay-env/models/yolo/yolo11m-pose.pt")
 
 
@@ -192,6 +194,85 @@ def _colors(game) -> dict[str, tuple[int | None, str]]:
     return out
 
 
+def _hex(lab: np.ndarray) -> str:
+    import cv2
+
+    bgr = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8)[None, None], cv2.COLOR_LAB2BGR)[0, 0]
+    return "#{:02X}{:02X}{:02X}".format(*bgr[::-1])
+
+
+def kit_samples(video: Path, h: dict, n: int, kps: dict[int, np.ndarray],
+                step: int = KIT_STEP) -> dict[int, np.ndarray]:  # fmt: skip
+    """Median Lab colour of each player's shirt in the window: the middle of the torso
+    between the shoulder and hip keypoints, every `step`-th frame."""
+    import cv2
+
+    got: dict[int, list[np.ndarray]] = {p: [] for p in kps}
+    for f, (_, img) in enumerate(read_window(video, h["t_start"], n)):
+        if f % step:
+            continue
+        for p, kp in kps.items():
+            sh, hp = kp[f, [5, 6]], kp[f, [11, 12]]  # COCO shoulders, hips
+            if (np.r_[sh[:, 2], hp[:, 2]] < KIT_MIN_SCORE).any():
+                continue
+            top, bot = (
+                sh[:, :2] + (hp[:, :2] - sh[:, :2]) * 0.2,
+                hp[:, :2] + (sh[:, :2] - hp[:, :2]) * 0.15,
+            )
+            quad = np.array([top[0], top[1], bot[1], bot[0]])
+            quad = quad.mean(axis=0) + (quad - quad.mean(axis=0)) * 0.7  # off the arms
+            x0, y0 = np.floor(quad.min(axis=0)).astype(int)
+            x1, y1 = np.ceil(quad.max(axis=0)).astype(int)
+            x0, y0 = max(x0, 0), max(y0, 0)
+            x1, y1 = min(x1, img.shape[1]), min(y1, img.shape[0])
+            if x1 - x0 < 2 or y1 - y0 < 2:
+                continue
+            m = np.zeros((y1 - y0, x1 - x0), np.uint8)
+            cv2.fillConvexPoly(m, np.round(quad - [x0, y0]).astype(np.int32), 1)
+            px = img[y0:y1, x0:x1][m.astype(bool)]
+            if len(px):
+                got[p].append(px)
+    out = {}
+    for p, px in got.items():
+        if px:
+            lab = cv2.cvtColor(np.concatenate(px)[None], cv2.COLOR_BGR2LAB)[0].astype(float)
+            out[p] = np.median(lab, axis=0)
+    return out
+
+
+def kit_teams(samples: dict[int, np.ndarray], prior: dict[int, int | None]
+              ) -> dict[int, tuple[int | None, str]]:  # fmt: skip
+    """(team, kit colour hex) per player from the shirts seen in the video: two clusters
+    of the players' shirt colours (2-means in Lab). A cluster takes the team id most of
+    its players have in game.json (`prior`), so the ids match the rest of the app. A
+    player far from both kits (a referee) keeps no team and their own shirt colour."""
+    ps = list(samples)
+    if len(ps) < 2:
+        return {p: (prior.get(p), _hex(samples[p])) for p in ps}
+    x = np.array([samples[p] for p in ps])
+    d = np.linalg.norm(x[:, None] - x[None], axis=-1)
+    i, j = np.unravel_index(np.argmax(d), d.shape)
+    c = x[[i, j]].copy()
+    for _ in range(20):
+        lab = np.argmin(np.linalg.norm(x[:, None] - c[None], axis=-1), axis=1)
+        new = np.array([np.median(x[lab == k], axis=0) if (lab == k).any() else c[k]
+                        for k in (0, 1)])  # fmt: skip
+        if np.allclose(new, c):
+            break
+        c = new
+    votes = [sum((prior.get(p) == 0) - (prior.get(p) == 1) for p, k in zip(ps, lab, strict=True)
+                 if k == q) for q in (0, 1)]  # fmt: skip
+    ids = (0, 1) if votes[0] >= votes[1] else (1, 0)
+    sep = float(np.linalg.norm(c[0] - c[1]))
+    out = {}
+    for p, k, v in zip(ps, lab, x, strict=True):
+        if np.linalg.norm(v - c[k]) > max(KIT_FAR, 0.6 * sep):
+            out[p] = (None, _hex(v))
+        else:
+            out[p] = (ids[k], _hex(c[k]))
+    return out
+
+
 def build(
     game_dir: Path,
     play_id: str,
@@ -268,10 +349,14 @@ def build(
 
     quality = _quality(raw, final, planted, fps)
     colors = _colors(game)
+    # kits as worn in this window's video: the identity stage's game-wide teams can be
+    # off (two near-identical dark colours on the CC BY basketball game)
+    kits = kit_teams(kit_samples(video, h, n, {p: kps[p] for p in order}),
+                     {p: game.players.get(tracks.ids[p], {}).get("team") for p in order})  # fmt: skip
     players = []
     for k, p in enumerate(order):
         pid = tracks.ids[p]
-        team, color = colors.get(pid, (None, PALETTE[2]))
+        team, color = kits.get(p) or colors.get(pid, (None, PALETTE[2]))
         players.append(
             {
                 "id": pid,

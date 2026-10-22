@@ -67,7 +67,7 @@ def test_score_and_lower_thirds_from_contract_data(doc):
     assert [s["scores"] for s in g["score"]] == [[2, 0], [2, 3]]
     names = [(l3["name"], l3["line2"]) for l3 in g["lower_thirds"]]
     assert ("Avery", "+2  ·  2 PTS") in names  # tagged name
-    assert ("#p3", "+3  ·  3 PTS") in names  # untagged: tracker id
+    assert ("Player 3", "+3  ·  3 PTS") in names  # untagged: tracker number, as on the TV
     l3s = g["lower_thirds"]
     assert all(a["t_end"] <= b["t_start"] for a, b in pairwise(l3s))
     for l3 in g["lower_thirds"]:  # never under a replay

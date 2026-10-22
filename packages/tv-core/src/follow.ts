@@ -87,6 +87,12 @@ const BOX_H_TAU_S = 0.5; // ... while the box height it reads is smoothed (heigh
 const ZOOM_K = 2.5; // window height = this × the box height ...
 const MIN_H = 0.4; // ... but never tighter (a 1080p source would be upscaled > 2.5×)
 const MAX_H = 0.75;
+// Near a frame edge the window cannot centre the player without leaving the picture: it
+// zooms in instead, up to this height (≈3.1× on 1080p), so a player at x 0.86 sits
+// 0.02 off centre instead of 0.06. Off centre by up to EDGE_SLACK of the window width
+// is fine as it is: the zoom does not twitch for a player just short of the edge.
+const MIN_H_EDGE = 0.32;
+const EDGE_SLACK = 0.06;
 const WIDEN_AFTER_S = 0.6; // a gap longer than this starts widening ...
 const WIDEN_S = 2.5; // ... to the wide shot over this long
 /** No hand-off after a gap this long: the player is lost (the screen offers a re-pick). */
@@ -143,6 +149,7 @@ export function createFollowCam(
   let bornCache: Map<string, boolean> | null = null; // bornOnUs, per gap
   let held: [number, number] | null = null; // dead-zone anchor
   let boxH: number | null = null; // the box height, smoothed (it sets the zoom)
+  let seenH = 1; // the window height while the box was last seen (a gap widens from it)
   let view: FollowView = {
     rect: [0, 0, 1, 1],
     box: null,
@@ -263,15 +270,16 @@ export function createFollowCam(
         held[1] + band(ty - held[1], gh),
       ];
       [gx, gy] = held;
+      // near a side edge, the tightest window that still centres them, down to
+      // MIN_H_EDGE. Sides only: players stand low in the frame most of the time, and
+      // zooming for that would change the framing all game.
+      const fits = Math.min(gx, 1 - gx) / (0.5 - EDGE_SLACK) / wPerH;
+      if (fits < gh) gh = Math.max(fits, Math.min(MIN_H_EDGE, gh));
+      seenH = gh;
     } else if (lastBox) {
       const gap = t - lastSeen;
       const k = Math.min(Math.max((gap - WIDEN_AFTER_S) / WIDEN_S, 0), 1);
-      const h0 = Math.min(
-        Math.max((boxH ?? lastBox[3]) * ZOOM_K, MIN_H),
-        MAX_H,
-        hCap,
-      );
-      gh = h0 + (hCap - h0) * k;
+      gh = seenH + (hCap - seenH) * k;
       [gx, gy] = held ?? centre(lastBox);
     } else {
       gh = hCap; // never seen (a seek to where this id is not): the whole court

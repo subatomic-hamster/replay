@@ -6,8 +6,16 @@ import type {
   Game,
   GameEvent,
   GameSummary,
+  Player,
   Stats,
 } from "./types";
+
+/** Ids on screen for less than this are tracker fragments: lists keep them out of the way. */
+export const MIN_SEEN_S = 5;
+/** A fragment, by `seen_s`; an older game without it lists everyone. Named or linked
+ *  players always count, whoever they are. */
+export const isShortTrack = (p: Player) =>
+  p.seen_s !== undefined && p.seen_s < MIN_SEEN_S && !p.name && !p.profile_id;
 
 export function fmtDuration(s?: number | null) {
   if (!s && s !== 0) return "—";

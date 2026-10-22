@@ -124,6 +124,7 @@ BODIES = {
     "/games/{g}/events/{id}": {"confirmed": True},
     "/games/{g}/search": {"text": "threes"},
     "/games/{g}/query": {"text": "threes"},
+    "/games/{g}/tv/play": {"t": 1.0},
 }
 
 
@@ -218,3 +219,29 @@ def test_phone_tags_and_trims_its_game(tv, anon, phone_settings):
     players = anon.get(f"/games/{gid}", headers=ph).json()["players"]
     assert next(p for p in players if p["id"] == "p1")["name"] == "Jordan"
     assert anon.get("/profiles", headers=ph).status_code == 200
+
+
+def test_phone_plays_a_hit_on_the_tv(tv, anon, phone_settings):
+    a, b = ready_game(tv, phone_settings), ready_game(tv, phone_settings, "Other")
+    ph = _ph(_link(tv, a, "search")["token"])
+    r = anon.post(f"/games/{a}/tv/play", json={"t": 12.345}, headers=ph)
+    assert r.status_code == 202, r.text
+    assert r.json()["tv"] is False  # no TV heartbeat yet: the phone plays it itself
+    cid = r.json()["id"]
+    # its own game only, and t >= 0
+    assert anon.post(f"/games/{b}/tv/play", json={"t": 1}, headers=ph).status_code == 401
+    assert anon.post(f"/games/{a}/tv/play", json={"t": -1}, headers=ph).status_code == 422
+    # the TV (API key) sees it once, then acks it
+    cmds = tv.get("/tv/commands").json()["commands"]
+    assert [(c["id"], c["kind"], c["game_id"], c["t"], c["source"]) for c in cmds] == [
+        (cid, "play", a, 12.35, "phone")
+    ]
+    assert tv.post(f"/tv/commands/{cid}/ack").status_code == 200
+    assert tv.get("/tv/commands").json()["commands"] == []
+    # the phone token cannot read the TV's queue
+    assert anon.get("/tv/commands", headers=ph).status_code == 401
+    # a TV showing this game (its Watch heartbeat): the phone leaves the playing to it
+    assert tv.post("/tv/state", json={"game_id": a, "t": 3.0, "playing": True}).status_code == 200
+    assert anon.post(f"/games/{a}/tv/play", json={"t": 1}, headers=ph).json()["tv"] is True
+    assert tv.post("/tv/state", json={"game_id": b, "t": 0.0}).status_code == 200
+    assert anon.post(f"/games/{a}/tv/play", json={"t": 1}, headers=ph).json()["tv"] is False

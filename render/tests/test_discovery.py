@@ -261,3 +261,19 @@ def test_shot_chart_png(tmp_path):
     out = shot_chart_png(stats, "basketball", "full", tmp_path / "chart.png", label="SYNTHETIC")
     img = cv2.imread(str(out))
     assert img.shape[1] > img.shape[0] > 500
+
+
+def test_play_value_by_kind_not_points():
+    """D-92: a pickup game's 1-point basket is an inside make (not a free throw), a shot of
+    unknown outcome is worth half, a miss nothing."""
+    grid = np.arange(0.0, 50.0, 0.1)
+
+    def at(t, **kw):
+        return float(hype.play_score(grid, [{"type": "shot", "t_key": t, **kw}], outside=2)[
+            int(t * 10) + 1])  # fmt: skip
+
+    assert at(1.0, made=True, points=1) == hype.PLAY_VALUE[2]
+    assert at(1.0, made=True, points=2) == hype.PLAY_VALUE[3]
+    assert at(1.0, made=True, points=1, cause="free_throw") == hype.PLAY_VALUE[1]
+    assert at(1.0, made=None, points=1) == hype.PLAY_VALUE[2] * hype.UNKNOWN_SHARE
+    assert at(1.0, made=False, points=1) == 0.0

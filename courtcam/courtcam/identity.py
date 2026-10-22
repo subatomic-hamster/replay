@@ -14,7 +14,7 @@ import cv2
 import lap
 import numpy as np
 
-from .court import CourtTrack, bystander, track_from_json, track_json
+from .court import CourtTrack, bystander, resample, stationary, track_from_json, track_json
 from .profiles import CourtTemplate, Profile
 from .schema import Player as PlayerModel
 from .schema import Team as TeamModel
@@ -39,6 +39,9 @@ class PlayerTrack:
     # the id has none, so `tracks/` bridges only short gaps and the TV never hands the
     # follow to another id (D-89)
     solved: bool = False
+    # share of the id's sampled torsos nearer the other kit (`jersey_color` only; None
+    # elsewhere): above `TEAM_MIXED_SHARE` the UI does not show `team`
+    off_kit: float | None = None
 
     @property
     def t_start(self) -> float:
@@ -194,6 +197,14 @@ JERSEY_MIN_AGREE = 0.85
 agree with their tracklet's team: two real kits. Synthetic basketball 0.875-0.966; the
 Kennesaw pickup game (mixed shirts, a grey referee) 0.80, where cutting on colour broke
 the one stable referee row into four."""
+
+
+OFF_KIT_EVERY = 5
+"""`off_kit` reads every this-many-th box of each player (stride-2 detections: ~3 Hz)."""
+
+TEAM_MIXED_SHARE = 0.3
+"""A player whose `off_kit` is above this is `team_mixed` in game.json (the UI hides the
+team). Tuned on the CC BY Nottingham game against a red-torso kit check (D-89)."""
 
 
 def _runs(
@@ -459,6 +470,20 @@ ROSTER_SHARE = 0.25
 """K = the most people on court at once for at least this share of the clip's live time
 (occlusion hides one for a while; a ghost box adds one for a moment)."""
 ROSTER_ROUNDS = 3
+
+
+DISTANT_SHARE = 0.35
+"""A person whose usual box is shorter than this share of the tall players' (the 90th
+percentile of the tracklets' median heights) stands far beyond a small game: people
+across the park, behind the fence. The court fit cannot drop them when it is not trusted
+(D-94), and counting them breaks the roster (the JaiArtHub clip, D-89 round 5)."""
+
+
+def near_tracks(tracks: list[CourtTrack]) -> list[CourtTrack]:
+    """`tracks` without the distant people (`DISTANT_SHARE`)."""
+    h = np.array([np.median(np.asarray(t.tracklet.boxes)[:, 3]) for t in tracks])
+    keep = h >= DISTANT_SHARE * np.percentile(h, 90)
+    return [t for t, k in zip(tracks, keep, strict=True) if k]
 
 
 def roster_size(tracks: list[CourtTrack], step_s: float = ROSTER_STEP_S) -> int:
@@ -1076,9 +1101,16 @@ def _stitch(
 
 
 def identify(
-    video: str, tracks: list[CourtTrack], profile: Profile, variant: str | None = None
+    video: str,
+    tracks: list[CourtTrack],
+    profile: Profile,
+    variant: str | None = None,
+    *,
+    court_ok: bool = True,
 ) -> list[PlayerTrack]:
-    """Tracklets → `p1..pN` with team labels and team colours."""
+    """Tracklets → `p1..pN` with team labels and team colours. `court_ok` false (the
+    court fit disagrees with the people, `court.fit_check`): nobody is dropped as a
+    bystander for where they stand, only for standing still."""
     if not tracks:
         return []
     # Only `jersey_color` needs pixels, and decoding the clip for torso crops is the
@@ -1086,7 +1118,9 @@ def identify(
     need = profile.team_rule == "jersey_color" or profile.tracking.appearance_weight > 0
     hists, colors, body = sample_appearance(video, tracks) if need else (None, None, None)
     teams = assign_teams(hists, tracks, profile, profile.template(variant))
+    kits = None  # (torso histograms, teams) the kit centroids come from, for `off_kit`
     if profile.team_rule == "jersey_color" and len(np.unique(teams)) == 2:
+        kits = (hists, teams)
         n = len(tracks)
         lab, clear = jersey_labels(video, tracks, hists, teams)  # type: ignore[arg-type]
         # The gate reads every sample, as D-70 measured it (Kennesaw 0.80); only the cut
@@ -1099,7 +1133,8 @@ def identify(
     cfg = profile.tracking
     roster, groups, labelled = 0, [], False
     if cfg.appearance_cut > 0:  # D-89: undo the tracker's swaps, then link by look too
-        roster = roster_size(tracks) if cfg.roster_max > 0 else 0
+        # people far beyond a small game do not count toward its size (`DISTANT_SHARE`)
+        roster = roster_size(near_tracks(tracks)) if cfg.roster_max > 0 else 0
         if 0 < roster <= cfg.roster_max:
             # every box's look, covered ones too; the piece solve reads the clear ones at
             # its own pace (`APP_EVERY_S`) for the people's looks, then every box is labelled
@@ -1127,7 +1162,12 @@ def identify(
         merged = [
             (g, c)
             for g in groups
-            if not bystander(c := _concat(tracks, g), polygon, profile.tracking)
+            for c in [_concat(tracks, g)]
+            if not (
+                bystander(c, polygon, profile.tracking)
+                if court_ok
+                else stationary(c, profile.tracking)
+            )
         ]
         # `players.max` caps *merged* players, not raw tracklets (§4.4 step 5 applied
         # after step 6): a player broken into six tracklets should still beat a bystander
@@ -1146,6 +1186,15 @@ def identify(
         key=lambda gc: gc[1].score,
         reverse=True,
     )
+    off = [None] * len(merged)
+    if kits is not None and merged:
+        lab, _ = jersey_labels(video, [c for _, c in merged], *kits, every=OFF_KIT_EVERY)
+        off = [
+            round(float(np.mean([v != int(np.bincount(teams[g]).argmax()) for v in d.values()])), 3)
+            if d
+            else None
+            for (g, _), d in zip(merged, lab, strict=True)
+        ]
     players: list[PlayerTrack] = []
     for n, (group, track) in enumerate(merged, start=1):
         team = int(np.bincount(teams[group]).argmax())
@@ -1165,16 +1214,34 @@ def identify(
                     for i in group
                 ),
                 solved=labelled,
+                off_kit=off[n - 1],
             )
         )
     return players
+
+
+def seen_s(p: PlayerTrack, rate_hz: int = 10) -> float:
+    """Seconds `p` has a box in `tracks/`: the frames of the export's time grid
+    (`pipeline.stage_tracks`: multiples of 1/rate_hz) its box is on, over rate_hz."""
+    t = p.track.tracklet
+    k = np.arange(np.ceil(t.t_start * rate_hz - 1e-6), np.floor(t.t_end * rate_hz + 1e-6) + 1)
+    boxes, _, _ = resample(p.track, k / rate_hz, TRACKS_MAX_GAP_S if p.solved else np.inf)
+    return round(float(np.isfinite(boxes).all(axis=1).sum()) / rate_hz, 1)
 
 
 def to_models(players: list[PlayerTrack]) -> tuple[list[PlayerModel], list[TeamModel]]:
     teams = {p.team: p.color_hex for p in players}
     return (
         [
-            PlayerModel(id=p.player_id, name=None, team=p.team, color_hex=p.color_hex, tagged=False)
+            PlayerModel(
+                id=p.player_id,
+                name=None,
+                team=p.team,
+                color_hex=p.color_hex,
+                tagged=False,
+                seen_s=seen_s(p),
+                team_mixed=None if p.off_kit is None else p.off_kit > TEAM_MIXED_SHARE,
+            )
             for p in players
         ],
         [TeamModel(id=t, color_hex=c) for t, c in sorted(teams.items())],
@@ -1202,6 +1269,7 @@ def write_players(path, players: list[PlayerTrack], meta: dict) -> Path:
                         "members": list(p.members),
                         "spans": [list(s) for s in p.spans],
                         "solved": p.solved,
+                        "off_kit": p.off_kit,
                         **track_json(p.track),
                     }
                     for p in players
@@ -1224,6 +1292,7 @@ def read_players(path: Path) -> tuple[list[PlayerTrack], dict]:
             members=tuple(d.get("members", ())),
             spans=tuple((int(s[0]), float(s[1]), float(s[2])) for s in d.get("spans", ())),
             solved=bool(d.get("solved", False)),
+            off_kit=d.get("off_kit"),
         )
         for d in raw["players"]
     ]

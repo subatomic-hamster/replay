@@ -98,21 +98,43 @@ def hoops(calib: dict[str, Any], profile: Profile) -> list[Hoop]:
     rims = tpl.rims or ([tpl.rim] if tpl.rim else [])
     proj = projector(calib, profile)
     size = calib.get("image_size") or (0, 0)
+    clicks = calib.get("landmarks_px") or {}
     out = []
     r = RIM_DIAMETER_M / 2
-    for x, y in rims:
+    # D-93: the hoop the user tapped on the calibration page (`rim_top`, `rim_top_f`, the
+    # names `calibrate.height_landmarks` gives them) is where the hoop is; the camera
+    # model only sizes it. A phone fit from four corners can put the projected hoop a rim
+    # or more off, or have no camera at all.
+    for (x, y), name in zip(rims, ("rim_top", "rim_top_f"), strict=False):
         c = proj((x, y, RIM_HEIGHT_M))
-        if c is None or not (0 <= c[0] < size[0] and 0 <= c[1] < size[1]):
+        d = None
+        if c is not None:
+            ends = [proj((x + dx, y + dy, RIM_HEIGHT_M))
+                    for dx, dy in ((r, 0), (-r, 0), (0, r), (0, -r))]  # fmt: skip
+            if all(e is not None for e in ends):
+                # the rim is a horizontal circle: its widest image extent is its diameter
+                d = max(abs(ends[0][0] - ends[1][0]), abs(ends[2][0] - ends[3][0]))
+        if clicks.get(name):
+            c = np.asarray(clicks[name], dtype=float)
+            d = d if d is not None else _floor_rim_px(clicks, tpl, x, y)
+        if c is None or d is None or not (0 <= c[0] < size[0] and 0 <= c[1] < size[1]):
             continue
-        ends = [
-            proj((x + dx, y + dy, RIM_HEIGHT_M)) for dx, dy in ((r, 0), (-r, 0), (0, r), (0, -r))
-        ]
-        if any(e is None for e in ends):
-            continue
-        # the rim is a horizontal circle: its widest image extent is its diameter
-        d = max(abs(ends[0][0] - ends[1][0]), abs(ends[2][0] - ends[3][0]))
         out.append(Hoop((float(x), float(y)), (float(c[0]), float(c[1])), float(max(d, 4.0))))
     return out
+
+
+def _floor_rim_px(clicks: dict, tpl, x: float, y: float) -> float | None:
+    """A rim's width in pixels from the floor homography alone: the floor under the rim
+    is about as far from the camera as the rim itself. None without a homography."""
+    from . import calibrate
+
+    try:
+        h, _ = calibrate.homography(clicks, tpl)
+    except calibrate.CalibrationError:
+        return None
+    r = RIM_DIAMETER_M / 2
+    a, b = calibrate.project(np.array([[x - r, y], [x + r, y]]), np.linalg.inv(h))
+    return float(np.hypot(*(a - b)))
 
 
 def median_frame(video: Path, n: int = 25) -> np.ndarray | None:
@@ -216,6 +238,8 @@ def scan(
     kernel = np.ones((3, 3), np.uint8)
     bgs: list[np.ndarray | None] = [None] * len(found)
     samples: list[list[list[float]]] = [[] for _ in found]
+    quiet = [0.0] * len(found)  # per hoop: no samples before this time (after a re-aim)
+    reaimed: list[float] = []
     skipped: list[float] = []
     prev = None
     i = -1
@@ -247,12 +271,21 @@ def scan(
                     bgs[k] = cur
                     continue
                 (dx, dy), _ = cv2.phaseCorrelate(bg.mean(axis=2), cur.mean(axis=2))
-                if 0.25 <= max(abs(dx), abs(dy)) <= 4.0:  # shake, not a scene change
+                if max(abs(dx), abs(dy)) > cfg.max_shift_px:
+                    # the camera re-aimed (Nottingham Q1 236 s): the background is stale and
+                    # every edge "moves"; start it again and stay quiet while the view
+                    # settles (D-92)
+                    bgs[k], quiet[k] = cur, t + 2 * cfg.bg_s
+                    reaimed.append(round(t, 3))
+                    continue
+                if 0.25 <= max(abs(dx), abs(dy)):  # shake: register onto the background
                     m = np.float32([[1, 0, -dx], [0, 1, -dy]])
                     cur = cv2.warpAffine(cur, m, (cur.shape[1], cur.shape[0]),
                                          borderMode=cv2.BORDER_REPLICATE)  # fmt: skip
                 diff = np.abs(cur - bg).max(axis=2)
                 bg += alpha * (cur - bg)
+                if t < quiet[k]:
+                    continue
                 mask = cv2.morphologyEx((diff > cfg.diff).astype(np.uint8), cv2.MORPH_OPEN, kernel)
                 n, lab, st, cen = cv2.connectedComponentsWithStats(mask)
                 if n <= 1:
@@ -297,6 +330,7 @@ def scan(
             for k, (h, p) in enumerate(zip(found, projected, strict=True))
         ],
         "skipped": skipped,
+        "reaimed": sorted(set(reaimed)),  # frames a hoop box jumped (any hoop)
     }
 
 
@@ -324,7 +358,7 @@ def run(
     return doc
 
 
-def _made(p: np.ndarray, cfg: BallCfg) -> bool:
+def _made(p: np.ndarray, cfg: BallCfg) -> bool | None:
     """The ball going down through the rim: two samples at most `cross_dt` apart (and a
     ball's step apart) that cross the plane just under the rim (`plane_v`) downward, at a
     point within `cross_u` of the rim's middle, then a sample within `drop_s` lower still
@@ -333,28 +367,39 @@ def _made(p: np.ndarray, cfg: BallCfg) -> bool:
     out never crosses. Blind spot: a ball falling off the near or far side of the rim
     crosses in the middle of the picture. The crossing frames must hold at most
     `cross_max_blobs` blobs at the rim: more is a body moving through (3x3 proxy: a
-    rebounder's arm and head under the rim after a rim-out, 5 blobs a frame)."""
+    rebounder's arm and head under the rim after a rim-out, 5 blobs a frame).
+
+    None (can't tell) when the only such drop is at the rim's edge (`cross_u` to
+    `edge_u`) or has a gap up to `edge_dt`: a ball rolling in off the rim and a rim-out
+    falling off its near side look the same from one camera (Nottingham Q3 156 s make,
+    Q1 100.6 s and 3x3 9.8 s misses). The events stage then decides from what follows,
+    and the review queue asks."""
     t, u, v = p[:, 0], p[:, 1], p[:, 2]
     near = (np.abs(u) <= 2.0) & (v >= -2.0) & (v <= 3.0)
     times, counts = np.unique(t[near], return_counts=True)
     busy = set(times[counts > cfg.cross_max_blobs].tolist())
+    unsure = False
     for i in np.nonzero(v <= cfg.plane_v)[0]:
         if t[i] in busy:
             continue
-        nxt = (t > t[i]) & (t <= t[i] + cfg.cross_dt) & (v > cfg.plane_v)
-        nxt &= np.hypot(u - u[i], v - v[i]) <= 1.3
+        nxt = (t > t[i]) & (t <= t[i] + max(cfg.cross_dt, cfg.edge_dt)) & (v > cfg.plane_v)
+        # a ball's step: 1.3 rim radii in cross_dt, more across a longer gap
+        nxt &= np.hypot(u - u[i], v - v[i]) <= 1.3 * np.maximum(1.0, (t - t[i]) / cfg.cross_dt)
         for j in np.nonzero(nxt)[0]:
             if t[j] in busy:
                 continue
             uc = u[i] + (u[j] - u[i]) * (cfg.plane_v - v[i]) / (v[j] - v[i])
-            if abs(uc) > cfg.cross_u:
+            if abs(uc) > max(cfg.cross_u, cfg.edge_u):
                 continue
             low = (t > t[j]) & (t <= t[j] + cfg.drop_s)
             low &= v >= max(v[j], cfg.plane_v + 0.4) + cfg.fall_v
             low &= np.abs(u - uc) <= 0.4 + 0.6 * (v - cfg.plane_v)
-            if low.any():
+            if not low.any():
+                continue
+            if abs(uc) <= cfg.cross_u and t[j] - t[i] <= cfg.cross_dt:
                 return True
-    return False
+            unsure = True
+    return None if unsure else False
 
 
 def arrivals(doc: dict[str, Any], cfg: BallCfg) -> list[Arrival]:
@@ -363,8 +408,6 @@ def arrivals(doc: dict[str, Any], cfg: BallCfg) -> list[Arrival]:
     the visit and the `after_s` that follow; the confidence grows with the samples seen."""
     out: list[Arrival] = []
     u_max, v_lo, v_hi = cfg.rim_box
-    # ponytail: a camera re-aim mid-clip (Nottingham Q1 236 s) still reads as a visit;
-    # a per-frame registration-quality gate in `scan` is the fix if it matters
     for k, h in enumerate(doc.get("hoops") or []):
         p = np.asarray(h.get("samples") or [], dtype=np.float64).reshape(-1, 4)
         if not len(p):
@@ -386,6 +429,13 @@ def arrivals(doc: dict[str, Any], cfg: BallCfg) -> list[Arrival]:
             before = p[(p[:, 0] >= t0 - cfg.descent_s) & (p[:, 0] < t0)]
             fell = (before[:, 2] <= first[2] - cfg.descent_v).any() if len(before) else False
             if not fell and n < cfg.settle_samples:
+                continue
+            # a body under the rim: many blobs at once in much of the visit (3x3 proxy
+            # 11.0 s, 32% of frames; real visits up to 11%) (D-92)
+            w = p[(p[:, 0] >= t0) & (p[:, 0] <= t1)]
+            w = w[(np.abs(w[:, 1]) <= 2.0) & (w[:, 2] >= -2.0) & (w[:, 2] <= 3.0)]
+            _, per_frame = np.unique(w[:, 0], return_counts=True)
+            if np.mean(per_frame > cfg.cross_max_blobs) > cfg.visit_max_busy:
                 continue
             seen = p[(p[:, 0] >= t0 - 0.2) & (p[:, 0] <= t1 + cfg.after_s)]
             made = _made(seen, cfg)

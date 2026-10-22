@@ -27,7 +27,14 @@ from . import ingest as ingest_mod
 from . import plays as plays_mod
 from . import pose as pose_mod
 from . import triggers as triggers_mod
-from .court import on_court, polygon_px, read_court_tracks, resample, write_court_tracks
+from .court import (
+    fit_check,
+    on_court,
+    polygon_px,
+    read_court_tracks,
+    resample,
+    write_court_tracks,
+)
 from .profiles import Profile, load_profile
 from .schema import (
     AudioDoc,
@@ -314,15 +321,10 @@ def stage_court(
         h = np.asarray(calib["H"], dtype=np.float64)
         polygon = np.asarray(calib["court_polygon_m"], dtype=np.float64)
         size = calib.get("image_size")
-        tracks = on_court(
-            tracklets,
-            h,
-            profile,
-            polygon,
-            k1=float(calib.get("k1") or 0.0),
-            image_size=tuple(size) if size else None,
-        )
-        write_court_tracks(path, tracks, meta)
+        lens = {"k1": float(calib.get("k1") or 0.0), "image_size": tuple(size) if size else None}
+        fit = fit_check(tracklets, h, profile, polygon, **lens)  # D-94
+        tracks = on_court(tracklets, h, profile, polygon, trusted=fit["trusted"], **lens)
+        write_court_tracks(path, tracks, {**meta, "fit": fit})
     progress("court", 1.0)
     return path
 
@@ -336,7 +338,10 @@ def stage_identity(
         tracks, meta = read_court_tracks(out_dir / "_work" / "court.json")
         # `team_rule: net_side` reads the net line off *this variant's* template, so the
         # variant has to come along — badminton singles and doubles are different courts.
-        players = identity.identify(str(out_dir / WIDE_REL), tracks, profile, variant)
+        court_ok = (meta.get("fit") or {}).get("trusted", True)
+        players = identity.identify(
+            str(out_dir / WIDE_REL), tracks, profile, variant, court_ok=court_ok
+        )
         identity.write_players(path, players, meta)
     progress("identity", 1.0)
     return path
@@ -724,8 +729,9 @@ def run(
         _mark(out_dir, game, "identity")
 
     if (out_dir / "_work" / "players.json").exists():
-        players, _ = identity.read_players(out_dir / "_work" / "players.json")
+        players, pmeta = identity.read_players(out_dir / "_work" / "players.json")
         game.players, game.teams = identity.to_models(players)
+        game.court.trusted = (pmeta.get("fit") or {}).get("trusted")
 
     if "tracks" in requested:
         n_chunks = stage_tracks(out_dir, info, progress=report)

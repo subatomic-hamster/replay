@@ -33,6 +33,11 @@ DEFAULT_VOCAB: dict[str, dict[str, Any]] = {
     "buckets": {"type": "shot", "made": True, "label": "made shots"},
     "misses": {"type": "shot", "made": False, "label": "missed shots"},
     "missed": {"type": "shot", "made": False, "label": "missed shots"},
+    # steals and rebounds are possession changes by cause (the LLM path's SUBTYPES)
+    "steals": {"type": "possession_change", "cause": "steal", "label": "steals"},
+    "steal": {"type": "possession_change", "cause": "steal", "label": "steals"},
+    "rebounds": {"type": "possession_change", "cause": "rebound", "label": "rebounds"},
+    "rebound": {"type": "possession_change", "cause": "rebound", "label": "rebounds"},
     "bookmarks": {"type": "bookmark", "label": "bookmarks"},
     "bookmark": {"type": "bookmark", "label": "bookmarks"},
     "rallies": {"type": "rally", "label": "rallies"},
@@ -95,11 +100,15 @@ def _cap(t: float, duration: float) -> float:
 
 
 def _clip_label(ev: dict, name_by_id: dict[str, str]) -> str:
-    who = name_by_id.get(ev.get("player_id") or "", "")
+    pid = ev.get("player_id") or ""
+    # an unnamed player reads "Player 12" (track p12), as on the TV and the phone
+    who = name_by_id.get(pid) or (f"Player {pid.removeprefix('p')}" if pid else "")
     if ev.get("type") == "shot":
         what = "made" if ev.get("made") else "missed"
         return f"{who} {what}".strip()
-    return f"{who} {ev.get('type', 'clip')}".strip()
+    # "possession_change" + cause "defensive_rebound" -> "defensive rebound"
+    what = ev.get("cause") or ev.get("type") or "clip"
+    return f"{who} {what.replace('_', ' ')}".strip()
 
 
 class RuleQueryEngine:
@@ -156,7 +165,7 @@ class RuleQueryEngine:
         if filt.get("limit"):
             picked = picked[: filt["limit"]]
 
-        name_by_id = {p["id"]: p.get("name") or p["id"] for p in players}
+        name_by_id = {p["id"]: p["name"] for p in players if p.get("name")}
         clips = [
             {
                 "t_start": max(0.0, round(float(e["t_start"]) - PAD_S, 3)),

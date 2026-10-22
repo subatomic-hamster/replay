@@ -52,6 +52,10 @@ export interface Player {
   tagged?: boolean;
   /** M10: set while this roster player is linked to a profile (D-58). */
   profile_id?: string;
+  /** Seconds this id has a box in the tracks (courtcam). Absent on older games. */
+  seen_s?: number;
+  /** The id's box time is split between kits, so `team` is a guess (courtcam). */
+  team_mixed?: boolean;
 }
 
 export interface Team {
@@ -75,6 +79,9 @@ export interface Game extends TvReadiness {
     variant: string;
     standard?: string;
     landmarks_px?: Record<string, [number, number]>;
+    /** D-94: false when the court fit disagrees with the people (positions, zones and
+     *  shot charts unreliable; nobody was dropped for where they stand). Older: absent. */
+    trusted?: boolean;
   };
   renditions: { wide: string; players?: Record<string, string> };
   players: Player[];
@@ -409,6 +416,15 @@ export interface PhoneLink {
   url: string | null;
   token: string;
   expires_at: number;
+}
+
+/** GET /tv/commands: a command for the TV, e.g. `play` (the phone's "Play on the TV": seek
+ *  `game_id` to `t`). Alexa's kinds (`clip`, `reel`) share the queue; the TV ignores them. */
+export interface TvCommand {
+  id: string;
+  kind: string;
+  game_id: string | null;
+  t: number | null;
 }
 
 /** POST /games/{id}/players/{pid}/render — 202 with the queued job. */

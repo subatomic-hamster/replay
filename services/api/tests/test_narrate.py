@@ -78,6 +78,7 @@ def test_advice_is_grounded_and_compares_shot_values():
     stats = {"box_score": [
         {"player_id": "p1", "team": 0, "samples": 100, "distance_m": 812.4},
         {"player_id": "p3", "team": 0, "samples": 100, "distance_m": 700.0},
+        {"player_id": "p9", "team": 0, "samples": 12, "distance_m": 9.0},  # a fragment
     ]}  # fmt: skip
     out = A.player_advice(GAME, events, [], stats, "p1")
     assert out["grounding"]["template_ok"], out["grounding"]
@@ -92,6 +93,9 @@ def test_advice_is_grounded_and_compares_shot_values():
         "Marcus had 1 turnovers.",
         "Marcus covered 812 metres; the team average was 756 metres.",
     ]
+    # D-92: a fragment is neither compared with nor given a distance line of its own
+    lines = A.player_advice(GAME, [], [], stats, "p9")["lines"]
+    assert not any("metres" in t for t in lines)
 
 
 def test_advice_llm_paraphrase_must_stay_grounded():

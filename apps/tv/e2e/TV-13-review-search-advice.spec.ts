@@ -71,6 +71,28 @@ test("TV-13 identity questions: type a name, or merge into a teammate", async ({
   ).toHaveCount(0);
 });
 
+test("TV-13 Watch it: an event question opens the play, Back returns to answer it", async ({
+  page,
+}) => {
+  // D-93: "Make or miss?" needs eyes on the shot; the answer is the user's own label
+  await page.goto(`/tv/${GAME_ID}/review`);
+  const item = page.getByTestId("review-item");
+  await expect(item).toHaveAttribute("data-event-id", "e_0004");
+  await page.keyboard.press("ArrowRight"); // No
+  await page.keyboard.press("ArrowRight"); // Watch it
+  await expect(page.getByTestId("review-watch")).toHaveAttribute(
+    "data-focused",
+    "true",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("watch")).toBeVisible();
+  for (let i = 0; i < 4 && !(await item.isVisible()); i++) {
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+  }
+  await expect(item).toHaveAttribute("data-event-id", "e_0004");
+});
+
 test("TV-13 search: a chip runs POST /search; matches first; Select plays the hit", async ({
   page,
 }) => {

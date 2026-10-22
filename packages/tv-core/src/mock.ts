@@ -25,6 +25,7 @@ import type {
   Storyboard,
   TracksChunk,
   TrackPlayer,
+  TvCommand,
   TvReadiness,
   SceneLayout,
 } from "./types";
@@ -182,13 +183,20 @@ const PICKLEBALL: SportProfile = {
   },
 };
 
-function player(id: string, name: string | null, team: number): Player {
+function player(
+  id: string,
+  name: string | null,
+  team: number,
+  extra: Partial<Player> = {},
+): Player {
   return {
     id,
     name,
     team,
     color_hex: team === 0 ? "#1f4fa0" : "#e8e8e8",
     tagged: name !== null,
+    seen_s: 40,
+    ...extra,
   };
 }
 
@@ -286,8 +294,9 @@ function baseGame(id: string, title: string, status: Game["status"]): Game {
     players: done
       ? [
           player("p1", "Marcus", 0),
-          player("p2", null, 1),
-          player("p3", null, 0),
+          // MOCK: p2's kit reads as both teams; p3 is a short tracker fragment
+          player("p2", null, 1, { team_mixed: true }),
+          player("p3", null, 0, { seen_s: 3.2 }),
           player("p4", null, 1),
         ]
       : [],
@@ -367,6 +376,10 @@ function distanceFor(playerId: string): number {
 
 const games = new Map<string, Game>();
 const events = new Map<string, GameEvent[]>();
+/** The TV command queue (POST /games/{id}/tv/play, GET /tv/commands). */
+const tvQueue: TvCommand[] = [];
+const tvAcked = new Set<string>();
+let tvShowing: string | null = null; // the game in the last tvState heartbeat
 
 function seed() {
   games.clear();
@@ -1054,6 +1067,37 @@ export const mockApi: ReplayApi = {
       token,
       expires_at: Math.floor(Date.now() / 1000) + 3600,
     });
+  },
+
+  playOnTv(gameId, t) {
+    log("POST", `/games/${gameId}/tv/play`, { t });
+    needGame(gameId);
+    const id = `c_${String(Date.now()).padStart(13, "0")}${String(tvQueue.length % 10_000).padStart(4, "0")}`;
+    tvQueue.push({ id, kind: "play", game_id: gameId, t });
+    // a test sets `globalThis.__replayMockTvShowing` (an init script) to stand in for a TV
+    // on another device; on this page, the open Watch's own heartbeat
+    const showing =
+      (globalThis as { __replayMockTvShowing?: string })
+        .__replayMockTvShowing ?? tvShowing;
+    return delay(showing === gameId);
+  },
+
+  // Not logged: the open Watch sends it every few seconds.
+  tvState(gameId) {
+    tvShowing = gameId;
+    return delay(undefined);
+  },
+
+  // Not logged: the open Watch polls it every few seconds.
+  tvCommands(after) {
+    const commands = tvQueue.filter((c) => c.id > after && !tvAcked.has(c.id));
+    return delay({ commands, cursor: commands.at(-1)?.id ?? after });
+  },
+
+  ackTvCommand(id) {
+    log("POST", `/tv/commands/${id}/ack`);
+    tvAcked.add(id);
+    return delay(undefined);
   },
 
   renderPlayer(gameId, playerId) {

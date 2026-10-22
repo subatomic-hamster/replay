@@ -25,6 +25,7 @@ import type {
   Stats,
   Storyboard,
   TracksChunk,
+  TvCommand,
 } from "./types";
 import type { ReplayManifest, ReplaySummary } from "./replays";
 import { fetchRetrying, idempotent } from "./retry";
@@ -139,6 +140,14 @@ export interface ReplayApi {
     job: PhoneJob,
     t: number | null,
   ): Promise<PhoneLink>;
+  /** The phone's "Play on the TV": queue a `play` command for this game at `t`. True when
+   *  a TV is showing this game now (its `tvState` heartbeat), so it plays there. */
+  playOnTv(gameId: string, t: number): Promise<boolean>;
+  /** The open Watch's heartbeat (POST /tv/state): which game, where, playing or not. */
+  tvState(gameId: string, t: number, playing: boolean): Promise<void>;
+  /** The TV's command queue, newer than `after` (a cursor from the previous answer). */
+  tvCommands(after: string): Promise<{ commands: TvCommand[]; cursor: string }>;
+  ackTvCommand(id: string): Promise<void>;
   /** Plan task 12: queue the follow-cam rendition for one player (fire-and-forget). */
   renderPlayer(gameId: string, playerId: string): Promise<RenderJob>;
   /** M8: the game's rendered multi-angle replays ([] when none). */
@@ -776,6 +785,26 @@ export function createHttpApi(
         method: "POST",
         json: { job, t },
       }),
+    playOnTv: (gameId, t) =>
+      req<unknown>(`/games/${gameId}/tv/play`, {
+        method: "POST",
+        json: { t },
+      }).then((r) => (r as { tv?: boolean } | undefined)?.tv === true),
+    tvState: (gameId, t, playing) =>
+      req<unknown>("/tv/state", {
+        method: "POST",
+        json: { game_id: gameId, t: Math.max(0, t), playing },
+        idempotent: true, // the latest heartbeat wins
+      }).then(() => undefined),
+    tvCommands: (after) =>
+      req<{ commands: TvCommand[]; cursor: string }>(
+        `/tv/commands?after=${encodeURIComponent(after)}`,
+      ),
+    ackTvCommand: (id) =>
+      req<unknown>(`/tv/commands/${encodeURIComponent(id)}/ack`, {
+        method: "POST",
+        idempotent: true, // acking twice is the same ack
+      }).then(() => undefined),
     renderPlayer: (gameId, playerId) =>
       req<RenderJob>(`/games/${gameId}/players/${playerId}/render`, {
         method: "POST",

@@ -203,12 +203,14 @@ def draw_plane(canvas: np.ndarray, tex: np.ndarray, view: View, origin, ax_u, ax
     if x1 <= x0 or y1 <= y0:
         return
     shift = np.array([[1, 0, -x0], [0, 1, -y0], [0, 0, 1.0]])
-    warped = cv2.warpPerspective(tex, shift @ hm, (x1 - x0, y1 - y0), flags=cv2.INTER_LINEAR)
+    warped = cv2.warpPerspective(tex, shift @ hm, (x1 - x0, y1 - y0), flags=cv2.INTER_LINEAR,
+                                 borderMode=cv2.BORDER_REPLICATE)  # fmt: skip
     mask = np.zeros((y1 - y0, x1 - x0), np.uint8)
     cv2.fillConvexPoly(mask, np.round((dst - [x0, y0]) * 16).astype(np.int32), 255, cv2.LINE_AA, 4)
-    a = (mask.astype(np.float32) / 255.0)[..., None]
     roi = canvas[y0:y1, x0:x1]
-    roi[:] = (warped * a + roi * (1 - a)).astype(np.uint8)
+    # one native blend (a numpy float blend of whole-frame planes was most of the time)
+    w = mask.astype(np.float32) * (1 / 255.0)
+    roi[:] = cv2.blendLinear(warped, np.ascontiguousarray(roi), w, 1.0 - w)
 
 
 def background(size=OUT_SIZE) -> np.ndarray:
@@ -216,6 +218,56 @@ def background(size=OUT_SIZE) -> np.ndarray:
     k = np.linspace(0, 1, h)[:, None, None]
     img = np.asarray(BG_TOP, np.float32) * (1 - k) + np.asarray(BG_BOTTOM, np.float32) * k
     return np.repeat(img, w, axis=1).astype(np.uint8)
+
+
+def _median_colour(img: np.ndarray) -> np.ndarray:
+    px = img.reshape(-1, 3)
+    seen = px.max(axis=1) > 12  # unseen texels are black
+    return np.median(px[seen], axis=0) if seen.any() else np.array([60.0, 60.0, 60.0])
+
+
+def room_planes(floor: np.ndarray, wall: np.ndarray, plate_meta: dict) -> list:
+    """Flat stand-ins for what the real camera never saw, drawn under the plate: a floor
+    out to the horizon in the floor's own median colour, and a wall on every side of the
+    plate's floor box shaded from the backdrop's upper to lower median colour. Plain
+    colour, so nothing reads as detail that was not filmed. (tex, origin, ax_u, ax_v,
+    inward normal or None) for `draw_plane`; a wall is drawn only from inside its face."""
+    fx0, fy0, fx1, fy1 = plate_meta["floor"]["bounds_m"]
+    hgt = float(plate_meta["backdrop"]["height_m"])
+    hh = wall.shape[0]
+    top, low = _median_colour(wall[: hh // 2]), _median_colour(wall[hh // 2 :])
+    grad = np.repeat(np.linspace(top, low, 64)[:, None, :], 2, axis=1).astype(np.uint8)
+    out = []
+    ext = 60.0
+    tile = np.full((2, 2, 3), _median_colour(floor), np.uint8)
+    out.append((tile, np.array([fx0 - ext, fy1 + ext, 0.0]),
+                np.array([(fx1 - fx0 + 2 * ext) / 2, 0, 0.0]),
+                np.array([0, -(fy1 - fy0 + 2 * ext) / 2, 0.0]), None))  # fmt: skip
+    ring = [(fx0, fy0), (fx1, fy0), (fx1, fy1), (fx0, fy1)]  # counter-clockwise from above
+    for (ax, ay), (bx, by) in zip(ring, ring[1:] + ring[:1], strict=True):
+        a, b = np.array([ax, ay, hgt]), np.array([bx, by, hgt])
+        inward = np.array([-(by - ay), bx - ax]) / np.hypot(bx - ax, by - ay)
+        out.append((grad, a, (b - a) / 2, -EZ * hgt / 64, (a[:2], inward)))
+    return out
+
+
+def fill_unseen(floor: np.ndarray, wall: np.ndarray, planes: list, seen_f, seen_b):
+    """The plate's never-seen texels (`seen_*` 0, the masks the 2.5D scene package ships as
+    alpha) in the stand-in colours, so a virtual camera turned past the real one's field
+    of view sees plain floor / wall, not black holes."""
+    floor, wall = floor.copy(), wall.copy()
+    floor[seen_f[: floor.shape[0], : floor.shape[1]] < 128] = planes[0][0][0, 0]
+    rows = cv2.resize(planes[1][0][:, :1], (1, wall.shape[0]), interpolation=cv2.INTER_LINEAR)
+    hole = seen_b[: wall.shape[0], : wall.shape[1]] < 128
+    wall[hole] = np.broadcast_to(rows, wall.shape)[hole]
+    return floor, wall
+
+
+def draw_room(canvas: np.ndarray, view: View, planes: list) -> None:
+    eye = view.centre[:2]
+    for tex, origin, ax_u, ax_v, face in planes:
+        if face is None or (eye - face[0]) @ face[1] > 0:
+            draw_plane(canvas, tex, view, origin, ax_u, ax_v)
 
 
 def draw_shadow(canvas: np.ndarray, view: View, foot: np.ndarray) -> None:
@@ -233,7 +285,14 @@ def draw_shadow(canvas: np.ndarray, view: View, foot: np.ndarray) -> None:
         return
     m = np.zeros((y1 - y0, x1 - x0), np.uint8)
     cv2.fillPoly(m, [np.round(px - [x0, y0]).astype(np.int32)], 255, cv2.LINE_AA)
-    m = cv2.GaussianBlur(m, (0, 0), sigma)
+    k = int(sigma // 3)  # a big soft shadow (a player at a POV's feet) blurs at 1/k size:
+    if k > 1:  # the full-size blur was half of a POV render's time
+        small = cv2.resize(m, (max(1, m.shape[1] // k), max(1, m.shape[0] // k)),
+                           interpolation=cv2.INTER_AREA)  # fmt: skip
+        small = cv2.GaussianBlur(small, (0, 0), sigma / k)
+        m = cv2.resize(small, (m.shape[1], m.shape[0]), interpolation=cv2.INTER_LINEAR)
+    else:
+        m = cv2.GaussianBlur(m, (0, 0), sigma)
     a = (m.astype(np.float32) / 255.0 * 0.45)[..., None]
     roi = canvas[y0:y1, x0:x1]
     roi[:] = (roi * (1 - a)).astype(np.uint8)
@@ -327,6 +386,34 @@ def draw_ball(canvas: np.ndarray, view: View, trail: np.ndarray) -> None:
     cv2.circle(canvas, c, r, (10, 30, 60), 1, cv2.LINE_AA)
 
 
+SEEN_FULL, SEEN_NONE = np.radians(35), np.radians(75)  # real pixels: full / none
+# over a body proxy the cutout hands over sooner and quicker (two bodies never ghost)
+PROXY_FULL, PROXY_NONE = np.radians(18), np.radians(32)
+NEAR_FADE_M = 1.8  # image-based cutouts fade in from 1.2 m to 3.0 m from the camera
+
+
+def seen_weight(th: float) -> float:
+    """How much of a cutout's real pixels to show when the virtual line of sight is `th`
+    radians (horizontal) from the real camera's: all up to 35°, none past 75°."""
+    return float(np.clip((SEEN_NONE - abs(th)) / (SEEN_NONE - SEEN_FULL), 0.0, 1.0))
+
+
+def turn(real: View, view: View, foot: np.ndarray) -> float:
+    """Signed horizontal angle (rad) at `foot` from the real line of sight to the
+    virtual one."""
+    dr, dv = (foot - real.centre)[:2], (foot - view.centre)[:2]
+    return float(np.arctan2(dr[0] * dv[1] - dr[1] * dv[0], dr @ dv))
+
+
+def _silhouette(rgb: np.ndarray, tint, w: float) -> np.ndarray:
+    """The crop blended toward a flat kit colour shaded by its own light (folds, arms and
+    legs stay readable): weight `w` of the real pixels."""
+    g = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    shade = (0.55 + 0.45 * g / max(float(g.mean()), 1.0))[..., None]
+    flat = np.clip(np.asarray(tint, np.float32) * shade, 0, 255)
+    return (rgb.astype(np.float32) * w + flat * (1 - w)).astype(np.uint8)
+
+
 class Billboard:
     """Player cutout -> virtual image through the plane at the foot point."""
 
@@ -339,14 +426,24 @@ class Billboard:
         a[2] = 0
         return a / np.linalg.norm(a)
 
-    def draw(self, canvas, view: View, frame, foot: np.ndarray, xy0, mask: np.ndarray) -> None:
+    def draw(self, canvas, view: View, frame, foot: np.ndarray, xy0, mask: np.ndarray,
+             tint=None, fade: float = 1.0) -> None:  # fmt: skip
+        """`tint`: None (the real pixels), or a BGR kit colour the cutout fades to as the
+        virtual line of sight turns away from the real one (`seen_weight`): past ~45° a
+        flat cutout reads wrong, so it becomes a kit-coloured, shaded silhouette of the
+        same shape, mirrored once seen from behind. Never stretched garbage. With a tint
+        a cutout also fades out closer than `NEAR_FADE_M` (a POV brushing past someone
+        would fill the frame with a few dozen magnified source pixels). `fade` scales
+        its opacity (over a body proxy, `avatars.proxy`)."""
         a_r = self._axis(self.real.centre, foot)
-        dr = (foot - self.real.centre)[:2]
-        dv = (foot - view.centre)[:2]
-        th = np.arctan2(dr[0] * dv[1] - dr[1] * dv[0], dr @ dv)
+        th = turn(self.real, view, foot)
         c, s = np.cos(th), np.sin(th)
         a_v = np.array([c * a_r[0] - s * a_r[1], s * a_r[0] + c * a_r[1], 0.0])
-        if view.depth(foot + 0.9 * EZ)[0] < NEAR_M + 0.5:
+        dist = float(view.depth(foot + 0.9 * EZ)[0])
+        if dist < NEAR_M + 0.5:
+            return
+        opacity = fade * (1.0 if tint is None else float(np.clip((dist - 1.2) / NEAR_FADE_M, 0, 1)))
+        if opacity <= 0:
             return
         g_real = plane_homography(self.real.p, foot, a_r, EZ)
         g_virt = plane_homography(view.p, foot, a_v, EZ)
@@ -372,9 +469,15 @@ class Billboard:
         x1, y1 = min(canvas.shape[1], hi[0]), min(canvas.shape[0], hi[1])
         if x1 <= x0 or y1 <= y0 or (x1 - x0) * (y1 - y0) > canvas.size:
             return
+        if tint is not None:
+            w = seen_weight(th)
+            if w < 1.0:
+                rgb = _silhouette(rgb, tint, w)
+            if abs(th) > np.pi / 2:  # from behind: the person's left is on our left
+                rgb, m = np.ascontiguousarray(rgb[:, ::-1]), np.ascontiguousarray(m[:, ::-1])
         alpha = m.astype(np.float32)
         alpha = cv2.erode(alpha, np.ones((3, 3), np.uint8)) if min(cw, ch) > 24 else alpha
-        alpha = cv2.GaussianBlur(alpha, (0, 0), max(0.7, ch / 120))
+        alpha = cv2.GaussianBlur(alpha, (0, 0), max(0.7, ch / 120)) * opacity
         shift = np.array([[1, 0, -x0], [0, 1, -y0], [0, 0, 1.0]]) @ total
         out_wh = (x1 - x0, y1 - y0)
         col = cv2.warpPerspective(rgb, shift, out_wh, flags=cv2.INTER_LINEAR)
@@ -423,7 +526,17 @@ def render_angle(
     *,
     size: tuple[int, int] = OUT_SIZE,
     progress=None,
+    views: list[View] | None = None,
+    hide: tuple[str, ...] = (),
+    tints: dict[str, tuple[int, int, int]] | None = None,
+    label_fn=None,
+    proxy=None,
 ) -> dict[str, Any]:
+    """Tier B's angle `angle`; or, given `views` (one per frame), the image-based virtual
+    views (avatars.imageview): `hide` players (a POV's own), `tints` kit colours the
+    cutouts fade to at wide angles, `label_fn(canvas)` their burned-in label, `proxy`
+    a `proxy(real, k1, src_size, masks, n)` that builds the posed body proxies the
+    cutouts cross-fade to instead (`avatars.proxy`)."""
     gd = Path(game_dir)
     started = time.time()
     h = play(gd, play_id)
@@ -452,7 +565,8 @@ def render_angle(
     with np.errstate(all="ignore"):  # per-frame extent of the players on court, metres
         extent = np.nanmax(court, axis=0) - np.nanmin(court, axis=0)  # (F, 2)
     spread = float(np.nanmedian(extent.max(axis=1))) if np.isfinite(extent).any() else 10.0
-    views = camera_path(angle, real, src_size, centre, spread, size)
+    if views is None:
+        views = camera_path(angle, real, src_size, centre, spread, size)
     fl = plate_meta["floor"]
     x0, _, _, y1 = fl["bounds_m"]
     ppm = fl["px_per_m"]
@@ -489,35 +603,57 @@ def render_angle(
             rim = min(rims, key=lambda r: np.hypot(r[0] - rel[0], r[1] - rel[1]))
             shot_ball = ball_track(s, rel, np.asarray(rim), times)
     billboard = Billboard(real, k1, src_size)
+    feet = {pid: court[i] for i, pid in enumerate(tracks.ids)}
+    bodies = proxy(real, k1, src_size, masks, n, feet) if proxy is not None else None
+    room = room_planes(floor, wall, plate_meta) if tints is not None else []
+    if room:
+        from .scene import _plates  # (scene imports this module)
+
+        calib = json.loads((gd / "calib.json").read_text(encoding="utf-8"))
+        (_, bgra_b), (_, bgra_f) = _plates(gd, calib, calibration, False)
+        floor, wall = fill_unseen(floor, wall, room, bgra_f[..., 3], bgra_b[..., 3])
     proc = open_encoder(Path(out_path), size, fps)
     assert proc.stdin is not None
     drawn = 0
     try:
         for f, (_, frame) in enumerate(read_window(video, h["t_start"], n)):
-            view = views[f]
+            view = views[min(f, len(views) - 1)]  # (a scene doc's frame count may round 1 short)
             canvas = background(size)
+            if room:  # above the stand-in walls: their top colour, dimmed (no black void)
+                canvas[:] = (room[1][0][0, 0] * 0.6).astype(np.uint8)
+            draw_room(canvas, view, room)
             draw_plane(canvas, wall, view, b_origin, b_u, b_v)
             draw_plane(canvas, floor, view, f_origin, f_u, f_v)
             people = []
             for p, pid in enumerate(tracks.ids):
-                if not np.isfinite(court[p, f, 0]):
+                if not np.isfinite(court[p, f, 0]) or pid in hide:
                     continue
                 m = masks.get(pid, f)
                 if m is None:
                     continue
                 foot = np.array([court[p, f, 0], court[p, f, 1], 0.0])
-                people.append((float(view.depth(foot + 0.9 * EZ)[0]), foot, m))
-            for _, foot, _ in people:
+                people.append((float(view.depth(foot + 0.9 * EZ)[0]), foot, m, pid))
+            for _, foot, _, _ in people:
                 draw_shadow(canvas, view, foot)
             if rims:
                 draw_hoops(canvas, view, rims, baselines)
             # painter's order; the net goes between the far-side and near-side players
             net_d = float(view.depth(np.mean(net, axis=0, keepdims=True))[0]) if net else -1.0
             people.sort(key=lambda q: -q[0])
-            for i, (d, foot, (xy0, m)) in enumerate(people):
+            for i, (d, foot, (xy0, m), pid) in enumerate(people):
                 if net and d <= net_d and (i == 0 or people[i - 1][0] > net_d):
                     draw_net(canvas, view, net)
-                billboard.draw(canvas, view, frame, foot, xy0, m)
+                tint = None if tints is None else tints.get(pid, (150, 150, 150))
+                if bodies is not None:  # the cutout fades into its posed, textured proxy
+                    th = abs(turn(real, view, foot))
+                    w = float(np.clip((PROXY_NONE - th) / (PROXY_NONE - PROXY_FULL), 0, 1))
+                    near = float(np.clip((d - 1.2) / NEAR_FADE_M, 0, 1))
+                    if w < 1 and near > 0 and bodies.draw(canvas, view, f, frame, pid, masks,
+                                                          near):  # fmt: skip
+                        if w > 0:
+                            billboard.draw(canvas, view, frame, foot, xy0, m, None, w * near)
+                        continue
+                billboard.draw(canvas, view, frame, foot, xy0, m, tint)
             if net and (not people or people[-1][0] > net_d):
                 draw_net(canvas, view, net)
             drawn += len(people)
@@ -525,7 +661,10 @@ def render_angle(
                 draw_ball(canvas, view, shot_ball[max(0, f - 8) : f + 1])
             if mirrored:  # the clicks were labelled mirror-wise: show it as the camera saw it
                 canvas = cv2.flip(canvas, 1)
-            label(canvas, angle, synthetic)
+            if label_fn:
+                label_fn(canvas)
+            else:
+                label(canvas, angle, synthetic)
             proc.stdin.write(np.ascontiguousarray(canvas).tobytes())
             if progress:
                 progress((f + 1) / n)

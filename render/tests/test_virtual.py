@@ -59,6 +59,63 @@ def test_billboard_seen_from_the_real_camera_is_the_source():
     assert canvas[:, : x0 - 5].max() == 0 and canvas[:, x0 + 45 :].max() == 0
 
 
+def _cutout(frame, foot):
+    (fx, fy), (_, hy) = REAL.project(np.array([foot, foot + [0, 0, 1.85]]))
+    x0, y0 = int(fx - 20), int(hy)
+    mask = np.zeros((int(fy - hy), 40), bool)
+    mask[:, 10:30] = True
+    frame[y0 : y0 + mask.shape[0], x0 : x0 + 40][mask] = (0, 255, 0)
+    return (x0, y0), mask
+
+
+def test_a_cutout_seen_from_the_side_becomes_its_kit_colour():
+    """Image-based views: real pixels near the real line of sight, the kit-coloured
+    silhouette (not stretched pixels) once the view has turned ~90° round the player."""
+    frame = np.zeros((toy.H, toy.W, 3), np.uint8)
+    foot = np.array([1.0, 12.0, 0.0])
+    xy0, mask = _cutout(frame, foot)
+    bb = tierb.Billboard(REAL, 0.0, SIZE)
+    side = REAL.centre - foot
+    side = foot + np.array([-side[1], side[0], 0.0]) * 0.8  # 90° round, a bit closer
+    side[2] = REAL.centre[2]
+    view = tierb.look_at(side, foot + [0, 0, 1.0], 500.0, SIZE)
+    canvas = np.zeros_like(frame)
+    bb.draw(canvas, view, frame, foot, xy0, mask, tint=(200, 40, 40))
+    drawn = canvas.max(axis=-1) > 60
+    assert drawn.sum() > 50
+    px = canvas[drawn].astype(int)
+    assert (px[:, 0] > px[:, 1]).mean() > 0.9  # blue kit, not the green source pixels
+    assert tierb.seen_weight(np.radians(20)) == 1.0 and tierb.seen_weight(np.radians(80)) == 0.0
+
+
+def test_a_cutout_right_at_the_camera_fades_out():
+    frame = np.zeros((toy.H, toy.W, 3), np.uint8)
+    foot = np.array([1.0, 12.0, 0.0])
+    xy0, mask = _cutout(frame, foot)
+    eye = foot + (REAL.centre - foot) * (1.3 / np.linalg.norm(REAL.centre - foot))
+    view = tierb.look_at(eye, foot + [0, 0, 1.0], 300.0, SIZE)
+    canvas = np.zeros_like(frame)
+    tierb.Billboard(REAL, 0.0, SIZE).draw(canvas, view, frame, foot, xy0, mask, tint=(0, 0, 255))
+    assert canvas.max() < 40  # 1.3 m away: (almost) nothing, not a wall of blurred pixels
+
+
+def test_unseen_walls_fill_the_view_from_inside_and_vanish_from_outside():
+    floor = np.full((40, 30, 3), (60, 120, 180), np.uint8)
+    wall = np.full((40, 60, 3), 90, np.uint8)
+    meta = {"floor": {"bounds_m": [-7.5, -3.0, 7.5, 17.0]}, "backdrop": {"height_m": 8.0}}
+    planes = tierb.room_planes(floor, wall, meta)
+    inside = tierb.look_at(np.array([0.0, 14.0, 1.7]), np.array([0.0, -3.0, 1.7]), 600.0, SIZE)
+    canvas = np.zeros((SIZE[1], SIZE[0], 3), np.uint8)
+    tierb.draw_room(canvas, inside, planes)
+    assert (canvas.max(axis=-1) == 0).mean() < 0.01  # walls and floor everywhere
+    outside = tierb.look_at(np.array([0.0, 30.0, 6.0]), np.array([0.0, 7.0, 1.0]), 300.0, SIZE)
+    canvas[:] = 0
+    tierb.draw_room(canvas, outside, planes)
+    # the near wall (between the camera and the court) is culled: the court shows
+    u, v = np.round(outside.project(np.array([[0.0, 7.0, 0.0]]))[0]).astype(int)
+    assert tuple(canvas[v, u]) == (60, 120, 180)
+
+
 def test_floor_plane_behind_the_camera_is_clipped():
     canvas = np.zeros((toy.H, toy.W, 3), np.uint8)
     tex = np.full((400, 300, 3), 200, np.uint8)
@@ -90,6 +147,19 @@ def test_ball_parabola_meets_release_and_rim():
     assert b[200, 2] == pytest.approx(3.05, abs=1e-6) and b[200, 1] == pytest.approx(1.575)
     assert np.nanmax(b[:, 2]) > 3.05  # an arc, not a line
     assert np.isnan(b[-1]).all()
+
+
+def test_plays_with_angles_scale_with_the_game_and_spread_over_it():
+    assert [replays.auto_n(s) for s in (60, 241, 3600)] == [3, 4, 10]
+
+    def w(t: float) -> dict:
+        return {"play_id": f"at{t:g}", "t_start": t, "t_end": t + 6}
+
+    ranked = [w(200), w(203), w(210), w(10), w(100)]  # the best plays bunch at the end
+    got = replays._spread(ranked, 3, 240.0)
+    assert [h["play_id"] for h in got] == ["at10", "at100", "at200"]
+    # fewer stretches with a play: the rest come from the ranking, never overlapping
+    assert [h["play_id"] for h in replays._spread(ranked[:3], 3, 240.0)] == ["at200", "at210"]
 
 
 def test_highlights_come_from_events_without_plays(tmp_path):

@@ -1,4 +1,4 @@
-"""Tier C stylized 3D replays (M9): tierc_scene -> tierc -> tierc_manifest.
+"""Tier C virtual views (M9, image-based since D-86): tierc_scene -> tierc -> tierc_manifest.
 
 * `tierc_scene`    one task per highlight: scene/<play>.json (`replay.scene.v1`): 2D
   keypoints per player at every frame -> 3D joints in court metres (MotionBERT when the
@@ -7,8 +7,11 @@
   GPU (YOLO pose, MotionBERT) unless the keypoints are a synthetic clip's ground truth
   and the method is analytic.
 * `tierc`          one task per play x angle: replays/<play>/tierc_<angle>.mp4
-  (broadcast_high, baseline, overhead, reverse, then pov_<pid> for every player in the
-  3D scene, the key player first: a virtual POV, manifest id `pov:<pid>`).
+  (wing, courtside, baseline where a cutout can carry it, then pov_<pid> for the key
+  player and those nearest them: a virtual POV, manifest id `pov:<pid>`). The 3D scene
+  steers the cameras; the people are their real SAM cutouts on billboards over the
+  court plate, fading to kit-coloured silhouettes far from the real camera
+  (`avatars.imageview`; the stylized avatars of `avatars.render` are no longer shipped).
 * `tierc_manifest` one uncached task per play: adds the Tier C angles to
   replays/<play>/manifest.json. The `replays` stage (Tier A/B, virtual.py) writes that
   file from the angle videos it knows; this step merges ours in after it (it replaces
@@ -32,8 +35,8 @@ from . import broadcast as bc
 from . import courtcam as cc
 from .virtual import HIGHLIGHTS, _plays, _width
 
-LABELS = {"broadcast_high": "Broadcast high", "baseline": "Baseline", "overhead": "Overhead",
-          "reverse": "Reverse", "pov": "Virtual POV"}  # fmt: skip
+LABELS = {"wing": "Virtual wing", "courtside": "Virtual courtside",
+          "baseline": "Virtual baseline", "pov": "Virtual POV"}  # fmt: skip
 
 
 def _code_hash() -> str:
@@ -69,7 +72,7 @@ def _angles_of(gd: Path, play_id: str) -> list[str]:
     """A play's Tier C angles from its 3D scene (a virtual POV per reconstructed player),
     else from the highlight (the key player's POV)."""
     from replay_render.avatars import scene
-    from replay_render.avatars.render import angles_for
+    from replay_render.avatars.imageview import angles_for
     from replay_render.virtual.replays import play
 
     has_scene = (gd / scene.SCENE_REL.format(play_id=play_id)).is_file()
@@ -97,11 +100,13 @@ def run_scene(ctx: Ctx, item: str | None) -> None:
 
 
 def run_render(ctx: Ctx, item: str | None) -> None:
-    from replay_render.avatars import render, scene
+    from replay_render.avatars import imageview, scene
 
     play_id, stem = item.split("/", 1)
     w = _width(ctx.cfg)
-    render.render_angle(
+    imageview.render_angle(
+        ctx.game_dir,
+        ctx.game_dir / cc.WIDE,
         scene.read(ctx.game_dir, play_id),
         stem.removeprefix("tierc_"),
         ctx.game_dir / f"replays/{item}.mp4",
@@ -113,7 +118,7 @@ def run_render(ctx: Ctx, item: str | None) -> None:
 def merge_manifest(game_dir: Path, play_id: str, sport: str | None = None) -> dict:
     """Add the rendered Tier C angles of one play to its manifest (created from the
     Tier A/B videos if the `replays` stage has not written it)."""
-    from replay_render.virtual.replays import probe_video, write_manifest
+    from replay_render.virtual.replays import player_name, poster, probe_video, write_manifest
 
     gd = Path(game_dir)
     path = gd / "replays" / play_id / "manifest.json"
@@ -130,15 +135,11 @@ def merge_manifest(game_dir: Path, play_id: str, sport: str | None = None) -> di
         kind, _, pid = a.partition("_") if a.startswith("pov_") else (a, "", "")
         # `3d:` keeps ids unique: Tier B has a `broadcast_high` too
         aid = f"pov:{pid}" if pid else f"3d:{kind}"
-        label = (
-            ("" if pid else "3D ")
-            + LABELS[kind]
-            # an untagged player reads "Player 3" (track p3), as everywhere on the TV
-            + (f" · {names.get(pid) or 'Player ' + pid.removeprefix('p')}" if pid else "")
-        )
-        angles.append({"id": aid, "tier": "C", "label": label, "url": rel,
-                       "duration_s": info["duration_s"], "width": info["width"],
-                       "height": info["height"]})  # fmt: skip
+        label = f"{LABELS[kind]} · {player_name(names, pid)}" if pid else LABELS[kind]
+        angles.append({"id": aid, "tier": "C", "label": label,
+                       **({"player_id": pid} if pid else {}), "url": rel,
+                       "poster": poster(gd, rel), "duration_s": info["duration_s"],
+                       "width": info["width"], "height": info["height"]})  # fmt: skip
     m["angles"] = angles
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(m, indent=1), encoding="utf-8")
@@ -172,10 +173,10 @@ STAGES = [
         "tierc",
         VERSION,
         run_render,
-        inputs=(HIGHLIGHTS, "scene"),
+        inputs=(cc.WIDE, HIGHLIGHTS, "scene", "calibration.json", "plate", "segments", "tracks"),
         outputs=("replays/{item}.mp4",),
         params=("replay_width",),
-        after=("tierc_scene",),
+        after=("tierc_scene", "segment", "plate"),
         fanout=_angles,
         default=False,
     ),

@@ -29,6 +29,7 @@ def _manifest(gd, play_id: str, t_start: float, angles: list[tuple[str, str]]) -
                 "tier": "B" if stem in ("orbit", "push_in") else "A",
                 "label": stem,
                 "url": f"replays/{play_id}/{stem}.mp4",
+                "poster": f"replays/{play_id}/{stem}.jpg",
                 "duration_s": 6.0,
                 "width": 1280,
                 "height": 720,
@@ -63,6 +64,7 @@ def test_replays_listed_in_time_order_and_manifest_urls_resolved(client: TestCli
     assert [a["tier"] for a in m["angles"]] == ["A", "A", "B"]
     url = m["angles"][2]["url"]
     assert url.endswith(f"/media/games/{gid}/replays/pl_0001/push_in.mp4")
+    assert m["angles"][2]["poster"].endswith(f"/media/games/{gid}/replays/pl_0001/push_in.jpg")
     r = client.get(url, headers={"Range": "bytes=0-49"})
     assert r.status_code == 206 and r.content == TINY_MP4.read_bytes()[:50]
 

@@ -17,6 +17,7 @@ from . import grounding as G
 SCHEMA = "replay.advice.v1"
 MIN_ATTEMPTS = 2  # per shot value, before comparing efficiencies
 GAP_PCT = 20  # make-% gap worth a suggestion
+COVERAGE_SHARE = 0.5  # of the best-covered player's track samples, to compare distances
 
 SYSTEM = (
     "You are a friendly amateur-sports coach. You get FACTS (JSON) about one player's game "
@@ -122,14 +123,22 @@ def player_lines(game: dict, events: list[dict], plays: list[dict], stats: dict,
 
     rows = {r["player_id"]: r for r in (stats or {}).get("box_score", [])}
     me = rows.get(pid)
-    if me and me.get("samples") and me.get("distance_m"):
-        mates = [
-            r["distance_m"] for r in rows.values()
-            if r.get("team") == team and r.get("samples") and r.get("distance_m")
-        ]  # fmt: skip
-        d, avg = round(me["distance_m"]), round(sum(mates) / len(mates))
-        lines.append(f"{a} covered {d} metres; the team average was {avg} metres.")
-        cite(d, avg)
+    # D-92: a track fragment seen for a few seconds is not a teammate to compare with
+    # (a quarter read "191 metres; the team average was 44"): only players followed for
+    # at least COVERAGE_SHARE of the best-covered player's samples count
+    most = max((r.get("samples") or 0 for r in rows.values()), default=0)
+    full = [r for r in rows.values() if r.get("distance_m")
+            and (r.get("samples") or 0) >= COVERAGE_SHARE * most]  # fmt: skip
+    if me in full:
+        d = round(me["distance_m"])
+        mates = [r["distance_m"] for r in full if r.get("team") == team]
+        if len(mates) > 1:
+            avg = round(sum(mates) / len(mates))
+            lines.append(f"{a} covered {d} metres; the team average was {avg} metres.")
+            cite(d, avg)
+        else:
+            lines.append(f"{a} covered {d} metres.")
+            cite(d)
     if not lines:
         lines.append(f"No stats for {a} yet.")
     return lines, used, nums

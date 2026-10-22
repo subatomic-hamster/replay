@@ -81,7 +81,21 @@ Verification frames (viewed by the author of this doc, local scratchpad only, no
 - **Shows:** a fixed tripod at court level beside one basket of an outdoor park court; 2v2 half court, four adults in clearly different clothes (grey shirt and black pants; grey #23 jersey and white pants; black shirt and shorts; cream shirt and maroon pants). Edited score cards between some points; cuts at 40-42 s and 480-483 s of the source, none inside the 120 s cut.
 - **Honest limits:** the court lines are washed out by the sun, so there is no court calibration; the D-89 evaluation used a ground plane fitted to people's heights (`docs/evidence/D89-tracking/`), not a court fit. People pass close to the camera (very large boxes, frequent overlaps).
 - **Ground truth:** `samples/truth/basketball_2v2park_identity.json` (hand-checked identity boxes at 10 Hz; how it was made is in its `source` field, including one fix by eye: A added at 40.2-41.1 s). Score with `docs/evidence/D89-tracking/gt_eval.py`.
+- **Shot truth (D-92, hold-out for shots and makes):** `samples/truth/basketball_2v2park.json`. It lists 10 attempts and 3 makes (1s and 2s); the makes add up to the score cards (1-1 at 23 s, 1-2 at 58 s, 1-4 at 118 s). It was annotated by eye from contact sheets, and its `source` field says how. All play is at the large basket top right, rim centre about (1390, 175), about 115 px wide. The small basket at (611, 453) is the far end, and nobody shoots there.
+- **Shot truth, development set (D-95):** `samples/truth/basketball_2v2park_dev.json` covers source 180-330 s of `full.mp4` (t = source - 180). It lists 11 attempts and 5 makes, and is made the same way as the hold-out. Score cards are at 0, 24.7, 96.15, 113.92 and 129.27 s. Unlike the hold-out, this segment may be used to tune the ball rules. One make (t 10.52) looks good on video, but the cards do not credit it.
 - **Found by:** YouTube CC-filter searches from the box ("1v1 basketball full game", "2v2 basketball game", "2v2 pickup basketball", "1 on 1 basketball tripod", "basketball 21 game", "2 on 2 basketball", "3v3 half court basketball pickup", "basketball 2v2 tripod gym", "1v1 basketball outdoor court", "streetball 2v2"); 16 CC BY candidates viewed as 4-frame sheets. Close seconds: `7MloXoCl6LU` / `NY0t2bejspg` / `AThYgh0YRWA` (JaiArtHub 2v2, fixed tripod, visible court lines, but burned-in score graphics and four players mostly in black); the rest were handheld, vlog-edited, at night or with face overlays.
+
+#### 3.1d Basketball 2v2 JaiArtHub (half court, low tripod, faint lines: the court-fit fail-safe, D-94)
+
+- **Box files:** `/workspace/wt/replay-env/samples-cc/basketball_2v2jai/basketball_2v2jai_60s.mp4` (source 20-80 s, `ffmpeg -c copy`), `SOURCE.txt`, `source.info.json`.
+- **URL:** https://www.youtube.com/watch?v=7MloXoCl6LU
+- **Title:** "Fun 2v2 Basketball - Best of 2 series - vol-1"; **uploader:** JaiArtHub (https://www.youtube.com/@jaiarthub), uploaded 2023-02-17
+- **Licence (exact):** `Creative Commons Attribution license (reuse allowed)` (CC BY 3.0, https://creativecommons.org/licenses/by/3.0/), checked in the yt-dlp metadata on 2026-10-22
+- **Attribution (paste-ready):** "Fun 2v2 Basketball - Best of 2 series - vol-1" by JaiArtHub, https://www.youtube.com/watch?v=7MloXoCl6LU, licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Cut to 60 s, otherwise unmodified.
+- **Format:** 1920x1080, 30 fps (source 1016 s).
+- **Shows:** a half court from a tripod at about knee height, four players, faint lines, score graphics burned in. The kind of framing a phone on the fence gives.
+- **Honest limits:** no hand calibration. Autocalib's `half` proposal is wrong here (`ok=False`); the clip is used to check that a wrong fit is reported untrusted and drops nobody (D-94). People behind the fence are in shot all clip long.
+- **Ground truth (identity, D-89 round 5):** `/workspace/wt/replay-env/samples-cc/basketball_2v2jai/basketball_2v2jai_identity.json` (same schema as the park's; to be copied to `samples/truth/`). 10 Hz, 601 frames, 1978 boxes, four players, all in dark tops; how it was made is in its `source` field. Spot check about 4 % wrong, all in overlaps.
 
 ### 3.2 Pickleball: two clips from one tournament channel
 

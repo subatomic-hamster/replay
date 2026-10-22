@@ -34,6 +34,11 @@ class CourtInfo(_Model):
     variant: str
     standard: str
     landmarks_px: dict[str, Vec2] = Field(default_factory=dict)
+    # Additive (D-94): false when the court fit disagrees with the people (most of them
+    # off its court, or the wrong height for its camera). Nobody was dropped for where
+    # they stand, but court positions, zones and shot charts are unreliable. Older games
+    # lack it.
+    trusted: bool | None = None
 
 
 class Renditions(_Model):
@@ -47,6 +52,10 @@ class Player(_Model):
     team: int
     color_hex: str
     tagged: bool = False
+    # Additive (D-89): seconds this id has a box in tracks/, and whether its box time is
+    # split between kits so much that `team` is unreliable. Older games lack both.
+    seen_s: float | None = None
+    team_mixed: bool | None = None
 
 
 class Team(_Model):

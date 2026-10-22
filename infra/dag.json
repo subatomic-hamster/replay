@@ -342,7 +342,9 @@
  {
   "name": "tierc",
   "after": [
-   "tierc_scene"
+   "tierc_scene",
+   "segment",
+   "plate"
   ],
   "resource": "cpu",
   "fanout": true,

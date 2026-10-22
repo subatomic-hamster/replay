@@ -18,7 +18,9 @@ async function createAndUpload(page: Page, sport = "basketball") {
   await page.getByTestId("game-title-input").fill("Test Game");
   await page.getByTestId(`sport-option-${sport}`).check();
   await page.getByTestId("create-game").click();
-  await expect.poll(() => new URL(page.url()).pathname).toMatch(/^\/upload\/g_/);
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toMatch(/^\/upload\/g_/);
 
   await page.getByTestId("file-input").setInputFiles({
     name: "synth-bball-half-5v5.mp4",
@@ -28,8 +30,13 @@ async function createAndUpload(page: Page, sport = "basketball") {
 
   // S-03: progress runs to 100 and the done marker appears.
   await expect(page.getByTestId("upload-progress")).toBeVisible();
-  await expect(page.getByTestId("upload-done")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("upload-progress")).toHaveJSProperty("value", 100);
+  await expect(page.getByTestId("upload-done")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.getByTestId("upload-progress")).toHaveJSProperty(
+    "value",
+    100,
+  );
 
   await page.getByTestId("go-calibrate").click();
   await expect(page.getByTestId("calib-image")).toBeVisible();
@@ -39,7 +46,9 @@ async function createAndUpload(page: Page, sport = "basketball") {
 const stageStates = (page: Page) =>
   page
     .locator('[data-testid^="stage-"]')
-    .evaluateAll((els) => els.map((e) => e.getAttribute("data-state")).join(","));
+    .evaluateAll((els) =>
+      els.map((e) => e.getAttribute("data-state")).join(","),
+    );
 
 async function clickLandmarks(page: Page, n = 5) {
   const img = page.getByTestId("calib-image");
@@ -49,7 +58,9 @@ async function clickLandmarks(page: Page, n = 5) {
   }
 }
 
-test("S-04/S-06 five landmarks give a reprojection error and unlock Start", async ({ page }) => {
+test("S-04/S-06 five landmarks give a reprojection error and unlock Start", async ({
+  page,
+}) => {
   // The stage poll below waits up to 40 s; the default test timeout is 30 s, so under
   // load the test died before its own assertion could fail (bug 6).
   test.setTimeout(90_000);
@@ -57,7 +68,9 @@ test("S-04/S-06 five landmarks give a reprojection error and unlock Start", asyn
 
   // E-05: the gate is shut and the error field says what is missing, not a stale number.
   await expect(page.getByTestId("start-processing")).toBeDisabled();
-  await expect(page.getByTestId("calib-error")).toContainText("need 5 more points");
+  await expect(page.getByTestId("calib-error")).toContainText(
+    "need 5 more points",
+  );
   await expect(page.getByTestId("calib-prompt")).toContainText("corner nl");
 
   await clickLandmarks(page, 4);
@@ -68,15 +81,27 @@ test("S-04/S-06 five landmarks give a reprojection error and unlock Start", asyn
   await expect(page.locator('[data-testid^="landmark-"]')).toHaveCount(5);
 
   // S-04: numeric error under the 5 px threshold, and the gate opens.
-  await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "true");
-  const px = Number((await page.getByTestId("calib-error").textContent())!.replace(/[^\d.]/g, ""));
+  await expect(page.getByTestId("calib-error")).toHaveAttribute(
+    "data-ok",
+    "true",
+  );
+  const px = Number(
+    (await page.getByTestId("calib-error").textContent())!.replace(
+      /[^\d.]/g,
+      "",
+    ),
+  );
   expect(px).toBeLessThan(5);
   await expect(page.getByTestId("start-processing")).toBeEnabled();
   // Bug 3: the API reports a residual per landmark, so the page can name the worst click
   // instead of only printing one number.
-  await expect(page.getByTestId("calib-worst")).toContainText(/worst point: \w+.* · [\d.]+ px/);
+  await expect(page.getByTestId("calib-worst")).toContainText(
+    /worst point: \w+.* · [\d.]+ px/,
+  );
 
-  const calib = (await mockCalls(page)).filter((c) => c.path.endsWith("/calibration"));
+  const calib = (await mockCalls(page)).filter((c) =>
+    c.path.endsWith("/calibration"),
+  );
   expect(calib).toHaveLength(1);
   const body = calib[0].body as {
     sport: string;
@@ -102,7 +127,9 @@ test("S-04/S-06 five landmarks give a reprojection error and unlock Start", asyn
 
   // S-07/S-08: processing enqueues and every stage reaches a terminal state.
   await page.getByTestId("start-processing").click();
-  await expect.poll(() => new URL(page.url()).pathname).toBe(`/upload/${id}/status`);
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toBe(`/upload/${id}/status`);
   await expect(page.getByTestId("stage-ingest")).toBeVisible();
   // Whatever stage list the API sent, every row ends done (or partial).
   await expect
@@ -111,19 +138,61 @@ test("S-04/S-06 five landmarks give a reprojection error and unlock Start", asyn
   await expect(page.getByTestId("game-status")).toHaveText("ready");
 });
 
-test("S-05 the full-court variant is carried in the calibration body", async ({ page }) => {
+test("S-04c after the fit, one tap places the hoop itself (rim_top)", async ({
+  page,
+}) => {
+  // D-93: the floor fit only guesses where a hoop 3 m up sits; the ball is watched there.
+  await createAndUpload(page);
+  await expect(page.getByTestId("calib-hoop")).toHaveCount(0); // not before a fit
+  await clickLandmarks(page, 5);
+  await expect(page.getByTestId("calib-error")).toHaveAttribute(
+    "data-ok",
+    "true",
+  );
+  await page.getByTestId("calib-hoop").click();
+  await expect(page.getByTestId("calib-prompt")).toContainText(
+    "middle of the hoop",
+  );
+  const img = page.getByTestId("calib-image");
+  const box = (await img.boundingBox())!;
+  await img.click({ position: { x: box.width * 0.5, y: box.height * 0.2 } });
+  await expect(page.getByTestId("calib-hoop")).toHaveCount(0);
+  await expect(page.getByTestId("calib-error")).toHaveAttribute(
+    "data-ok",
+    "true",
+  );
+  const calib = (await mockCalls(page)).filter((c) =>
+    c.path.endsWith("/calibration"),
+  );
+  const last = calib[calib.length - 1].body as {
+    landmarks_px: Record<string, number[]>;
+  };
+  expect(last.landmarks_px.rim_top[0]).toBeCloseTo(640, -1);
+  await expect(page.getByTestId("start-processing")).toBeEnabled();
+});
+
+test("S-05 the full-court variant is carried in the calibration body", async ({
+  page,
+}) => {
   await createAndUpload(page);
   await page.getByTestId("variant-full").check();
   await clickLandmarks(page, 5);
 
-  await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("calib-error")).toHaveAttribute(
+    "data-ok",
+    "true",
+  );
   await expect(page.getByTestId("start-processing")).toBeEnabled();
-  const calib = (await mockCalls(page)).filter((c) => c.path.endsWith("/calibration"));
+  const calib = (await mockCalls(page)).filter((c) =>
+    c.path.endsWith("/calibration"),
+  );
   const body = calib.at(-1)!.body as { court_variant: string };
   expect(body.court_variant).toBe("full");
 });
 
-test("S-04 undo removes the last landmark and reshuts the gate", async ({ page }) => {
+test("S-04 undo removes the last landmark and reshuts the gate", async ({
+  page,
+}) => {
   await createAndUpload(page);
   await clickLandmarks(page, 5);
   await expect(page.getByTestId("start-processing")).toBeEnabled();
@@ -133,11 +202,15 @@ test("S-04 undo removes the last landmark and reshuts the gate", async ({ page }
   await expect(page.getByTestId("start-processing")).toBeDisabled();
 });
 
-test("E-03 a non-video file is rejected before it is uploaded", async ({ page }) => {
+test("E-03 a non-video file is rejected before it is uploaded", async ({
+  page,
+}) => {
   await page.goto("/upload");
   await page.getByTestId("game-title-input").fill("Bad upload");
   await page.getByTestId("create-game").click();
-  await expect.poll(() => new URL(page.url()).pathname).toMatch(/^\/upload\/g_/);
+  await expect
+    .poll(() => new URL(page.url()).pathname)
+    .toMatch(/^\/upload\/g_/);
 
   await page.getByTestId("file-input").setInputFiles({
     name: "non-video.txt",
@@ -169,8 +242,13 @@ test("S-05b a single-variant sport hides the picker and posts its own variant", 
   const box = (await img.boundingBox())!;
   await img.click({ position: { x: box.width * 0.2, y: box.height * 0.55 } });
 
-  await expect(page.getByTestId("calib-error")).toHaveAttribute("data-ok", "true");
-  const calib = (await mockCalls(page)).filter((c) => c.path.endsWith("/calibration"));
+  await expect(page.getByTestId("calib-error")).toHaveAttribute(
+    "data-ok",
+    "true",
+  );
+  const calib = (await mockCalls(page)).filter((c) =>
+    c.path.endsWith("/calibration"),
+  );
   const body = calib.at(-1)!.body as {
     sport: string;
     court_variant: string;
@@ -200,8 +278,20 @@ test("S-08 the status page lists the API's own stages, in order, with progress",
   const rows = page.locator('[data-testid^="stage-"]');
   await expect(rows).toHaveCount(9);
   expect(
-    await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")!.slice(6))),
-  ).toEqual(["ingest", "calibrate", "detect", "track", "court", "identity", "tracks", "crops", "events"]);
+    await rows.evaluateAll((els) =>
+      els.map((e) => e.getAttribute("data-testid")!.slice(6)),
+    ),
+  ).toEqual([
+    "ingest",
+    "calibrate",
+    "detect",
+    "track",
+    "court",
+    "identity",
+    "tracks",
+    "crops",
+    "events",
+  ]);
   await expect(page.getByTestId("game-status")).toHaveText("processing");
   // Exactly one running stage, everything before it done, everything after pending...
   expect(await stageStates(page)).toMatch(/^(done,)*running(,pending)*$/);

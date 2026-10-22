@@ -141,6 +141,9 @@ test("TV-32 Menu while following opens the player card paused; the stat line is 
 
   await expect(page.getByTestId("player-card-name")).toHaveText("Player 2");
   await expect(card).toContainText("Anonymous until named");
+  // the mock's p2 has a mixed kit (team_mixed): no team line rather than a wrong one
+  await expect(page.getByTestId("player-card-team")).toHaveCount(0);
+  await expect(card).not.toContainText("Team ");
   // Expected values straight from the events (not through statLine): p2's shots.
   const evs = await mockApi.getEvents(await mockApi.getGame(GAME_ID));
   const shots = evs.filter((e) => e.type === "shot" && e.player_id === "p2");
@@ -289,6 +292,10 @@ test("TV-32 a failed name save says so on the card and keeps the old name", asyn
   );
   await expect(status).toHaveAttribute("data-error", "true");
   await expect(page.getByTestId("player-card-name")).toHaveText("Marcus");
+  await expect(page.getByTestId("player-card-team")).toHaveAttribute(
+    "data-team",
+    "0",
+  );
   // the card keeps the remote; Back closes it and the ring still says Marcus
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("player-card")).toHaveCount(0);

@@ -187,6 +187,7 @@ class BallCfg(_Cfg):
     diff: float = 25.0  # grey levels (max over BGR) from the running background
     bg_s: float = 1.1  # running background memory
     max_frame_change: float = 0.15  # more of the frame than this changing: occlusion, skip
+    max_shift_px: float = 4.0  # a hoop box moving more than this: a re-aim, relearn it
     # snap each projected rim onto the painted rim (`ball.refine`): red/orange hue range
     # (wrapping through 180 when lo > hi) and saturation of a painted steel rim
     refine: bool = True
@@ -208,10 +209,16 @@ class BallCfg(_Cfg):
     plane_v: float = 0.3
     cross_dt: float = 0.2
     cross_u: float = 0.55
+    # the same drop at the rim's edge (to edge_u) or across a gap (to edge_dt) is a
+    # roll-in or a near-side rim-out: made unknown, not a miss (D-92)
+    edge_u: float = 0.9
+    edge_dt: float = 0.3
     fall_v: float = 0.3
     # a crossing in a frame with more blobs than this at the rim is a body, not the ball
     # (set on the 3x3 proxy's rim-out at 10.1 s; Nottingham unchanged from 2 to off)
     cross_max_blobs: int = 3
+    # a visit with more than this share of such frames is a body, not a shot (3x3 proxy)
+    visit_max_busy: float = 0.25
     drop_s: float = 0.7
 
 

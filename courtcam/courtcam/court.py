@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .calibrate import project
+from .calibrate import _k, focal_from_homography, pose_from_homography, project
 from .distortion import distort_points, undistort_points
 from .profiles import Profile, TrackingCfg
 from .track import Tracklet
@@ -130,6 +130,84 @@ def polygon_px(
     return distort_points(px, k1, image_size) if k1 else px
 
 
+FIT_MIN_ON_COURT = 0.35
+"""A court fit is trusted only if at least this share of moving people's time (tracklets
+that pass `min_lifetime_s` and are not `stationary`) is on its court. Right fits:
+0.57-0.69 on the CC BY Nottingham game, the 3x3 Usti clip and the volleyball clip (the
+rest is the bench and passers-by), 0.998 on the 2v2 park ground plane; the autocalib
+proposals that were wrong: 0.0 (2v2 park) and 0.13 (3x3)."""
+
+FIT_MIN_HEIGHT = 0.4
+"""... and at least this share of person boxes is 0.6-1.6x the height a 1.75 m person
+on that foot point would be in the camera the homography implies. Right fits 0.64-0.997;
+the wrong Nottingham half-court proposal 0.0 (people 3x shorter than its camera says),
+which the on-court test cannot see: it squeezes the whole floor into the court."""
+
+PERSON_M = 1.75
+
+
+def _height_share(
+    boxes: np.ndarray, h: np.ndarray, k1: float, image_size: tuple[int, int]
+) -> float | None:
+    """Share of `boxes` (xywh px) 0.6-1.6x as tall as a PERSON_M person standing at the
+    box's foot point would be; None when the homography implies no camera."""
+
+    h_inv = np.linalg.inv(h)
+    f = focal_from_homography(h_inv, image_size)
+    if f is None or not len(boxes):
+        return None
+    k = _k(f, image_size)
+    r, t = pose_from_homography(h_inv, k)
+    feet = np.c_[boxes[:, 0] + boxes[:, 2] / 2, boxes[:, 1] + boxes[:, 3]]
+    head = np.c_[feet[:, 0], boxes[:, 1]]
+    if k1:
+        feet, head = undistort_points(feet, k1, image_size), undistort_points(head, k1, image_size)
+    ground = project(feet, h)
+    top = (k @ (r @ np.c_[ground, np.full(len(ground), PERSON_M)].T + t[:, None])).T
+    pred = feet[:, 1] - top[:, 1] / top[:, 2]
+    ratio = (feet[:, 1] - head[:, 1]) / np.where(np.abs(pred) > 1.0, pred, np.nan)
+    return float(np.mean((ratio > 0.6) & (ratio < 1.6)))
+
+
+def fit_check(
+    tracklets: list[Tracklet],
+    h: np.ndarray,
+    profile: Profile,
+    court_polygon_m: np.ndarray,
+    *,
+    k1: float = 0.0,
+    image_size: tuple[int, int] | None = None,
+) -> dict:
+    """Does the court fit agree with the people (D-94)? A wrong fit must never decide who
+    is a player: `trusted` false turns the on-court filter off (`on_court(trusted=)`)."""
+    cfg = profile.tracking
+    moving = on = 0.0
+    boxes = []
+    for tracklet, court_m in zip(
+        tracklets,
+        to_court(tracklets, h, smooth_window=cfg.smooth_window, k1=k1, image_size=image_size),
+        strict=True,
+    ):
+        if tracklet.lifetime_s < cfg.min_lifetime_s:
+            continue
+        frac = float(np.mean(inside(court_m, court_polygon_m, profile.court.margin_m)))
+        if stationary(CourtTrack(tracklet, court_m, frac), cfg):
+            continue
+        moving += tracklet.lifetime_s
+        on += tracklet.lifetime_s * (frac >= cfg.oncourt_min_fraction)
+        boxes.append(tracklet.boxes)
+    share = on / moving if moving else None
+    tall = _height_share(np.vstack(boxes), h, k1, image_size) if boxes and image_size else None
+    trusted = (share is None or share >= FIT_MIN_ON_COURT) and (
+        tall is None or tall >= FIT_MIN_HEIGHT
+    )
+    return {
+        "trusted": bool(trusted),
+        "on_court_share": None if share is None else round(share, 3),
+        "height_share": None if tall is None else round(tall, 3),
+    }
+
+
 def on_court(
     tracklets: list[Tracklet],
     h: np.ndarray,
@@ -138,6 +216,7 @@ def on_court(
     *,
     k1: float = 0.0,
     image_size: tuple[int, int] | None = None,
+    trusted: bool = True,
 ) -> list[CourtTrack]:
     """Keep tracklets that live on the court (§4.4 step 5).
 
@@ -151,6 +230,9 @@ def on_court(
     the longest unbroken track and throws the rest of the roster away; the cap belongs
     on merged players (`identity.identify`). `tracking.max_candidates` is only a guard
     on the O(n^2) merge.
+
+    `trusted` false (`fit_check`: the fit disagrees with the people) keeps everyone who
+    moves, on court or not: a bench in the list beats players dropped by a wrong court.
     """
     cfg = profile.tracking
     kept: list[CourtTrack] = []
@@ -160,6 +242,8 @@ def on_court(
         strict=True,
     ):
         frac = float(np.mean(inside(court_m, court_polygon_m, profile.court.margin_m)))
+        if not trusted:
+            frac = 1.0
         if frac < cfg.oncourt_min_fraction or tracklet.lifetime_s < cfg.min_lifetime_s:
             continue
         track = CourtTrack(tracklet, court_m, frac)

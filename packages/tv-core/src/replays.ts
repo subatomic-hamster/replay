@@ -13,6 +13,8 @@ export interface ReplayAngle {
   tier: ReplayTier;
   label: string;
   url: string;
+  /** The angle's middle frame (jpg), for its thumbnail; absent in older manifests. */
+  poster?: string | null;
   duration_s: number;
   width: number;
   height: number;

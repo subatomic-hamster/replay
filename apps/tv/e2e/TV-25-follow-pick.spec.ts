@@ -178,15 +178,17 @@ test("TV-25 through a tracking gap the camera holds and widens, then closes back
   page,
 }) => {
   // The mock's p1 has no box for 12–13 s (a scripted occlusion).
-  await openWatch(page, undefined, "?t=8.5"); // time to settle at scale 2 first
+  await openWatch(page, undefined, "?t=8.5"); // time to settle first
   await enterSelectMode(page);
   await expect.poll(() => focusedBoxId(page)).toBe("p1");
   await page.keyboard.press("Enter");
   const ring = page.getByTestId("follow-frame");
   await expect(ring).toHaveAttribute("data-visible", "true");
+  // p1 runs along the left edge, so the camera zooms in past scale 2 to keep them
+  // centred (follow.ts MIN_H_EDGE); it settles there before the gap
   await expect
     .poll(async () => (await transform(page))[0], { timeout: 5_000 })
-    .toBeCloseTo(2, 1);
+    .toBeGreaterThan(2.2);
 
   // Sample the camera and the ring every animation frame from here to past the gap.
   type Sample = {
@@ -242,8 +244,9 @@ test("TV-25 through a tracking gap the camera holds and widens, then closes back
   expect(Math.min(...after.map((x) => x.op))).toBeGreaterThan(0.9);
   // holds first, then starts widening (after 0.6 s), by small steps, never jumping
   const early = gap.filter((x) => x.t < 12.5);
-  expect(Math.min(...early.map((x) => x.s))).toBeGreaterThan(1.97);
-  expect(Math.min(...gap.map((x) => x.s))).toBeLessThan(1.99);
+  const s0 = tracked[tracked.length - 1].s; // the zoom the gap starts from
+  expect(Math.min(...early.map((x) => x.s))).toBeGreaterThan(s0 - 0.03);
+  expect(Math.min(...gap.map((x) => x.s))).toBeLessThan(s0 - 0.01);
   for (let i = 1; i < gap.length; i++)
     expect(Math.abs(gap[i].s - gap[i - 1].s)).toBeLessThan(0.05);
   // back: the ring returns and the camera closes in again

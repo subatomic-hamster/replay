@@ -238,11 +238,12 @@ class Game:
         return (colors + ["#1F6FEB", "#E5484D"])[:2] if len(colors) < 2 else colors[:2]
 
     def player_label(self, pid: str | None) -> str:
-        """Roster name if tagged, else `#<player id>` (the tracker's id, not a jersey)."""
+        """Roster name if tagged, else "Player N" (the tracker's number, not a jersey), as
+        the TV and phone show it."""
         if not pid:
             return ""
         name = (self.players.get(pid) or {}).get("name")
-        return name if name else f"#{pid}"
+        return name if name else f"Player {pid.removeprefix('p')}"
 
     def crop_rects(self, pid: str) -> tuple[np.ndarray, float] | None:
         doc = read_json(self.dir / "crops" / f"{pid}.json")

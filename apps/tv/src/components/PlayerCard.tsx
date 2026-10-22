@@ -180,16 +180,19 @@ export function PlayerCard({
             <T style={type.title} numberOfLines={1} testID="player-card-name">
               {name}
             </T>
-            <View style={styles.teamRow}>
-              <View
-                style={[styles.swatch, { backgroundColor: tint }]}
-                testID="player-card-team"
-                dataSet={{ color: tint, team: String(player.team) }}
-              />
-              <T style={[type.meta, styles.dim]} numberOfLines={1}>
-                {`Team ${player.team + 1}`}
-              </T>
-            </View>
+            {/* a mixed kit (the id is half one team, half the other): no team beats a wrong one */}
+            {player.team_mixed ? null : (
+              <View style={styles.teamRow}>
+                <View
+                  style={[styles.swatch, { backgroundColor: tint }]}
+                  testID="player-card-team"
+                  dataSet={{ color: tint, team: String(player.team) }}
+                />
+                <T style={[type.meta, styles.dim]} numberOfLines={1}>
+                  {`Team ${player.team + 1}`}
+                </T>
+              </View>
+            )}
             {player.name ? null : (
               <T style={[type.meta, styles.dim]} numberOfLines={1}>
                 Anonymous until named

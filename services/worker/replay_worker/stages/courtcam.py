@@ -210,8 +210,9 @@ def run_game(ctx: Ctx, item: str | None) -> None:
         standard=calib.get("standard", "unknown"),
         landmarks_px={k: (v[0], v[1]) for k, v in calib.get("landmarks_px", {}).items()},
     )
-    players, _ = identity.read_players(gd / PLAYERS)
+    players, pmeta = identity.read_players(gd / PLAYERS)
     game.players, game.teams = identity.to_models(players)
+    game.court.trusted = (pmeta.get("fit") or {}).get("trusted")
     game.tracks = TracksRef(
         rate_hz=10,
         chunk_s=10,

@@ -40,11 +40,23 @@ RIM_OUT = [
 ]
 # off the side of the rim and down outside it
 OFF_SIDE = [(2.5, -3.0), (1.4, -1.2), (0.9, -0.2), (1.1, 0.6), (1.4, 1.5), (1.6, 2.4)]
+# D-92: down at the rim's edge: rolled in, or off the near side? Unknown, not a miss
+EDGE = [(2.5, -3.0), (1.4, -1.4), (0.8, -0.7), (0.75, -0.1), (0.7, 0.7), (0.6, 1.5), (0.5, 2.4)]
 
 
-@pytest.mark.parametrize("path,made", [(SWISH, True), (RIM_OUT, False), (OFF_SIDE, False)])
+@pytest.mark.parametrize(
+    "path,made", [(SWISH, True), (RIM_OUT, False), (OFF_SIDE, False), (EDGE, None)]
+)
 def test_made_is_the_ball_dropping_through_the_rim(path, made):
     assert ball._made(np.asarray(_path(path)), CFG) is made
+
+
+def test_a_body_under_the_rim_is_not_a_visit():
+    """D-92: four or more blobs at the rim in a third of the visit's frames."""
+    shot = _path(SWISH, t0=10.0)
+    body = [[s[0], du, dv, 0.3] for s in shot[::3] for du, dv in ((-1, 0), (1, 0), (0, 1))]
+    assert len(ball.arrivals(_doc(shot), CFG)) == 1
+    assert ball.arrivals(_doc(shot + body), CFG) == []
 
 
 def _doc(*hoop_samples):
@@ -59,6 +71,23 @@ def test_arrivals_one_per_visit_and_a_pass_across_is_not_a_shot():
     across = [[30.0 + i / 30, -2.4 + i * 0.8, -0.5, 0.25] for i in range(7)]
     arr = ball.arrivals(_doc(shot + second + across), CFG)
     assert [(round(a.t), a.made) for a in arr] == [(10, True), (20, False)]
+
+
+def test_the_tapped_hoop_is_where_the_ball_is_watched():
+    """D-93: `rim_top` from the calibration page wins over the camera's projection, and a
+    fit with no camera still sizes the hoop from the floor homography."""
+    from courtcam.profiles import load_profile
+
+    prof = load_profile("basketball")
+    tpl = prof.template("half")
+    # a top-down view, 50 px per metre: no perspective, so no camera can be fitted
+    clicks = {n: [400 + 50 * x, 900 - 50 * y] for n, (x, y) in tpl.landmarks.items()
+              if n.startswith("corner")}  # fmt: skip
+    calib = {"variant": "half", "image_size": [1920, 1080], "landmarks_px": clicks}
+    assert ball.hoops(calib, prof) == []
+    calib["landmarks_px"] = {**clicks, "rim_top": [431.0, 260.0]}
+    (h,) = ball.hoops(calib, prof)
+    assert h.px == (431.0, 260.0) and h.rim_px == pytest.approx(50 * 0.45, rel=0.01)
 
 
 def test_arrivals_two_rims_at_once_keep_the_better_seen():

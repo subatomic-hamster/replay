@@ -1,8 +1,10 @@
 """Player masks for one highlight: SAM 2.1 video, box prompts from the tracks (M8).
 
 The play window is cut into chunks of `CHUNK` frames; each chunk is a fresh SAM 2 video
-session prompted, on its first frame, with the tracked box of every player present
-there, then propagated through the chunk. Re-prompting per chunk bounds drift and
+session prompted with the tracked box of every player, each on the first frame of the
+chunk where they have a box (a player whose track starts mid-chunk is not lost until the
+next chunk), then propagated through every `STRIDE`-th frame of the chunk. Re-prompting
+per chunk bounds drift and
 identity leaks (docs/models.md: masks drift through clusters) and keeps every GPU call
 short. Each mask is then clipped to its player's grown track box, so a mask that
 leaks onto a neighbour cannot carry them along.
@@ -30,7 +32,14 @@ from ..gamedata import load_tracks
 from .replays import frame_count, play, probe_video, read_window
 
 MODEL_ID = "facebook/sam2.1-hiera-small"
-CHUNK = 48
+# re-prompt every 0.8 s at 30 fps: SAM loses players behind others within a chunk, and
+# shorter chunks cost no more (the per-frame image encoding dominates). A Nottingham play:
+# masked player-frames 1828 at 48, 2162 at 24, wall 34 s -> 27 s
+CHUNK = 24
+# SAM sees every STRIDE-th frame; a frame between reuses the one before, moved with its
+# track box (half the GPU time; at 30 fps a player moves a few pixels in 1/30 s)
+STRIDE = 2
+HOLD = 24  # frames a lost player's last mask is held (moved with their box)
 GROW = 0.25  # the clip box around a track box, per side, as a fraction of its size
 SEGMENTS_DIR = "segments"
 
@@ -57,6 +66,10 @@ def _windows(boxes: np.ndarray, size: tuple[int, int]) -> tuple[np.ndarray, tupl
     x0 = np.clip(np.round(cx - cw / 2), 0, size[0] - cw).astype(int)
     y0 = np.clip(np.round(cy - ch / 2), 0, size[1] - ch).astype(int)
     return np.stack([x0, y0], axis=1), (cw, ch)
+
+
+def _centre(box: np.ndarray) -> np.ndarray:
+    return np.array([(box[0] + box[2]) / 2, (box[1] + box[3]) / 2])
 
 
 def _clip_box(box: np.ndarray, size: tuple[int, int]) -> tuple[int, int, int, int]:
@@ -89,11 +102,20 @@ class _Sam:
         self.torch = torch
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
-        self.model = Sam2VideoModel.from_pretrained(model_id, dtype=self.dtype).to(self.device)
-        self.proc = Sam2VideoProcessor.from_pretrained(model_id)
+        try:  # the cached snapshot: the Hub's online checks stalled ~80 s per load on the box
+            self.model = Sam2VideoModel.from_pretrained(
+                model_id, dtype=self.dtype, local_files_only=True
+            )
+            self.proc = Sam2VideoProcessor.from_pretrained(model_id, local_files_only=True)
+        except OSError:  # not downloaded yet
+            self.model = Sam2VideoModel.from_pretrained(model_id, dtype=self.dtype)
+            self.proc = Sam2VideoProcessor.from_pretrained(model_id)
+        self.model = self.model.to(self.device)
 
-    def chunk(self, frames_rgb: list[np.ndarray], prompts: dict[int, list[float]]):
-        """Yields (frame index in chunk, {obj_id: (H, W) bool}), prompted on frame 0."""
+    def chunk(self, frames_rgb: list[np.ndarray], prompts: dict[int, tuple[int, list[float]]]):
+        """Yields (frame index in chunk, {obj_id: (H, W) bool}); each object is prompted
+        with its box on its own first frame (`prompts[obj] = (frame, box)`). An object's
+        mask before its prompt frame is meaningless; the caller drops it."""
         from PIL import Image
 
         torch = self.torch
@@ -103,14 +125,15 @@ class _Sam:
                 inference_device=self.device,
                 dtype=self.dtype,
             )
-            ids = list(prompts)
-            self.proc.add_inputs_to_inference_session(
-                inference_session=sess,
-                frame_idx=0,
-                obj_ids=ids,
-                input_boxes=[[prompts[i] for i in ids]],
-            )
-            self.model(inference_session=sess, frame_idx=0)
+            for fi in sorted({fi for fi, _ in prompts.values()}):
+                ids = [k for k, (f, _) in prompts.items() if f == fi]
+                self.proc.add_inputs_to_inference_session(
+                    inference_session=sess,
+                    frame_idx=fi,
+                    obj_ids=ids,
+                    input_boxes=[[prompts[i][1] for i in ids]],
+                )
+                self.model(inference_session=sess, frame_idx=fi)
             h, w = sess.video_height, sess.video_width
             for o in self.model.propagate_in_video_iterator(sess):
                 masks = self.proc.post_process_masks(
@@ -141,31 +164,49 @@ def segment_play(
     sam = None if fake else _Sam(model_id)
     started = time.time()
 
-    def store(f: int, p: str, m: np.ndarray) -> None:
-        x0, y0, x1, y1 = _clip_box(boxes[p][f], size)
-        clipped = np.zeros_like(m)
-        clipped[y0:y1, x0:x1] = m[y0:y1, x0:x1]
+    def store(f: int, p: str, m: np.ndarray, src: int) -> None:
+        """Player `p`'s crop at frame `f` from the full-frame mask `m` of frame `src`
+        (the same frame, or the SAM frame before it: moved along with the track box)."""
+        x0, y0, x1, y1 = _clip_box(boxes[p][src], size)
         (ox, oy), (cw, ch) = wins[p][0][f], wins[p][1]
-        crops[p][f] = clipped[oy : oy + ch, ox : ox + cw]
+        dx, dy = np.round(_centre(boxes[p][f]) - _centre(boxes[p][src])).astype(int)
+        sx, sy = ox - dx, oy - dy  # frame f's window, back in frame src's pixels
+        ax0, ay0, ax1, ay1 = max(sx, x0), max(sy, y0), min(sx + cw, x1), min(sy + ch, y1)
+        if ax1 > ax0 and ay1 > ay0:
+            crops[p][f][ay0 - sy : ay1 - sy, ax0 - sx : ax1 - sx] = m[ay0:ay1, ax0:ax1]
 
     frames = read_window(video, h["t_start"], n)
     for c0 in range(0, n, CHUNK):
         chunk = [f for _, f in itertools.islice(frames, CHUNK)]
         if not chunk:
             break
-        present = [p for p in pids if np.isfinite(boxes[p][c0, 0])]
+        # each player's first SAM frame with a box in this chunk: a player who walks in
+        # (or whose track starts) mid-chunk is prompted there, not skipped to the next chunk
+        sam_f = range(c0, c0 + len(chunk), STRIDE)
+        first = {}
+        for p in pids:
+            j0 = next((j for j, f in enumerate(sam_f) if np.isfinite(boxes[p][f, 0])), None)
+            if j0 is not None:
+                first[p] = j0
         if sam is None:
             for j in range(len(chunk)):
                 for p in pids:
                     if np.isfinite(boxes[p][c0 + j, 0]):
-                        store(c0 + j, p, _ellipse(boxes[p][c0 + j], size))
-        elif present:
-            rgb = [np.ascontiguousarray(f[:, :, ::-1]) for f in chunk]
-            ids = {k + 1: p for k, p in enumerate(present)}
-            for j, masks in sam.chunk(rgb, {k: boxes[p][c0].tolist() for k, p in ids.items()}):
-                for k, p in ids.items():
-                    if np.isfinite(boxes[p][c0 + j, 0]):
-                        store(c0 + j, p, masks[k])
+                        store(c0 + j, p, _ellipse(boxes[p][c0 + j], size), c0 + j)
+        elif first:
+            rgb = [np.ascontiguousarray(f[:, :, ::-1]) for f in chunk[::STRIDE]]
+            ids = {k + 1: p for k, p in enumerate(first)}
+            prompts = {k: (first[p], boxes[p][sam_f[first[p]]].tolist()) for k, p in ids.items()}
+            for j, masks in sam.chunk(rgb, prompts):
+                src = c0 + j * STRIDE
+                for f in range(src, min(src + STRIDE, c0 + len(chunk))):
+                    for k, p in ids.items():
+                        if (
+                            j >= first[p]
+                            and np.isfinite(boxes[p][f, 0])
+                            and np.isfinite(boxes[p][src, 0])
+                        ):
+                            store(f, p, masks[k], src)
         if progress:
             progress(min(1.0, (c0 + len(chunk)) / max(1, n)))
     out_dir = gd / SEGMENTS_DIR
@@ -173,10 +214,22 @@ def segment_play(
     arrays: dict[str, np.ndarray] = {}
     index = {}
     for p in pids:
+        cov = crops[p].reshape(n, -1).any(axis=1)
+        sam_cov = int(cov.sum())
+        # SAM drops a player it loses behind another (an empty mask) until the next
+        # chunk's prompt; hold their last mask for up to HOLD frames instead. The crop
+        # window follows the track box, so a copied crop moves with the player.
+        last = -(HOLD + 1)
+        for f in range(n):
+            if cov[f]:
+                last = f
+            elif np.isfinite(boxes[p][f, 0]) and f - last <= HOLD:
+                crops[p][f] = crops[p][last]
+        cov = crops[p].reshape(n, -1).any(axis=1)
         arrays[f"{p}_xy"] = wins[p][0].astype(np.int32)
         arrays[f"{p}_mask"] = np.packbits(crops[p], axis=-1)
-        cov = crops[p].reshape(n, -1).any(axis=1)
-        index[p] = {"crop_wh": list(wins[p][1]), "frames_with_mask": int(cov.sum())}
+        index[p] = {"crop_wh": list(wins[p][1]), "frames_with_mask": int(cov.sum()),
+                    "frames_segmented": sam_cov}  # fmt: skip
     np.savez_compressed(out_dir / f"{play_id}.npz", **arrays)
     meta = {
         "schema": "replay.segments.v1",
@@ -188,6 +241,7 @@ def segment_play(
         "fps": fps,
         "frames": n,
         "chunk": CHUNK,
+        "stride": 1 if fake else STRIDE,
         "players": index,
         "wall_s": round(time.time() - started, 2),
     }
@@ -202,6 +256,7 @@ class Masks:
         base = Path(game_dir) / SEGMENTS_DIR / play_id
         self.meta = json.loads(base.with_suffix(".json").read_text(encoding="utf-8"))
         self._z = np.load(base.with_suffix(".npz"))
+        self._cache: dict[str, np.ndarray] = {}
 
     @property
     def players(self) -> list[str]:
@@ -212,11 +267,18 @@ class Masks:
         if pid not in self.meta["players"] or f >= self.meta["frames"]:
             return None
         cw = self.meta["players"][pid]["crop_wh"][0]
-        m = np.unpackbits(self._z[f"{pid}_mask"][f], axis=-1, count=cw).astype(bool)
+        m = np.unpackbits(self._arr(f"{pid}_mask")[f], axis=-1, count=cw).astype(bool)
         if not m.any():
             return None
-        x0, y0 = self._z[f"{pid}_xy"][f]
+        x0, y0 = self._arr(f"{pid}_xy")[f]
         return (int(x0), int(y0)), m
+
+    def _arr(self, key: str) -> np.ndarray:
+        """An npz member is decompressed on every access: keep each one (packed bits,
+        a few MB per player per play) after the first."""
+        if key not in self._cache:
+            self._cache[key] = self._z[key]
+        return self._cache[key]
 
 
 def main() -> None:

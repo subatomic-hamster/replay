@@ -52,7 +52,9 @@ def label(e: dict, player: dict | None, sport: str) -> str | None:
         return "Your bookmark"
     if typ == "shot":
         if made is True:
-            base = {3: "Three-pointer", 2: "Two-pointer", 1: "Free throw"}.get(pts, "Basket")
+            # D-93: a pickup game's 1-point basket is not a free throw
+            base = ("Free throw" if cause == "free_throw"
+                    else {3: "Three-pointer", 2: "Two-pointer"}.get(pts, "Basket"))  # fmt: skip
         elif made is False:
             base = "Missed three" if pts == 3 else "Missed shot"
         else:  # the detector could not tell: say only that a shot went up
@@ -97,10 +99,15 @@ def _rank(e: dict) -> tuple:
             bool(e.get("confirmed")), float(e.get("confidence") or 0.0))  # fmt: skip
 
 
+SHORT_S = 2.0  # an event range shorter than this is an instant, not a play
+LEAD_S, TAIL_S = 4.0, 2.0  # its moment: the shot or pressure before it, the ball secured
+
+
 def moments(events: list[dict], game: dict) -> list[dict]:
     """`GET /games/{id}/moments` rows (without thumb_url), sorted by time."""
     players = {p["id"]: p for p in game.get("players") or []}
     sport = game.get("sport") or ""
+    duration = (game.get("video") or {}).get("duration_s")
     out = []
     for e in events:
         if e.get("dismissed") or "t_key" not in e:
@@ -109,11 +116,17 @@ def moments(events: list[dict], game: dict) -> list[dict]:
         text = label(e, p, sport)
         if text is None:
             continue
+        t = float(e["t_key"])
+        a, b = float(e.get("t_start", t)), float(e.get("t_end", t))
+        if b - a < SHORT_S:  # D-92: a steal / rebound marks an instant; show the play
+            a, b = max(0.0, min(a, t - LEAD_S)), max(b, t + TAIL_S)
+            if duration:
+                b = min(b, float(duration))
         m = {
             "id": e["id"],
-            "t": round(float(e["t_key"]), 3),
-            "t_start": round(float(e.get("t_start", e["t_key"])), 3),
-            "t_end": round(float(e.get("t_end", e["t_key"])), 3),
+            "t": round(t, 3),
+            "t_start": round(a, 3),
+            "t_end": round(b, 3),
             "kind": kind(e),
             "label": text,
             # honesty: where the label came from (heuristic / vlm / user) and how sure

@@ -1,0 +1,169 @@
+{
+  "schema": "replay.playlog.v1",
+  "use": "evaluation",
+  "label": "hand annotation (development set)",
+  "source": "Annotated by eye from cv2 contact sheets: a 3 fps pass over the whole segment (downscaled full frame + hoop crop) to find candidate attempts, cross-checked against a per-frame count of ball-coloured pixels around the rim; then 8-24 fps zooms of the hoop (up to 1.6x) and of the shooter around each candidate to set release time, rim time and make/miss from the ball's path through the net or off the rim/board. Score-card times found with a per-frame white-card detector and read from crops. Every make checked against the next card. t = source seconds - 180.",
+  "clip": {
+    "id": "basketball_2v2park_dev",
+    "file": "/workspace/wt/replay-env/samples-cc/basketball_2v2park/full.mp4",
+    "offset_s": 180.0,
+    "duration_s": 150.0,
+    "attribution": "\"2v2 BASKETBALL GAME\" by M'ster Lewis, https://www.youtube.com/watch?v=z5bdgHqcShw, licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Segment 180-330 s of the source, otherwise unmodified. This file holds facts read from the video, not the video.",
+    "notes": "Development set: unlike basketball_2v2park.json (hold-out), this segment may be used to tune the ball rules. All play at the large basket top right (rim centre ~(1390,175)). Team A = grey shirt + black pants (big man) with black shirt + black shorts (white guy, shoulder-length hair). Team B = grey #23 jersey with yellow print + white pants (long hair) with cream shirt + maroon pants. Score cards are white boxes mid-frame, about 3.2 s each, at t 0.0 (1-4), 24.7 (2-4), 96.15 (3-4), 113.92 (5-4), 129.27 (6-4); read as B-A (first number #23/cream, second grey/black): every card increment follows a B make by #23 or cream, and the 3->5 jump follows #23's long jumper (2 pts). Card conflict: A's black-shirt shot at t 10.5 looks like a make on video (ball drops through the back of the rim and out the bottom of the net) but the next card (24.7) shows A still on 4 and B +1 from the t 23 make; marked made with medium confidence, see the entry note. t 72.1-74.6 is an edited instant replay ('ROLL BACK' overlay with a record dot) of the t 59-61 play, not new play; it is not annotated as an attempt. t 60.1-60.6: cream rebounds play E and the ball is knocked/thrown away from the basket, not a shot. t 81.3-81.9: cream catches G's long rebound in the air and lands with it, no shot. Not annotated: a 2-pt jumper by A's grey big man from far left released ~t 149.55 that reaches the rim at ~t 150.6 (after the segment end) and bounces off; the cut at source 480-483 s is outside this segment. Points of misses are judged from the shooter's spot only: far-left spots (like the carded 2-pt make at t 111.75) are 2, spots nearer the basket are 1."
+  },
+  "teams": {
+    "A": {
+      "name": "Grey shirt/black pants (big man) + black shirt/black shorts (long hair)"
+    },
+    "B": { "name": "Grey #23 jersey/white pants + cream shirt/maroon pants" }
+  },
+  "scoreboard": [
+    {
+      "t": 0.0,
+      "scores": { "A": 4, "B": 1 },
+      "note": "card '1-4' (B-A) visible t -0.03 to 0.93, carried in from before the segment"
+    },
+    {
+      "t": 24.7,
+      "scores": { "A": 4, "B": 2 },
+      "note": "card '2-4' t 24.7-27.9, after cream's make at t 24.1; does not credit A's apparent make at t 11.4"
+    },
+    {
+      "t": 96.15,
+      "scores": { "A": 4, "B": 3 },
+      "note": "card '3-4' t 96.15-99.4, after cream's putback at t 95.9"
+    },
+    {
+      "t": 113.92,
+      "scores": { "A": 4, "B": 5 },
+      "note": "card '5-4' t 113.9-117.1, after #23's 2-pt jumper at t 112.85"
+    },
+    {
+      "t": 129.27,
+      "scores": { "A": 4, "B": 6 },
+      "note": "card '6-4' t 129.3-132.5, after cream's layup that drops in at t 128.7"
+    }
+  ],
+  "entries": [
+    {
+      "t": 10.52,
+      "t_rim": 11.4,
+      "type": "shot",
+      "team": "A",
+      "player": "black shirt (long hair)",
+      "made": true,
+      "points": 1,
+      "confidence": "medium",
+      "note": "Jump shot from just inside, cream contesting. Ball comes down by the backboard at 11.36-11.40, drops inside the back of the rim at 11.44, through the net 11.48-11.57 (net strings in front of the ball, net pulled) and out the bottom at 11.61; looks like a make. But the next card (t 24.7, '2-4') credits only B's t 24 make and A stays on 4 through the segment, so either the basket was not counted or the ball went down outside the back of the net. Video says make; cards say no."
+    },
+    {
+      "t": 15.0,
+      "t_rim": 16.05,
+      "type": "shot",
+      "team": "B",
+      "player": "cream shirt / maroon pants",
+      "made": false,
+      "points": 1,
+      "confidence": "high",
+      "note": "Jumper after taking the ball out; hits the front-left rim at ~16.0 and bounces off left; cream rebounds ~16.9, no putback. Miss is certain; 1 vs 2 points is a guess from the spot (low)."
+    },
+    {
+      "t": 23.3,
+      "t_rim": 24.12,
+      "type": "shot",
+      "team": "B",
+      "player": "cream shirt / maroon pants",
+      "made": true,
+      "points": 1,
+      "confidence": "high",
+      "note": "Pull-up jumper over the grey big man; clean through the net 24.12-24.37. Matches card 2-4 at 24.7 (B +1)."
+    },
+    {
+      "t": 37.75,
+      "t_rim": 39.05,
+      "type": "shot",
+      "team": "B",
+      "player": "#23 (grey jersey / white pants)",
+      "made": false,
+      "points": 1,
+      "confidence": "high",
+      "note": "Jumper over the black-shirt defender; ball hits the back of the rim / board at ~39.05-39.14 and bounces out left, long rebound to the grey big man. Points from spot (low)."
+    },
+    {
+      "t": 59.2,
+      "type": "shot",
+      "team": "A",
+      "player": "black shirt (long hair)",
+      "made": false,
+      "points": 1,
+      "confidence": "medium",
+      "note": "Driving layup contested by cream; ball leaves the hand at ~59.2 touching cream's hand and goes almost straight up out of frame, comes down by the top right of the backboard at ~59.9 without touching the rim; cream rebounds at 60.0. Treated as blocked (no t_rim). Shown again as an edited replay at t 72.1-74.6 (not a new attempt)."
+    },
+    {
+      "t": 79.6,
+      "t_rim": 80.7,
+      "type": "shot",
+      "team": "A",
+      "player": "black shirt (long hair)",
+      "made": false,
+      "points": 2,
+      "confidence": "high",
+      "note": "Long jumper from far left; ball arrives high at the backboard / back iron ~80.65-80.76 and rebounds out left (above rim level at 80.9-81.1); cream catches the long rebound at ~81.4."
+    },
+    {
+      "t": 94.15,
+      "t_rim": 94.73,
+      "type": "shot",
+      "team": "B",
+      "player": "#23 (grey jersey / white pants)",
+      "made": false,
+      "points": 1,
+      "confidence": "high",
+      "note": "Drive and layup past the black-shirt defender; ball rolls on the rim 94.73-94.86 and falls off the front left at ~95.0."
+    },
+    {
+      "t": 95.35,
+      "t_rim": 95.9,
+      "type": "shot",
+      "team": "B",
+      "player": "cream shirt / maroon pants",
+      "made": true,
+      "points": 1,
+      "confidence": "high",
+      "note": "Putback / tip of #23's miss: cream catches at ~95.25 in the air and puts it up; through the net 95.98-96.23. Matches card 3-4 at 96.15 (B +1)."
+    },
+    {
+      "t": 111.75,
+      "t_rim": 112.85,
+      "type": "shot",
+      "team": "B",
+      "player": "#23 (grey jersey / white pants)",
+      "made": true,
+      "points": 2,
+      "confidence": "high",
+      "note": "Long jumper from far left; swish-ish through the net 112.88-113.5. Card 5-4 at 113.92 (B +2) confirms 2 points."
+    },
+    {
+      "t": 127.75,
+      "t_rim": 127.89,
+      "type": "shot",
+      "team": "B",
+      "player": "cream shirt / maroon pants",
+      "made": true,
+      "points": 1,
+      "confidence": "high",
+      "note": "Driving layup: hits the front rim at 127.89, pops up off the rim/board (128.0-128.3), comes back down onto the rim at 128.6 and drops through the net 128.77-129.0. Card 6-4 at 129.27 (B +1). t_rim is first rim contact."
+    },
+    {
+      "t": 139.5,
+      "t_rim": 140.7,
+      "type": "shot",
+      "team": "B",
+      "player": "#23 (grey jersey / white pants)",
+      "made": false,
+      "points": 2,
+      "confidence": "high",
+      "note": "Long jumper from the same far-left spot as the carded 2-pt make at 111.75; hits the back rim at ~140.7 and bounces up and out (ball seen again falling left of the hoop ~142.0)."
+    }
+  ]
+}

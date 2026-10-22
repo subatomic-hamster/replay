@@ -144,6 +144,9 @@ interface SeekState {
 }
 
 const POLL_MS = 10_000;
+/** How often the open Watch asks for the phone's "Play on the TV" (GET /tv/commands). */
+const TV_COMMANDS_MS = 3_000;
+const TV_STATE_MS = 10_000; // the API counts a TV as watching for 30 s after a beat
 const EXTRAS_LATEST_MS = 3000;
 
 /** D-87: true once the game is read and its video has a first frame (a duration), or
@@ -228,9 +231,12 @@ export function Watch({
   initialPlay,
   initialCard,
   initialPanel,
+  initialBack,
   q,
 }: {
   gameId: string;
+  /** D-93: where Back leaves to instead of Home (Review's "Watch it") */
+  initialBack?: StatsExit;
   /** reopen the player card (Back from its View profile), paused */
   initialCard?: { pid: string; resume: boolean };
   /** reopen the Stats panel (Back from Review or Tips) */
@@ -1076,7 +1082,7 @@ export function Watch({
           else if (chrome) setChrome(false);
           // out of Highlights or Condensed into the full game, where the reel was
           else if (way !== "full") startWay("full");
-          else leave("library");
+          else leave(initialBack ?? "library");
           break;
         case "bookmark":
           bookmark();
@@ -1122,6 +1128,7 @@ export function Watch({
       startSelect,
       way,
       startWay,
+      initialBack,
     ],
   );
   useDpad(onAction, !tagging && !linking && layer === null && !angle);
@@ -1143,6 +1150,51 @@ export function Watch({
       [goTo, commentaryOn, gameId],
     ),
   );
+  // The phone's "Play on the TV" (a search hit, POST /games/{id}/tv/play) works without
+  // pairing: poll the TV command queue (HTTP, so the cloud API serves it too) while this
+  // game is open. Only this game's `play` is ours; Alexa's kinds share the queue.
+  const playFromPhone = useRef<(t: number) => void>(() => {});
+  useEffect(() => {
+    playFromPhone.current = (t) => {
+      setLayer(null);
+      goTo(t);
+      if (!commentaryOn) setMode("wide");
+      setToast("Playing from your phone");
+    };
+  });
+  useEffect(() => {
+    let on = true;
+    let busy = false; // a slow (retried) answer must not overlap the next tick's
+    let cursor = "";
+    const tick = () => {
+      if (busy) return;
+      busy = true;
+      api
+        .tvCommands(cursor)
+        .then(
+          (r) => {
+            if (!on) return;
+            cursor = r.cursor;
+            for (const c of r.commands)
+              if (c.kind === "play" && c.game_id === gameId && c.t !== null) {
+                playFromPhone.current(c.t);
+                api.ackTvCommand(c.id).catch(() => {});
+              }
+          },
+          () => {}, // the next tick tries again
+        )
+        .finally(() => {
+          busy = false;
+        });
+    };
+    tick();
+    const timer = setInterval(tick, TV_COMMANDS_MS);
+    return () => {
+      on = false;
+      clearInterval(timer);
+    };
+  }, [gameId]);
+
   useEffect(() => {
     if (!handle || !game) return;
     const timer = setInterval(() => {
@@ -1157,12 +1209,28 @@ export function Watch({
     return () => clearInterval(timer);
   }, [handle, game, send, remember]);
 
+  // The TV heartbeat (POST /tv/state): tells the phone's "Watch it" that this game is on
+  // the TV, and Alexa's "clip that" where the TV is. A missed beat is harmless.
+  useEffect(() => {
+    if (!handle || !game) return;
+    const beat = () =>
+      api
+        .tvState(game.id, handle.currentTime(), !handle.paused())
+        .catch(() => {});
+    beat();
+    const timer = setInterval(beat, TV_STATE_MS);
+    return () => clearInterval(timer);
+  }, [handle, game]);
+
   // The nearest play's angles (Do more's Angles and Free view), read when it changes so
-  // they are in before Do more opens.
+  // they are in before Do more opens. While Do more is open it stays the play nearest
+  // the moment it opened: the video plays on underneath, and the row must not swap plays
+  // (and player names) under the remote.
+  const replayT = layer === "domore" ? layerT : t;
   const nearestReplay = [...(replays ?? [])].sort(
     (a, b) =>
-      Math.abs((a.t_start + a.t_end) / 2 - t) -
-      Math.abs((b.t_start + b.t_end) / 2 - t),
+      Math.abs((a.t_start + a.t_end) / 2 - replayT) -
+      Math.abs((b.t_start + b.t_end) / 2 - replayT),
   )[0];
   const nearId = nearestReplay?.play_id;
   /** The replay nearest a moment, within ANGLES_NEAR_S of its window: Moments → Down
@@ -1311,8 +1379,8 @@ export function Watch({
         },
       ]
     : [];
-  // Angles: the nearest play's angles as thumbnails (the play's frame; the API has no
-  // per-angle poster yet), its players' virtual POVs as one (the key player's; Up in the
+  // Angles: the nearest play's angles as thumbnails (each angle's own poster, the play's
+  // storyboard frame for an older manifest without one), its players' virtual POVs as one (the key player's; Up in the
   // angle, or Player POV's chips, picks another), Free view last when the play has a
   // scene. A game with no replay angles still has its views now: the recorded camera
   // and a follow cam.
@@ -1337,7 +1405,17 @@ export function Watch({
             id: `angle-${a.id}`,
             label: p ? povLabel(p) : a.label,
             sub: tierBadge(a.tier),
-            art: frame,
+            art: a.poster ? (
+              <View style={styles.thumb}>
+                <Image
+                  source={{ uri: a.poster }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="cover"
+                />
+              </View>
+            ) : (
+              frame
+            ),
             run: () => openAngle(play.play_id, i),
           };
         }),
@@ -1752,7 +1830,10 @@ export function Watch({
                   game={game}
                   player={card}
                   tint={
-                    (card.color_hex && ink.get(card.color_hex)) || color.accent
+                    (!card.team_mixed &&
+                      card.color_hex &&
+                      ink.get(card.color_hex)) ||
+                    color.accent
                   }
                   following={followed}
                   moments={

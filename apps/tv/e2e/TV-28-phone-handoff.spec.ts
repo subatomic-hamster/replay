@@ -95,6 +95,43 @@ test("TV-28 On your phone: a QR per job, the API's phone link for this game and 
   expect(await mints(page)).toHaveLength(JOBS.length);
 });
 
+test("TV-28 Play on the TV: the phone's search hit plays here, once; another game's is ignored", async ({
+  page,
+}) => {
+  const { panel } = await openPanel(page);
+  const send = (gameId: string, t: number) =>
+    page.evaluate(
+      ([g, at]) =>
+        (
+          window as unknown as {
+            __replayMock: {
+              api: { playOnTv: (g: string, t: number) => Promise<void> };
+            };
+          }
+        ).__replayMock.api.playOnTv(g, at),
+      [gameId, t] as const,
+    );
+  const acks = async () =>
+    (await mockCalls(page)).filter(
+      (c) => c.method === "POST" && c.path.startsWith("/tv/commands/"),
+    );
+
+  await send("g_mock02", 3); // not the open game: stays queued for its own Watch
+  await send(GAME_ID, 4); // back from the open moment (~12 s; the mock video is 20 s)
+  // picked up within a poll (3 s): the phone layer closes and the video plays from 4 s
+  await expect(panel).toHaveCount(0, { timeout: 6_000 });
+  await expect(page.getByTestId("toast")).toHaveText("Playing from your phone");
+  await expect.poll(async () => (await media(page)).paused).toBe(false);
+  const t = (await media(page)).t;
+  expect(t).toBeGreaterThanOrEqual(4);
+  expect(t).toBeLessThan(8);
+  await expect.poll(async () => (await acks()).length).toBe(1);
+  // acked: later polls do not play it again
+  await page.waitForTimeout(3_500);
+  expect(await acks()).toHaveLength(1);
+  expect((await media(page)).t).toBeGreaterThan(t);
+});
+
 test("TV-28 On your phone: no web address on the server, or an error, says so (no QR)", async ({
   page,
 }) => {

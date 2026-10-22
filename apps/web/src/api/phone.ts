@@ -46,6 +46,7 @@ export type PhoneApi = Pick<
   | "getReviewQueue"
   | "answerReview"
   | "search"
+  | "playOnTv"
   | "mediaUrl"
   | "profileMediaUrl"
 >;
@@ -118,6 +119,10 @@ export function phoneHttpApi(apiBase: string, token: string): PhoneApi {
       ),
     exportGameReel: (id, aspect) =>
       req<ReelExport>(`${g(id)}/exports/reel`, "POST", { aspect }),
+    playOnTv: (id, t) =>
+      req<{ tv?: boolean }>(`${g(id)}/tv/play`, "POST", { t }).then(
+        (r) => r?.tv === true,
+      ),
     getGameReel: (id, rid) =>
       req<ReelExport>(`${g(id)}/exports/reel/${encodeURIComponent(rid)}`),
     listProfiles: () =>

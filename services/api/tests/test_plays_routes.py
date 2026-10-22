@@ -128,6 +128,44 @@ def test_uploader_notes_are_your_note_moments(client: TestClient):
     assert not [m for m in client.get(f"/games/{gid}/moments").json() if m["id"].startswith("note")]
 
 
+def test_post_notes_loads_a_play_log_kept_apart_from_detections(client: TestClient):
+    """D-90: POST /notes takes the uploader's CSV or JSON play log. The notes show only as
+    "Your note" moments: events, score and stats do not change, and an evaluation log
+    (hand-annotated truth) is refused."""
+    gid = _seed(client)
+    events = client.app_settings.games_dir / gid / "events.json"
+    before = {r: client.get(f"/games/{gid}/{r}").json() for r in ("score", "stats", "plays")}
+    events_before = events.read_text()
+    csv = "t,team,player,type,result,points,note\n0:12.5,red,Sam,shot,make,3,corner three\n"
+    r = client.post(f"/games/{gid}/notes", content=csv, headers={"Content-Type": "text/csv"})
+    assert r.status_code == 201 and r.json()["notes"] == 1
+    doc = client.get(f"/games/{gid}/notes").json()
+    assert (doc["use"], doc["source"], doc["entries"][0]["made"]) == ("notes", "user", True)
+    note = next(m for m in client.get(f"/games/{gid}/moments").json() if m["id"] == "note1")
+    assert (note["label"], note["source"]) == ("Your note: corner three", "user")
+    assert {r: client.get(f"/games/{gid}/{r}").json() for r in before} == before
+    assert events.read_text() == events_before
+    # replaced by the next upload; JSON rows work too
+    body = json.dumps([{"t": 3, "type": "note", "note": "tip-off"}])
+    assert client.post(f"/games/{gid}/notes", content=body).json()["notes"] == 1
+    truth = json.dumps({"use": "evaluation", "entries": [{"t": 1, "type": "shot"}]})
+    r = client.post(f"/games/{gid}/notes", content=truth)
+    assert r.status_code == 400 and "only notes" in r.json()["detail"]
+    r = client.post(f"/games/{gid}/notes", content="t,type\nsoon,shot\n")
+    assert r.status_code == 400 and "line 2" in r.json()["detail"]
+    assert client.get(f"/games/{gid}/notes").json()["entries"][0]["note"] == "tip-off"
+
+
+def test_post_notes_needs_the_api_key(settings):
+    import dataclasses
+
+    from replay_api.main import create_app
+
+    with TestClient(create_app(dataclasses.replace(settings, api_key="s3cret"))) as c:
+        r = c.post("/games/g_00000000/notes", content="t,type\n1,note\n")
+        assert r.status_code == 401
+
+
 def test_voice_subject_follows_the_roster_and_clips_trim(client: TestClient):
     gid = _seed(client)
     clips = client.get(f"/games/{gid}/clips").json()["clips"]

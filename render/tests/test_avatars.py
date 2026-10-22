@@ -9,6 +9,7 @@ import pytest
 from replay_render import testing as toy
 from replay_render.avatars import lift, motion, render
 from replay_render.avatars.place import Camera, place_analytic, player_height
+from replay_render.avatars.scene import joints_array
 from replay_render.avatars.skeleton import (
     ANKLES,
     BONES,
@@ -18,6 +19,7 @@ from replay_render.avatars.skeleton import (
     h36m_to_coco,
     rest_pose,
 )
+from replay_render.virtual.tierb import look_at
 
 CAM = Camera(toy.K, toy.R, toy.T, 0.0, (toy.W, toy.H))
 
@@ -186,6 +188,76 @@ def test_a_virtual_pov_for_every_player_in_3d_key_player_first():
     ]
     # a highlight (no 3D players yet): only the key player's
     assert render.angles_for({"primary": "p4"}) == [*render.ANGLES, "pov_p4"]
+
+
+def test_povs_are_capped_to_the_players_nearest_the_key_player():
+    doc = _toy_doc()
+    base = doc["players"][1]
+    doc["players"] = [doc["players"][0]] + [
+        {**base, "id": f"q{k}", "joints": (np.asarray(base["joints"]) + [k, 0, 0]).tolist()}
+        for k in (9, 1, 7, 3, 5, 8, 2)
+    ]  # q1 is nearest p1 (the shooter), q9 farthest
+    povs = [a for a in render.angles_for(doc) if a.startswith("pov_")]
+    assert povs == ["pov_p1", "pov_q1", "pov_q2", "pov_q3", "pov_q5", "pov_q7"]
+
+
+def test_kits_cluster_into_two_teams_and_a_referee_keeps_their_own_shirt():
+    from replay_render.avatars.scene import kit_teams
+
+    red, black, grey = (136.0, 208, 195), (20.0, 128, 128), (150.0, 128, 128)  # OpenCV Lab
+    seen = {0: red, 1: np.add(red, 4), 2: black, 3: np.add(black, 3), 5: grey}
+    prior = {0: 1, 1: 1, 2: 0, 3: 0, 5: 0}  # game.json: the reds are team 1
+    out = kit_teams({p: np.asarray(v, float) for p, v in seen.items()}, prior)
+    assert out[0][0] == out[1][0] == 1 and out[2][0] == out[3][0] == 0
+    assert out[0][1] == out[1][1] and out[2][1] == out[3][1]  # one colour per team
+    r, g, b = render.hex_rgb(out[2][1])
+    assert max(r, g, b) < 60  # the black kit stays black, not lifted to grey
+    r, g, b = render.hex_rgb(out[0][1])
+    assert r > 150 and g < 80  # red
+    assert out[5][0] is None  # the referee: neither team
+
+
+def test_net_fades_for_a_camera_at_the_net():
+    left, right = (-3.0, 7.0, 0.9), (3.0, 7.0, 0.9)
+
+    def dark(eye) -> float:
+        view = look_at(np.array(eye), np.array([0.0, 12.0, 0.9]), 320.0, (320, 180))
+        c = np.full((180, 320, 3), 200, np.uint8)
+        for _, fn in render.net_prims(left, right, view):
+            fn(c)
+        return float((c.mean(axis=-1) < 150).mean())
+
+    assert dark([0.0, 1.0, 1.6]) > 0.05  # from 6 m: a see-through dark net
+    assert dark([0.0, 5.4, 1.6]) < 0.01  # a POV 1.6 m from the net: no screen of mesh
+
+
+def test_image_based_angles_stay_where_a_cutout_holds_up():
+    from replay_render.avatars import imageview
+
+    doc = _toy_doc()
+    angles = imageview.angles_for(doc, (320, 180))
+    # the toy camera films from the sideline: a baseline camera would face it at ~90°
+    assert angles == ["wing", "courtside", "pov_p1", "pov_p2"]
+    joints = joints_array(doc)
+    centre = imageview._centre(doc, joints)
+    real_c = imageview._real_centre(doc)
+    for a, lo, hi in (("wing", 25, 45), ("courtside", 10, 18)):
+        views = imageview.camera_views(a, doc, joints, (320, 180))
+        assert len(views) == doc["frames"]
+        off = np.degrees(imageview.off_angle(views, centre, real_c))
+        assert lo - 3 < off < hi + 3
+        assert min(v.centre[2] for v in views) > 1.0
+
+
+def test_a_pov_never_looks_up_more_than_twenty_degrees():
+    from replay_render.avatars import imageview
+
+    doc = _toy_doc()
+    j = np.asarray(doc["players"][0]["joints"])
+    doc["players"][0]["joints"] = (j + [0, -1.3, 0]).tolist()  # right under the rim
+    views = imageview.camera_views("pov_p1", doc, joints_array(doc), (320, 180))
+    pitch = [np.degrees(np.arcsin(v.r[2][2])) for v in views]
+    assert max(pitch) <= 20.0 + 1e-6
 
 
 def test_bones_table_covers_the_skeleton():

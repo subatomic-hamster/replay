@@ -61,6 +61,7 @@ PHONE_ROUTES = (
     ("PATCH", "/games/{g}/events/{id}"),  # review answers
     ("POST", "/games/{g}/search"),
     ("POST", "/games/{g}/query"),  # search's fallback without embeddings
+    ("POST", "/games/{g}/tv/play"),  # play a search hit on the TV
 )
 _PHONE_RES = tuple(
     (

@@ -206,7 +206,18 @@ test("S-57 Tag: players with thumbs; link one to a profile, name another as some
 }) => {
   await open(page, "job=tag");
   const players = page.getByTestId("tag-player");
+  // p3 is on screen 3.2 s (a tracker fragment): behind one row until asked for
+  await expect(players).toHaveCount(3);
+  await expect(
+    page.locator('[data-testid="tag-player"][data-player-id="p3"]'),
+  ).toHaveCount(0);
+  const short = page.getByTestId("tag-short-toggle");
+  await expect(short).toHaveText("1 short track (under 5 s on screen)");
+  await short.click();
   await expect(players).toHaveCount(4);
+  await expect(short).toHaveText("Hide the short tracks");
+  await short.click();
+  await expect(players).toHaveCount(3);
   await expect(
     page.locator(
       '[data-testid="tag-player"][data-player-id="p2"] .player-thumb',
@@ -323,6 +334,28 @@ test("S-59 Search: this game's plays; a hit plays its window on the phone", asyn
     "Marcus scores",
   );
   await expect(page.getByTestId("phone-search-interpretation")).toBeVisible();
+});
+
+test("S-59 Play on the TV: a hit's start goes to the TV's command queue", async ({
+  page,
+}) => {
+  await open(page, "job=search");
+  await page.getByTestId("phone-search-input").fill("Marcus scores");
+  await page.getByTestId("phone-search-go").click();
+  const hit = page.getByTestId("phone-search-hit").nth(1);
+  const t0 = Number(await hit.getAttribute("data-t-start"));
+  await hit.click();
+  await page.getByTestId("phone-search-tv").click();
+  await expect(page.getByTestId("phone-search-tv-note")).toHaveText(
+    "Playing on the TV",
+  );
+  expect(await calls(page, "POST", `/games/${GAME_ID}/tv/play`)).toEqual([
+    { method: "POST", path: `/games/${GAME_ID}/tv/play`, body: { t: t0 } },
+  ]);
+  await phoneFriendly(page);
+  // another hit clears the note
+  await page.getByTestId("phone-search-hit").first().click();
+  await expect(page.getByTestId("phone-search-tv-note")).toHaveCount(0);
 });
 
 test("S-60 Reel: the highlight reel, 9:16, rendered on the server, then a download link", async ({

@@ -34,6 +34,54 @@ def test_review_queue_maps_to_existing_patches(client):
     assert stats["totals"]["attempts"] == 2  # dismissed: out of the box score
 
 
+def test_review_queue_asks_only_what_changes_score_or_stats():
+    """D-92: no inbound (the 0:00 start) or turnover questions, steals and rebounds by
+    name; shots, then rebounds, then steals when the dozen-question cap bites."""
+    from replay_api.stats import EVENT_QUESTIONS, review_queue
+
+    def ev(i, t, typ, conf=0.5, **kw):
+        return {"id": f"e_{i:04d}", "type": typ, "t_key": t, "confidence": conf, **kw}
+
+    events = [
+        ev(0, 0.0, "possession_change", cause="inbound"),
+        ev(1, 5.0, "possession_change", cause="steal"),
+        ev(2, 5.0, "turnover", 0.4, cause="steal"),
+        ev(3, 9.0, "possession_change", cause="defensive_rebound"),
+        *(ev(10 + i, 20.0 + i, "shot", made=False) for i in range(EVENT_QUESTIONS - 2)),
+        ev(99, 90.0, "shot", 0.9, made=None),
+    ]
+    q = review_queue({"id": "g", "players": []}, events, [])
+    assert len(q) == EVENT_QUESTIONS and q[0]["event_id"] == "e_0099"  # D-93: outcome first
+    assert [x["t"] for x in q[1:]] == sorted(x["t"] for x in q[1:])
+    prompts = {x["event_id"]: x["prompt"] for x in q}
+    assert prompts["e_0003"] == "Was this a defensive rebound?"
+    assert prompts["e_0099"] == "Make or miss?"
+    assert not {"e_0000", "e_0001", "e_0002"} & set(prompts)  # the steal lost to the cap
+    q = review_queue({"id": "g", "players": []}, events[:4], [])
+    assert [x["prompt"] for x in q] == ["Was this a steal?", "Was this a defensive rebound?"]
+
+
+def test_steal_and_rebound_moments_span_the_play():
+    """D-92: a possession change is a 0.5 s instant; its moment shows the lead-up."""
+    from replay_api.moments import moments
+
+    evs = [{"id": "e_1", "type": "possession_change", "cause": "defensive_rebound",
+            "t_key": 30.0, "t_start": 30.0, "t_end": 30.5, "confidence": 0.5},
+           {"id": "e_2", "type": "possession_change", "cause": "steal", "t_key": 1.0,
+            "t_start": 1.0, "t_end": 1.5, "confidence": 0.5}]  # fmt: skip
+    ms = {m["id"]: m for m in moments(evs, {"video": {"duration_s": 31.0}})}
+    assert (ms["e_1"]["t_start"], ms["e_1"]["t_end"]) == (26.0, 31.0)
+    assert (ms["e_2"]["t_start"], ms["e_2"]["t_end"]) == (0.0, 3.0)
+
+
+def test_a_pickup_one_point_basket_is_not_a_free_throw():
+    from replay_api.moments import label
+
+    shot = {"type": "shot", "made": True, "points": 1}
+    assert label(shot, None, "basketball") == "Basket"
+    assert label({**shot, "cause": "free_throw"}, None, "basketball") == "Free throw"
+
+
 def test_review_queue_asks_who_untagged_players_are(client):
     gid = ready_game(client, client.app_settings)
     gd = client.app_settings.games_dir / gid

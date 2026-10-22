@@ -96,6 +96,40 @@ def test_presets_inside_the_envelope_and_edges_meet_the_limits(pkg):
         assert m["mag"] <= scene.MAG_MAX, name
 
 
+def test_sam_prompts_players_on_their_first_boxed_frame_and_holds_a_lost_mask(
+    pkg, tmp_path, monkeypatch
+):
+    """Each player is prompted on their own first boxed frame of a chunk, and a mask SAM
+    loses mid-chunk is held (moved with the box) for up to HOLD frames."""
+    gd, video, play_id, _, _ = pkg
+    prompted: list[dict] = []
+
+    class LosesEveryoneMidChunk:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def chunk(self, frames, prompts):
+            prompted.append(prompts)
+            hw = frames[0].shape[:2]
+            for j in range(len(frames)):
+                lost = 3 <= j <= 5  # SAM frames where every object comes back empty
+                yield j, {k: np.full(hw, not lost) for k in prompts}
+
+    monkeypatch.setattr(segment, "_Sam", LosesEveryoneMidChunk)
+    g2 = tmp_path / "g"
+    shutil.copytree(gd, g2, ignore=shutil.ignore_patterns("segments", "pkg", "media"))
+    (g2 / "media").symlink_to(gd / "media")
+    meta = segment.segment_play(g2, video, play_id)
+    boxes = segment._boxes(g2, replays.play(g2, play_id), meta["fps"], meta["frames"],
+                           (toy.W, toy.H))  # fmt: skip
+    for p, v in meta["players"].items():
+        boxed = int(np.isfinite(boxes[p][:, 0]).sum())
+        assert v["frames_segmented"] < boxed  # the lost frames
+        assert v["frames_with_mask"] == boxed  # all held back
+    for prompts in prompted:
+        assert all(fi >= 0 and len(box) == 4 for fi, box in prompts.values())
+
+
 def test_billboard_axis_faces_the_camera():
     cam = np.array([0.0, -10.0, 3.0])
     a = scene.billboard_axis(cam, np.array([0.0, 0.0, 0.0]))

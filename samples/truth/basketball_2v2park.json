@@ -1,0 +1,148 @@
+{
+  "schema": "replay.playlog.v1",
+  "use": "evaluation",
+  "label": "hand annotation (ground truth for evaluation)",
+  "source": "Hand annotation by eye from contact sheets: full-frame + hoop-crop pass at 3 fps over 0-120 s (every 0.33 s), then 6-24 fps zooms around every candidate attempt (0-2.6, 6.8-10, 14.8-18, 20.8-22.6, 37-40.4, 51.4-54, 55.2-57.6, 73-76, 89.4-94, 107-110, 114-116.6 s) with the hoop crop at 1.2-1.3x and wide crops of the shooter. Make/miss decided from the ball's path through or off the rim/net in the hoop crop; score cards read from the frames and checked against the makes.",
+  "clip": {
+    "id": "basketball_2v2park",
+    "file": "/workspace/wt/replay-env/samples-cc/basketball_2v2park/basketball_2v2park_120s.mp4",
+    "duration_s": 120.0,
+    "attribution": "\"2v2 BASKETBALL GAME\" by M'ster Lewis, https://www.youtube.com/watch?v=z5bdgHqcShw, licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Cut to 120 s, otherwise unmodified. This file holds facts read from the video, not the video.",
+    "notes": "BASKET CORRECTION: the game is played at the LARGE basket in the top right of the frame, the one the camera stands beside, not at the small distant basket. Played rim centre is about pixel (1390, 175), roughly 110-120 px wide, backboard about x 1300-1500, y 0-170. The small basket around (600, 430) is the far end of the court and no shot goes there in this clip. Teams: A = grey shirt + black pants (big man) with black shirt + black shorts (long hair); B = grey #23 jersey + white pants with cream shirt + maroon pants. Evidence: black shirt guards #23 (0.0 s, 90.1 s) and cream shirt (15.4 s); cream shirt guards black shirt (21.0 s, 51.8 s, 55.9 s); grey shirt rebounds cream's miss (17.3 s) and rebounds #23's miss and passes out to black shirt (92.4-93.6 s); the score card's second number rises on each black-shirt make. Score cards: read as B-A (first number #23/cream, second number grey/black). 1-1 at 23.0 s after black shirt's make at 21.7 s, 1-2 at 58.0 s after his make at 57.1 s, 1-4 at 118.0 s after his long jumper from well outside at 115.8 s. So the clip starts at B 1, A 0 (B's point came before the cut), and scoring is 1 inside / 2 outside, which the +2 for the deep 114.5 s jumper confirms. Points for missed shots are a judgement of distance from the frame only. Possible gaps: the 3 fps pass could miss a very quick tip at the rim, and contested moves under the basket where the ball never rises to the rim (around 37-40 s, 53.0-53.4 s) are not listed as attempts.",
+    "camera": "fixed tripod at court level beside the played basket"
+  },
+  "teams": {
+    "A": { "name": "grey shirt + black pants and black shirt + black shorts" },
+    "B": {
+      "name": "grey #23 jersey + white pants and cream shirt + maroon pants"
+    }
+  },
+  "scoreboard": [
+    {
+      "t": 23.0,
+      "scores": { "A": 1, "B": 1 },
+      "note": "card '1-1', on screen about 23.0-25.7 s"
+    },
+    {
+      "t": 58.0,
+      "scores": { "A": 2, "B": 1 },
+      "note": "card '1-2', on screen about 58.0-61.0 s"
+    },
+    {
+      "t": 118.0,
+      "scores": { "A": 4, "B": 1 },
+      "note": "card '1-4' on a white panel, on screen 118.0-120.0 s"
+    }
+  ],
+  "entries": [
+    {
+      "t": 0.0,
+      "t_rim": 1.7,
+      "type": "shot",
+      "team": "B",
+      "player": "grey #23 jersey + white pants",
+      "made": false,
+      "points": 2,
+      "confidence": "medium",
+      "note": "Ball is already in flight in the first frame and #23 is in his follow-through, guarded by black shirt, so the release is at or just before 0.0 s. The ball comes down on the front-left of the rim at 1.7 s and drops outside the net to the left (1.8-1.9 s). Points guessed from the long, high flight."
+    },
+    {
+      "t": 7.3,
+      "t_rim": 8.3,
+      "type": "shot",
+      "team": "A",
+      "player": "grey shirt + black pants",
+      "made": false,
+      "points": 2,
+      "confidence": "medium",
+      "note": "Long jump shot from the left foreground (6.8-7.5 s). Ball reaches the top of the board or the rim at 8.3 s, goes above the frame, and falls to the right of the rim at 9.1 s; black shirt rebounds. Contact is mostly above the frame, so t_rim is approximate."
+    },
+    {
+      "t": 15.4,
+      "t_rim": 15.8,
+      "type": "shot",
+      "team": "B",
+      "player": "cream shirt + maroon pants",
+      "made": false,
+      "points": 1,
+      "confidence": "medium",
+      "note": "Jump shot over black shirt. Ball hits the upper board or back rim at about 15.8 s, goes up out of the hoop crop, comes back onto the rim at 16.6 s and bounces away up-left; grey shirt rebounds at 17.3 s. Inside or outside the arc is unclear."
+    },
+    {
+      "t": 21.1,
+      "t_rim": 21.6,
+      "type": "shot",
+      "team": "A",
+      "player": "black shirt + black shorts",
+      "made": true,
+      "points": 1,
+      "confidence": "high",
+      "note": "Close shot over cream shirt. Ball drops through the rim at 21.6-21.7 s and out the bottom of the net at 22.2 s. Score card 1-1 follows at 23.0 s."
+    },
+    {
+      "t": 51.8,
+      "t_rim": 52.1,
+      "type": "shot",
+      "team": "A",
+      "player": "black shirt + black shorts",
+      "made": false,
+      "points": 1,
+      "confidence": "high",
+      "note": "Shot in the lane, guarded by cream shirt. Ball hits the rim at 52.1 s, sits on top of the rim through 52.5 s and rolls off the left side at 52.6-52.8 s. Black shirt gets the rebound and goes back up at 53.0-53.3 s, but the ball never rises to the rim (pump fake or stripped), so that is not listed as an attempt."
+    },
+    {
+      "t": 56.0,
+      "t_rim": 56.8,
+      "type": "shot",
+      "team": "A",
+      "player": "black shirt + black shorts",
+      "made": true,
+      "points": 1,
+      "confidence": "high",
+      "note": "Jump shot near the basket over cream shirt (rises from 55.7 s). Ball comes down onto the rim at 56.8 s, rolls in at 57.1 s and out of the net at 57.3 s. Score card 1-2 at 58.0 s."
+    },
+    {
+      "t": 73.5,
+      "t_rim": 74.5,
+      "type": "shot",
+      "team": "B",
+      "player": "cream shirt + maroon pants",
+      "made": false,
+      "points": 2,
+      "confidence": "high",
+      "note": "Long jump shot from the far left of the court (73.0-73.7 s). Ball hits the front-left of the rim at 74.5 s and bounces back out to the left (74.7-75.2 s)."
+    },
+    {
+      "t": 90.2,
+      "t_rim": 91.3,
+      "type": "shot",
+      "team": "B",
+      "player": "grey #23 jersey + white pants",
+      "made": false,
+      "points": 2,
+      "confidence": "high",
+      "note": "Jump shot from the left wing guarded by black shirt (89.9-90.4 s). Ball hits the front of the rim at 91.3 s, bounces high, comes back onto the rim at 92.1 s and falls off the left side at 92.2 s. Grey shirt rebounds at 92.4 s, contested by cream, and passes out to black shirt. Points guessed from the distance."
+    },
+    {
+      "t": 107.6,
+      "type": "shot",
+      "team": "A",
+      "player": "black shirt + black shorts",
+      "made": false,
+      "points": 1,
+      "confidence": "low",
+      "note": "Black shirt goes up with the ball close to the basket (107.4-107.6 s), with #23 contesting. The ball leaves his hand upward but goes left and down by 107.7 s without reaching the rim. Most likely blocked or deflected by #23. A blocked shot, so no t_rim. Could also be read as a lost ball rather than an attempt."
+    },
+    {
+      "t": 114.5,
+      "t_rim": 115.7,
+      "type": "shot",
+      "team": "A",
+      "player": "black shirt + black shorts",
+      "made": true,
+      "points": 2,
+      "confidence": "high",
+      "note": "Deep jump shot from the left of the court (set 114.2 s, release about 114.5 s). Ball drops through the rim at 115.7-115.9 s and out of the net at 116.2 s. Score goes 1-2 to 1-4 on the card at 118.0 s, so it was worth 2."
+    }
+  ]
+}

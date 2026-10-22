@@ -27,6 +27,7 @@ MAX_S = 8.0
 MIN_S = 2.0
 POST_S = 1.5  # kept after the key moment (the ball dropping, the celebration)
 RELEASE_LEAD_S = 1.0  # a shot's release this long before the rim (courtcam ShotCfg)
+PER_PLAY_S, MIN_N, MAX_N = 60.0, 3, 10  # plays with angles: ~one per minute of game
 TIER_A = ("wide", "follow", "tight")
 TIER_B = ("broadcast_high", "orbit", "push_in")
 LABELS = {
@@ -71,18 +72,76 @@ def _shot(game: Game, evs: list[dict]) -> dict | None:
     }
 
 
-def _label(game: Game, kind: str, pid: str | None, shot: dict | None) -> str:
-    who = game.player_label(pid) if pid else ""
+def player_name(names: dict[str, str | None], pid: str) -> str:
+    """The name the TV shows everywhere: the user's (or enrolled) name, else "Player N"
+    (the track number, not a jersey)."""
+    return names.get(pid) or f"Player {pid.removeprefix('p')}"
+
+
+def _names(game_or_doc) -> dict[str, str | None]:
+    players = game_or_doc.players.values() if isinstance(game_or_doc, Game) else (
+        game_or_doc.get("players") or [])  # fmt: skip
+    return {p["id"]: p.get("name") for p in players}
+
+
+def _label(kind: str, pid: str | None, shot: dict | None) -> tuple[str, str | None]:
+    """A play's title as a template with `{player}` for the name (the API fills it in
+    from the live roster, so a rename shows at once), and that player's id."""
     if shot:
         made = {True: " (make)", False: " (miss)"}.get(shot.get("made"), "")
-        return f"Shot · {game.player_label(shot['player_id'])}{made}"
-    return f"{kind.replace('_', ' ').capitalize()}" + (f" · {who}" if who else "")
+        return f"Shot · {{player}}{made}", shot["player_id"]
+    title = kind.replace("_", " ").capitalize()
+    return (f"{title} · {{player}}", pid) if pid else (title, None)
+
+
+def label_of(h: dict, names: dict[str, str | None]) -> str:
+    tpl = h.get("label_template") or h.get("label") or ""
+    pid = h.get("label_player")
+    return tpl.format(player=player_name(names, pid)) if pid else tpl
+
+
+def auto_n(duration: float) -> int:
+    """How many plays get angles: about one a minute of game, at least 3, at most 10."""
+    return int(np.clip(round(duration / PER_PLAY_S), MIN_N, MAX_N))
+
+
+def _entry(game: Game, play_id: str, kind: str, t0: float, t1: float, pid: str | None,
+           participants: list[str], shot: dict | None) -> dict:  # fmt: skip
+    tpl, who = _label(kind, pid, shot)
+    h = {"play_id": play_id, "kind": kind, "t_start": t0, "t_end": t1, "primary": pid,
+         "participants": participants, "shot": shot, "label_template": tpl,
+         "label_player": who}  # fmt: skip
+    return {**h, "label": label_of(h, _names(game))}
+
+
+def _spread(cands: list[dict], n: int, duration: float) -> list[dict]:
+    """Up to `n` of the ranked windows, none overlapping, spread over the game: the best
+    one starting in each of `n` equal stretches first, then the next best anywhere."""
+    out: list[dict] = []
+
+    def free(c: dict) -> bool:
+        return c not in out and not any(
+            c["t_start"] < h["t_end"] and h["t_start"] < c["t_end"] for h in out
+        )
+
+    span = duration / n if duration > 0 and n else 0.0
+    for i in range(n if span else 0):
+        c = next((c for c in cands if i * span <= c["t_start"] < (i + 1) * span and free(c)),
+                 None)  # fmt: skip
+        if c:
+            out.append(c)
+    for c in cands:
+        if len(out) >= n:
+            break
+        if free(c):
+            out.append(c)
+    return sorted(out, key=lambda h: h["t_start"])
 
 
 def select(game: Game, n: int = 3) -> tuple[list[dict], str]:
     """Up to `n` highlight windows and where they came from (`plays` | `events`)."""
     by_id = {e.get("id"): e for e in game.events}
-    out: list[dict] = []
+    cands: list[dict] = []
     if game.plays:
         ranked = sorted(
             game.plays,
@@ -99,50 +158,23 @@ def select(game: Game, n: int = 3) -> tuple[list[dict], str]:
             t0, t1 = _window(float(p["t_start"]), float(p["t_end"]), key, game.duration)
             if t1 - t0 < MIN_S:
                 continue
-            shot = _shot(game, evs)
-            pid = _primary(p, by_id)
-            out.append(
-                {
-                    "play_id": p["id"],
-                    "kind": p.get("grammar") or "play",
-                    "t_start": t0,
-                    "t_end": t1,
-                    "primary": pid,
-                    "participants": list(
-                        dict.fromkeys(q["player_id"] for q in p.get("participants") or [])
-                    ),
-                    "shot": shot,
-                    "label": _label(game, p.get("grammar") or "play", pid, shot),
-                }
-            )
-            if len(out) == n:
-                break
-        if out:
-            return sorted(out, key=lambda h: h["t_start"]), "plays"
-    cands = [e for e in game.events if e.get("type") in ("shot", "rally", "point")]
-    cands.sort(key=lambda e: (e["type"] != "shot", -(e["t_end"] - e["t_start"])))
-    for e in cands:
+            parts = list(dict.fromkeys(q["player_id"] for q in p.get("participants") or []))
+            cands.append(_entry(game, p["id"], p.get("grammar") or "play", t0, t1,
+                                _primary(p, by_id), parts, _shot(game, evs)))  # fmt: skip
+        if cands:
+            return _spread(cands, n, game.duration), "plays"
+    evs = [e for e in game.events if e.get("type") in ("shot", "rally", "point")]
+    evs.sort(key=lambda e: (e["type"] != "shot", -(e["t_end"] - e["t_start"])))
+    for e in evs:
         t0, t1 = _window(
             float(e["t_start"]) - 4.0, float(e["t_end"]), float(e["t_key"]), game.duration
         )
-        if t1 - t0 < MIN_S or any(t0 < h["t_end"] and h["t_start"] < t1 for h in out):
+        if t1 - t0 < MIN_S:
             continue
-        shot = _shot(game, [e])
-        out.append(
-            {
-                "play_id": f"ev_{e['id']}",
-                "kind": e["type"],
-                "t_start": t0,
-                "t_end": t1,
-                "primary": e.get("player_id"),
-                "participants": [e["player_id"]] if e.get("player_id") else [],
-                "shot": shot,
-                "label": _label(game, e["type"], e.get("player_id"), shot),
-            }
-        )
-        if len(out) == n:
-            break
-    return sorted(out, key=lambda h: h["t_start"]), "events"
+        pid = e.get("player_id")
+        cands.append(_entry(game, f"ev_{e['id']}", e["type"], t0, t1, pid,
+                            [pid] if pid else [], _shot(game, [e])))  # fmt: skip
+    return _spread(cands, n, game.duration), "events"
 
 
 def _present(game: Game, pid: str, t0: float, t1: float) -> float:
@@ -153,9 +185,10 @@ def _present(game: Game, pid: str, t0: float, t1: float) -> float:
     return float(np.isfinite(game.tracks.box[i, m, 0]).mean()) if m.any() else 0.0
 
 
-def write_highlights(game_dir: Path, *, n: int = 3, synthetic: bool = False) -> dict:
+def write_highlights(game_dir: Path, *, n: int | None = None, synthetic: bool = False) -> dict:
+    """`n` plays, else `auto_n` of the game's length."""
     game = load_game(game_dir)
-    plays, source = select(game, n)
+    plays, source = select(game, n or auto_n(game.duration))
     for h in plays:
         # Tier A's player angles need a player who is actually tracked in the window
         if not h["primary"] or _present(game, h["primary"], h["t_start"], h["t_end"]) < 0.5:
@@ -235,12 +268,36 @@ def probe_video(path: Path) -> dict[str, Any]:
     return out
 
 
+def poster(game_dir: Path, rel: str, width: int = 480) -> str | None:
+    """`<angle>.jpg` beside an angle video: its middle frame, so each tile in the TV's
+    angle row shows its own view. Rewritten when the video is newer. Game-relative."""
+    video = Path(game_dir) / rel
+    out = video.with_suffix(".jpg")
+    if out.is_file() and out.stat().st_mtime_ns >= video.stat().st_mtime_ns:
+        return Path(rel).with_suffix(".jpg").as_posix()
+    cap = cv2.VideoCapture(str(video))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) // 2))
+    ok, frame = cap.read()
+    cap.release()
+    if not ok:
+        return None
+    h, w = frame.shape[:2]
+    if w > width:
+        frame = cv2.resize(
+            frame, (width, round(h * width / w / 2) * 2), interpolation=cv2.INTER_AREA
+        )
+    cv2.imwrite(str(out), frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return Path(rel).with_suffix(".jpg").as_posix()
+
+
 def write_manifest(game_dir: Path, play_id: str, sport: str | None = None) -> dict:
     """`replays/{play_id}/manifest.json` from the angle videos that exist on disk.
     URLs are game-relative; the API resolves them."""
     gd = Path(game_dir)
     doc = read_highlights(gd)
     h = play(gd, play_id)
+    game = json.loads((gd / "game.json").read_text()) if (gd / "game.json").exists() else {}
+    names = _names(game)
     angles = []
     for stem, aid, tier in angle_files(h):
         rel = f"replays/{play_id}/{stem}.mp4"
@@ -249,16 +306,15 @@ def write_manifest(game_dir: Path, play_id: str, sport: str | None = None) -> di
         info = probe_video(gd / rel)
         kind, _, pid = aid.partition(":")
         label = LABELS.get(kind, kind)
-        if pid:
-            game = json.loads((gd / "game.json").read_text()) if (gd / "game.json").exists() else {}
-            name = next((p.get("name") for p in game.get("players") or [] if p["id"] == pid), None)
-            label += f" · {name or '#' + pid}"
         angles.append(
             {
                 "id": aid,
                 "tier": tier,
-                "label": label,
+                # `player_id`: the API re-labels from the live roster (renames show at once)
+                "label": f"{label} · {player_name(names, pid)}" if pid else label,
+                **({"player_id": pid} if pid else {}),
                 "url": rel,
+                "poster": poster(gd, rel),
                 "duration_s": info["duration_s"],
                 "width": info["width"],
                 "height": info["height"],
@@ -267,7 +323,9 @@ def write_manifest(game_dir: Path, play_id: str, sport: str | None = None) -> di
     manifest = {
         "schema": MANIFEST_SCHEMA,
         "play_id": play_id,
-        "label": h["label"],
+        "label": label_of(h, names),
+        "label_template": h.get("label_template"),
+        "label_player": h.get("label_player"),
         "sport": sport or doc.get("sport"),
         "t_start": h["t_start"],
         "t_end": h["t_end"],

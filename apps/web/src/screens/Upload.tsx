@@ -16,6 +16,8 @@ import type { AutoCalibration, Game, SportProfile } from "../api/types";
 
 // What courtcam's homography needs; the API enforces the same floor (D-19).
 const MIN_LANDMARKS = 4;
+// D-93: the hoop itself (courtcam `calibrate.height_landmarks`), tapped after the fit
+const HOOP = "rim_top";
 // D-23: below this a proposed landmark is drawn hollow and is not committed until
 // the user moves it. Same bar courtcam.autocalib uses before it fits a homography.
 const MIN_CONFIDENCE = 0.5;
@@ -646,11 +648,13 @@ export function Calibrate({
         data-testid="calib-prompt"
         data-target={next ?? ""}
       >
-        {selected
-          ? `Tap where ${selected.replace(/_/g, " ")} really is, or "Not visible" if it is off the frame.`
-          : next
-            ? `Tap ${next.replace(/_/g, " ")} — point ${names.indexOf(next) + 1} of ${names.length}`
-            : "All landmarks placed."}
+        {selected === HOOP
+          ? 'Tap the middle of the hoop (the ring, not the board), or "Not visible".'
+          : selected
+            ? `Tap where ${selected.replace(/_/g, " ")} really is, or "Not visible" if it is off the frame.`
+            : next
+              ? `Tap ${next.replace(/_/g, " ")} — point ${names.indexOf(next) + 1} of ${names.length}`
+              : "All landmarks placed."}
       </p>
 
       <div className="calib-frame">
@@ -836,6 +840,18 @@ export function Calibrate({
             onClick={() => setMore(true)}
           >
             More points
+          </button>
+        ) : null}
+        {/* D-93: one tap on the hoop itself. The floor fit only guesses where a hoop 3 m
+            up sits in the picture; the ball is watched around this point. */}
+        {required.includes("rim") && valid && !(HOOP in marks) ? (
+          <button
+            type="button"
+            className="secondary"
+            data-testid="calib-hoop"
+            onClick={() => setSelected(HOOP)}
+          >
+            Tap the hoop
           </button>
         ) : null}
       </div>

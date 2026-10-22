@@ -21,6 +21,8 @@ export type Route =
       card?: { pid: string; resume: boolean };
       /** reopen the Stats panel (Back from Review or Tips, which it opened) */
       panel?: "stats";
+      /** D-93: Back leaves to this screen instead of Home (Review's "Watch it") */
+      back?: "review";
     }
   | { name: "review"; gameId: string }
   | { name: "clips" | "search" | "advice"; gameId: string }

@@ -24,6 +24,7 @@ MAX_SPEED_MPS = 9.0  # faster than any sprint: an id switch / foot-point jump, n
 MAX_GAP_S = 0.5  # a longer absence breaks the path (no straight line across a re-entry)
 REVIEW_CONFIDENCE = 0.6  # tv-core REVIEW_CONFIDENCE_THRESHOLD
 IDENTITY_QUESTIONS = 5
+EVENT_QUESTIONS = 12  # D-92: a viewer answers a dozen with the remote, not thirty
 
 
 def _heatmap_bins(x_range: list[float], y_range: list[float]) -> tuple[int, int]:
@@ -215,14 +216,17 @@ def compute(game: dict, events: list[dict], frames: Iterable[dict], profile: dic
 
 
 def review_queue(game: dict, events: list[dict], frames: Iterable[dict]) -> list[dict]:
-    """Questions a viewer can answer with the remote, most useful first. Each option is
+    """Questions a viewer can answer with the remote: up to EVENT_QUESTIONS events whose
+    answer changes the score or the box score ("Make or miss?" first, then game order), then
+    identities. Each option is
     the existing PATCH it maps to, so answering needs no new write path:
     shot outcomes the detector could not tell, low-confidence events (R5), and who the
     most-seen untagged players are (name them, or merge into a tagged player)."""
     gid = game["id"]
-    out: list[dict] = []
-    for e in sorted(events, key=lambda e: e.get("t_key") or 0.0):
-        if e.get("confirmed") or e.get("type") not in ("shot", "block", "possession_change"):
+    asks: list[tuple[int, dict]] = []  # (rank, question): lower rank changes more
+    for e in events:
+        noun = _review_noun(e)
+        if e.get("confirmed") or noun is None:
             continue
         path = f"/games/{gid}/events/{e['id']}"
         conf = float(e.get("confidence") or 0.0)
@@ -236,13 +240,21 @@ def review_queue(game: dict, events: list[dict], frames: Iterable[dict]) -> list
                 _opt("Missed", "PATCH", path, {"made": False, "confirmed": True}),
                 no,
             ]
+            rank = 0  # the score itself
         elif conf < REVIEW_CONFIDENCE:
-            noun = {"shot": "a shot", "block": "a block"}.get(e["type"], "a change of possession")
             q.update(id=f"q_conf_{e['id']}", kind="low_confidence", prompt=f"Was this {noun}?")
             q["options"] = [_opt("Yes", "PATCH", path, {"confirmed": True}), {**no, "label": "No"}]
+            # a shot moves the score or attempts; "steal" is the fallback cause of a flip
+            rank = {"a shot": 1, "a steal": 3}.get(noun, 2)
         else:
             continue
-        out.append(q)
+        asks.append((rank, q))
+    # D-92: only what changes the score or a box-score column, the most telling first, then
+    # in game order (a quarter used to ask 30+ "change of possession?" questions)
+    asks.sort(key=lambda a: (a[0], a[1]["t"] or 0.0))
+    # D-93: "Make or miss?" first (the score waits on it), the rest in game order
+    out = sorted((q for _, q in asks[:EVENT_QUESTIONS]),
+                 key=lambda q: (q["kind"] != "shot_outcome", q["t"] or 0.0))  # fmt: skip
     # identity: untagged players, most seen first, shown where their box is largest
     best: dict[str, tuple[float, float, int]] = {}  # pid -> (box h, t, samples)
     for frame in frames:
@@ -279,6 +291,21 @@ def review_queue(game: dict, events: list[dict], frames: Iterable[dict]) -> list
             }
         )
     return out
+
+
+def _review_noun(e: dict) -> str | None:
+    """What a review question calls the event, or None when no answer would change the
+    score or a box-score column: an inbound (who has the ball at the start, or after a
+    make) and a turnover (its steal is asked instead) are left out."""
+    if e.get("type") == "shot":
+        return "a shot"
+    if e.get("type") == "block":
+        return "a block"
+    if e.get("type") == "possession_change":
+        return {"steal": "a steal", "defensive_rebound": "a defensive rebound"}.get(
+            e.get("cause") or ""
+        )
+    return None
 
 
 def _opt(label: str, method: str, path: str, body: dict, text_field: str | None = None) -> dict:

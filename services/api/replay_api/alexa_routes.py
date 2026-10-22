@@ -5,6 +5,7 @@
     POST /tv/state                {game_id, t, playing}: heartbeat while a game is open
     GET  /tv/commands?after=<id>  -> {commands: [...], cursor, paired}; 60 s old ones dropped
     POST /tv/commands/{id}/ack    the TV handled it (never delivered again)
+    POST /games/{g}/tv/play       {t}: the phone's "Play on the TV" (phone token), a `play` command
 
 Alexa never reaches the TV: the skill writes a command, the TV polls for it. State is
 five small JSON docs under `alexa/` (S3 in cloud mode, the data dir in local mode): `pair`
@@ -137,6 +138,24 @@ def tv_ack(request: Request, cid: str):
         if cid not in ids:
             store.put("acks", {"ids": (ids + [cid])[-50:]})
     return {"id": cid, "acked": True}
+
+
+class PlayIn(BaseModel):
+    t: float = Field(ge=0)
+
+
+@router.post("/games/{game_id}/tv/play", status_code=202)
+def tv_play(request: Request, game_id: str, body: PlayIn):
+    """The phone's "Play on the TV" (a search hit, phone token): a `play` command for this
+    game, which the TV's open Watch picks up from GET /tv/commands and acks. `tv`: a TV is
+    showing this game now (a fresh POST /tv/state), so the phone plays it there, not inline."""
+    if request.app.state.index.load(game_id) is None:
+        raise HTTPException(404, f"game {game_id} not found")
+    store = _store(request)
+    cmd = enqueue(store, "play", game_id, round(body.t, 2), source="phone")
+    tv = store.get("tv")
+    showing = tv.get("game_id") == game_id and time.time() - tv.get("at", 0) <= FRESH_S
+    return {"id": cmd["id"], "queued": True, "tv": showing}
 
 
 # --------------------------------------------------------------------------- the skill

@@ -17,7 +17,11 @@ import { Avatar } from "../components/Avatar";
 import { setQuery, useLocation } from "../router";
 import { useAsync } from "../ui";
 import { Problem } from "./QrUpload";
-import { highlightQueries } from "../../../../packages/tv-core/src/display";
+import {
+  highlightQueries,
+  isShortTrack,
+  MIN_SEEN_S,
+} from "../../../../packages/tv-core/src/display";
 import {
   exportPending,
   fmtClock,
@@ -54,6 +58,9 @@ const NEAR_S = 10;
 const REACH_S = 10;
 /** The 9:16 render takes tens of seconds; poll gently (D-87: shared Lambda concurrency). */
 const POLL_MS = 3000;
+/** Review's "Watch it": from 4 s before the play (as on the TV) to 3 s after. */
+const WATCH_LEAD_S = 4;
+const WATCH_TAIL_S = 3;
 
 type Win = { t_start: number; t_end: number };
 /** A panel's error → its message; a 401 also flips the whole page to "expired". */
@@ -655,6 +662,11 @@ function TagJob({ api, game, moments, fail }: JobProps) {
   const [busy, setBusy] = useState(false);
   const list = [...(profiles ?? []), ...made];
   const label = (p: Player) => p.name ?? `Player ${trackNo(p.id)}`;
+  // Tracker fragments (on screen under 5 s) wait behind one row, so the real players
+  // are the list; a fragment that gets a name joins it.
+  const [showShort, setShowShort] = useState(false);
+  const nShort = players.filter(isShortTrack).length;
+  const shown = showShort ? players : players.filter((p) => !isShortTrack(p));
 
   const tag = async (pid: string, profile: Profile | null) => {
     setBusy(true);
@@ -689,7 +701,7 @@ function TagJob({ api, game, moments, fail }: JobProps) {
         </p>
       ) : null}
       <ul className="phone-list">
-        {players.map((p) => (
+        {shown.map((p) => (
           <li key={p.id}>
             <button
               type="button"
@@ -760,6 +772,19 @@ function TagJob({ api, game, moments, fail }: JobProps) {
           </li>
         ))}
       </ul>
+      {nShort ? (
+        <button
+          type="button"
+          className="secondary wide-btn"
+          data-testid="tag-short-toggle"
+          aria-expanded={showShort}
+          onClick={() => setShowShort((s) => !s)}
+        >
+          {showShort
+            ? "Hide the short tracks"
+            : `${nShort} short track${nShort === 1 ? "" : "s"} (under ${MIN_SEEN_S} s on screen)`}
+        </button>
+      ) : null}
     </>
   );
 }
@@ -778,8 +803,27 @@ function ReviewJob({ api, game, moments, fail }: JobProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  // "Watch it": on the TV when a TV is showing this game, else here on the card
+  const [watch, setWatch] = useState<{
+    q: string;
+    t0: number;
+    t1: number;
+    onTv: boolean | null; // null: still asking
+  } | null>(null);
   const name = (pid: string) =>
     game.players.find((p) => p.id === pid)?.name ?? `Player ${trackNo(pid)}`;
+  const watchIt = (q: ReviewQuestion, t: number) => {
+    const w = {
+      q: q.id,
+      t0: Math.max(0, t - WATCH_LEAD_S),
+      t1: t + WATCH_TAIL_S,
+    };
+    setWatch({ ...w, onTv: null });
+    api.playOnTv(game.id, w.t0).then(
+      (onTv) => setWatch({ ...w, onTv }),
+      () => setWatch({ ...w, onTv: false }), // no TV to reach: play it here
+    );
+  };
 
   const answer = (opt: ReviewOption, value?: string) => {
     setBusy(true);
@@ -863,7 +907,37 @@ function ReviewJob({ api, game, moments, fail }: JobProps) {
                     {opt.label}
                   </button>
                 ))}
+                {q.t != null && q.kind !== "identity" ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    data-testid="review-watch"
+                    disabled={watch?.q === q.id && watch.onTv === null}
+                    onClick={() => watchIt(q, q.t as number)}
+                  >
+                    Watch it
+                  </button>
+                ) : null}
               </div>
+              {watch?.q === q.id && watch.onTv === true ? (
+                <p className="dim" role="status" data-testid="review-watch-note">
+                  Playing on the TV
+                </p>
+              ) : null}
+              {watch?.q === q.id && watch.onTv === false ? (
+                <>
+                  <WindowVideo
+                    src={api.mediaUrl(game, game.renditions.wide)}
+                    win={{ t_start: watch.t0, t_end: watch.t1 }}
+                    at={watch.t0}
+                    autoPlay
+                    testId="review-watch-video"
+                  />
+                  <p className="dim" role="status" data-testid="review-watch-note">
+                    No TV is showing this game, so it plays here.
+                  </p>
+                </>
+              ) : null}
               {typing?.q === q.id ? (
                 <form
                   onSubmit={(e) => {
@@ -908,6 +982,7 @@ function SearchJob({ api, game, fail }: JobProps) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState("");
   const [hit, setHit] = useState<SearchHit | null>(null);
+  const [tvNote, setTvNote] = useState("");
   const chips = useMemo(() => highlightQueries(game), [game]);
 
   const run = (raw: string) => {
@@ -985,13 +1060,35 @@ function SearchJob({ api, game, fail }: JobProps) {
         </p>
       ) : null}
       {hit ? (
-        <WindowVideo
-          src={api.mediaUrl(game, game.renditions.wide)}
-          win={hit}
-          at={hit.t_start}
-          autoPlay
-          testId="phone-search-preview"
-        />
+        <>
+          <WindowVideo
+            src={api.mediaUrl(game, game.renditions.wide)}
+            win={hit}
+            at={hit.t_start}
+            autoPlay
+            testId="phone-search-preview"
+          />
+          <button
+            type="button"
+            className="wide-btn"
+            data-testid="phone-search-tv"
+            disabled={tvNote === "Sending…"}
+            onClick={() => {
+              setTvNote("Sending…");
+              api.playOnTv(game.id, hit.t_start).then(
+                () => setTvNote("Playing on the TV"),
+                (e) => setTvNote(`Could not reach the TV: ${fail(e)}`),
+              );
+            }}
+          >
+            Play on the TV
+          </button>
+          {tvNote ? (
+            <p className="dim" role="status" data-testid="phone-search-tv-note">
+              {tvNote}
+            </p>
+          ) : null}
+        </>
       ) : null}
       {result && result.results.length === 0 ? (
         <p data-testid="phone-search-empty">Nothing in this game matches.</p>
@@ -1005,7 +1102,10 @@ function SearchJob({ api, game, fail }: JobProps) {
               aria-pressed={hit === h}
               data-testid="phone-search-hit"
               data-t-start={h.t_start}
-              onClick={() => setHit(h)}
+              onClick={() => {
+                setHit(h);
+                setTvNote("");
+              }}
             >
               <span className="hit-time">{fmtClock(h.t_start)}</span>
               <span className="row-text">{h.text}</span>

@@ -574,3 +574,120 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - a camera re-aim reads as a shot;
   - a notes upload route in the API (CLI only);
   - a per-game scoring override.
+
+## Demo readiness walk (2026-10-22, D-91)
+
+- Every demo beat was walked on real games:
+  - the CC BY Nottingham game;
+  - the volleyball game (local only);
+  - a fresh 45 s upload, Add game → phone upload → calibrate → 13 stages in about 40 s → Home.
+  - Status per beat, evidence and the morning list are in docs/demo-readiness.md.
+- The Fire TV was checked on the live API and the round-4 APK: open, follow, card, Stats, Review and Advice work. Free view, POV, Watch ways and Commentary wait for the Lambda redeploy and a re-process.
+- Fixed:
+  - Back from Review/Tips reopens Stats.
+  - Back from Highlights/Condensed goes to the full game.
+  - The Highlights count matches the reel.
+  - The phone clip default is the play (7 s, not 0.5 s).
+  - The phone has a Reel tab for the highlight reel, plus a TV phone-panel chip.
+  - Unnamed players read "Player N" on the phone.
+  - Home puts games waiting for an upload last.
+  - Calibration dots are numbered.
+  - The phone tab bar stays on one row.
+- Tests:
+  - Web Playwright 108 passed, 1 skipped.
+  - TV Playwright 124 passed, 3 skipped.
+  - tsc and eslint clean.
+  - Updated or added: TV-22, TV-27, TV-28, TV-29, S-60 Reel and momentClip.
+- Routed to other agents:
+  - follow: few boxes in Select, fragments, framing;
+  - events: no makes, review noise, 0.5 s windows, skewed distance advice;
+  - angles: near-empty Free view/Tier B, POV clipping, identical thumbnails.
+- Not done:
+  - Alexa commands on the TV;
+  - TV name presets;
+  - reel rendering end to end (runs on the runner);
+  - docs/demo-script.md still describes the synthetic build.
+
+## Score round 2 and demo-walk events items (2026-10-22, D-92)
+
+- Make or miss at the rim's edge is now "can't tell", not a miss; the Review queue asks it first. This covers the Q3 156 s make called a miss.
+- No more false shots from a camera re-aim (Q1 236 s) or a body under the rim (3x3 11.0 s).
+- The put-back at Q1 36 s was not a merge: the first miss is never seen at the rim.
+- Results (full table in D-92):
+  - Q1: shots P 1.0, R .90; labelled make/miss 1.0.
+  - Q3: P .80, R 1.0; make/miss 1.0; highlights P@5 0 → .2.
+  - 3x3: P 1.0, R 1.0; makes P 1.0, R 1.0; score error 4 → 2.
+- New hold-out, 2v2 park (`samples/truth/basketball_2v2park.json`, 10 attempts, 3 makes), ball only:
+  - The played rim is at top right; the round-1 brief named the far rim.
+  - Shots P 1.0, R .80; make/miss .714; makes P .60, R 1.0.
+  - Two wrong makes come from the camera standing beside the post.
+- Highlights rank detected plays first. A pickup 1-point make counts as an inside make; a shot of unknown outcome counts half.
+- `POST /games/{id}/notes` loads a play log as notes (docs/playlog.md). Notes are never merged into events.
+- Demo walk:
+  - Review asks at most 12 event questions, only ones that change score or stats: no inbound or 0:00 items, steals and rebounds named.
+  - Steal and rebound moments span 4 s before to 2 s after.
+  - Advice compares distance only among well-covered players.
+- No new model. Ball scan 15 s per 120 s 1080p clip with one hoop.
+- Not done: automatic rim finding, a learned ball detector, arc tracking, make or miss from the net. The live game needs a re-process for these to show on the TV.
+
+## Score round 3: tap the hoop, settle "can't tell" in Review (2026-10-22, D-95)
+
+- Phone calibration has a one-tap "Tap the hoop" after the fit (`rim_top`). The ball is watched at the tapped hoop.
+- Review asks "Make or miss?" first. On the TV, "Watch it" opens the play 4 s early and Back returns to Review; the score refreshes after each answer.
+- A pickup 1-point make is labelled "Basket", not "Free throw".
+- Tried and rejected (numbers in D-95):
+  - make or miss from net motion (a rim hit shakes the net as much as a make);
+  - a put-back visit split;
+  - a static-blob filter.
+- New park development set, `samples/truth/basketball_2v2park_dev.json` (11 attempts, 5 makes). Ball only: shots P 1.0, R .82; make/miss .667.
+- Highlights P@5 is unchanged (Q1 .4, Q3 .2). The ceilings are .6 and .4, and the gap is unknown outcomes plus no block detector, not ranking.
+- Needs: web deploy for the hoop tap, APK for "Watch it", and a re-process for the label fix.
+
+## Demo walk round 6: reel, Play on the TV, every stage on a fresh upload (2026-10-22, D-93)
+
+- Demo script rewritten for the real demo (docs/demo-script.md):
+  - 3–4 people on a half court in distinct colours, a phone on a tripod, uploaded live;
+  - beats with remote keys, what the audience sees and a fallback for each;
+  - filming rules from D-89/D-90; calibration dots dragged by hand.
+- Reel end to end on Nottingham: 9:16, 28 s, 5 segments, rendered in about 10 s.
+- "Play on the TV" from phone search now works on Fire TV and live (HTTP command queue). Rule search finds steals and rebounds, and hit labels read "Player 12 steal".
+- A fresh 45 s CC BY upload on a stack like the runner's (`REPLAY_PIPELINE=worker`, default opt-in stages):
+  - ready in about 4 min;
+  - thumbnails, 9 Do more tiles, 9 angle cuts, Free view, Player POV, Highlights and Condensed.
+- Phone Tag list hides short tracks and the card hides a mixed kit's team, once courtcam adds `seen_s` and `team_mixed`.
+- Tests:
+  - API 66 in the touched files, full suite run separately;
+  - web Playwright 109 passed (1 skipped);
+  - TV Playwright 125 passed (3 skipped);
+  - tsc, eslint and ruff clean.
+- Routed: the reel captions say "#P18", not "Player 18" (render/replay_render/gamedata.py).
+- Needs: Lambda redeploy, APK, web deploy, runner restart.
+- Court fit fail-safe (D-94): a fit the people disagree with (position or height) is `court.trusted: false` and filters nobody. Autocalib is still wrong on half-court phone frames. Players carry `seen_s` and `team_mixed`; follow-cam zooms in a little at the frame edge; Fire TV ring lag measured at 0–90 ms (no retune); ghost-box check measured, not built (D-89 round 4).
+- Second 2v2 check (D-89 round 5): there is now a hand-checked GT for the JaiArtHub clip. Before the fix the follow-cam was on the right person 48 % of the time; now it is 64 % (park: 94 %). People across the park no longer count toward a small game's size. The rest of the gap is outfits (three black tops), so the filming guidance now says: different tops, and calibrate by hand. The follow-cam edge zoom now applies to the sides only, with a little slack; the TV suite passes (127, 3 skipped).
+
+## Virtual views from the real players' pixels (2026-10-22, D-88)
+
+- Tier C is image-based now (`avatars/imageview.py`). Each tracked person is their own SAM cutout, stood at their tracked foot point on the reconstructed court. It fades to a kit-colour silhouette past 35–75° from the real camera, and out within 3 m of the virtual camera. Courts and walls the camera never saw are flat median colours.
+- Angles are wing, courtside and baseline (only within 60° of the real camera), plus POVs for the key player and the 5 nearest them. A POV hides its owner and never looks up more than 20°.
+- Every frame is labelled "VIRTUAL VIEW". TV badge "Virtual view"; the POV line reads "the real players placed on a reconstructed court, not a camera".
+- Free view and Tier B now show every tracked player. Before, SAM lost players mid-chunk and players who walked in were not prompted. Masked player-frames:
+  - Nottingham play: 73 % -> 99.8 %.
+  - Re-processed plays: 2310/2315 and 2412/2412.
+  - Volleyball: 2649/2650 and 2780/2782.
+  - 3x3: 524/525.
+- Each angle has its own poster jpg (middle frame); the Angles row shows it instead of one shared frame. The row stays on the play it opened on while the video plays under Do more (the volleyball row had swapped plays and POV names mid-browse).
+- Unnamed players read "Player 18" in reel captions and broadcast overlays (was "#p18").
+- Times on hfbox, per game of four highlights:
+  - Nottingham: SAM 116 s, Tier B 45 s, Tier C scene 215 s, 32 renders 202 s.
+  - Volleyball: 119 / 56 / 160 / 263 s.
+  - 3x3 proxy, two highlights: 23 / 14 / 30 / 58 s.
+  - A 240-frame POV: 20.2 s -> 4.3 s after the blur, blend and mask-cache fixes.
+- Proxy for the demo scenario: the fixed shot of a CC BY 3.0 3x3 game (Honza Nový), lens-corrected, with hand landmarks (docs/test-data.md 3.1b).
+- Evidence: web-build Playwright `ANGLES-real` on the 3x3 proxy and Nottingham (angles row, Tier B cut, virtual wing, POV and Up, Free view, moment link) passes.
+- Not done:
+  - no articulated proxy, so wide angles become silhouettes;
+  - a POV under the basket looks at stand-in walls;
+  - an outdoor clip gets plain stand-in walls;
+  - the stylized avatar renderer is kept for camera paths only;
+  - Tier C files from older runs stay on disk (not in the manifest).
+- Needs: runner update and re-process for the new angles, posters and masks; APK and web deploy for the TV changes; Lambda redeploy for poster signing.

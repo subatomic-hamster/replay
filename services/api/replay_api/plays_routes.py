@@ -24,6 +24,8 @@ PLAYS_REL, TRIGGERS_REL, CLIPS_REL, SCORE_REL = (
     "clips.json",
     "score.json",
 )
+NOTES_REL = "notes.json"  # the uploader's play log (D-90); = moments.NOTES_REL
+NOTES_MAX_BYTES = 1_000_000
 SCHEMAS = {
     PLAYS_REL: ("replay.plays.v1", "plays"),
     TRIGGERS_REL: ("replay.triggers.v1", "triggers"),
@@ -208,3 +210,32 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
         # the file stays the whole timeline (the broadcast renderer reads it as is)
         edits.apply(gd, (SCORE_REL,))
         return entry
+
+    @app.post("/games/{game_id}/notes", status_code=201)
+    async def post_notes(request: Request, game_id: str):
+        """The uploader's own play log (CSV or JSON as the body, docs/playlog.md) as the
+        game's notes.json, replacing earlier notes. Shown as "Your note" moments; never
+        merged into events, score or stats (D-90). X-Replay-Key only (not a phone route)."""
+        storage = ctx(request).storage
+        game = game_or_404(request, game_id)
+        raw = await request.body()
+        if len(raw) > NOTES_MAX_BYTES:
+            raise HTTPException(413, f"a play log is at most {NOTES_MAX_BYTES} bytes")
+        try:
+            doc = adapter.user_notes(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        duration = (game.get("video") or {}).get("duration_s")
+        late = [e["t"] for e in doc["entries"] if duration and e["t"] > duration]
+        if late:
+            raise HTTPException(400, f"t {late[0]} is past the end of the video ({duration} s)")
+        storage.write_json(game_id, NOTES_REL, doc)
+        return {"notes": len(doc["entries"]), "label": doc["label"]}
+
+    @app.get("/games/{game_id}/notes")
+    def get_notes(request: Request, game_id: str):
+        """The uploader's notes as loaded (`replay.playlog.v1`), or an empty log."""
+        game_or_404(request, game_id)
+        p = ctx(request).storage.path(game_id, NOTES_REL)
+        return json.loads(p.read_text()) if p.is_file() else {
+            "schema": "replay.playlog.v1", "use": "notes", "entries": []}  # fmt: skip

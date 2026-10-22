@@ -39,6 +39,20 @@ def _track(tid: int, t0: float, t1: float, start_m, end_m, fps: int = 15) -> Cou
     return CourtTrack(tl, court, 1.0)
 
 
+def test_people_far_beyond_a_small_game_do_not_count_toward_its_size():
+    """The JaiArtHub 2v2 (D-89 round 5): people across the park behind the fence are a
+    third the players' height and there all clip long; counted, the 2v2 reads as 7."""
+    from courtcam.identity import near_tracks, roster_size
+
+    players = [_track(i, 0.0, 60.0, (float(i), 5.0), (float(i), 6.0)) for i in range(4)]
+    far = [_track(10 + j, 0.0, 60.0, (float(j), 20.0), (float(j), 20.0)) for j in range(3)]
+    for t in far:
+        t.tracklet.boxes[:, 3] = 35.0  # vs 120 px players
+    assert roster_size(players + far) == 7
+    assert roster_size(near_tracks(players + far)) == 4
+    assert near_tracks(players) == players  # nobody is far when all are alike
+
+
 def test_merges_across_a_short_gap_on_the_same_team():
     a = _track(1, 0.0, 4.0, (0.0, 5.0), (2.0, 6.0))
     b = _track(2, 4.8, 9.0, (2.5, 6.4), (5.0, 8.0))  # gap 0.8 s, 0.64 m away
@@ -117,6 +131,12 @@ def test_identify_caps_merged_players_at_max_and_prefers_fragmented_ones(tmp_pat
     assert len(players) == 4
     merged = [p for p in players if len(p.members) > 1]
     assert merged and set(merged[0].members) == {10, 11, 12, 13}
+
+    # an untrusted court fit (D-94): nobody is dropped for where the fit puts them
+    roomy = MERGE.model_copy(update={"players": MERGE.players.model_copy(update={"max": 20})})
+    with patch("courtcam.identity.sample_appearance", return_value=(hists, colors, None)):
+        kept = identify("unused.mp4", tracks, roomy, court_ok=False)
+    assert len(kept) == 11
 
 
 def test_split_teams_separates_two_jersey_clusters():
@@ -418,3 +438,25 @@ def test_roster_cuts_a_swap_and_solves_two_people_as_two_ids():
     spans = sorted(sorted((src[i], round(pieces[i].tracklet.t_start)) for i in g) for g in groups)
     assert spans == [[(0, 0), (2, 5)], [(0, 5), (1, 0)]]
     assert max(pieces[i].tracklet.t_end for i in groups[0] + groups[1] if src[i] == 2) < 9.0
+
+
+def test_game_players_carry_seen_seconds_and_a_mixed_kit_flag(tmp_path):
+    from courtcam.identity import PlayerTrack, read_players, to_models, write_players
+
+    def joined(a: CourtTrack, b: CourtTrack) -> CourtTrack:
+        cat = lambda f: np.concatenate([getattr(a.tracklet, f), getattr(b.tracklet, f)])  # noqa: E731
+        tl = Tracklet(a.track_id, cat("frames"), cat("times"), cat("boxes"), cat("confs"))
+        return CourtTrack(tl, np.vstack([a.court_m, b.court_m]), 1.0)
+
+    # boxes 0-1 s and 3-4 s: tracks/ fills the 2 s hole unless the id is a solved person
+    holed = joined(_track(1, 0.0, 1.0, (1, 1), (1, 1)), _track(1, 3.0, 4.0, (1, 1), (1, 1)))
+    players = [
+        PlayerTrack("p1", 0, "#FF0000", holed, (1,), off_kit=0.1),
+        PlayerTrack("p2", 1, "#0000FF", holed, (1,), solved=True, off_kit=0.6),
+        PlayerTrack("p3", 1, "#0000FF", _track(3, 0.0, 2.0, (1, 1), (1, 1)), (3,)),
+    ]
+    write_players(tmp_path / "players.json", players, {})
+    back, _ = read_players(tmp_path / "players.json")
+    models, _ = to_models(back)
+    got = {m.id: (m.seen_s, m.team_mixed) for m in models}
+    assert got == {"p1": (4.1, False), "p2": (2.2, True), "p3": (2.1, None)}

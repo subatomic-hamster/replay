@@ -41,6 +41,8 @@ WEIGHTS = {"audio": 0.85, "arms_up": 0.6, "speed": 0.35, "plays": 0.9}
 PLAY_VALUE = {1: 0.25, 2: 0.7, 3: 0.9}
 NOTABLE_VALUE = {"block": 0.7, "steal": 0.6}
 PLAY_HOLD_S = 3.0
+UNKNOWN_SHARE = 0.5  # a shot of unknown outcome: half a make's value (D-92)
+PLAY_FIRST = 0.3  # candidates with a play worth this much rank first (not a free throw)
 LOUDNESS_WITH_HYPE = 0.4  # raw loudness's share of the audio cue when courtcam's ran
 CANDIDATE_MIN = 0.4
 MIN_GAP_S = 8.0
@@ -163,16 +165,22 @@ def speed_score(game: Game) -> np.ndarray:
     return np.clip((fast - base - 1.0) / 2.5, 0.0, 1.0)
 
 
-def play_score(grid: np.ndarray, events: list[dict]) -> np.ndarray:
+def play_score(grid: np.ndarray, events: list[dict], outside: int = 3) -> np.ndarray:
     """Per grid sample: the best detected play in the last PLAY_HOLD_S — a make by its
-    points (`PLAY_VALUE`, 2 when unknown), a block or steal (`NOTABLE_VALUE`)."""
+    kind (`PLAY_VALUE`: a free throw, inside, or from `outside` points up; inside when
+    unknown), a block or steal (`NOTABLE_VALUE`). D-92: a shot whose outcome the ball
+    could not tell counts half (it rolled on the rim: worth a look either way), and a
+    pickup game's 1-point basket is an inside make, not a free throw."""
     out = np.zeros(len(grid))
     for e in events:
         if e.get("dismissed"):
             continue
         kind = e.get("type")
-        if kind == "shot" and e.get("made"):
-            v = PLAY_VALUE.get(int(e.get("points") or 2), PLAY_VALUE[2])
+        if kind == "shot" and e.get("made") is not False:
+            pts = int(e.get("points") or 0)
+            v = PLAY_VALUE[1 if e.get("cause") == "free_throw" else 3 if pts >= outside else 2]
+            if e.get("made") is None:
+                v *= UNKNOWN_SHARE
         elif kind in NOTABLE_VALUE:
             v = NOTABLE_VALUE[kind]
         else:
@@ -184,7 +192,8 @@ def play_score(grid: np.ndarray, events: list[dict]) -> np.ndarray:
 
 
 def candidates(t: np.ndarray, hype: np.ndarray, comps: dict, game: Game) -> list[dict]:
-    """Greedy peaks >= CANDIDATE_MIN, >= MIN_GAP_S apart, best first."""
+    """Greedy peaks >= CANDIDATE_MIN, >= MIN_GAP_S apart; detected plays first, each
+    group best first."""
     peak = (hype >= CANDIDATE_MIN) & (hype >= np.r_[hype[1:], 0]) & (hype > np.r_[0, hype[:-1]])
     taken: list[int] = []
     for i in sorted(np.nonzero(peak)[0], key=lambda i: -hype[i]):
@@ -211,7 +220,21 @@ def candidates(t: np.ndarray, hype: np.ndarray, comps: dict, game: Game) -> list
                 "components": {k: round(float(c[i]), 3) for k, c in comps.items()},
             }
         )
+    # D-92: a detected play first (by its value), the crowd and poses only after: a
+    # cheer with no play found is a guess, a make is a highlight (a free throw is not)
+    out.sort(key=lambda c: (c["components"].get("plays", 0.0) < PLAY_FIRST, -c["score"]))
     return out
+
+
+def _outside_points(game: Game) -> int:
+    """What a basket from outside the arc is worth in this game's sport (3; 2 in a 1s
+    and 2s pickup profile)."""
+    try:
+        from courtcam.profiles import load_profile
+
+        return int(load_profile(game.game.get("sport") or "basketball").scoring.outside)
+    except Exception:  # noqa: BLE001 — no courtcam or no such sport: full-court rules
+        return 3
 
 
 def hype_series(game: Game) -> dict:
@@ -242,7 +265,7 @@ def hype_series(game: Game) -> dict:
     if len(game.tracks.t) >= 3:
         comps["speed"] = np.interp(grid, game.tracks.t, speed_score(game), left=0.0, right=0.0)
         sources["speed"] = "tracks"
-    comps["plays"] = play_score(grid, game.events)
+    comps["plays"] = play_score(grid, game.events, _outside_points(game))
     if comps["plays"].any():
         sources["plays"] = "events.json"
     keep = np.ones(len(grid))

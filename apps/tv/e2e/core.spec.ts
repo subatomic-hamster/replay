@@ -135,6 +135,20 @@ test("follow-cam: moves on the first frame, then keeps a running player in the w
   expect(box![0] + box![2] / 2).toBeLessThan(rect[0] + rect[2] / 2);
 });
 
+test("follow-cam: near the frame edge it zooms in a little to keep the player centred", () => {
+  // Player 26 at 0:38 of the Nottingham game: box centre x 0.86, 0.08 of the frame tall.
+  const cam = createFollowCam(
+    fakeTracks(() => [at("p1", 0.848, 0.43, 0.08)]),
+    "p1",
+  );
+  run(cam, 0, 4);
+  const { rect } = cam.current();
+  const off = 0.86 - (rect[0] + rect[2] / 2);
+  expect(Math.abs(off)).toBeLessThan(0.025); // 0.06 with the 0.4 window
+  expect(rect[3]).toBeGreaterThanOrEqual(0.32 - 1e-6); // never past ~3.1x on 1080p
+  expect(rect[0] + rect[2]).toBeLessThanOrEqual(1 + 1e-9);
+});
+
 test("follow-cam: hands off only when unambiguous, never across teams or into a crowd", () => {
   const team: Record<string, number> = { p1: 0, p9: 0, p8: 0, p2: 0, p3: 1 };
   /** Follow p1 (on court until 5 s at x 0.5) for 6 s; which id is the camera on? */

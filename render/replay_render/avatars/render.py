@@ -18,6 +18,7 @@ player's eyes, turning to the rim before the release; net sports: looking across
 
 from __future__ import annotations
 
+import colorsys
 import time
 import warnings
 from pathlib import Path
@@ -30,7 +31,7 @@ from courtcam.profiles import load_profile
 from courtcam.render import open_encoder
 
 from ..camera import ease
-from ..graphics import distinct_team_colors
+from ..graphics import hex_rgb
 from ..virtual.tierb import (
     NEAR_M,
     View,
@@ -58,6 +59,8 @@ FLOOR, APRON, PAINT, LINE = (96, 146, 196), (54, 60, 70), (70, 105, 160), (240, 
 GREY = (205, 200, 196)
 SHOE = (40, 40, 44)
 RIM_R = 0.225
+NET_CLEAR_M = 1.0  # a camera this close to the net sees no mesh (net_prims)
+MAX_POV = 6  # virtual POVs per play: the key player and the 5 nearest them
 LIGHT = np.array([-0.5, -0.8])  # screen-space direction the light comes from (up-left)
 
 # (parent, child, radius m, part) — part: "team" jersey, "shorts", "limb" mannequin grey
@@ -76,18 +79,22 @@ def _tone(c, k: float) -> tuple[int, int, int]:
     return tuple(int(np.clip(v * k, 0, 255)) for v in c)
 
 
+def kit_color(hex_: str) -> tuple[int, int, int]:
+    """BGR of a kit colour as worn: the hue kept, the lightness only kept off pure black
+    and white so the capsule shading (dark rim, light stripe) still reads. A coloured kit
+    measured in a dim gym (a red shirt's median pixel is maroon) is lit back up; a black
+    or grey one stays as dark as it was."""
+    r, g, b = (v / 255 for v in hex_rgb(hex_))
+    hh, ll, ss = colorsys.rgb_to_hls(r, g, b)
+    lo = 0.4 if ss > 0.25 else 0.14
+    rgb = colorsys.hls_to_rgb(hh, min(max(ll, lo), 0.86), ss)
+    return tuple(round(v * 255) for v in rgb[::-1])  # type: ignore[return-value]
+
+
 def team_colors(doc: dict) -> list[tuple[int, int, int]]:
-    """BGR per player: the broadcast package's two legible, distinct team colours
-    (graphics.distinct_team_colors); grey for a player without a team."""
-    first = {}
-    for p in doc["players"]:
-        first.setdefault(p.get("team"), p.get("color") or "#888888")
-    pair = distinct_team_colors([first.get(0, "#C0392B"), first.get(1, "#2E86C1")])
-    out = []
-    for p in doc["players"]:
-        rgb = pair[p["team"]] if p.get("team") in (0, 1) else (150, 150, 150)
-        out.append(tuple(int(v) for v in rgb[::-1]))
-    return out
+    """BGR per player: the kit colour the scene measured for its team in the video
+    (`color`, avatars.scene.kit_teams); grey for a player without one."""
+    return [kit_color(p["color"]) if p.get("color") else (150, 150, 150) for p in doc["players"]]
 
 
 # --- the court -------------------------------------------------------------------------
@@ -249,15 +256,21 @@ def net_prims(left, right, view: View) -> list:
     a, b = np.asarray(left, float), np.asarray(right, float)
     h = a[2]
     quad = np.array([[*a[:2], 0.12], [*b[:2], 0.12], b, a])
+    # a camera close to the net (a POV at the net) would look through a dark screen of
+    # mesh: the net fades out over the last few metres, keeping only the posts and tape
+    eye, ab = view.centre[:2], (b - a)[:2]
+    s = float(np.clip((eye - a[:2]) @ ab / max(ab @ ab, 1e-9), 0.0, 1.0))
+    fade = float(np.clip((np.linalg.norm(eye - (a[:2] + s * ab)) - NET_CLEAR_M) / 3.0, 0, 1))
 
     def fn(c):
         if (view.depth(quad) <= NEAR_M).any():
             return
-        over = c.copy()
-        cv2.fillConvexPoly(over, np.round(view.project(quad) * 16).astype(np.int32),
-                           (40, 40, 40), cv2.LINE_AA, 4)  # fmt: skip
-        cv2.addWeighted(over, 0.45, c, 0.55, 0, c)
-        for u in np.linspace(0, 1, 25)[1:-1]:  # mesh
+        if fade > 0:
+            over = c.copy()
+            cv2.fillConvexPoly(over, np.round(view.project(quad) * 16).astype(np.int32),
+                               (40, 40, 40), cv2.LINE_AA, 4)  # fmt: skip
+            cv2.addWeighted(over, 0.45 * fade, c, 1 - 0.45 * fade, 0, c)
+        for u in np.linspace(0, 1, 25)[1:-1] if fade > 0.5 else ():  # mesh
             p = a + (b - a) * u
             _seg3d(c, view, [*p[:2], 0.12], p, (90, 90, 90), 1)
         for p in (a, b):
@@ -413,9 +426,9 @@ def camera_path(angle: str, doc: dict, joints: list[np.ndarray], size=OUT_SIZE) 
 # --- the render ------------------------------------------------------------------------
 
 
-def label(
-    canvas: np.ndarray, angle: str, synthetic: bool, title: str, method: str, who: str = ""
-) -> None:
+def label(canvas: np.ndarray, angle: str, synthetic: bool, method: str) -> None:
+    """The burned-in honesty label. No player names: the clients title the angle from
+    the live roster (a rename must show without a re-render)."""
     h, w = canvas.shape[:2]
     s = w / 1280.0
 
@@ -427,11 +440,7 @@ def label(
     cv2.rectangle(canvas, at(24, 24), at(34, 98), (90, 200, 120), -1)
     cv2.putText(canvas, "TIER C  3D", at(46, 54), font, 0.8 * s, (120, 230, 150), 1, cv2.LINE_AA)
     name = NAMES.get(angle.split("_", 1)[0] if angle.startswith("pov") else angle, angle.upper())
-    if who:  # whose eyes: the box fits ~22 characters
-        name = f"{name} {who[:10].upper()}"
     cv2.putText(canvas, name, at(46, 86), font, 0.8 * s, (245, 245, 245), 1, cv2.LINE_AA)
-    cv2.putText(canvas, title[:48], (int(24 * s), h - int(28 * s)), font, 0.7 * s,
-                (235, 235, 235), 1, cv2.LINE_AA)  # fmt: skip
     how = "MotionBERT lift" if method == "motionbert" else "analytic"
     note = f"3D reconstruction - stylized ({how})" + ("  |  SYNTHETIC" if synthetic else "")
     (tw, _), _ = cv2.getTextSize(note, small, 0.5 * s, 1)
@@ -500,15 +509,13 @@ def render_angle(
     painter = Painter(doc, size)
     views = camera_path(angle, doc, painter.joints, size)
     pov_id = pov_player(angle, doc) if angle.startswith("pov") else None
-    who = next((p.get("label") or p["id"] for p in doc["players"] if p["id"] == pov_id), "")
     n = doc["frames"]
     proc = open_encoder(Path(out_path), size, doc["fps"])
     assert proc.stdin is not None
     try:
         for f in range(n):
             canvas = painter.frame(f, views[f], angle, pov_id)
-            label(canvas, angle, bool(doc.get("synthetic")), doc.get("label") or "", doc["method"],
-                  who)  # fmt: skip
+            label(canvas, angle, bool(doc.get("synthetic")), doc["method"])
             proc.stdin.write(np.ascontiguousarray(canvas).tobytes())
             if progress:
                 progress((f + 1) / n)
@@ -525,14 +532,29 @@ def render_angle(
 
 
 def angles_for(doc_or_highlight: dict) -> list[str]:
-    """File-stem angles of a play: the four fixed ones + a virtual POV. A scene doc gives
-    one per player it reconstructed, the key player (the shooter, else the primary) first;
-    a highlight only the key player's."""
+    """File-stem angles of a play: the four fixed ones + virtual POVs. A scene doc gives
+    one per player it reconstructed (`MAX_POV` at most: the key player, the shooter else
+    the primary, first, then those nearest them); a highlight only the key player's."""
     shot = doc_or_highlight.get("shot") or {}
     pid = (
         doc_or_highlight.get("shooter") or shot.get("player_id") or doc_or_highlight.get("primary")
     )
     if "players" in doc_or_highlight:  # only players who are in 3D: no one else's eyes
-        ids = [p["id"] for p in doc_or_highlight["players"]]
-        return list(ANGLES) + [f"pov_{p}" for p in sorted(ids, key=lambda p: p != pid)]
+        return list(ANGLES) + [f"pov_{p}" for p in _pov_players(doc_or_highlight, pid)]
     return list(ANGLES) + ([f"pov_{pid}"] if pid else [])
+
+
+def _pov_players(doc: dict, key: str | None) -> list[str]:
+    """Whose POVs a scene gets: the key player, then the players closest to them over the
+    play, `MAX_POV` in all (each is a 3-6 s render; the far side of a 12-player volleyball
+    court adds cost, not views)."""
+    ids = [p["id"] for p in doc["players"]]
+    if key not in ids or not any(p.get("joints") for p in doc["players"]):
+        return sorted(ids, key=lambda p: p != key)[:MAX_POV]
+    pel = {
+        p["id"]: j[:, PELVIS, :2] for p, j in zip(doc["players"], joints_array(doc), strict=True)
+    }
+    with warnings.catch_warnings():  # never on court together: infinitely far
+        warnings.simplefilter("ignore", RuntimeWarning)
+        far = {p: np.nanmean(np.linalg.norm(pel[p] - pel[key], axis=1)) for p in ids}
+    return sorted(ids, key=lambda p: (p != key, np.nan_to_num(far[p], nan=np.inf)))[:MAX_POV]

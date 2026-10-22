@@ -8,6 +8,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PKG_ROOT = Path(__file__).resolve().parents[1]
+# Every upload gets replay angles (Tier A/B), Free view (scene) and the Tier C angles
+# with each tracked player's virtual POV, plus highlights and condensed, when
+# REPLAY_WORKER_STAGES is unset (D-84, "Angles and POV for every upload").
+# Set it to choose; "" runs none. Worker pipeline only.
+DEFAULT_WORKER_STAGES = ("hype", "condensed", "replays", "scene", "tierc_manifest")
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,7 @@ class Settings:
     autocalib_backend: str = "auto"
     # REPLAY_WORKER_STAGES="replays,scene": opt-in worker stages (default=False in the
     # worker, D-56/D-75) run on every upload after the default ones; worker pipeline only.
+    # from_env() defaults it to DEFAULT_WORKER_STAGES.
     worker_stages: tuple[str, ...] = ()
     # D-80 cloud mode (REPLAY_STORAGE=s3 + REPLAY_JOBS=s3, docs/aws-migration.md). The
     # three secrets come from SSM under `ssm_prefix` when it is set, else from env.
@@ -78,7 +84,9 @@ def from_env(**overrides) -> Settings:
         detector=env("REPLAY_DETECTOR", "yolo"),
         autocalib_backend=env("REPLAY_AUTOCALIB_BACKEND", "auto"),
         worker_stages=tuple(
-            s.strip() for s in env("REPLAY_WORKER_STAGES", "").split(",") if s.strip()
+            s.strip()
+            for s in env("REPLAY_WORKER_STAGES", ",".join(DEFAULT_WORKER_STAGES)).split(",")
+            if s.strip()
         ),
         s3_bucket=env("REPLAY_S3_BUCKET") or None,
         ssm_prefix=env("REPLAY_SSM_PREFIX") or None,

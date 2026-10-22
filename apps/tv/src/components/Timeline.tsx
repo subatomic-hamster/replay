@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     left: sp(1),
     bottom: sp(1),
     paddingHorizontal: sp(1.5),
-    borderRadius: px(8),
+    borderRadius: radius.chip, // the same full-round time badge as a moment card's
     backgroundColor: "rgba(18, 26, 35, 0.84)",
   },
   // Wider than the frame so a long label still fits on one line.

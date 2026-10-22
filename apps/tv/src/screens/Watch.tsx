@@ -16,9 +16,10 @@
 // back while it renders). Everything polls every 10 s while the game is still processing,
 // so moments arrive on the line and Do more's tiles light up.
 //
-// Do more (Wave 3): Follow player (player chips; pick on screen; Spotlight, Tag, Link once
-// a player is picked), Angles and Free view of the nearest play (AngleView replaces the
-// game video until Back, which resumes the game where it was), Watch (the ways), Stats
+// Do more (Wave 3): Follow player (pauses on the frame with a marker on every player: the
+// arrows hop between them, Select follows, Back cancels; Spotlight, Tag, Link once a
+// player is picked; the camera is computed on the device, D-82), Angles (always there), Free
+// view and Player POV of the nearest play, also from a moment (AngleView replaces the game video until Back, which resumes the game where it was), Watch (the ways), Stats
 // (StatsPanel, the right third), Commentary, On your phone (PhonePanel's QR handoff) and
 // Bookmark. Where the game was is remembered (resume.ts) every second and before leaving
 // (stored every 5 s, and at once on leaving), so a sub-screen's Back or Home's Resume
@@ -40,19 +41,24 @@ import {
   type RallyDoc,
 } from "../../../../packages/tv-core/src/discovery";
 import { fmtDuration } from "../../../../packages/tv-core/src/display";
-import { cropRectAt, mapBB } from "../../../../packages/tv-core/src/follow";
+import {
+  createFollowCam,
+  HANDOFF_MAX_GAP_S,
+  mapBB,
+} from "../../../../packages/tv-core/src/follow";
 import { followSource } from "../../../../packages/tv-core/src/followSource";
 import {
   nextFocus,
   type Direction,
 } from "../../../../packages/tv-core/src/spatial";
 import {
+  cutOrder,
+  povOf,
   tierBadge,
   type ReplayManifest,
 } from "../../../../packages/tv-core/src/replays";
 import { createTracksCache } from "../../../../packages/tv-core/src/tracksCache";
 import type {
-  CropPath,
   FeatureKey,
   Game,
   Moment,
@@ -62,9 +68,9 @@ import type {
 import { api } from "../api";
 import { AngleView } from "../components/AngleView";
 import { DoMoreLayer, type Tile } from "../components/DoMoreLayer";
-import { FollowFrame } from "../components/FollowFrame";
 import { MomentsLayer } from "../components/MomentsLayer";
 import { PhonePanel } from "../components/PhonePanel";
+import { PlayerCard } from "../components/PlayerCard";
 import { ProfilePicker } from "../components/ProfilePicker";
 import { SelectOverlay } from "../components/SelectOverlay";
 import { StatsPanel, type StatsExit } from "../components/StatsPanel";
@@ -99,11 +105,11 @@ import {
   useSessionMessages,
   type SessionMessage,
 } from "../session";
-import { color, px, radius, safe, sp, type } from "../theme";
+import { color, px, radius, safe, sp, teamColorMap, type } from "../theme";
 import { ApiErrorBanner, Fade, Hint, Loading, T, useAsync } from "../ui";
 
 type Mode = "wide" | "select" | "follow";
-type Layer = "moments" | "domore" | "stats" | "phone" | null;
+type Layer = "moments" | "domore" | "stats" | "phone" | "player" | null;
 /** A play's replay angles in place of the game video: the angle to open, or Free view. */
 interface Angle {
   playId: string;
@@ -237,10 +243,15 @@ export function Watch({
   const [roster, setRoster] = useState<Player[]>([]);
   const [pid, setPid] = useState<string | null>(initialPid ?? null);
   const [focusId, setFocusId] = useState<string | null>(initialPid ?? null);
-  const [crop, setCrop] = useState<CropPath | null>(null);
+  /** What select mode came from (Back returns there, playback as it was). */
+  const selectFrom = useRef<{ mode: Mode; playing: boolean } | null>(null);
   const [spotlight, setSpotlight] = useState(false);
   const [tagging, setTagging] = useState<string | null>(null);
   const [linking, setLinking] = useState<string | null>(null);
+  /** The player card's player (layer "player"); Moments filtered to one player. */
+  const [cardPid, setCardPid] = useState<string | null>(null);
+  const cardPlaying = useRef(false); // playing when the card opened: Back resumes
+  const [momentsOf, setMomentsOf] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const renderAsked = useRef<string | null>(null);
   const [version, bump] = useState(0);
@@ -250,10 +261,6 @@ export function Watch({
   /** Where the game was when an angle opened (Back resumes it there). */
   const angleReturn = useRef<{ t: number; play: boolean } | null>(null);
   const [near, setNear] = useState<ReplayManifest | null>(null);
-  const { data: profiles } = useAsync(
-    () => api.listProfiles().catch(() => []),
-    [],
-  );
   /** Seek + play once the (next) source knows its duration: deep link, a way's first
    *  play, the swap to or from the condensed rendition, the return from an angle. A plain
    *  open of the full game starts where it was left (resume.ts). */
@@ -290,15 +297,19 @@ export function Watch({
   // ---------------------------------------------------------------- data
   const loadMoments = useCallback(
     () =>
-      api
-        .getMoments(gameId)
+      // through a promise: the mock throws synchronously for an unknown game id, and
+      // that must reach the error banner, not crash the screen
+      Promise.resolve()
+        .then(() => api.getMoments(gameId))
         .then(setMoments, () => {})
         .finally(() => setMomentsRead(true)),
     [gameId],
   );
   useEffect(() => {
     loadMoments();
-    api.getRallies(gameId).then(setRallies, () => setRallies(null));
+    Promise.resolve()
+      .then(() => api.getRallies(gameId))
+      .then(setRallies, () => setRallies(null));
   }, [gameId, loadMoments]);
 
   const processing = !!info && info.status !== "ready";
@@ -397,10 +408,6 @@ export function Watch({
     if (settle(handle)) handle?.pause();
     else handle?.toggle();
   }, [handle, settle]);
-  const pause = useCallback(() => {
-    settle(handle);
-    handle?.pause();
-  }, [handle, settle]);
 
   /** Note where the game is (resume.ts): a queued start while one is pending, a seek's
    *  target while seeking. Game time only (not the condensed rendition's clock). */
@@ -446,21 +453,29 @@ export function Watch({
     if (mode !== "follow") setRendering(false);
   }, [mode]);
 
-  // D-6 client follow-cam: the crop path for the followed player.
-  useEffect(() => {
-    if (!source.useCrop || !pid || !game) {
-      setCrop(null);
-      return;
-    }
-    let on = true;
-    api.getCropPath(game, pid).then(
-      (c) => on && setCrop(c),
-      () => on && setCrop(null),
-    );
-    return () => {
-      on = false;
-    };
-  }, [source.useCrop, pid, game]);
+  // D-82 client follow-cam: computed on the device every frame from the tracks chunks
+  // already in memory (the player was picked from them), so it moves at once. One camera
+  // per pick: it keeps its hand-offs across Back (the ring stays on in the wide shot).
+  const rosterRef = useRef(roster);
+  rosterRef.current = roster;
+  const vw = game?.video.width ?? 16;
+  const vh = game?.video.height ?? 9;
+  const cam = useMemo(
+    () =>
+      tracks && pid
+        ? createFollowCam(
+            tracks,
+            pid,
+            vw / vh,
+            (id) => rosterRef.current.find((p) => p.id === id)?.team,
+          )
+        : null,
+    [tracks, pid, vw, vh],
+  );
+  /** The roster id of the player being followed now (null when not following), for
+   *  anything that shows who it is (the player card). The camera may be on a later track
+   *  id of the same person after a hand-off: `cam.current().id`. */
+  const followedId = mode === "follow" ? pid : null;
 
   // `version` bumps when a tracks chunk lands; the cache reads it internally.
   const players = useMemo(
@@ -749,7 +764,7 @@ export function Watch({
   }, [chrome, handle, layer, seekV, mode]);
 
   // The Stats panel and the phone layer cover the transport's corners: it steps aside.
-  const overlay = layer === "stats" || layer === "phone";
+  const overlay = layer === "stats" || layer === "phone" || layer === "player";
   const shown =
     !overlay &&
     (chrome || layer !== null || seekV !== null || mode === "select");
@@ -775,6 +790,35 @@ export function Watch({
     },
     [commit, handle, settle],
   );
+
+  /** The player card (D-83) for `id`: the game pauses on the frame; Back resumes it if
+   *  it was playing. */
+  const openCard = useCallback(
+    (id: string) => {
+      if (seekRef.current) commit();
+      if (handle) {
+        cardPlaying.current = settle(handle) || !handle.paused();
+        handle.pause();
+      }
+      setCardPid(id);
+      setLayer("player");
+    },
+    [commit, handle, settle],
+  );
+  const closeCard = useCallback(
+    (resume = true) => {
+      setLayer(null);
+      if (resume && cardPlaying.current) handle?.play();
+      cardPlaying.current = false;
+      lastKey.current = Date.now();
+      setChrome(true);
+    },
+    [handle],
+  );
+  // Moments filtered to one player (the card's "Their moments") only while it is open.
+  useEffect(() => {
+    if (layer !== "moments") setMomentsOf(null);
+  }, [layer]);
 
   /** A play's angles (or Free view) in place of the game video; the game pauses where it
    *  is and its player unmounts (one decoder at a time on the Fire TV). */
@@ -806,16 +850,44 @@ export function Watch({
     lastKey.current = Date.now();
   }, []);
 
-  /** Follow a player from Do more's chips: in place, playback as it was. */
-  const follow = useCallback(
-    (id: string) => {
-      setLayer(null);
-      setPid(id);
-      setFocusId(id);
-      setMode("follow");
-      poke();
+  /** Do more → Follow player: pause on the frame with a marker on every player; the
+   *  arrows hop between them, Select follows, Back goes back (W3, REPLAY_PLAN §1). Focus
+   *  starts on whoever the camera is on, else the leftmost player. */
+  const startSelect = useCallback(() => {
+    if (!handle) return;
+    const playing = settle(handle) || !handle.paused();
+    // picking again from Do more inside select mode keeps where it first came from
+    if (mode !== "select" || !selectFrom.current)
+      selectFrom.current = { mode: mode === "select" ? "wide" : mode, playing };
+    handle.pause();
+    setLayer(null);
+    // On whoever the camera is on; lost, on the player nearest where they were last seen.
+    const v = cam && pid ? cam.current() : null;
+    if (v?.box) setFocusId(v.id);
+    else if (v?.last) {
+      const [lx, ly] = [v.last[0] + v.last[2] / 2, v.last[1] + v.last[3] / 2];
+      const d = (p: { bb: number[] }) =>
+        Math.hypot(p.bb[0] + p.bb[2] / 2 - lx, p.bb[1] + p.bb[3] / 2 - ly);
+      const near = [...players].sort((a, b) => d(a) - d(b))[0];
+      if (near) setFocusId(near.id);
+    }
+    setMode("select");
+    poke();
+  }, [handle, settle, mode, cam, pid, players, poke]);
+
+  /** Leave select mode: following `id`, or (null) back where it came from; playback
+   *  resumes if it was playing. */
+  const endSelect = useCallback(
+    (id: string | null) => {
+      const from = selectFrom.current;
+      selectFrom.current = null;
+      if (id) {
+        setPid(id);
+        setMode("follow");
+      } else setMode(from?.mode ?? "wide");
+      if (from?.playing) handle?.play();
     },
-    [poke],
+    [handle],
   );
 
   const leave = useCallback(
@@ -913,20 +985,29 @@ export function Watch({
           if (mode !== "select") scrubPress(a === "seek-fwd" ? 1 : -1);
           break;
         case "menu":
-          openLayer("domore");
+          // D-83: following someone, Menu is their player card; else Do more (as Up).
+          if (mode === "follow" && pid) openCard(pid);
+          else openLayer("domore");
           break;
         case "select":
           if (seeking) commit();
           else if (mode === "select") {
-            if (!focusId) break;
-            // W4: follow at the same timestamp; playback state is left as-is (S-19).
-            setPid(focusId);
-            setMode("follow");
-          } else toggle();
+            // W4: follow at the same timestamp, playing again if it was (S-19).
+            if (focusId) endSelect(focusId);
+          } else if (
+            mode === "follow" &&
+            (cam?.current().lost ?? 0) > HANDOFF_MAX_GAP_S
+          )
+            startSelect(); // lost sight of them: pick again, near where they were
+          else toggle();
           break;
         case "playpause":
           if (seeking) commit(true);
-          else toggle();
+          else if (mode === "select" && focusId) {
+            // "pick one, press play": follow them, playing
+            if (selectFrom.current) selectFrom.current.playing = true;
+            endSelect(focusId);
+          } else toggle();
           break;
         case "prev-event":
         case "next-event":
@@ -935,6 +1016,7 @@ export function Watch({
           break;
         case "back":
           if (seeking) cancelSeek();
+          else if (mode === "select") endSelect(null);
           else if (mode !== "wide") setMode("wide");
           else if (chrome) setChrome(false);
           else leave("library");
@@ -976,6 +1058,11 @@ export function Watch({
       toggle,
       leave,
       remember,
+      endSelect,
+      pid,
+      openCard,
+      cam,
+      startSelect,
     ],
   );
   useDpad(onAction, !tagging && !linking && layer === null && !angle);
@@ -1019,6 +1106,22 @@ export function Watch({
       Math.abs((b.t_start + b.t_end) / 2 - t),
   )[0];
   const nearId = nearestReplay?.play_id;
+  /** The replay whose window holds a moment: Moments → Down opens its angles. */
+  const replayOf = useCallback(
+    (m: Moment) =>
+      (replays ?? []).find(
+        (r) => m.t >= r.t_start - 0.5 && m.t <= r.t_end + 0.5,
+      ),
+    [replays],
+  );
+  const momentHasAngles = useCallback((m: Moment) => !!replayOf(m), [replayOf]);
+  const momentAngles = useCallback(
+    (m: Moment) => {
+      const r = replayOf(m);
+      if (r) openAngle(r.play_id, 0);
+    },
+    [replayOf, openAngle],
+  );
   useEffect(() => {
     if (!nearId) return;
     let on = true;
@@ -1073,10 +1176,15 @@ export function Watch({
   // An untagged player reads "Player 3" (track p3), as on the Moments chips.
   const targetName = (id: string) =>
     roster.find((p) => p.id === id)?.name ?? `Player ${id.replace(/^p/, "")}`;
-  const photo = (p: Player) =>
-    (p.profile_id &&
-      profiles?.find((x) => x.profile_id === p.profile_id)?.photo_url) ||
-    null;
+  // The drawn team colours (in team order, so the pair keeps which side is darker), as
+  // on the select markers: the ring and the Following chip's dot use them too.
+  const ink = teamColorMap(
+    [...roster]
+      .sort((a, b) => (a.team ?? 0) - (b.team ?? 0))
+      .map((r) => r.color_hex),
+  );
+  const followTint =
+    (followName?.color_hex && ink.get(followName.color_hex)) || color.accent;
   const nHype = hype?.candidates.length ?? 0;
   const hasRallies =
     (rallies?.n ?? 0) > 0 || rallies?.condensed.status === "done";
@@ -1106,44 +1214,46 @@ export function Watch({
       run: () => startWay("condensed"),
     }),
   ];
-  const pickOnScreen = close(() => {
-    pause();
-    setMode("select");
-  });
-  // Follow player: the roster as chips, picking on screen, and once a player is picked
-  // (followed, or the focused box) Spotlight, Tag and Link for them.
-  const followRow: Tile[] = [
-    ...roster.map((p) => ({
-      id: `follow-${p.id}`,
-      label: targetName(p.id),
-      avatar: { name: targetName(p.id), photo: photo(p) },
-      on: mode === "follow" && pid === p.id,
-      run: () => follow(p.id),
-    })),
-    { id: "follow-pick", label: "Pick on screen", run: pickOnScreen },
-    ...(tagTarget
-      ? [
-          {
-            id: "action-spotlight",
-            label: spotlight ? "Spotlight on" : "Spotlight off",
-            on: spotlight,
-            run: () => setSpotlight((s) => !s),
-          },
-          {
-            id: "action-tag",
-            label: `Tag ${targetName(tagTarget)}`,
-            run: close(() => setTagging(tagTarget)),
-          },
-          {
-            id: "action-link-profile",
-            label: "Link profile",
-            run: close(() => setLinking(tagTarget)),
-          },
-        ]
-      : []),
-  ];
+  // Follow player: picking happens on the video (startSelect). Once a player is picked
+  // (followed, or the focused marker) the tile opens a row: pick again, Spotlight, Tag
+  // and Link for them; with nobody picked it goes straight to picking.
+  const followRow: Tile[] = tagTarget
+    ? [
+        {
+          id: "follow-pick",
+          label: mode === "follow" ? "Pick another player" : "Pick a player",
+          run: startSelect,
+        },
+        {
+          // D-83: the player card (also the remote's Menu while following)
+          id: "follow-card",
+          label: "Player details",
+          sub: targetName(tagTarget),
+          run: () => openCard(tagTarget),
+        },
+        {
+          id: "action-spotlight",
+          label: spotlight ? "Spotlight on" : "Spotlight off",
+          on: spotlight,
+          run: () => setSpotlight((s) => !s),
+        },
+        {
+          id: "action-tag",
+          label: `Tag ${targetName(tagTarget)}`,
+          run: close(() => setTagging(tagTarget)),
+        },
+        {
+          id: "action-link-profile",
+          label: "Link profile",
+          run: close(() => setLinking(tagTarget)),
+        },
+      ]
+    : [];
   // Angles: the nearest play's angles as thumbnails (the play's frame; the API has no
-  // per-angle poster yet), Free view last when the play has a scene.
+  // per-angle poster yet), its players' virtual POVs as one (the key player's; Up in the
+  // angle, or Player POV's chips, picks another), Free view last when the play has a
+  // scene. A game with no replay angles still has its views now: the recorded camera
+  // and a follow cam.
   const play = near && near.play_id === nearestReplay?.play_id ? near : null;
   const playT = nearestReplay
     ? (nearestReplay.t_start + nearestReplay.t_end) / 2
@@ -1155,15 +1265,20 @@ export function Watch({
       ) : null}
     </View>
   );
+  const povLabel = (p: string) => `Virtual POV · ${targetName(p)}`;
   const angleRow: Tile[] = play
     ? [
-        ...play.angles.map((a, i) => ({
-          id: `angle-${a.id}`,
-          label: a.label,
-          sub: tierBadge(a.tier),
-          art: frame,
-          run: () => openAngle(play.play_id, i),
-        })),
+        ...cutOrder(play.angles, -1).map((i) => {
+          const a = play.angles[i];
+          const p = povOf(a);
+          return {
+            id: `angle-${a.id}`,
+            label: p ? povLabel(p) : a.label,
+            sub: p ? "3D reconstruction" : tierBadge(a.tier),
+            art: frame,
+            run: () => openAngle(play.play_id, i),
+          };
+        }),
         ...(play.scene_url
           ? [
               {
@@ -1177,6 +1292,70 @@ export function Watch({
           : []),
       ]
     : [];
+  const nowFrame = (
+    <View style={styles.thumb}>
+      {storyboard ? (
+        <SpriteFrame storyboard={storyboard} t={t} width={px(304)} />
+      ) : null}
+    </View>
+  );
+  const nowRow: Tile[] = [
+    {
+      id: "angle-recorded",
+      label: "Recorded camera",
+      sub: "The game's own camera",
+      art: nowFrame,
+      on: true,
+      run: closeLayer,
+    },
+    ...(roster.length > 0 && game.tracks.chunks > 0
+      ? [
+          {
+            id: "angle-follow",
+            label: "Follow cam",
+            sub: "Pick a player on screen",
+            art: nowFrame,
+            run: startSelect,
+          },
+        ]
+      : []),
+  ];
+  const anglesF = feature("angles");
+  const anglesTile: Tile = nearestReplay
+    ? {
+        id: "nav-replays",
+        label: "Angles",
+        sub: `${nearestReplay.label} · ${fmtDuration(nearestReplay.t_start)}`,
+        view: "thumbs",
+        children: angleRow,
+        run: () => openAngle(nearestReplay.play_id, 0),
+      }
+    : {
+        // always here: say why there are no replay angles, offer the views there are
+        id: "nav-replays",
+        label: "Angles",
+        sub:
+          anglesF?.state === "pending"
+            ? `Replay angles getting ready, ${(etaText(anglesF.eta_s) || "soon").replace(/ /g, " ")}`
+            : "No replay angles for this game",
+        view: "thumbs",
+        children: nowRow,
+      };
+  // Player POV: each tracked player's virtual POV of the nearest play, as player chips.
+  const povRow: Tile[] = play
+    ? play.angles.flatMap((a, i) => {
+        const p = povOf(a);
+        return p
+          ? [
+              {
+                id: `pov-${p}`,
+                label: targetName(p),
+                run: () => openAngle(play.play_id, i),
+              },
+            ]
+          : [];
+      })
+    : [];
   const tiles: Tile[] = [
     ...tile(
       "follow",
@@ -1187,24 +1366,24 @@ export function Watch({
         sub:
           mode === "follow" && pid
             ? `Following ${targetName(pid)}`
-            : "Pick a player",
-        view: "chips",
+            : "Pick a player on screen",
         children: followRow,
+        run: startSelect,
       },
     ),
-    ...tile("angles", !!nearestReplay, {
-      id: "nav-replays",
-      label: "Angles",
-      sub: nearestReplay?.label ?? "Replays of a play",
-      view: "thumbs",
-      children: angleRow,
-      run: () => nearestReplay && openAngle(nearestReplay.play_id, 0),
-    }),
+    anglesTile,
     ...tile("free_view", !!play?.scene_url, {
       id: "action-free-view",
       label: "Free view",
       sub: "Orbit this play",
       run: () => play && openAngle(play.play_id, "free"),
+    }),
+    ...tile("pov", povRow.length > 0, {
+      id: "action-pov",
+      label: "Player POV",
+      sub: "Virtual, through a player's eyes",
+      view: "chips",
+      children: povRow,
     }),
     ...(wayTiles.length > 1
       ? [
@@ -1261,14 +1440,20 @@ export function Watch({
       />
     );
   }
-  const cropRect = crop ? cropRectAt(crop, t) : null;
-  const spotPlayers = players
-    .filter((p) => p.id === pid)
-    .map((p) => ({ ...p, bb: mapBB(p.bb, cropRect) }));
+  // W6 spotlight while following: the camera's last frame (box and crop), at render rate.
+  const view = cam?.current();
+  // Gone past a hand-off's reach (an occlusion the tracker did not bridge): say so, and
+  // Select picks again near where they were, instead of a camera parked on nobody.
+  const lostSight =
+    mode === "follow" && !!view && view.lost > HANDOFF_MAX_GAP_S;
+  const spotPlayers =
+    view?.box && pid ? [{ id: pid, bb: mapBB(view.box, view.rect) }] : [];
   const onBroadcast = commentaryOn && !!broadcast && !condensedSrc;
   const src =
     condensedSrc ?? (onBroadcast && broadcast ? broadcast.url : source.src);
-  const showFollowFrame = !!pid && mode !== "select" && src === wideUrl;
+  // The camera runs (and the ring shows) on the wide shot only: track boxes describe it.
+  const showFollowFrame =
+    !!cam && !!pid && mode !== "select" && src === wideUrl;
   const stageW = Math.min(winW, (winH * 16) / 9);
   const caption = commentaryOn && !layer ? captionAt(lines, t) : null;
   const rally = condensedSrc
@@ -1300,6 +1485,7 @@ export function Watch({
         layer: layer ?? "",
         way,
         broadcast: onBroadcast ? "true" : "false",
+        followed: followedId ?? "",
       }}
     >
       <View style={{ width: stageW }}>
@@ -1310,7 +1496,17 @@ export function Watch({
           ref={setHandle}
           poster={artFor(gameId)}
           src={src}
-          crop={!onBroadcast && !condensedSrc && source.useCrop ? crop : null}
+          follow={
+            showFollowFrame && cam && pid
+              ? {
+                  cam,
+                  pid,
+                  zoom: mode === "follow" && source.useCrop,
+                  label: targetName(pid),
+                  tint: followTint,
+                }
+              : null
+          }
           muted={!onBroadcast}
         >
           {mode === "select" ? (
@@ -1330,15 +1526,6 @@ export function Watch({
               showBoxes={false}
             />
           ) : null}
-          {showFollowFrame && pid ? (
-            <FollowFrame
-              pid={pid}
-              label={followName?.name ?? pid}
-              players={players}
-              t={t}
-              crop={source.useCrop ? crop : null}
-            />
-          ) : null}
         </PlayerSurface>
 
         <Animated.View
@@ -1349,10 +1536,11 @@ export function Watch({
         >
           <Fade side="top" length={px(240)} strength={0.7} />
           <Fade side="bottom" length={px(420)} strength={0.85} />
-          <View style={styles.top}>
+          {/* Do more slides in from the top, over this: the title would show through it */}
+          <View style={[styles.top, layer === "domore" && { opacity: 0 }]}>
             {mode === "select" ? (
               <T style={type.meta} testID="select-hint">
-                Pick a player, then Select to follow
+                Arrows move between players, Select follows, Back cancels
               </T>
             ) : mode === "follow" ? null : (
               <T
@@ -1382,14 +1570,11 @@ export function Watch({
               testID="followcam-active"
               dataSet={{ playerId: pid ?? "" }}
             >
-              <View
-                style={[
-                  styles.teamDot,
-                  { backgroundColor: followName?.color_hex ?? color.chalk },
-                ]}
-              />
+              <View style={[styles.teamDot, { backgroundColor: followTint }]} />
               <T style={type.meta}>
-                {pid ? `Following ${targetName(pid)}` : ""}
+                {pid
+                  ? `${lostSight ? "Lost sight of" : "Following"} ${targetName(pid)}`
+                  : ""}
               </T>
               {rendering ? (
                 <T style={[type.meta, styles.dim]} testID="rendering-badge">
@@ -1397,7 +1582,13 @@ export function Watch({
                 </T>
               ) : null}
             </View>
-            {shown ? (
+            {lostSight ? (
+              <View testID="follow-repick">
+                <Hint k="Select" style={styles.stopHint}>
+                  Pick again
+                </Hint>
+              </View>
+            ) : shown ? (
               <Hint k="Back" style={styles.stopHint}>
                 Stop following
               </Hint>
@@ -1441,7 +1632,11 @@ export function Watch({
 
         {layer === "moments" ? (
           <MomentsLayer
-            moments={moments}
+            moments={
+              momentsOf
+                ? moments.filter((m) => m.player?.id === momentsOf)
+                : moments
+            }
             t={layerT}
             empty={
               feature("moments")?.state === "pending"
@@ -1453,6 +1648,8 @@ export function Watch({
             onJump={toMoment}
             onClose={closeLayer}
             onPlayPause={toggle}
+            hasAngles={momentHasAngles}
+            onAngles={momentAngles}
           />
         ) : null}
         {layer === "domore" ? (
@@ -1479,6 +1676,63 @@ export function Watch({
             onPlayPause={toggle}
           />
         ) : null}
+        {layer === "player" && cardPid
+          ? (() => {
+              const card = roster.find((p) => p.id === cardPid) ?? {
+                id: cardPid,
+                name: null,
+                team: 0,
+              };
+              const followed = mode === "follow" && pid === cardPid;
+              const profileId = card.profile_id;
+              return (
+                <PlayerCard
+                  game={game}
+                  player={card}
+                  tint={
+                    (card.color_hex && ink.get(card.color_hex)) || color.accent
+                  }
+                  following={followed}
+                  moments={
+                    moments.filter((m) => m.player?.id === cardPid).length
+                  }
+                  onRenamed={(p) =>
+                    setRoster((prev) =>
+                      prev.map((r) => (r.id === p.id ? { ...r, ...p } : r)),
+                    )
+                  }
+                  onFollow={() => {
+                    if (followed) setMode("wide");
+                    else if (mode === "select") endSelect(cardPid);
+                    else {
+                      setPid(cardPid);
+                      setMode("follow");
+                    }
+                    closeCard();
+                  }}
+                  onMoments={() => {
+                    closeCard();
+                    setMomentsOf(cardPid);
+                    openLayer("moments");
+                  }}
+                  onProfile={
+                    profileId
+                      ? () => {
+                          remember(true);
+                          navigate({
+                            name: "profile",
+                            profileId,
+                            from: gameId,
+                          });
+                        }
+                      : undefined
+                  }
+                  onClose={closeCard}
+                  onPlayPause={toggle}
+                />
+              );
+            })()
+          : null}
       </View>
 
       {tagging ? (

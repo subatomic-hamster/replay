@@ -96,6 +96,10 @@ export function SelectOverlay({
           const team =
             (info?.color_hex && ink.get(info.color_hex)) || color.dot;
           const isFocused = p.id === focusId;
+          // Names only for players someone tagged or linked; the rest stay anonymous, by
+          // track number, and only the focused one carries a label (10 tags is noise).
+          const name = info?.name ?? null;
+          const label = name ?? `Player ${p.id.replace(/^p/, "")}`;
           return (
             <View
               key={p.id}
@@ -120,19 +124,24 @@ export function SelectOverlay({
               ]}
             >
               {/* A wide row above the box, so the label sizes to its text, not the box. */}
-              <View style={styles.labelRow}>
-                <T
-                  testID={`player-label-${p.id}`}
-                  style={[
-                    styles.label,
-                    isFocused
-                      ? { backgroundColor: color.accent, color: color.onAccent }
-                      : { backgroundColor: team, color: inkOn(team) },
-                  ]}
-                >
-                  {info?.name ?? p.id}
-                </T>
-              </View>
+              {isFocused || name ? (
+                <View style={styles.labelRow}>
+                  <T
+                    testID={`player-label-${p.id}`}
+                    style={[
+                      styles.label,
+                      isFocused
+                        ? {
+                            backgroundColor: color.accent,
+                            color: color.onAccent,
+                          }
+                        : { backgroundColor: team, color: inkOn(team) },
+                    ]}
+                  >
+                    {label}
+                  </T>
+                </View>
+              ) : null}
             </View>
           );
         })}

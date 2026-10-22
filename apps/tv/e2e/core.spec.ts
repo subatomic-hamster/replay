@@ -1,6 +1,11 @@
 // Pure-logic checks for the modules apps/tv shares with apps/web (no page).
 import { expect, test } from "@playwright/test";
-import { cropTransform } from "../../../packages/tv-core/src/follow";
+import {
+  createFollowCam,
+  cropTransform,
+} from "../../../packages/tv-core/src/follow";
+import type { TrackPlayer } from "../../../packages/tv-core/src/types";
+import { createClock } from "../../../packages/tv-core/src/clock";
 import {
   nextFocus,
   type FocusTarget,
@@ -71,6 +76,177 @@ test("follow: cropTransform makes the crop rect fill the viewport", () => {
   // The rect's top-left lands on the viewport origin: sx*0.3*W + tx = 0.
   expect(sx * 0.3 * 1920 + tx).toBeCloseTo(0, 6);
   expect(sy * 0.22 * 1080 + ty).toBeCloseTo(0, 6);
+});
+
+// D-82 follow-cam on synthetic tracks: `who(t)` lists the boxes on court at t.
+const fakeTracks = (who: (t: number) => TrackPlayer[]) => ({ playersAt: who });
+const at = (id: string, x: number, y = 0.4, h = 0.16): TrackPlayer => ({
+  id,
+  bb: [x, y, h * 0.3, h],
+});
+/** Run the camera at 60 fps from t0 to t1 (media time = wall time, playing). */
+function run(
+  cam: ReturnType<typeof createFollowCam>,
+  t0: number,
+  t1: number,
+  each?: (t: number, v: ReturnType<typeof cam.step>) => void,
+  zoom = true,
+) {
+  for (let t = t0; t <= t1 + 1e-9; t += 1 / 60) {
+    const v = cam.step(t, 1 / 60, zoom); // not inside `each?.()`: it would skip the step
+    each?.(t, v);
+  }
+}
+const inside = (b: number[], r: number[]) =>
+  b[0] >= r[0] - 1e-9 &&
+  b[0] + b[2] <= r[0] + r[2] + 1e-9 &&
+  b[1] >= r[1] - 1e-9 &&
+  b[1] + b[3] <= r[1] + r[3] + 1e-9;
+
+test("follow-cam: moves on the first frame, then keeps a running player in the window", () => {
+  // Across the court and back in 8 s, 0.2 of the frame per second at the fastest.
+  const x = (t: number) => 0.45 + 0.4 * Math.sin(t * 0.5);
+  const cam = createFollowCam(
+    fakeTracks((t) => [at("p1", x(t))]),
+    "p1",
+  );
+  const first = cam.step(0, 1 / 60, true);
+  expect(first.rect[2]).toBeLessThan(1); // already zooming in
+  expect(first.box).not.toBeNull();
+  const xs: number[] = [];
+  let outside = 0;
+  run(cam, 1 / 60, 30, (t, v) => {
+    xs.push(v.rect[0]);
+    if (t > 1.5 && !inside(v.box!, v.rect)) outside++;
+  });
+  expect(outside).toBe(0);
+  // It pans the whole time (not parked) and is 16:9: zoom 2.5 × box height = 0.4.
+  expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.4);
+  const r = cam.current().rect;
+  expect(r[3]).toBeCloseTo(0.4, 2);
+  expect(r[2]).toBeCloseTo(0.4, 2);
+  // ... and it leads: moving right, the box sits left of the window's centre.
+  const v = createFollowCam(
+    fakeTracks((t) => [at("p1", 0.2 + 0.15 * t)]),
+    "p1",
+  );
+  run(v, 0, 2);
+  const { rect, box } = v.current();
+  expect(box![0] + box![2] / 2).toBeLessThan(rect[0] + rect[2] / 2);
+});
+
+test("follow-cam: hands off only when unambiguous, never across teams or into a crowd", () => {
+  const team: Record<string, number> = { p1: 0, p9: 0, p8: 0, p2: 0, p3: 1 };
+  /** Follow p1 (on court until 5 s at x 0.5) for 6 s; which id is the camera on? */
+  const after = (others: (t: number) => TrackPlayer[]) => {
+    const cam = createFollowCam(
+      fakeTracks((t) => [...(t < 5 ? [at("p1", 0.5)] : []), ...others(t)]),
+      "p1",
+      16 / 9,
+      (id) => team[id],
+    );
+    run(cam, 0, 6);
+    return cam.current().id;
+  };
+  const from = (t0: number, p: TrackPlayer) => (t: number) =>
+    t >= t0 ? [p] : [];
+  // a new id where p1 vanished (p2 far away): the same person, carried on
+  expect(after((t) => [...from(5.2, at("p9", 0.51))(t), at("p2", 0.1)])).toBe(
+    "p9",
+  );
+  // an id born on top of p1 half a second before p1 ended (a duplicate): carried on
+  expect(after(from(4.5, at("p9", 0.505)))).toBe("p9");
+  // the other team at the very spot: never
+  expect(after(from(5.2, at("p3", 0.5)))).toBe("p1");
+  // two new ids at the spot (a huddle): ambiguous, hold
+  expect(
+    after((t) => [
+      ...from(5.2, at("p9", 0.51))(t),
+      ...from(5.2, at("p8", 0.49))(t),
+    ]),
+  ).toBe("p1");
+  // someone on court nearby all along (a screen): another player, hold
+  expect(after(() => [at("p2", 0.53)])).toBe("p1");
+});
+
+test("follow-cam: a gap holds the spot and widens slowly; Back eases to exactly wide", () => {
+  const who = (t: number) => (t < 3 ? [at("p1", 0.3)] : [at("p5", 0.9)]);
+  const cam = createFollowCam(fakeTracks(who), "p1");
+  run(cam, 0, 3);
+  const before = cam.current().rect;
+  const hs: number[] = [];
+  let maxStep = 0;
+  let prev = before;
+  run(cam, 3 + 1 / 60, 7, (_t, v) => {
+    hs.push(v.rect[3]);
+    maxStep = Math.max(maxStep, Math.abs(v.rect[0] - prev[0]));
+    prev = v.rect;
+  });
+  expect(cam.current().id).toBe("p1"); // p5 is far away: not us
+  expect(cam.current().lost).toBeGreaterThan(3.9); // the screen offers a re-pick ...
+  expect(cam.current().last?.[0]).toBeCloseTo(0.3, 3); // ... near where p1 was
+  expect(hs[10]).toBeCloseTo(before[3], 2); // holds first ...
+  expect(hs[hs.length - 1]).toBeGreaterThan(0.9); // ... then widens to the court
+  expect(maxStep).toBeLessThan(0.02); // no jump, eased every frame
+  run(cam, 7, 10, undefined, false);
+  expect(cam.current().rect).toEqual([0, 0, 1, 1]);
+});
+
+test("clock: Play after a pause does not jump by the pause; extrapolation is capped", () => {
+  // Drive the clock by hand: a fake wall clock and animation frame.
+  let wall = 0;
+  let frame: (() => void) | null = null;
+  const g = globalThis as unknown as Record<string, unknown>;
+  const saved = [g.requestAnimationFrame, g.cancelAnimationFrame];
+  g.requestAnimationFrame = (fn: () => void) => ((frame = fn), 1);
+  g.cancelAnimationFrame = () => {};
+  const now = Object.getOwnPropertyDescriptor(performance, "now");
+  Object.defineProperty(performance, "now", {
+    value: () => wall,
+    configurable: true,
+  });
+  try {
+    const media = { t: 10, paused: false };
+    const clock = createClock({
+      currentTime: () => media.t,
+      paused: () => media.paused,
+    });
+    const tick = (ms: number) => {
+      wall += ms;
+      frame?.();
+    };
+    tick(16);
+    tick(100); // between reports: extrapolated
+    expect(clock.now()).toBeCloseTo(10.1, 2);
+    media.paused = true;
+    tick(16);
+    tick(5000); // a 5 s pause
+    expect(clock.now()).toBe(10);
+    media.paused = false; // Play; the player has not reported yet
+    tick(16);
+    expect(clock.now()).toBeLessThan(10.05); // was 15.0: the whole pause
+    tick(2000); // no report for 2 s (a stall the player has not flagged)
+    expect(clock.now()).toBeLessThanOrEqual(10.5);
+    clock.stop();
+  } finally {
+    [g.requestAnimationFrame, g.cancelAnimationFrame] = saved;
+    if (now) Object.defineProperty(performance, "now", now);
+    else delete (performance as unknown as Record<string, unknown>).now;
+  }
+});
+
+test("follow-cam: a seek jumps there; a 2560x960 panorama gets a 16:9 window", () => {
+  const cam = createFollowCam(
+    fakeTracks((t) => [at("p1", t < 50 ? 0.1 : 0.8)]),
+    "p1",
+    2560 / 960,
+  );
+  run(cam, 0, 5);
+  const [, , w, h] = cam.current().rect;
+  expect((w * 2560) / (h * 960)).toBeCloseTo(16 / 9, 3);
+  cam.step(60, 1 / 60, true); // seek
+  const { rect, box } = cam.current();
+  expect(inside(box!, rect)).toBe(true);
 });
 
 test("nav: web deep links map to routes", () => {

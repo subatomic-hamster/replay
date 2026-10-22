@@ -174,5 +174,19 @@ def test_render_angle_writes_every_frame(tmp_path):
     assert res["frames"] == doc["frames"] and out.stat().st_size > 1000
 
 
+def test_a_virtual_pov_for_every_player_in_3d_key_player_first():
+    doc = {"players": [{"id": "p1"}, {"id": "p2"}, {"id": "p3"}], "shooter": "p2"}
+    assert render.angles_for(doc) == [*render.ANGLES, "pov_p2", "pov_p1", "pov_p3"]
+    # the key player not in 3D: no POV is labelled with someone else's eyes
+    assert render.angles_for({**doc, "shooter": "p9"}) == [
+        *render.ANGLES,
+        "pov_p1",
+        "pov_p2",
+        "pov_p3",
+    ]
+    # a highlight (no 3D players yet): only the key player's
+    assert render.angles_for({"primary": "p4"}) == [*render.ANGLES, "pov_p4"]
+
+
 def test_bones_table_covers_the_skeleton():
     assert set(bone_lengths(1.8)) == set(BONES)

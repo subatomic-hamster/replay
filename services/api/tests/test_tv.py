@@ -32,7 +32,7 @@ def test_processed_game_has_hero_storyboard_moments_and_features(client: TestCli
     assert client.get(game["hero_url"]).content[:2] == b"\xff\xd8"
     f = {k: v["state"] for k, v in game["features"].items()}
     assert f == {"moments": "ready", "previews": "ready", "follow": "ready",
-                 "angles": "unavailable", "free_view": "unavailable",
+                 "angles": "unavailable", "free_view": "unavailable", "pov": "unavailable",
                  "highlights": "unavailable", "condensed": "unavailable",
                  "stats": "ready", "commentary": "ready"}  # fmt: skip
 

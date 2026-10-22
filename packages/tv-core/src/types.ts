@@ -103,6 +103,8 @@ export type FeatureKey =
   | "follow"
   | "angles"
   | "free_view"
+  /** each tracked player's virtual POV (Tier C `pov:<pid>` replay angles) */
+  | "pov"
   | "highlights"
   | "condensed"
   | "stats"
@@ -224,7 +226,17 @@ export interface CropPath {
 }
 
 export type EventType =
-  "shot" | "possession_change" | "rally" | "point" | "serve" | "bookmark";
+  | "shot"
+  | "possession_change"
+  | "rally"
+  | "point"
+  | "serve"
+  | "bookmark"
+  // M4, additive (courtcam schema.py)
+  | "turnover"
+  | "contact"
+  | "block"
+  | "hype";
 
 export interface GameEvent {
   id: string;
@@ -241,6 +253,12 @@ export interface GameEvent {
   label?: string;
   /** D-11 "not a shot": kept in events.json, excluded from query and stats. */
   dismissed?: boolean;
+  /** M4, additive (courtcam schema.py): the event's side (a contact: the hitter's), a
+   *  shot's value, why a possession changed or a point ended, who won a rally/point. */
+  team?: number | null;
+  points?: number | null;
+  cause?: string | null;
+  winner_side?: number | null;
 }
 
 export interface EventsFile {

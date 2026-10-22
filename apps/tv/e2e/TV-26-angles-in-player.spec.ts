@@ -33,15 +33,20 @@ test("TV-26 Angles in the player: thumbnails, play an angle, cut, Back at the sa
     "nav-replays",
   );
   const thumbs = page.locator('[data-testid="domore"] [data-testid^="angle-"]');
-  await expect(thumbs).toHaveCount(5); // four angles, then Free view
+  // four angles, one virtual POV (the key player's; the players' POVs share it), Free view
+  await expect(thumbs).toHaveCount(6);
+  await expect(thumbs.nth(4)).toHaveAttribute("data-testid", "angle-pov:p1");
   await expect(thumbs.last()).toHaveAttribute("data-testid", "angle-free");
   await expect(page.getByText("Broadcast high")).toBeVisible();
   await page.waitForTimeout(300);
-  for (const t of await thumbs.all()) {
+  // the whole thumbnails keep to the safe zone; the next one peeks at the clipped edge
+  const all = await thumbs.all();
+  for (const t of all.slice(0, 5)) {
     const b = (await t.boundingBox())!;
     expect(b.x).toBeGreaterThanOrEqual(96 - 12);
     expect(b.x + b.width).toBeLessThanOrEqual(1920 - 96 + 12);
   }
+  expect((await all[5].boundingBox())!.x).toBeLessThan(1920 - 96);
   expect(await smallText(page)).toEqual([]);
 
   // Broadcast high plays in the player.

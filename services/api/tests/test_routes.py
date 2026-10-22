@@ -193,6 +193,17 @@ def test_patch_player_rename(client: TestClient, settings):
     assert client.patch(f"/games/{gid}/players/p1", json={}).status_code == 400
 
 
+def test_patch_player_name_is_stripped_and_persisted(client: TestClient, settings):
+    """D-83 player card: the name is the viewer's label; it survives a re-read and a blank
+    one is refused (the old name stays)."""
+    gid = ready_game(client, settings)
+    assert client.patch(f"/games/{gid}/players/p2", json={"name": "  Zoe "}).status_code == 200
+    assert client.patch(f"/games/{gid}/players/p2", json={"name": "   "}).status_code == 422
+    assert client.patch(f"/games/{gid}/players/p2", json={"name": "x" * 61}).status_code == 422
+    p2 = next(p for p in client.get(f"/games/{gid}").json()["players"] if p["id"] == "p2")
+    assert p2["name"] == "Zoe" and p2["tagged"] is True
+
+
 def test_patch_player_merge_rewrites_ids(client: TestClient, settings):
     gid = ready_game(client, settings)
     r = client.patch(f"/games/{gid}/players/p2", json={"merge_into": "p1"})

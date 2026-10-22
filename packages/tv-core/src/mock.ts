@@ -205,8 +205,16 @@ const BOX_H = 0.2;
  *  fade-out and return (S-22b) is testable. Tracks only — MOTION, the crop path and the
  *  heatmap stay continuous, which is exactly what a real occlusion looks like. */
 const TRACK_GAP: Record<string, [number, number]> = { p1: [12, 13] };
+/** A test may set `globalThis.__replayMockTrackGap` (an init script) to script its own
+ *  occlusions, e.g. one long enough to lose the player; unset, TRACK_GAP stands. */
+const trackGap = (): Record<string, [number, number]> =>
+  (
+    globalThis as {
+      __replayMockTrackGap?: Record<string, [number, number]>;
+    }
+  ).__replayMockTrackGap ?? TRACK_GAP;
 const tracked = (id: string, t: number) => {
-  const gap = TRACK_GAP[id];
+  const gap = trackGap()[id];
   return !gap || t < gap[0] || t >= gap[1];
 };
 
@@ -519,6 +527,12 @@ function tvFields(g: Game): TvReadiness & { storyboard_url?: string } {
       angles: feat(ready && replays.length > 0, undefined, true),
       free_view: feat(
         ready && replays.some((r) => r.scene_url),
+        undefined,
+        true,
+      ),
+      pov: feat(
+        ready &&
+          replays.some((r) => r.angles.some((a) => a.id.startsWith("pov:"))),
         undefined,
         true,
       ),
@@ -1970,6 +1984,9 @@ const MOCK_REPLAYS: Record<string, ReplayManifest[]> = {
         mockAngle("follow:p1", "A", "Follow · Marcus"),
         mockAngle("broadcast_high", "B", "Broadcast high"),
         mockAngle("orbit", "B", "Orbit"),
+        // Tier C virtual POVs, one per tracked player (the key player first)
+        mockAngle("pov:p1", "C", "Virtual POV · Marcus"),
+        mockAngle("pov:p2", "C", "Virtual POV · Jordan"),
       ]),
       scene_url: "/games/g_mock01/scenes/play_0001",
     },

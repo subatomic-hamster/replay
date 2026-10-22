@@ -5,8 +5,17 @@
 // (`sport_ui.review`), never the sport name.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { optionTestId, type ReviewOption, type ReviewQuestion } from "../../../../packages/tv-core/src/discovery";
-import { autoDetectedLabel, boxColumns, courtViewBox, reviewPanels } from "../../../../packages/tv-core/src/display";
+import {
+  optionTestId,
+  type ReviewOption,
+  type ReviewQuestion,
+} from "../../../../packages/tv-core/src/discovery";
+import {
+  autoDetectedLabel,
+  boxColumns,
+  courtViewBox,
+  reviewPanels,
+} from "../../../../packages/tv-core/src/display";
 import type { Stats } from "../../../../packages/tv-core/src/types";
 import { api } from "../api";
 import { CourtView, courtSize } from "../components/CourtView";
@@ -15,15 +24,34 @@ import { TextEntryDialog } from "../components/TextEntryDialog";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
 import { color, font, px } from "../theme";
-import { ApiErrorBanner, Hint, Loading, Pill, T, styles as ui, useAsync } from "../ui";
+import {
+  ApiErrorBanner,
+  Hint,
+  Loading,
+  Pill,
+  T,
+  styles as ui,
+  useAsync,
+} from "../ui";
 
 const CHART_W = px(420);
 const CHART_H = px(400);
-const HEAT_CHIPS = 4;
+// 3, not 4: "Player 12"-style chips made the heatmap panel 690 px wide and squeezed the
+// box score's columns into each other
+const HEAT_CHIPS = 3;
+/** Box score rows that fit above the hint on a 1080p screen; a real game tracks more
+ *  players than that (the rest are counted, not drawn off the bottom edge). */
+const BOX_ROWS = 10;
+/** "Player 7" for an unnamed track, as on the Moments chips and the Stats panel. */
+const trackName = (pid: string) => `Player ${pid.replace(/^p/, "")}`;
 const titleCase = (v: string) => v.replace(/(^|\s)\S/g, (m) => m.toUpperCase());
 
 export function Review({ gameId }: { gameId: string }) {
-  const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
+  const {
+    data: game,
+    error,
+    reload,
+  } = useAsync(() => api.getGame(gameId), [gameId]);
   const [queue, setQueue] = useState<ReviewQuestion[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [focus, setFocus] = useState(0);
@@ -69,9 +97,16 @@ export function Review({ gameId }: { gameId: string }) {
       else if (a === "down") setRow(heatmap.length ? 1 : 0);
       else if (a === "left" && row === 0) setFocus((f) => Math.max(0, f - 1));
       else if (a === "left") setHeatFocus((i) => Math.max(0, i - 1));
-      else if (a === "right" && row === 0) setFocus((f) => Math.min(last, f + 1));
-      else if (a === "right") setHeatFocus((i) => Math.min(heatmap.length - 1, i + 1));
-      else if (a === "select" && row === 0 && linkable && focus === options.length) {
+      else if (a === "right" && row === 0)
+        setFocus((f) => Math.min(last, f + 1));
+      else if (a === "right")
+        setHeatFocus((i) => Math.min(heatmap.length - 1, i + 1));
+      else if (
+        a === "select" &&
+        row === 0 &&
+        linkable &&
+        focus === options.length
+      ) {
         setLinking(current?.player_id ?? null);
       } else if (a === "select" && row === 0 && options[focus]) {
         if (options[focus].text_field) setTyping(options[focus]);
@@ -88,16 +123,25 @@ export function Review({ gameId }: { gameId: string }) {
   const court = game.sport_ui?.court;
   const [cw] = courtSize(court, game.court.variant);
   const grid = heatmap[Math.min(heatFocus, heatmap.length - 1)];
-  const heatStart = Math.max(0, Math.min(heatFocus - 1, heatmap.length - HEAT_CHIPS));
-  const name = (pid?: string | null) => (pid ? (game.players.find((p) => p.id === pid)?.name ?? `#${pid}`) : "");
+  const heatStart = Math.max(
+    0,
+    Math.min(heatFocus - 1, heatmap.length - HEAT_CHIPS),
+  );
+  const name = (pid?: string | null) =>
+    pid ? (game.players.find((p) => p.id === pid)?.name ?? trackName(pid)) : "";
   const columns = boxColumns(stats);
+  const box = stats?.box_score ?? [];
 
   return (
-    <View style={ui.screen}>
+    <View style={ui.safe}>
       <T style={ui.h1} numberOfLines={1}>
         Review — {game.title}
       </T>
-      <T testID="auto-detected-label" dataSet={{ confidence: stats?.confidence ?? "" }} style={{ color: color.dim }}>
+      <T
+        testID="auto-detected-label"
+        dataSet={{ confidence: stats?.confidence ?? "" }}
+        style={{ color: color.dim }}
+      >
         {autoDetectedLabel(stats)}
       </T>
 
@@ -106,17 +150,31 @@ export function Review({ gameId }: { gameId: string }) {
         {current ? (
           <View
             testID="review-item"
-            dataSet={{ eventId: current.event_id ?? "", kind: current.kind, playerId: current.player_id ?? "", confidence: current.confidence ?? "" }}
+            dataSet={{
+              eventId: current.event_id ?? "",
+              kind: current.kind,
+              playerId: current.player_id ?? "",
+              confidence: current.confidence ?? "",
+            }}
           >
             <T>
               {current.prompt}
               {current.t != null ? ` · ${current.t.toFixed(1)} s` : ""}
-              {current.player_id && current.kind !== "identity" ? ` · ${name(current.player_id)}` : ""}
-              {current.confidence != null ? ` · confidence ${current.confidence.toFixed(2)}` : ""}
+              {current.player_id && current.kind !== "identity"
+                ? ` · ${name(current.player_id)}`
+                : ""}
+              {current.confidence != null
+                ? ` · confidence ${current.confidence.toFixed(2)}`
+                : ""}
             </T>
             <View style={styles.row}>
               {current.options.map((opt, i) => (
-                <Pill key={opt.label} label={opt.label} focused={row === 0 && i === focus} testID={optionTestId(opt.label)} />
+                <Pill
+                  key={opt.label}
+                  label={opt.label}
+                  focused={row === 0 && i === focus}
+                  testID={optionTestId(opt.label)}
+                />
               ))}
               {linkable ? (
                 <Pill
@@ -136,7 +194,13 @@ export function Review({ gameId }: { gameId: string }) {
         {panels.has("shot_chart") ? (
           <View style={styles.panel}>
             <T style={ui.h2}>Shot chart</T>
-            <CourtView court={court} variant={game.court.variant} width={CHART_W} maxHeight={CHART_H} testID="shot-chart">
+            <CourtView
+              court={court}
+              variant={game.court.variant}
+              width={CHART_W}
+              maxHeight={CHART_H}
+              testID="shot-chart"
+            >
               {(toPx, s) =>
                 (stats?.shots ?? []).map((sh) => {
                   const [x, y] = toPx(sh.court[0], sh.court[1]);
@@ -147,7 +211,10 @@ export function Review({ gameId }: { gameId: string }) {
                     <View
                       key={sh.event_id}
                       testID="shot-marker"
-                      dataSet={{ made: sh.made ? "true" : "false", outcome: sh.outcome ?? "" }}
+                      dataSet={{
+                        made: sh.made ? "true" : "false",
+                        outcome: sh.outcome ?? "",
+                      }}
                       style={[
                         styles.dot,
                         {
@@ -157,7 +224,11 @@ export function Review({ gameId }: { gameId: string }) {
                           height: 2 * r,
                           borderRadius: r,
                           backgroundColor: sh.made ? color.made : "transparent",
-                          borderColor: unknown ? color.dim : sh.made ? color.made : color.missed,
+                          borderColor: unknown
+                            ? color.dim
+                            : sh.made
+                              ? color.made
+                              : color.missed,
                           borderStyle: unknown ? "dashed" : "solid",
                         },
                       ]}
@@ -185,7 +256,13 @@ export function Review({ gameId }: { gameId: string }) {
                 />
               ))}
             </View>
-            <CourtView court={court} variant={game.court.variant} width={CHART_W} maxHeight={CHART_H} testID="heatmap">
+            <CourtView
+              court={court}
+              variant={game.court.variant}
+              width={CHART_W}
+              maxHeight={CHART_H}
+              testID="heatmap"
+            >
               {(toPx) => {
                 const ch = courtSize(court, game.court.variant)[1];
                 const box = courtViewBox(court, cw, ch);
@@ -196,8 +273,14 @@ export function Review({ gameId }: { gameId: string }) {
                 const max = Math.max(1, ...grid.values);
                 return grid.values.map((v, i) => {
                   if (v <= 0) return null;
-                  const [ax, ay] = toPx(x0 + (i % grid.cols) * cellW, y0 + Math.floor(i / grid.cols) * cellH);
-                  const [bx, by] = toPx(x0 + ((i % grid.cols) + 1) * cellW, y0 + (Math.floor(i / grid.cols) + 1) * cellH);
+                  const [ax, ay] = toPx(
+                    x0 + (i % grid.cols) * cellW,
+                    y0 + Math.floor(i / grid.cols) * cellH,
+                  );
+                  const [bx, by] = toPx(
+                    x0 + ((i % grid.cols) + 1) * cellW,
+                    y0 + (Math.floor(i / grid.cols) + 1) * cellH,
+                  );
                   return (
                     <View
                       key={i}
@@ -224,30 +307,52 @@ export function Review({ gameId }: { gameId: string }) {
           <View style={styles.panel}>
             <T style={ui.h2}>Box score</T>
             <View style={styles.tr}>
-              <T style={[styles.td, styles.tdName, { color: color.dim }]}>Player</T>
+              <T style={[styles.td, styles.tdName, { color: color.dim }]}>
+                Player
+              </T>
               {columns.map((c) => (
-                <T key={c.label} style={[styles.td, { color: color.dim }]}>
+                <T
+                  key={c.label}
+                  style={[styles.td, colWidth(c.label), { color: color.dim }]}
+                >
                   {c.label}
                 </T>
               ))}
             </View>
-            {(stats?.box_score ?? []).map((r) => (
-              <View key={r.player_id} style={styles.tr} testID="box-score-row" dataSet={{ playerId: r.player_id }}>
+            {box.slice(0, BOX_ROWS).map((r) => (
+              <View
+                key={r.player_id}
+                style={styles.tr}
+                testID="box-score-row"
+                dataSet={{ playerId: r.player_id }}
+              >
                 <T style={[styles.td, styles.tdName]} numberOfLines={1}>
-                  {r.name ?? `#${r.player_id}`}
+                  {r.name ?? trackName(r.player_id)}
                 </T>
                 {columns.map((c) => (
-                  <T key={c.label} style={styles.td} testID={`box-${c.label.split(" ")[0].toLowerCase()}`}>
+                  <T
+                    key={c.label}
+                    style={[styles.td, colWidth(c.label)]}
+                    testID={`box-${c.label.split(" ")[0].toLowerCase()}`}
+                  >
                     {c.value(r)}
                   </T>
                 ))}
               </View>
             ))}
+            {box.length > BOX_ROWS ? (
+              <T style={styles.more} testID="box-score-more">
+                and {box.length - BOX_ROWS} more players
+              </T>
+            ) : null}
           </View>
         ) : null}
       </View>
 
-      <Hint>Left/Right pick an answer · Down switches the heatmap player · Select confirms · Back returns</Hint>
+      <Hint>
+        Left/Right pick an answer · Down switches the heatmap player · Select
+        confirms · Back returns
+      </Hint>
 
       {typing ? (
         <TextEntryDialog
@@ -267,7 +372,7 @@ export function Review({ gameId }: { gameId: string }) {
         <ProfilePicker
           gameId={gameId}
           playerId={linking}
-          playerLabel={`#${linking}`}
+          playerLabel={name(linking)}
           onCancel={() => setLinking(null)}
           onLinked={() => {
             setLinking(null);
@@ -287,6 +392,11 @@ const styles = StyleSheet.create({
   panel: { marginRight: px(40) },
   dot: { position: "absolute", borderWidth: px(4) },
   tr: { flexDirection: "row", paddingVertical: px(4) },
-  td: { width: px(84), fontSize: font.body, fontVariant: ["tabular-nums"] },
+  td: { width: px(88), fontSize: font.body, fontVariant: ["tabular-nums"] },
+  // "Dist m" ran into "Conf" (and "Made" into "Pts") at 84 px
+  tdWide: { width: px(112) },
   tdName: { width: px(180) },
+  more: { color: color.dim, fontSize: font.meta, marginTop: px(4) },
 });
+
+const colWidth = (label: string) => (label.length > 4 ? styles.tdWide : null);

@@ -47,7 +47,7 @@ export function Pair({ gameId }: { gameId?: string }) {
   if (error) return <ApiErrorBanner error={error} onRetry={reload} />;
 
   return (
-    <View style={ui.screen}>
+    <View style={ui.safe}>
       <T style={ui.h1}>Pair your phone</T>
       <T>Open /companion on your phone and enter this code:</T>
       <T
@@ -67,7 +67,7 @@ export function Pair({ gameId }: { gameId?: string }) {
           ? "Type or speak a query on the phone — the TV jumps to the results."
           : "Open a game first so phone queries have something to search."}
       </Hint>
-      <Hint>Back returns</Hint>
+      <Hint k="Back">{gameId ? "The game" : "Home"}</Hint>
     </View>
   );
 }

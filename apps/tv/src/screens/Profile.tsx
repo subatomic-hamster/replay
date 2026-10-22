@@ -102,7 +102,7 @@ export function Profile({
   };
   return (
     <View
-      style={ui.screen}
+      style={ui.safe}
       testID="profile"
       dataSet={{ profileId, zone, tab: TABS[tab].toLowerCase() }}
     >
@@ -120,9 +120,12 @@ export function Profile({
           </T>
         </View>
         {profile.face_enrolled ? (
-          <T style={styles.badge} testID="face-enrolled">
-            FACE ENROLLED (OPT-IN)
-          </T>
+          // the fill on a View: T centres the glyphs only on a Text without a background
+          <View style={styles.badge}>
+            <T style={styles.badgeText} testID="face-enrolled">
+              FACE ENROLLED (OPT-IN)
+            </T>
+          </View>
         ) : null}
       </View>
       <View style={styles.tabs}>
@@ -750,14 +753,12 @@ function LinksTab({ profile, active, onExit, onChange }: TabProps) {
 const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", marginBottom: px(16) },
   badge: {
-    color: color.floor,
     backgroundColor: color.chalk,
-    fontWeight: "800",
-    fontSize: font.small,
     paddingHorizontal: px(16),
     paddingVertical: px(4),
     borderRadius: px(8),
   },
+  badgeText: { color: color.floor, fontWeight: "800", fontSize: font.small },
   tabs: { flexDirection: "row", marginBottom: px(8) },
   row: { flexDirection: "row", flexWrap: "wrap", alignItems: "center" },
   dim: { color: color.dim, fontSize: font.small, marginVertical: px(6) },
@@ -802,14 +803,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: px(12),
   },
-  counter: { position: "absolute", left: px(24), top: px(24) },
-  counterText: {
-    color: color.onAccent,
+  // the fill on the View, not the Text (T's glyph centring skips a filled Text)
+  counter: {
+    position: "absolute",
+    left: px(24),
+    top: px(24),
     backgroundColor: color.accent,
-    fontWeight: "800",
     paddingHorizontal: px(16),
     borderRadius: px(8),
   },
+  counterText: { color: color.onAccent, fontWeight: "800" },
   listRow: {
     paddingHorizontal: px(20),
     paddingVertical: px(6),

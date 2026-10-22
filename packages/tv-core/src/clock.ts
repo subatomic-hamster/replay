@@ -19,6 +19,9 @@ export interface Clock {
   stop(): void;
 }
 
+/** Reports come every 0.1 s (react-native-video) to ~0.25 s (`timeupdate`). */
+const MAX_EXTRAPOLATE_S = 0.5;
+
 export function createClock(source: MediaClockSource): Clock {
   const subs = new Set<(t: number) => void>();
   let lastCt = -1;
@@ -28,12 +31,19 @@ export function createClock(source: MediaClockSource): Clock {
 
   const tick = () => {
     const ct = source.currentTime();
-    if (ct !== lastCt) {
+    const paused = source.paused();
+    // A new report, or paused (the wall clock must not run on through a pause: on Play the
+    // next report is up to one progress interval away, and extrapolating from the last
+    // report before the pause jumped the time forward by the whole pause).
+    if (ct !== lastCt || paused) {
       lastCt = ct;
       lastWall = performance.now();
     }
-    // Paused: currentTime is exact, so no extrapolation (NF-05).
-    t = source.paused() ? ct : ct + (performance.now() - lastWall) / 1000;
+    // Paused: currentTime is exact, so no extrapolation (NF-05). Playing: never more than
+    // MAX_EXTRAPOLATE_S past the last report (a stall that has not said so yet).
+    t = paused
+      ? ct
+      : ct + Math.min((performance.now() - lastWall) / 1000, MAX_EXTRAPOLATE_S);
     for (const fn of subs) fn(t);
     raf = requestAnimationFrame(tick);
   };

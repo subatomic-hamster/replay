@@ -50,6 +50,20 @@ def test_worker_mode_passes_the_game_and_filters_progress(tmp_path, monkeypatch)
     assert "asr_model" not in cfg  # no voice triggers unless COURTCAM_ASR_MODEL is set
 
 
+def test_worker_stages_default_makes_angles_free_view_and_pov(monkeypatch):
+    """Unset, every upload gets replay angles, Free view and the Tier C angles with the
+    players' virtual POVs; set to "" it gets none."""
+    from replay_api.config import from_env
+    from replay_worker.stages import load_registry
+
+    monkeypatch.delenv("REPLAY_WORKER_STAGES", raising=False)
+    stages = from_env().worker_stages
+    assert {"replays", "scene", "tierc_manifest"} <= set(stages)
+    assert set(stages) <= set(load_registry())  # names the worker knows
+    monkeypatch.setenv("REPLAY_WORKER_STAGES", "")
+    assert from_env().worker_stages == ()
+
+
 def test_worker_stages_env_runs_opt_in_stages_after_the_defaults(tmp_path, monkeypatch):
     """Each opt-in stage runs after the default run, with `moments` (the hero follows
     hype); one that fails leaves the game ready. The ASR model joins the run config."""

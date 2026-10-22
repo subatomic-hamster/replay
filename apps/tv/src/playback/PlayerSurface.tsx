@@ -16,10 +16,11 @@ import {
   type Clock,
 } from "../../../../packages/tv-core/src/clock";
 import {
-  cropRectAt,
   cropTransform,
+  mapBB,
+  type FollowCam,
 } from "../../../../packages/tv-core/src/follow";
-import type { CropPath } from "../../../../packages/tv-core/src/types";
+import { FollowFrame, nativeValue, newRing } from "../components/FollowFrame";
 import { Media } from "../platform/Media";
 import { color, px, type } from "../theme";
 import { Backdrop, Busy, Spinner, T } from "../ui";
@@ -38,10 +39,19 @@ export interface PlayerHandle {
   clock: Clock | null;
 }
 
+/** D-82 client follow-cam: the camera, whether it zooms (follow mode) or only tracks (the
+ *  ring stays on the player in the wide shot), and the ring's words and team colour. */
+export interface Follow {
+  cam: FollowCam;
+  pid: string;
+  zoom: boolean;
+  label: string;
+  tint: string;
+}
+
 interface Props {
   src: string;
-  /** D-6 client follow-cam: per-frame crop rects. null = wide shot. */
-  crop?: CropPath | null;
+  follow?: Follow | null;
   muted?: boolean;
   /** Restart at the end instead of stopping (Replay view). */
   loop?: boolean;
@@ -54,12 +64,17 @@ interface Props {
   ref?: Ref<PlayerHandle>;
 }
 
+/** The follow ring stays through a tracking dropout this short (one or two 10 Hz track
+ *  frames), and eases over to the new box for this long after a track hand-off. */
+const RING_GRACE_S = 0.3;
+const RING_BLEND_S = 0.2;
+
 /** A stall shorter than this shows no spinner (a seek on a warm buffer). */
 const BUFFER_SHOW_MS = 400;
 
 export function PlayerSurface({
   src,
-  crop,
+  follow,
   muted,
   loop,
   aspect,
@@ -86,10 +101,10 @@ export function PlayerSurface({
     return () => clearTimeout(t);
   }, [stalled]);
   const [anim] = useState(() => ({
-    tx: new Animated.Value(0),
-    ty: new Animated.Value(0),
-    sx: new Animated.Value(1),
-    sy: new Animated.Value(1),
+    tx: nativeValue(0),
+    ty: nativeValue(0),
+    sx: nativeValue(1),
+    sy: nativeValue(1),
   }));
 
   useEffect(() => {
@@ -122,40 +137,99 @@ export function PlayerSurface({
     [clock, error],
   );
 
-  // Follow-cam: recompute the transform every animation frame from the crop rect at the
-  // clock's time. RN scales about the view centre, so the translate is corrected by
-  // c·(1−s) to get the same top-left-origin result as apps/web's CSS transform.
+  // Follow-cam: step the camera every animation frame at the clock's time and move the
+  // video and the ring in the same frame. RN scales about the view centre, so the
+  // translate is corrected by c·(1−s) to get the same top-left-origin result as apps/web's
+  // CSS transform. Zoom is read through a ref: Back eases out instead of restarting.
+  const [ring] = useState(newRing);
+  const [seen, setSeen] = useState<{ track: string; visible: boolean } | null>(
+    null,
+  );
+  const zoom = useRef(false);
+  zoom.current = !!follow?.zoom;
+  const cam = follow?.cam ?? null;
   useEffect(() => {
     const reset = () => {
       anim.tx.setValue(0);
       anim.ty.setValue(0);
       anim.sx.setValue(1);
       anim.sy.setValue(1);
+      ring.opacity.setValue(0);
     };
-    if (!crop || crop.rects.length === 0 || !clock) {
+    if (!cam || !clock) {
       reset();
+      setSeen(null);
       return;
     }
     let raf = 0;
+    let wall = performance.now();
+    let last = { track: "", visible: false };
+    // The ring's own box (frame coordinates) and fade, so it never flickers or snaps:
+    // a dropout shorter than RING_GRACE_S keeps it on, held where the player was (still
+    // mapped through the moving camera); longer, it fades out; on a hand-off to another
+    // track id it eases over to the new box instead of jumping.
+    let ringBox: number[] | null = null;
+    let ringId = "";
+    let blend = 0; // seconds of easing left after a hand-off
+    let lost = 0;
+    let alpha = 0;
+    // Animated pushes every setValue to the view, equal or not: send only real changes.
+    const sent = new Map<Animated.Value, number>();
+    const put = (a: Animated.Value, x: number, step = 0.1) => {
+      const q = Math.round(x / step) * step;
+      if (sent.get(a) === q) return;
+      sent.set(a, q);
+      a.setValue(q);
+    };
     const apply = () => {
+      const now = performance.now();
+      const dt = Math.min((now - wall) / 1000, 0.1);
+      const v = cam.step(clock.now(), (now - wall) / 1000, zoom.current);
+      wall = now;
       const { w, h } = size.current;
-      const { tx, ty, sx, sy } = cropTransform(
-        cropRectAt(crop, clock.now()),
-        w,
-        h,
-      );
-      anim.tx.setValue(tx + (w / 2) * (sx - 1));
-      anim.ty.setValue(ty + (h / 2) * (sy - 1));
-      anim.sx.setValue(sx);
-      anim.sy.setValue(sy);
+      const { tx, ty, sx, sy } = cropTransform(v.rect, w, h);
+      put(anim.tx, tx + (w / 2) * (sx - 1));
+      put(anim.ty, ty + (h / 2) * (sy - 1));
+      put(anim.sx, sx, 1e-4);
+      put(anim.sy, sy, 1e-4);
+      const box = v.box;
+      if (box) {
+        if (ringBox && ringId && v.id !== ringId) blend = RING_BLEND_S;
+        ringId = v.id;
+        lost = 0;
+        if (ringBox && blend > 0) {
+          blend -= dt;
+          const k = Math.min(1, dt / Math.max(blend + dt, 1e-3));
+          ringBox = ringBox.map((a, i) => a + (box[i] - a) * k);
+        } else ringBox = [...box];
+      } else lost += dt;
+      const on = !!ringBox && lost < RING_GRACE_S;
+      // fade in fast (the ring is the answer to Select), out gently
+      alpha += ((on ? 1 : 0) - alpha) * Math.min(1, dt * (on ? 25 : 6));
+      if (ringBox) {
+        const [bx, by, bw, bh] = mapBB(
+          ringBox as [number, number, number, number],
+          v.rect,
+        );
+        put(ring.x, bx * w);
+        put(ring.y, by * h);
+        put(ring.w, bw * w);
+        put(ring.h, bh * h);
+      }
+      put(ring.opacity, alpha, 0.01);
+      // React hears only of changes (tests and the label read these), not every frame.
+      if (last.track !== v.id || last.visible !== !!v.box) {
+        last = { track: v.id, visible: !!v.box };
+        setSeen(last);
+      }
       raf = requestAnimationFrame(apply);
     };
-    raf = requestAnimationFrame(apply);
+    apply(); // this frame, not the next: the ring is there on the render that asked
     return () => {
       cancelAnimationFrame(raf);
       reset();
     };
-  }, [crop, clock, anim]);
+  }, [cam, clock, anim, ring]);
 
   return (
     <View
@@ -198,6 +272,16 @@ export function PlayerSurface({
       </Animated.View>
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {children}
+        {follow && seen ? (
+          <FollowFrame
+            pid={follow.pid}
+            track={seen.track}
+            label={follow.label}
+            tint={follow.tint}
+            visible={seen.visible}
+            ring={ring}
+          />
+        ) : null}
       </View>
       {error ? (
         <View

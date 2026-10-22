@@ -7,14 +7,16 @@
   GPU (YOLO pose, MotionBERT) unless the keypoints are a synthetic clip's ground truth
   and the method is analytic.
 * `tierc`          one task per play x angle: replays/<play>/tierc_<angle>.mp4
-  (broadcast_high, baseline, overhead, reverse, pov_<shooter>).
+  (broadcast_high, baseline, overhead, reverse, then pov_<pid> for every player in the
+  3D scene, the key player first: a virtual POV, manifest id `pov:<pid>`).
 * `tierc_manifest` one uncached task per play: adds the Tier C angles to
   replays/<play>/manifest.json. The `replays` stage (Tier A/B, virtual.py) writes that
   file from the angle videos it knows; this step merges ours in after it (it replaces
   only `tier == "C"` entries, so re-running either side is safe in this order).
 
 Opt-in (default False): `--stages tierc_manifest` runs the lot, including the Tier A/B
-chain it sits on. Knobs: `tierc_method` (auto | motionbert | analytic), `tierc_kp`
+chain it sits on; the API runs it on every upload (replay_api.config
+DEFAULT_WORKER_STAGES). Knobs: `tierc_method` (auto | motionbert | analytic), `tierc_kp`
 (auto | gt | yolo | poses; auto = the synthetic ground truth when there is one, else
 YOLO-pose on the track crops), `pose_model`, `replay_width`.
 """
@@ -31,7 +33,7 @@ from . import courtcam as cc
 from .virtual import HIGHLIGHTS, _plays, _width
 
 LABELS = {"broadcast_high": "Broadcast high", "baseline": "Baseline", "overhead": "Overhead",
-          "reverse": "Reverse", "pov": "Shooter's POV"}  # fmt: skip
+          "reverse": "Reverse", "pov": "Virtual POV"}  # fmt: skip
 
 
 def _code_hash() -> str:
@@ -63,15 +65,19 @@ def _lift_available(cfg: dict) -> bool:
     return lift.available()
 
 
-def _angles(ctx: Ctx) -> list[str]:
+def _angles_of(gd: Path, play_id: str) -> list[str]:
+    """A play's Tier C angles from its 3D scene (a virtual POV per reconstructed player),
+    else from the highlight (the key player's POV)."""
+    from replay_render.avatars import scene
     from replay_render.avatars.render import angles_for
-    from replay_render.virtual.replays import read_highlights
+    from replay_render.virtual.replays import play
 
-    return [
-        f"{h['play_id']}/tierc_{a}"
-        for h in read_highlights(ctx.game_dir)["plays"]
-        for a in angles_for(h)
-    ]
+    has_scene = (gd / scene.SCENE_REL.format(play_id=play_id)).is_file()
+    return angles_for(scene.read(gd, play_id) if has_scene else play(gd, play_id))
+
+
+def _angles(ctx: Ctx) -> list[str]:
+    return [f"{p}/tierc_{a}" for p in _plays(ctx) for a in _angles_of(ctx.game_dir, p)]
 
 
 def run_scene(ctx: Ctx, item: str | None) -> None:
@@ -107,8 +113,7 @@ def run_render(ctx: Ctx, item: str | None) -> None:
 def merge_manifest(game_dir: Path, play_id: str, sport: str | None = None) -> dict:
     """Add the rendered Tier C angles of one play to its manifest (created from the
     Tier A/B videos if the `replays` stage has not written it)."""
-    from replay_render.avatars.render import angles_for
-    from replay_render.virtual.replays import play, probe_video, write_manifest
+    from replay_render.virtual.replays import probe_video, write_manifest
 
     gd = Path(game_dir)
     path = gd / "replays" / play_id / "manifest.json"
@@ -117,14 +122,20 @@ def merge_manifest(game_dir: Path, play_id: str, sport: str | None = None) -> di
         m = write_manifest(gd, play_id, sport)
     angles = [a for a in m.get("angles") or [] if a.get("tier") != "C"]
     names = {p["id"]: p.get("name") for p in _players(gd)}
-    for a in angles_for(play(gd, play_id)):
+    for a in _angles_of(gd, play_id):
         rel = f"replays/{play_id}/tierc_{a}.mp4"
         if not (gd / rel).is_file():
             continue
         info = probe_video(gd / rel)
         kind, _, pid = a.partition("_") if a.startswith("pov_") else (a, "", "")
-        aid = f"pov:{pid}" if pid else kind
-        label = "3D " + LABELS[kind] + (f" · {names.get(pid) or '#' + pid}" if pid else "")
+        # `3d:` keeps ids unique: Tier B has a `broadcast_high` too
+        aid = f"pov:{pid}" if pid else f"3d:{kind}"
+        label = (
+            ("" if pid else "3D ")
+            + LABELS[kind]
+            # an untagged player reads "Player 3" (track p3), as everywhere on the TV
+            + (f" · {names.get(pid) or 'Player ' + pid.removeprefix('p')}" if pid else "")
+        )
         angles.append({"id": aid, "tier": "C", "label": label, "url": rel,
                        "duration_s": info["duration_s"], "width": info["width"],
                        "height": info["height"]})  # fmt: skip

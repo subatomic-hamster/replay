@@ -65,8 +65,9 @@ test("TV-01 Home → player → follow a player → Back → Home", async ({
   );
   expect(Math.abs(box.width / surface.width - 0.06)).toBeLessThan(0.005);
 
-  // W4: Select follows at the same timestamp; the crop transform scales by 1/0.5. The
-  // player's chip takes the title's place top-left.
+  // W4: Select follows from the same timestamp, playing again (it was playing before the
+  // pick); the camera zooms to 2.5 × the box height (0.5 → scale 2). The player's chip
+  // takes the title's place top-left.
   const before = (await video(page))!.currentTime;
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("followcam-active")).toBeVisible();
@@ -82,9 +83,10 @@ test("TV-01 Home → player → follow a player → Back → Home", async ({
   const [sx, sy, tx] = await transform(page);
   expect(sy).toBeCloseTo(2, 2);
   expect(tx).toBeLessThan(0); // panned right, toward p3
-  expect(
-    Math.abs((await video(page))!.currentTime - before),
-  ).toBeLessThanOrEqual(FRAME);
+  const resumed = await video(page);
+  expect(resumed!.paused).toBe(false);
+  expect(resumed!.currentTime).toBeGreaterThanOrEqual(before - FRAME);
+  expect(resumed!.currentTime).toBeLessThan(before + 6);
   expect(sx).toBeCloseTo(2, 2);
   await expect(page.getByTestId("follow-frame")).toHaveAttribute(
     "data-pid",
@@ -99,14 +101,13 @@ test("TV-01 Home → player → follow a player → Back → Home", async ({
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("domore")).toHaveCount(0);
 
-  // Back stops following: wide shot at the same time, identity transform, the frame stays
-  // on p3 (W4).
+  // Back stops following: the camera eases back to the wide shot (identity transform),
+  // playback goes on, the frame stays on p3 (W4).
+  const leaving = (await video(page))!.currentTime;
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("followcam-active")).toHaveCount(0);
   await expect.poll(async () => (await transform(page))[0]).toBeCloseTo(1, 3);
-  expect(
-    Math.abs((await video(page))!.currentTime - before),
-  ).toBeLessThanOrEqual(FRAME);
+  expect((await video(page))!.currentTime).toBeGreaterThanOrEqual(leaving);
   await expect(page.getByTestId("follow-frame")).toHaveAttribute(
     "data-pid",
     "p3",

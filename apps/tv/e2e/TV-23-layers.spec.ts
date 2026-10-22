@@ -72,7 +72,9 @@ test("TV-23 every layer: no text under 24 px, inside the safe zone, clear of the
   const line = await box("time-elapsed"); // the times row tops the court line
   const title = await box("watch-title");
   expect(title.x).toBeGreaterThanOrEqual(96);
-  expect(title.y).toBeGreaterThanOrEqual(54);
+  // T paints its glyphs 0.04 em up to centre the capitals (TV-33): the box, not the ink,
+  // may start a pixel above the safe edge
+  expect(title.y).toBeGreaterThanOrEqual(54 - 2);
   expect(line.x).toBeGreaterThanOrEqual(96);
   expect(
     (await box("time-remaining")).x + (await box("time-remaining")).width,

@@ -4,7 +4,7 @@
 // what does not fit is clipped at its edge, the next tile peeking, and the row scrolls with
 // focus. A tile whose feature is still processing says "Getting ready, about N min" and
 // cannot be chosen. A tile with `children` opens its own row in place (Follow player's
-// player chips, Angles' thumbnails, Watch's ways), the current child marked; Back or Down
+// actions, Player POV's player chips, Angles' thumbnails, Watch's ways), the current child marked; Back or Down
 // returns to the main row, and from there closes the layer.
 import { useCallback, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
@@ -110,7 +110,10 @@ export function DoMoreLayer({
         dataSet={{ row: open ? open.id : "main" }}
       >
         <T style={[type.meta, styles.crumb]}>{open ? open.label : "Do more"}</T>
-        <View style={styles.clip}>
+        <View
+          style={[styles.clip, view === "chips" && styles.toEdge]}
+          testID="domore-clip"
+        >
           <View style={[styles.row, { transform: [{ translateX: -shift }] }]}>
             {row.map((t, n) => {
               const on = n === k;
@@ -219,6 +222,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: SCALE_ROOM,
     paddingVertical: SCALE_ROOM,
   },
+  // Chips run on off the screen edge, like Moments' filter chips: a chip cut at the safe
+  // edge read as a broken label ("P6 Pla"). `shift` still keeps the focused one inside it.
+  toEdge: { width: px(1920) - safe.x + SCALE_ROOM },
   row: { flexDirection: "row" },
   tile: { padding: sp(3) },
   chip: {

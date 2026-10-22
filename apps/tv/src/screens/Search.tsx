@@ -4,21 +4,41 @@
 // the keyword query route, and says so. Select on a hit plays that play's window.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { fmtClock, listWindow, type SearchResult } from "../../../../packages/tv-core/src/discovery";
+import {
+  fmtClock,
+  listWindow,
+  type SearchResult,
+} from "../../../../packages/tv-core/src/discovery";
 import { highlightQueries } from "../../../../packages/tv-core/src/display";
 import { api } from "../api";
 import { TextEntryDialog } from "../components/TextEntryDialog";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
-import { PlayerSurface, useClockTime, type PlayerHandle } from "../playback/PlayerSurface";
-import { color, focusRing, font, px } from "../theme";
-import { ApiErrorBanner, Hint, Loading, Pill, T, styles as ui, useAsync } from "../ui";
+import {
+  PlayerSurface,
+  useClockTime,
+  type PlayerHandle,
+} from "../playback/PlayerSurface";
+import { color, focusRing, font, px, radius } from "../theme";
+import {
+  ApiErrorBanner,
+  Hint,
+  Loading,
+  Pill,
+  T,
+  styles as ui,
+  useAsync,
+} from "../ui";
 
 const ASK_CHIP = "Type a search…";
 const VISIBLE = 5;
 
 export function Search({ gameId }: { gameId: string }) {
-  const { data: game, error, reload } = useAsync(() => api.getGame(gameId), [gameId]);
+  const {
+    data: game,
+    error,
+    reload,
+  } = useAsync(() => api.getGame(gameId), [gameId]);
   const [result, setResult] = useState<SearchResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState("");
@@ -63,7 +83,8 @@ export function Search({ gameId }: { gameId: string }) {
       else if (a === "up") setRow(0);
       else if (a === "down") setRow(hits.length ? 1 : 0);
       else if (a === "left" && row === 0) setCol((c) => Math.max(0, c - 1));
-      else if (a === "right" && row === 0) setCol((c) => Math.min(chips.length - 1, c + 1));
+      else if (a === "right" && row === 0)
+        setCol((c) => Math.min(chips.length - 1, c + 1));
       else if (a === "left") setIndex((i) => Math.max(0, i - 1));
       else if (a === "right") setIndex((i) => Math.min(hits.length - 1, i + 1));
       else if (a === "select" && row === 0) {
@@ -84,26 +105,44 @@ export function Search({ gameId }: { gameId: string }) {
   const first = listWindow(index, hits.length, VISIBLE);
 
   return (
-    <View style={ui.screen} testID="search">
+    <View style={ui.safe} testID="search">
       <T style={ui.h1}>Search this game</T>
       <View style={styles.chips}>
         {chips.map((c, i) => (
-          <Pill key={c} label={c} focused={row === 0 && i === col} testID="search-chip" dataSet={{ chip: c }} />
+          <Pill
+            key={c}
+            label={c}
+            focused={row === 0 && i === col}
+            testID="search-chip"
+            dataSet={{ chip: c }}
+          />
         ))}
       </View>
       {busy ? <T style={{ color: color.dim }}>Searching…</T> : null}
       {failed ? <T testID="search-error">Search failed: {failed}</T> : null}
       {result ? (
-        <T testID="search-interpretation" dataSet={{ fallback: result.fallback ? "true" : "false" }} style={styles.interp}>
+        <T
+          testID="search-interpretation"
+          dataSet={{ fallback: result.fallback ? "true" : "false" }}
+          style={styles.interp}
+        >
           “{result.query}” — {result.interpretation}
-          {result.fallback ? " · keyword match (no search index for this game yet)" : " · ranked by similarity"}
+          {result.fallback
+            ? " · keyword match (no search index for this game yet)"
+            : " · ranked by similarity"}
         </T>
       ) : null}
-      {result && hits.length === 0 ? <T testID="search-empty">Nothing in this game matches.</T> : null}
+      {result && hits.length === 0 ? (
+        <T testID="search-empty">Nothing in this game matches.</T>
+      ) : null}
       {hits.length ? (
         <View style={styles.layout}>
           <View style={{ width: px(960) }}>
-            <PlayerSurface ref={setHandle} src={api.mediaUrl(game, game.renditions.wide)} muted />
+            <PlayerSurface
+              ref={setHandle}
+              src={api.mediaUrl(game, game.renditions.wide)}
+              muted
+            />
           </View>
           <View style={styles.list}>
             {hits.slice(first, first + VISIBLE).map((h, k) => {
@@ -113,13 +152,26 @@ export function Search({ gameId }: { gameId: string }) {
                 <View
                   key={`${h.play_id}-${i}`}
                   testID="search-hit"
-                  dataSet={{ playId: h.play_id, tStart: h.t_start, focused: on ? "true" : "false", match: h.filter_match ? "true" : "false" }}
-                  style={[styles.hit, focusRing(on), i === index && { backgroundColor: color.raised }]}
+                  dataSet={{
+                    playId: h.play_id,
+                    tStart: h.t_start,
+                    focused: on ? "true" : "false",
+                    match: h.filter_match ? "true" : "false",
+                  }}
+                  style={[
+                    styles.hit,
+                    focusRing(on),
+                    i === index && { backgroundColor: color.raised },
+                  ]}
                 >
                   <View style={styles.hitHead}>
                     <T style={styles.rank}>{i + 1}</T>
                     <T style={{ color: color.dim }}>{fmtClock(h.t_start)}</T>
-                    {h.filter_match ? <T style={styles.match}>MATCH</T> : null}
+                    {h.filter_match ? (
+                      <View style={styles.match}>
+                        <T style={styles.matchText}>Match</T>
+                      </View>
+                    ) : null}
                   </View>
                   <T numberOfLines={2}>{h.text}</T>
                 </View>
@@ -128,7 +180,10 @@ export function Search({ gameId }: { gameId: string }) {
           </View>
         </View>
       ) : null}
-      <Hint>Left/Right pick · Select searches or plays · Down to the results · Back returns to the game</Hint>
+      <Hint>
+        Left/Right pick · Select searches or plays · Down to the results · Back
+        returns to the game
+      </Hint>
 
       {typing ? (
         <TextEntryDialog
@@ -150,8 +205,32 @@ const styles = StyleSheet.create({
   interp: { color: color.dim, marginVertical: px(12) },
   layout: { flexDirection: "row", marginTop: px(8) },
   list: { flex: 1, marginLeft: px(32) },
-  hit: { paddingHorizontal: px(16), paddingVertical: px(8), borderRadius: px(10), marginBottom: px(10), backgroundColor: color.panel },
+  hit: {
+    paddingHorizontal: px(16),
+    paddingVertical: px(8),
+    borderRadius: radius.card,
+    marginBottom: px(10),
+    backgroundColor: color.panel,
+  },
   hitHead: { flexDirection: "row", alignItems: "center" },
-  rank: { width: px(48), color: color.accent, fontSize: font.body, fontWeight: "800" },
-  match: { marginLeft: px(16), color: color.onAccent, backgroundColor: color.made, fontSize: font.small, fontWeight: "800", paddingHorizontal: px(10), borderRadius: px(6) },
+  rank: {
+    width: px(48),
+    color: color.accent,
+    fontSize: font.body,
+    fontWeight: "800",
+  },
+  // the fill on a View (T lifts its glyphs; a fill on the Text would move with them);
+  // sentence case, full-round like every other tag
+  match: {
+    marginLeft: px(16),
+    backgroundColor: color.made,
+    paddingHorizontal: px(12),
+    borderRadius: radius.chip,
+  },
+  matchText: {
+    color: color.onAccent,
+    fontSize: font.small,
+    lineHeight: px(34),
+    fontWeight: "800",
+  },
 });

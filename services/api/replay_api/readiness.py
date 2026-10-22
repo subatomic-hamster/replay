@@ -71,6 +71,8 @@ FEATURES: dict[str, tuple[tuple[str, ...], str | None, tuple[str, ...]]] = {
     "follow": (("crops/*.json",), "crops", ()),
     "angles": (("replays/*/manifest.json",), None, ("replays", "tierc_manifest")),
     "free_view": (("replays/*/scene/layout.json",), None, ("scene",)),
+    # each tracked player's virtual POV (Tier C, `pov:<pid>` angles)
+    "pov": (("replays/*/tierc_pov_*.mp4",), None, ("tierc_manifest",)),
     "highlights": (("hype.json",), None, ("hype",)),
     "condensed": (("renditions/condensed.mp4",), None, ("condensed",)),
     "stats": (("events.json",), "events", ()),

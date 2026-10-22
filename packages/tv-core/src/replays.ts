@@ -7,7 +7,7 @@ export type ReplayTier = "A" | "B" | "C";
 
 export interface ReplayAngle {
   /** Tier A: `wide`, `follow:<pid>`, `tight:<pid>`; Tier B: `broadcast_high`, `orbit`,
-   *  `push_in`, `reverse`. */
+   *  `push_in`, `reverse`; Tier C: `3d:<kind>` and `pov:<pid>` (a virtual POV). */
   id: string;
   tier: ReplayTier;
   label: string;
@@ -45,7 +45,11 @@ export interface ReplaySummary {
   manifest_url: string;
 }
 
-const TIER_BADGE: Record<ReplayTier, string> = { A: "Real video", B: "2.5D", C: "3D" };
+const TIER_BADGE: Record<ReplayTier, string> = {
+  A: "Real video",
+  B: "2.5D",
+  C: "3D",
+};
 
 export const tierBadge = (tier: ReplayTier): string => TIER_BADGE[tier] ?? tier;
 
@@ -53,6 +57,24 @@ export const tierBadge = (tier: ReplayTier): string => TIER_BADGE[tier] ?? tier;
 export function cycleAngle(index: number, count: number, dir: 1 | -1): number {
   if (count <= 0) return 0;
   return (((index + dir) % count) + count) % count;
+}
+
+/** A Tier C virtual POV (`pov:<pid>`): that player's eyes in the 3D reconstruction. */
+export const povOf = (a: ReplayAngle | undefined): string | null =>
+  a?.id.startsWith("pov:") ? a.id.slice(4) : null;
+
+/** The angle indices Left/Right cut between: every angle but the virtual POVs, which
+ *  share one slot — `at` when it is a POV, else the first POV (the play's key player).
+ *  A play has a POV per tracked player; Up picks another (`nextPov`). */
+export function cutOrder(angles: ReplayAngle[], at: number): number[] {
+  const slot = povOf(angles[at]) ? at : angles.findIndex((a) => povOf(a));
+  return angles.flatMap((a, i) => (!povOf(a) || i === slot ? [i] : []));
+}
+
+/** The next player's POV after the one at `at` (wraps); `at` when there is no other. */
+export function nextPov(angles: ReplayAngle[], at: number): number {
+  const povs = angles.flatMap((a, i) => (povOf(a) ? [i] : []));
+  return povs.length ? povs[(povs.indexOf(at) + 1) % povs.length] : at;
 }
 
 /** How long the angle label stays big after a cut (broadcast lower-third), in ms. */

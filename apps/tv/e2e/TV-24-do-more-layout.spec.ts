@@ -9,6 +9,7 @@ const ORDER = [
   "action-follow",
   "nav-replays",
   "action-free-view",
+  "action-pov",
   "menu-watch",
   "nav-review",
   "action-captions",

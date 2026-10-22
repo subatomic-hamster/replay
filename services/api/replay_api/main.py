@@ -10,7 +10,7 @@ import math
 import secrets
 import time
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import (
     Body,
@@ -24,7 +24,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 from starlette.concurrency import run_in_threadpool
 
 from . import (
@@ -129,7 +129,10 @@ class AutoCalibration(BaseModel):
 
 
 class PlayerPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=60)
+    # stripped first: a name of spaces is no name (422), not a blank label on the TV
+    name: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)] | None
+    ) = None
     merge_into: str | None = None
 
 

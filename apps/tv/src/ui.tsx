@@ -45,7 +45,8 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
   useEffect(() => {
     let live = true;
     setError(null);
-    run().then(
+    // A synchronous throw (the mock's unknown game id) is an error too, not a crash.
+    new Promise<T>((resolve) => resolve(run())).then(
       (v) => live && setData(v),
       (e: Error) => live && setError(e),
     );
@@ -58,8 +59,24 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
   return { data, error, reload };
 }
 
+/** Barlow's line box (ascent 1000, descent 200 per 1000 em, every face) puts the middle of
+ *  its capitals about 0.05 em below the middle of the box, so a label centred in a pill,
+ *  row or circle read 1–1.5 px low at 30 px (measured from pixels on the web build and a
+ *  Fire TV). T lifts its glyphs (paint only, a transform: layout is untouched) by 0.04 em,
+ *  which after rounding to whole pixels lands the capitals within half a pixel of the
+ *  box's middle on both (TV-33). */
+const CAP_DROP = 0.04;
+/** Android pads a text box with the font's extra top/bottom by default (another ~1 px low
+ *  at 30 px on a Fire TV, and taller boxes than the web build's): off, so both platforms
+ *  lay text out alike. */
+const ANDROID_TEXT =
+  Platform.OS === "android"
+    ? { includeFontPadding: false, textAlignVertical: "center" as const }
+    : null;
+
 /** Text. The weight picks the Barlow face (600+ = SemiBold, else Medium) and is then
- *  dropped, so neither platform fakes a bold; an explicit fontFamily (Figures) is kept. */
+ *  dropped, so neither platform fakes a bold; an explicit fontFamily (Figures) is kept.
+ *  Capitals sit on the middle of the text box (CAP_DROP). */
 export function T({
   children,
   style,
@@ -77,9 +94,20 @@ export function T({
   const { fontWeight: w, ...rest } = flat;
   const bold = w === "bold" || Number(w) >= 600;
   const family = rest.fontFamily ?? (bold ? face.semibold : face.medium);
+  // A Text that paints its own fill would carry the fill along: wrap such a badge in a
+  // View with the fill instead, as Clips and Search do.
+  const lift = rest.backgroundColor
+    ? 0
+    : PixelRatio.roundToNearestPixel((rest.fontSize ?? font.body) * CAP_DROP);
+  const moved = Array.isArray(rest.transform) ? rest.transform : [];
   return (
     <Text
-      style={[rest, { fontFamily: family }]}
+      style={[
+        rest,
+        ANDROID_TEXT,
+        { fontFamily: family },
+        lift ? { transform: [...moved, { translateY: -lift }] } : null,
+      ]}
       testID={testID}
       dataSet={dataSet}
       numberOfLines={numberOfLines}
@@ -387,7 +415,7 @@ export function Hint({
   return (
     <View style={[styles.hintRow, style]}>
       {k ? (
-        <View style={styles.keyCap}>
+        <View style={styles.keyCap} testID="hint-key">
           <T style={styles.keyText}>{k}</T>
         </View>
       ) : null}
@@ -750,7 +778,7 @@ export const styles = StyleSheet.create({
     marginBottom: sp(1.5),
   },
   title: { color: color.chalk, marginBottom: sp(2) },
-  hint: { color: color.bleacher, fontSize: font.meta },
+  hint: { color: color.bleacher, fontSize: font.meta, lineHeight: px(34) },
   hintRow: { flexDirection: "row", alignItems: "center", marginTop: sp(3) },
   keyCap: {
     borderWidth: px(2),
@@ -759,7 +787,12 @@ export const styles = StyleSheet.create({
     paddingHorizontal: sp(1.5),
     marginRight: sp(1.5),
   },
-  keyText: { color: color.bleacher, fontSize: font.meta, fontWeight: "600" },
+  keyText: {
+    color: color.bleacher,
+    fontSize: font.meta,
+    lineHeight: px(34),
+    fontWeight: "600",
+  },
   chip: {
     paddingHorizontal: sp(3),
     paddingVertical: px(6),
@@ -768,7 +801,12 @@ export const styles = StyleSheet.create({
     marginRight: sp(2),
     marginBottom: sp(1.5),
   },
-  chipText: { color: color.chalk, fontSize: font.body, fontWeight: "600" },
+  chipText: {
+    color: color.chalk,
+    fontSize: font.body,
+    lineHeight: px(36),
+    fontWeight: "600",
+  },
   pillButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -779,7 +817,11 @@ export const styles = StyleSheet.create({
     marginRight: sp(2),
   },
   pillButtonOn: { backgroundColor: color.chalk },
-  pillButtonText: { fontSize: font.body, fontWeight: "600" },
+  pillButtonText: {
+    fontSize: font.body,
+    lineHeight: px(40),
+    fontWeight: "600",
+  },
   triangle: {
     width: 0,
     height: 0,

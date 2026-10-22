@@ -2,7 +2,8 @@
 // above the court line, cued to the moment nearest the playhead, with filter chips above
 // (All N, Scores, each player, Your bookmarks). Left/Right walk (the line marks the focused
 // card's time), Select jumps there and closes, Up goes to the chips and from the chips
-// closes the layer, Back closes. Owns the remote while it is open (input stack).
+// closes the layer, Down opens the replay angles of a moment's play (the focused card says
+// "▼ Angles" when it has them), Back closes. Owns the remote while it is open (input stack).
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { fmtDuration } from "../../../../packages/tv-core/src/display";
@@ -17,6 +18,8 @@ const CARD_W = px(336);
 const THUMB_H = px(189);
 const PITCH = CARD_W + px(16) + sp(3);
 const SHOWN = 4;
+/** The chip row's room: from the layer's left (the safe edge) to the right safe edge. */
+const CHIPS_W = px(1920) - 2 * safe.x - px(8);
 
 interface Filter {
   id: string;
@@ -69,6 +72,8 @@ export function MomentsLayer({
   onJump,
   onClose,
   onPlayPause,
+  hasAngles,
+  onAngles,
 }: {
   moments: Moment[];
   /** The playhead when the layer opened: the row starts on the nearest moment. */
@@ -81,6 +86,9 @@ export function MomentsLayer({
   onJump: (m: Moment) => void;
   onClose: () => void;
   onPlayPause: () => void;
+  /** Whether a moment falls in a play with replay angles; Down opens them (`onAngles`). */
+  hasAngles?: (m: Moment) => boolean;
+  onAngles?: (m: Moment) => void;
 }) {
   const filters = useMemo(() => filtersOf(moments), [moments]);
   const [fi, setFi] = useState(0); // the applied filter
@@ -122,8 +130,11 @@ export function MomentsLayer({
         setCi(Math.min(fi, filters.length - 1));
         setZone("chips");
       } else if (a === "select" && cur) onJump(cur);
+      else if (a === "down" && cur && hasAngles?.(cur)) onAngles?.(cur);
     },
     [
+      hasAngles,
+      onAngles,
       zone,
       ci,
       filters,
@@ -144,22 +155,51 @@ export function MomentsLayer({
   // only the cards around the visible ones (absolutely placed at their slot, so nothing
   // shifts): on a Fire TV Stick every card of a long game re-rendering under the video
   // was 84 % janky frames.
+  // A real game has more players than chips fit across the screen, so the chip row slides
+  // to keep the focused chip (or, from the cards, the applied one) inside the right safe
+  // edge. Each chip's right edge comes from its layout.
+  const [edges, setEdges] = useState<number[]>([]);
+  const onChipLayout = useCallback(
+    (k: number, right: number) =>
+      setEdges((e) =>
+        e[k] === right ? e : Object.assign([...e], { [k]: right }),
+      ),
+    [],
+  );
+  const lead = zone === "chips" ? ci : Math.min(fi, filters.length - 1);
+  const chipShift = Math.max(0, (edges[lead] ?? 0) - CHIPS_W);
   const chipRow = useMemo(
     () => (
-      <View style={styles.chips}>
+      <View
+        style={[styles.chips, { transform: [{ translateX: -chipShift }] }]}
+        testID="moment-filters"
+        dataSet={{ shift: Math.round(chipShift) }}
+      >
         {(moments.length ? filters : []).map((f, k) => (
-          <Chip
+          <View
             key={f.id}
-            label={f.label}
-            focused={zone === "chips" && k === ci}
-            active={f === filter}
-            testID="moment-filter"
-            dataSet={{ filter: f.id, active: f === filter ? "true" : "false" }}
-          />
+            onLayout={(e) =>
+              onChipLayout(
+                k,
+                e.nativeEvent.layout.x + e.nativeEvent.layout.width,
+              )
+            }
+          >
+            <Chip
+              label={f.label}
+              focused={zone === "chips" && k === ci}
+              active={f === filter}
+              testID="moment-filter"
+              dataSet={{
+                filter: f.id,
+                active: f === filter ? "true" : "false",
+              }}
+            />
+          </View>
         ))}
       </View>
     ),
-    [moments.length, filters, zone, ci, filter],
+    [moments.length, filters, zone, ci, filter, chipShift, onChipLayout],
   );
   const first = Math.max(0, i - (SHOWN - 1));
   const cardRow = useMemo(() => {
@@ -175,11 +215,12 @@ export function MomentsLayer({
             m={m}
             at={(lo + n) * PITCH}
             on={zone === "cards" && lo + n === i}
+            angles={!!hasAngles?.(m)}
           />
         ))}
       </View>
     );
-  }, [list, first, i, zone]);
+  }, [list, first, i, zone, hasAngles]);
 
   return (
     <SlideIn
@@ -210,10 +251,13 @@ const MomentCard = memo(function MomentCard({
   m,
   at,
   on,
+  angles,
 }: {
   m: Moment;
   at: number;
   on: boolean;
+  /** the moment's play has replay angles (Down opens them) */
+  angles: boolean;
 }) {
   return (
     <View style={[styles.slot, { left: at }]}>
@@ -227,20 +271,28 @@ const MomentCard = memo(function MomentCard({
           kind: m.kind,
           t: m.t,
           focused: on ? "true" : "false",
+          angles: angles ? "true" : "false",
         }}
       >
         <View style={styles.thumb}>
           {m.thumb_url ? (
             <Image
               source={{ uri: m.thumb_url }}
-              style={StyleSheet.absoluteFill}
+              // rounds itself (the card does not clip over video): square corners
+              // poked out of the rounded focus ring
+              style={[StyleSheet.absoluteFill, styles.round]}
               resizeMode="cover"
               resizeMethod="resize"
             />
           ) : null}
-          <View style={styles.time}>
+          <View style={styles.time} testID="moment-time">
             <T style={styles.timeText}>{fmtDuration(m.t)}</T>
           </View>
+          {angles && on ? (
+            <View style={styles.angles} testID="moment-angles">
+              <T style={styles.anglesText}>▼ Angles</T>
+            </View>
+          ) : null}
         </View>
       </Focusable>
       <T
@@ -281,6 +333,24 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(18, 26, 35, 0.84)",
   },
   timeText: { ...type.figures, fontSize: px(26), lineHeight: px(34) },
-  label: { color: color.bleacher, marginTop: sp(1), marginLeft: px(8) },
+  angles: {
+    position: "absolute",
+    right: sp(1),
+    bottom: sp(1),
+    paddingHorizontal: sp(1.5),
+    borderRadius: radius.chip,
+    backgroundColor: color.scoreboard,
+  },
+  anglesText: { ...type.meta, color: color.floor },
+  // rides the video under the scrim: on a bright floor (a real gym's, lit) Bleacher alone
+  // washed out, so the same soft shadow as the seek readout
+  label: {
+    color: color.bleacher,
+    marginTop: sp(1),
+    marginLeft: px(8),
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: px(2) },
+    textShadowRadius: px(8),
+  },
   empty: { color: color.bleacher, marginLeft: px(8), marginTop: sp(2) },
 });

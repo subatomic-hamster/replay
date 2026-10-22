@@ -11,11 +11,21 @@ import { useDpad, type DpadAction } from "../platform/keys";
 import { PlayerSurface, type PlayerHandle } from "../playback/PlayerSurface";
 import { navigate } from "../router";
 import { ApiErrorBanner, fmtDuration, useAsync } from "../ui";
-import { ANGLE_BUG_MS, cycleAngle, tierBadge } from "../../../../packages/tv-core/src/replays";
+import {
+  ANGLE_BUG_MS,
+  cutOrder,
+  cycleAngle,
+  nextPov,
+  povOf,
+  tierBadge,
+} from "../../../../packages/tv-core/src/replays";
 import "./Replay.css";
 
 export function ReplayList({ gameId }: { gameId: string }) {
-  const { data, error, reload } = useAsync(() => api.listReplays(gameId), [gameId]);
+  const { data, error, reload } = useAsync(
+    () => api.listReplays(gameId),
+    [gameId],
+  );
   const [focus, setFocus] = useState(0);
   const replays = useMemo(() => data ?? [], [data]);
 
@@ -23,10 +33,13 @@ export function ReplayList({ gameId }: { gameId: string }) {
     (a: DpadAction) => {
       if (a === "back") navigate(`/tv/${gameId}`);
       else if (replays.length === 0) return;
-      else if (a === "down" || a === "right") setFocus((i) => Math.min(replays.length - 1, i + 1));
+      else if (a === "down" || a === "right")
+        setFocus((i) => Math.min(replays.length - 1, i + 1));
       else if (a === "up" || a === "left") setFocus((i) => Math.max(0, i - 1));
       else if (a === "select")
-        navigate(`/tv/${gameId}/replays/${encodeURIComponent(replays[focus].play_id)}`);
+        navigate(
+          `/tv/${gameId}/replays/${encodeURIComponent(replays[focus].play_id)}`,
+        );
     },
     [gameId, replays, focus],
   );
@@ -39,7 +52,9 @@ export function ReplayList({ gameId }: { gameId: string }) {
     <div className="screen replay-list" data-testid="replay-list">
       <h1>Replays</h1>
       {replays.length === 0 ? (
-        <p data-testid="replay-list-empty">No replays rendered for this game yet.</p>
+        <p data-testid="replay-list-empty">
+          No replays rendered for this game yet.
+        </p>
       ) : null}
       <ol className="replay-cards">
         {replays.map((r, i) => (
@@ -58,18 +73,23 @@ export function ReplayList({ gameId }: { gameId: string }) {
         ))}
       </ol>
       <p className="hint">
-        <b>↑ ↓</b> move · <b>Enter</b> opens a replay · <b>Escape</b> back to the game
+        <b>↑ ↓</b> move · <b>Enter</b> opens a replay · <b>Escape</b> back to
+        the game
       </p>
     </div>
   );
 }
 
 export function Replay({ gameId, playId }: { gameId: string; playId: string }) {
-  const { data: m, error, reload } = useAsync(() => api.getReplay(gameId, playId), [gameId, playId]);
+  const {
+    data: m,
+    error,
+    reload,
+  } = useAsync(() => api.getReplay(gameId, playId), [gameId, playId]);
   const [handle, setHandle] = useState<PlayerHandle | null>(null);
   const [index, setIndex] = useState(0);
   const [big, setBig] = useState(true);
-  const count = m?.angles.length ?? 0;
+  const order = useMemo(() => (m ? cutOrder(m.angles, index) : []), [m, index]);
 
   // A replay starts playing; PlayerSurface holds the request until the media can play.
   useEffect(() => {
@@ -86,12 +106,17 @@ export function Replay({ gameId, playId }: { gameId: string; playId: string }) {
   const onAction = useCallback(
     (a: DpadAction) => {
       if (a === "back") navigate(`/tv/${gameId}/replays`);
-      else if ((a === "left" || a === "right") && count > 1) {
-        setIndex((i) => cycleAngle(i, count, a === "right" ? 1 : -1));
+      else if ((a === "left" || a === "right") && order.length > 1) {
+        // the virtual POVs share one slot of the cut (the key player's); Up picks another
+        const k = Math.max(0, order.indexOf(index));
+        setIndex(order[cycleAngle(k, order.length, a === "right" ? 1 : -1)]);
+        setBig(true);
+      } else if (a === "up" && m && povOf(m.angles[index])) {
+        setIndex(nextPov(m.angles, index));
         setBig(true);
       } else if (a === "select" || a === "playpause") handle?.toggle();
     },
-    [gameId, count, handle],
+    [gameId, order, index, m, handle],
   );
   useDpad(onAction);
 
@@ -146,7 +171,7 @@ export function Replay({ gameId, playId }: { gameId: string; playId: string }) {
               </span>
               <span className="replay-arrow">◀</span>
               <span className="replay-pos" data-testid="replay-angle-pos">
-                {`${index + 1} / ${count}`}
+                {`${order.indexOf(index) + 1} / ${order.length}`}
               </span>
               <span className="replay-arrow">▶</span>
             </div>
@@ -156,8 +181,8 @@ export function Replay({ gameId, playId }: { gameId: string; playId: string }) {
           </div>
 
           <p className="hint replay-hint">
-            <b>◀ ▶</b> cut between camera angles · <b>Enter</b> plays/pauses · <b>Escape</b> back to
-            replays
+            <b>◀ ▶</b> cut between camera angles · <b>Enter</b> plays/pauses ·{" "}
+            <b>Escape</b> back to replays
           </p>
         </PlayerSurface>
       </div>

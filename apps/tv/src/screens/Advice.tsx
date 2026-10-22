@@ -10,7 +10,10 @@ import {
 import { api } from "../api";
 import { useDpad, type DpadAction } from "../input";
 import { navigate } from "../nav";
-import { color, px } from "../theme";
+import { color, px, radius } from "../theme";
+
+/** "Player 7" for an unnamed track, as on the Moments chips and the Stats panel. */
+const trackName = (pid: string) => `Player ${pid.replace(/^p/, "")}`;
 import {
   ApiErrorBanner,
   Hint,
@@ -62,13 +65,13 @@ export function Advice({ gameId }: { gameId: string }) {
   const first = listWindow(focus, players.length, CHIPS);
 
   return (
-    <View style={ui.screen} testID="advice">
+    <View style={ui.safe} testID="advice">
       <T style={ui.h1}>Advice</T>
       <View style={styles.row}>
         {players.slice(first, first + CHIPS).map((p, k) => (
           <Pill
             key={p.id}
-            label={p.name ?? `#${p.id}`}
+            label={p.name ?? trackName(p.id)}
             focused={first + k === focus}
             testID={`advice-player-${p.id}`}
           />
@@ -84,7 +87,7 @@ export function Advice({ gameId }: { gameId: string }) {
           testID="advice-panel"
           dataSet={{ playerId: doc.player_id, source: doc.source }}
         >
-          <T style={ui.h2}>{doc.name ?? `#${doc.player_id}`}</T>
+          <T style={ui.h2}>{doc.name ?? trackName(doc.player_id)}</T>
           {doc.lines.map((ln, i) => (
             <T key={i} testID="advice-line" style={styles.line}>
               • {ln}
@@ -110,7 +113,7 @@ const styles = StyleSheet.create({
   panel: {
     marginTop: px(24),
     padding: px(32),
-    borderRadius: px(16),
+    borderRadius: radius.card,
     backgroundColor: color.panel,
     maxWidth: px(1400),
   },

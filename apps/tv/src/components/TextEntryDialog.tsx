@@ -4,7 +4,7 @@
 import { useCallback, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useDpad, type DpadAction } from "../input";
-import { color, font, px } from "../theme";
+import { color, font, px, radius } from "../theme";
 import { Hint, Pill, T, styles as ui } from "../ui";
 
 interface Props {
@@ -24,7 +24,10 @@ interface Props {
 
 const LETTER_ROWS = ["ABCDEFGHIJ", "KLMNOPQRST", "UVWXYZ'-"].map((r) => [...r]);
 
-type Cell = { kind: "preset" | "char" | "space" | "del" | "save" | "cancel"; label: string };
+type Cell = {
+  kind: "preset" | "char" | "space" | "del" | "save" | "cancel";
+  label: string;
+};
 
 export function TextEntryDialog({
   idPrefix,
@@ -84,7 +87,10 @@ export function TextEntryDialog({
       switch (a) {
         case "up":
         case "down": {
-          const next = a === "up" ? Math.max(0, row - 1) : Math.min(grid.length - 1, row + 1);
+          const next =
+            a === "up"
+              ? Math.max(0, row - 1)
+              : Math.min(grid.length - 1, row + 1);
           setRow(next);
           setCol(Math.min(col, grid[next].length - 1));
           break;
@@ -114,10 +120,17 @@ export function TextEntryDialog({
 
   return (
     <View style={styles.backdrop}>
-      <View style={styles.dialog} testID={`${idPrefix}-dialog`} dataSet={dataSet}>
+      <View
+        style={styles.dialog}
+        testID={`${idPrefix}-dialog`}
+        dataSet={dataSet}
+      >
         <T style={ui.h2}>{title}</T>
         <View style={styles.value}>
-          <T testID={`${idPrefix}-value`} style={{ fontSize: font.h2, color: shown ? color.fg : color.dim }}>
+          <T
+            testID={`${idPrefix}-value`}
+            style={{ fontSize: font.h2, color: shown ? color.fg : color.dim }}
+          >
             {shown || "type here…"}
           </T>
         </View>
@@ -134,7 +147,9 @@ export function TextEntryDialog({
             ))}
           </View>
         ))}
-        <Hint>Arrows move · Select picks · DEL deletes a letter · Back cancels</Hint>
+        <Hint>
+          Arrows move · Select picks · DEL deletes a letter · Back cancels
+        </Hint>
       </View>
     </View>
   );
@@ -154,7 +169,7 @@ const styles = StyleSheet.create({
   dialog: {
     backgroundColor: color.panel,
     padding: px(48),
-    borderRadius: px(16),
+    borderRadius: radius.card,
     borderWidth: px(2),
     borderColor: color.line,
   },
@@ -163,9 +178,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: px(24),
     paddingVertical: px(12),
     marginBottom: px(24),
-    borderRadius: px(8),
+    borderRadius: radius.card,
     minWidth: px(800),
   },
   row: { flexDirection: "row", flexWrap: "wrap" },
-  key: { minWidth: px(72), alignItems: "center", borderRadius: px(10) },
+  // full-round like the wide keys beside them (they were 10 px squares among pills)
+  key: { minWidth: px(72), alignItems: "center" },
 });

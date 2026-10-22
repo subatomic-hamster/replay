@@ -12,8 +12,8 @@ neutral mannequin grey. Every frame is labelled "TIER C · 3D reconstruction —
 Angles (all eased, no jitter; time-aligned with the Tier A/B angles of the play):
 `broadcast_high` (elevated, the real camera's side), `reverse` (the opposite sideline),
 `baseline` (behind the target basket; net sports: behind the focus player's baseline),
-`overhead` (top-down, descending), `pov_<pid>` (from the shooter's eyes, turning to the
-rim before the release; net sports: looking across the net).
+`overhead` (top-down, descending), `pov_<pid>` (a virtual POV from any reconstructed
+player's eyes, turning to the rim before the release; net sports: looking across the net).
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ from .skeleton import (
 OUT_SIZE = (1280, 720)
 ANGLES = ("broadcast_high", "baseline", "overhead", "reverse")
 NAMES = {"broadcast_high": "BROADCAST HIGH", "baseline": "BASELINE", "overhead": "OVERHEAD",
-         "reverse": "REVERSE", "pov": "SHOOTER'S POV"}  # fmt: skip
+         "reverse": "REVERSE", "pov": "VIRTUAL POV"}  # fmt: skip
 PX_PER_M = 50
 FLOOR, APRON, PAINT, LINE = (96, 146, 196), (54, 60, 70), (70, 105, 160), (240, 240, 240)
 GREY = (205, 200, 196)
@@ -413,7 +413,9 @@ def camera_path(angle: str, doc: dict, joints: list[np.ndarray], size=OUT_SIZE) 
 # --- the render ------------------------------------------------------------------------
 
 
-def label(canvas: np.ndarray, angle: str, synthetic: bool, title: str, method: str) -> None:
+def label(
+    canvas: np.ndarray, angle: str, synthetic: bool, title: str, method: str, who: str = ""
+) -> None:
     h, w = canvas.shape[:2]
     s = w / 1280.0
 
@@ -425,6 +427,8 @@ def label(canvas: np.ndarray, angle: str, synthetic: bool, title: str, method: s
     cv2.rectangle(canvas, at(24, 24), at(34, 98), (90, 200, 120), -1)
     cv2.putText(canvas, "TIER C  3D", at(46, 54), font, 0.8 * s, (120, 230, 150), 1, cv2.LINE_AA)
     name = NAMES.get(angle.split("_", 1)[0] if angle.startswith("pov") else angle, angle.upper())
+    if who:  # whose eyes: the box fits ~22 characters
+        name = f"{name} {who[:10].upper()}"
     cv2.putText(canvas, name, at(46, 86), font, 0.8 * s, (245, 245, 245), 1, cv2.LINE_AA)
     cv2.putText(canvas, title[:48], (int(24 * s), h - int(28 * s)), font, 0.7 * s,
                 (235, 235, 235), 1, cv2.LINE_AA)  # fmt: skip
@@ -496,13 +500,15 @@ def render_angle(
     painter = Painter(doc, size)
     views = camera_path(angle, doc, painter.joints, size)
     pov_id = pov_player(angle, doc) if angle.startswith("pov") else None
+    who = next((p.get("label") or p["id"] for p in doc["players"] if p["id"] == pov_id), "")
     n = doc["frames"]
     proc = open_encoder(Path(out_path), size, doc["fps"])
     assert proc.stdin is not None
     try:
         for f in range(n):
             canvas = painter.frame(f, views[f], angle, pov_id)
-            label(canvas, angle, bool(doc.get("synthetic")), doc.get("label") or "", doc["method"])
+            label(canvas, angle, bool(doc.get("synthetic")), doc.get("label") or "", doc["method"],
+                  who)  # fmt: skip
             proc.stdin.write(np.ascontiguousarray(canvas).tobytes())
             if progress:
                 progress((f + 1) / n)
@@ -519,10 +525,14 @@ def render_angle(
 
 
 def angles_for(doc_or_highlight: dict) -> list[str]:
-    """File-stem angles of a play: the four fixed ones + the shooter's POV when there is a
-    shooter (else the primary player's)."""
+    """File-stem angles of a play: the four fixed ones + a virtual POV. A scene doc gives
+    one per player it reconstructed, the key player (the shooter, else the primary) first;
+    a highlight only the key player's."""
     shot = doc_or_highlight.get("shot") or {}
     pid = (
         doc_or_highlight.get("shooter") or shot.get("player_id") or doc_or_highlight.get("primary")
     )
+    if "players" in doc_or_highlight:  # only players who are in 3D: no one else's eyes
+        ids = [p["id"] for p in doc_or_highlight["players"]]
+        return list(ANGLES) + [f"pov_{p}" for p in sorted(ids, key=lambda p: p != pid)]
     return list(ANGLES) + ([f"pov_{pid}"] if pid else [])

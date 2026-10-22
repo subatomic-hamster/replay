@@ -5,11 +5,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { listWindow } from "../../../../packages/tv-core/src/discovery";
-import { sportsText, type Profile } from "../../../../packages/tv-core/src/profiles";
+import {
+  sportsText,
+  type Profile,
+} from "../../../../packages/tv-core/src/profiles";
 import { api } from "../api";
 import { Avatar } from "./Avatar";
 import { useDpad, type DpadAction } from "../input";
-import { color, focusRing, font, px } from "../theme";
+import { color, focusRing, font, px, radius } from "../theme";
 import { Hint, T, styles as ui, useAsync } from "../ui";
 
 const VISIBLE = 6;
@@ -37,13 +40,16 @@ export function ProfilePicker({
     (a: DpadAction) => {
       if (a === "back") onCancel();
       else if (a === "up" || a === "left") setFocus((i) => Math.max(0, i - 1));
-      else if (a === "down" || a === "right") setFocus((i) => Math.max(0, Math.min(list.length - 1, i + 1)));
+      else if (a === "down" || a === "right")
+        setFocus((i) => Math.max(0, Math.min(list.length - 1, i + 1)));
       else if (a === "select" && list[focus] && !busy) {
         setBusy(true);
-        api.linkProfile(list[focus].profile_id, gameId, playerId).then(onLinked, (e: Error) => {
-          setNote(`Not linked: ${e.message}`);
-          setBusy(false);
-        });
+        api
+          .linkProfile(list[focus].profile_id, gameId, playerId)
+          .then(onLinked, (e: Error) => {
+            setNote(`Not linked: ${e.message}`);
+            setBusy(false);
+          });
       }
     },
     [list, focus, busy, gameId, playerId, onLinked, onCancel],
@@ -55,10 +61,16 @@ export function ProfilePicker({
     <View style={styles.scrim}>
       <View style={styles.panel} testID="profile-picker" dataSet={{ playerId }}>
         <T style={ui.h2}>Link {playerLabel} to a profile</T>
-        <T style={{ color: color.dim }}>Linking names this player after the profile in this game.</T>
-        {error ? <T testID="picker-note">Could not load profiles: {error.message}</T> : null}
+        <T style={{ color: color.dim }}>
+          Linking names this player after the profile in this game.
+        </T>
+        {error ? (
+          <T testID="picker-note">Could not load profiles: {error.message}</T>
+        ) : null}
         {profiles && list.length === 0 ? (
-          <T testID="picker-empty">No profiles yet. Create one on your phone at /profiles.</T>
+          <T testID="picker-empty">
+            No profiles yet. Create one on your phone at /profiles.
+          </T>
         ) : null}
         <View style={{ marginTop: px(16) }}>
           {list.slice(first, first + VISIBLE).map((p, k) => {
@@ -67,11 +79,21 @@ export function ProfilePicker({
               <View
                 key={p.profile_id}
                 testID="picker-profile"
-                dataSet={{ profileId: p.profile_id, focused: on ? "true" : "false" }}
-                style={[styles.row, focusRing(on), on && { backgroundColor: color.raised }]}
+                dataSet={{
+                  profileId: p.profile_id,
+                  focused: on ? "true" : "false",
+                }}
+                style={[
+                  styles.row,
+                  focusRing(on),
+                  on && { backgroundColor: color.raised },
+                ]}
               >
                 <Avatar name={p.name} photo={p.photo_url} size={56} />
-                <T style={{ flex: 1, fontWeight: "700", marginLeft: px(20) }} numberOfLines={1}>
+                <T
+                  style={{ flex: 1, fontWeight: "700", marginLeft: px(20) }}
+                  numberOfLines={1}
+                >
                   {p.name}
                 </T>
                 <T style={styles.meta}>{sportsText(p)}</T>
@@ -97,7 +119,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  panel: { width: px(1000), padding: px(40), borderRadius: px(16), backgroundColor: color.panel },
+  panel: {
+    width: px(1000),
+    padding: px(40),
+    borderRadius: radius.card,
+    backgroundColor: color.panel,
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",

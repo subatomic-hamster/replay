@@ -77,8 +77,10 @@ def test_scene_angles_and_manifest_then_cache_hits(env):
     by = {r["stage"]: r for r in recs}
     assert by["tierc_scene"]["resource"] == "cpu"  # ground truth + analytic: no GPU
     items = sorted(r["item"] for r in recs if r["stage"] == "tierc")
+    # a virtual POV for every player in the 3D scene, not only the key player
+    povs = ("pov_p1", "pov_p2", "pov_p3", "pov_p4")
     assert items == sorted(f"ev_e1/tierc_{a}" for a in
-                           ("broadcast_high", "baseline", "overhead", "reverse", "pov_p1"))  # fmt: skip
+                           ("broadcast_high", "baseline", "overhead", "reverse", *povs))  # fmt: skip
 
     doc = json.loads((gd / "scene" / "ev_e1.json").read_text())
     assert doc["schema"] == "replay.scene.v1" and doc["method"] == "analytic"
@@ -92,11 +94,14 @@ def test_scene_angles_and_manifest_then_cache_hits(env):
     assert ball["made"] is True and ball["target"][2] == pytest.approx(3.05)
 
     m = json.loads((gd / "replays" / "ev_e1" / "manifest.json").read_text())
-    assert [a["tier"] for a in m["angles"]] == ["A"] * 3 + ["B"] * 3 + ["C"] * 5
+    assert [a["tier"] for a in m["angles"]] == ["A"] * 3 + ["B"] * 3 + ["C"] * 8
     c = [a for a in m["angles"] if a["tier"] == "C"]
-    assert [a["id"] for a in c] == ["broadcast_high", "baseline", "overhead", "reverse", "pov:p1"]
+    assert [a["id"] for a in c] == ["3d:broadcast_high", "3d:baseline", "3d:overhead",
+                                    "3d:reverse", "pov:p1", "pov:p2", "pov:p3", "pov:p4"]  # fmt: skip
+    ids = [a["id"] for a in m["angles"]]
+    assert len(ids) == len(set(ids))  # a TV focuses and keys angles by id
     assert {a["duration_s"] for a in m["angles"]} == {m["angles"][0]["duration_s"]}  # aligned
-    assert c[-1]["label"] == "3D Shooter's POV · Avery"
+    assert c[4]["label"] == "Virtual POV · Avery"  # the key player (shooter) first
 
     again = run(gd, cfg, registry=_registry(), stages=["tierc_manifest"], cache=cache)
     assert {r["cache"] for r in again if r["stage"] in ("tierc_scene", "tierc")} == {"hit"}

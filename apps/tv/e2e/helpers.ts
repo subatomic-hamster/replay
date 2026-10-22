@@ -66,10 +66,17 @@ export async function openWatch(page: Page, id = GAME_ID, query = "") {
     .toBeGreaterThanOrEqual(2);
 }
 
-/** Do more → Follow player → Pick on screen: the video pauses and the boxes over the
- *  players are pickable. */
+/** Do more → Follow player (→ Pick another player, once someone is picked): the video
+ *  pauses and the markers over the players are pickable. */
 export async function enterSelectMode(page: Page) {
-  await menuTo(page, "follow-pick");
+  if (!(await page.getByTestId("domore").count())) await openDoMore(page);
+  const picked = await page
+    .getByTestId("action-follow")
+    .getAttribute("data-children");
+  await menuTo(
+    page,
+    picked && picked !== "0" ? "follow-pick" : "action-follow",
+  );
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await video(page))?.paused).toBe(true);
   await expect(
@@ -86,8 +93,8 @@ export async function focusedBoxId(page: Page): Promise<string | null> {
   });
 }
 
-/** The Do more tile a sub-row item sits behind: the ways behind Watch, the player chips
- *  (and Spotlight, Tag, Link) behind Follow player, the angle thumbnails behind Angles. */
+/** The Do more tile a sub-row item sits behind: the ways behind Watch, Pick another
+ *  player, Spotlight, Tag and Link behind Follow player, the angle thumbnails behind Angles. */
 export function parentTile(id: string): string | null {
   if (id.startsWith("way-")) return "menu-watch";
   if (
@@ -96,14 +103,24 @@ export function parentTile(id: string): string | null {
   )
     return "action-follow";
   if (id.startsWith("angle-")) return "nav-replays";
+  if (id.startsWith("pov-")) return "action-pov";
   return null;
+}
+
+/** Do more: the remote's Menu key (`m`), or Up while following (Menu is the player card
+ *  there, D-83). */
+async function openDoMore(page: Page) {
+  const following = await page
+    .locator('[data-testid="watch"][data-mode="follow"]')
+    .count();
+  await page.keyboard.press(following ? "ArrowUp" : "m");
 }
 
 /** Open Do more with the remote's Menu key (`m`; Up does the same from the transport) and
  *  reach tile `id` with Left/Right, through its parent's row when it has one. */
 export async function menuTo(page: Page, id: string) {
   const domore = page.getByTestId("domore");
-  if (!(await domore.count())) await page.keyboard.press("m");
+  if (!(await domore.count())) await openDoMore(page);
   await expect(domore).toBeVisible();
   const parent = parentTile(id);
   const row = (await domore.getAttribute("data-row")) ?? "main";

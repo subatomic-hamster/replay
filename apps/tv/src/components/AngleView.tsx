@@ -6,12 +6,18 @@
 // the lower-left bug for ANGLE_BUG_MS, then it shrinks.
 // Free view (2.5D, Down, or straight from Do more): the angle player stays mounted and
 // paused underneath; the scene starts at its time and hands its own time back on exit.
+// Virtual POV (Tier C `pov:<pid>`, one per tracked player): one slot in the Left/Right
+// cut, the key player's first; Up on it switches to the next player's eyes. It is a
+// stylized 3D reconstruction, and the bug says so.
 // Back: Free view → the angle → the game (Watch resumes it where it was).
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import {
   ANGLE_BUG_MS,
+  cutOrder,
   cycleAngle,
+  nextPov,
+  povOf,
   tierBadge,
   type ReplayManifest,
 } from "../../../../packages/tv-core/src/replays";
@@ -80,6 +86,11 @@ export function AngleView({
   const lastPress = useRef<Partial<Record<CameraAction, number>>>({});
   const { width: winW, height: winH } = useWindowDimensions();
   const count = m?.angles.length ?? 0;
+  // Left/Right walk the cut order (all virtual POVs share one slot)
+  const order = useMemo(
+    () => (m ? cutOrder(m.angles, Math.min(index, count - 1)) : []),
+    [m, index, count],
+  );
 
   // A replay starts playing; PlayerSurface holds the request until the media can play.
   useEffect(() => {
@@ -157,8 +168,12 @@ export function AngleView({
         return;
       }
       if (a === "back") onBack(m ?? null);
-      else if ((a === "left" || a === "right") && count > 1) {
-        setIndex((i) => cycleAngle(i, count, a === "right" ? 1 : -1));
+      else if ((a === "left" || a === "right") && order.length > 1) {
+        const k = Math.max(0, order.indexOf(index));
+        setIndex(order[cycleAngle(k, order.length, a === "right" ? 1 : -1)]);
+        setBig(true);
+      } else if (a === "up" && m && povOf(m.angles[index])) {
+        setIndex(nextPov(m.angles, index));
         setBig(true);
       } else if (a === "select" || a === "playpause") handle?.toggle();
       else if (a === "down" && scene) {
@@ -166,7 +181,7 @@ export function AngleView({
         enterFree(scene, !(handle?.paused() ?? true));
       }
     },
-    [count, handle, free, scene, zoom, preset, m, onBack, enterFree],
+    [order, index, handle, free, scene, zoom, preset, m, onBack, enterFree],
   );
   useDpad(onAction);
   const onSceneTime = useCallback((t: number) => {
@@ -188,6 +203,8 @@ export function AngleView({
     );
   }
   const stageW = Math.min(winW, (winH * 16) / 9);
+  const pov = povOf(angle);
+  const povs = m.angles.filter((a) => povOf(a)).length;
   const inFree = free && scene && cam;
   const freeData = inFree
     ? {
@@ -209,6 +226,8 @@ export function AngleView({
         angle: angle.id,
         tier: angle.tier,
         index,
+        pov: pov ?? "",
+        cuts: order.length,
         mode: inFree ? "free" : "angles",
         free: scene ? "true" : "false",
         play: m.play_id,
@@ -234,7 +253,13 @@ export function AngleView({
           ) : null}
           <Fade side="top" length={px(200)} strength={0.7} />
           <Fade side="bottom" length={px(360)} strength={0.8} />
-          <View style={styles.top}>
+          {/* Tier C videos burn their own label top-left: the title moves right */}
+          <View
+            style={[
+              styles.top,
+              angle.tier === "C" && !inFree && { justifyContent: "flex-end" },
+            ]}
+          >
             <T
               style={[type.meta, styles.title]}
               numberOfLines={1}
@@ -274,7 +299,7 @@ export function AngleView({
                   </T>
                 </View>
                 <T style={[type.meta, styles.dim]} testID="replay-angle-pos">
-                  {`${index + 1} / ${count}`}
+                  {`${order.indexOf(index) + 1} / ${order.length}`}
                 </T>
               </View>
               <T
@@ -283,6 +308,12 @@ export function AngleView({
               >
                 {angle.label}
               </T>
+              {pov ? (
+                <T style={[type.meta, styles.honesty]} testID="pov-honesty">
+                  Virtual POV: a stylized 3D reconstruction from tracked poses,
+                  not a camera
+                </T>
+              ) : null}
             </View>
           )}
 
@@ -299,11 +330,20 @@ export function AngleView({
                   {zoom ? "Height" : "Zoom"}
                 </Hint>
               </>
-            ) : scene ? (
-              <Hint k="▼" style={styles.hint}>
-                Free view
-              </Hint>
-            ) : null}
+            ) : (
+              <>
+                {pov && povs > 1 ? (
+                  <Hint k="▲" style={styles.hint}>
+                    Next player
+                  </Hint>
+                ) : null}
+                {scene ? (
+                  <Hint k="▼" style={styles.hint}>
+                    Free view
+                  </Hint>
+                ) : null}
+              </>
+            )}
             <Hint k="Back" style={styles.hint}>
               {inFree && !freeOnly.current ? "The angle" : "The game"}
             </Hint>

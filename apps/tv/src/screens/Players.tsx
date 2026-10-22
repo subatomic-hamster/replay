@@ -57,7 +57,7 @@ export function Players({ from }: { from?: string }) {
   const shown = list.slice(firstRow * COLS, (firstRow + ROWS) * COLS);
 
   return (
-    <View style={ui.screen} testID="players">
+    <View style={ui.safe} testID="players">
       <T style={ui.h1}>Players</T>
       {list.length === 0 ? (
         <T testID="players-empty">
@@ -104,7 +104,8 @@ export function Players({ from }: { from?: string }) {
 const styles = StyleSheet.create({
   grid: { flexDirection: "row", flexWrap: "wrap" },
   card: {
-    width: px(320),
+    // COLS cards and their margins inside the 1728 px safe width (5 x (312 + 32))
+    width: px(312),
     alignItems: "center",
     paddingVertical: px(24),
     marginRight: px(32),

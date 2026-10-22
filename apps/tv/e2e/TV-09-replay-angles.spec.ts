@@ -74,20 +74,26 @@ test("TV-09 cycleAngle wraps both ways; tier badges", () => {
 });
 
 // The way in from the player (Do more → Angles → a thumbnail) and Back to the game: TV-26.
-test("TV-09 a game without replays has no Angles tile", async ({ page }) => {
+// A game without replays keeps its Angles tile (TV-31): the views it does have, now.
+test("TV-09 a game without replays has no Free view or Player POV", async ({
+  page,
+}) => {
   await openWatch(page, "g_pickle4");
   await page.keyboard.press("ArrowUp");
   await expect(page.getByTestId("domore")).toBeVisible();
   await expect(page.getByTestId("action-bookmark")).toBeAttached();
-  await expect(page.getByTestId("nav-replays")).toHaveCount(0);
+  await expect(page.getByTestId("nav-replays")).toContainText(
+    "No replay angles for this game",
+  );
   await expect(page.getByTestId("action-free-view")).toHaveCount(0);
+  await expect(page.getByTestId("action-pov")).toHaveCount(0);
 });
 
 test("TV-09 Left/Right cut angles at the same time and play state, wrapping", async ({
   page,
 }) => {
   await openReplay(page);
-  await expectAngle(page, "Wide", "Real video", "1 / 4");
+  await expectAngle(page, "Wide", "Real video", "1 / 5");
   // The angle name is big right after a cut (and on entry), then shrinks.
   await expect(page.getByTestId("replay-bug")).toHaveAttribute(
     "data-prominent",
@@ -108,15 +114,23 @@ test("TV-09 Left/Right cut angles at the same time and play state, wrapping", as
   const t0 = (await media(page)).t;
 
   await cut(page, "ArrowRight", "follow:p1", t0);
-  await expectAngle(page, "Follow · Marcus", "Real video", "2 / 4");
+  await expectAngle(page, "Follow · Marcus", "Real video", "2 / 5");
   await cut(page, "ArrowRight", "broadcast_high", t0);
-  await expectAngle(page, "Broadcast high", "2.5D", "3 / 4");
+  await expectAngle(page, "Broadcast high", "2.5D", "3 / 5");
   await cut(page, "ArrowRight", "orbit", t0);
-  await expectAngle(page, "Orbit", "2.5D", "4 / 4");
+  await expectAngle(page, "Orbit", "2.5D", "4 / 5");
+  // the players' virtual POVs share one slot: the key player's, Up for the next player
+  await cut(page, "ArrowRight", "pov:p1", t0);
+  await expectAngle(page, "Virtual POV · Marcus", "3D", "5 / 5");
+  await expect(page.getByTestId("pov-honesty")).toContainText("reconstruction");
+  await cut(page, "ArrowUp", "pov:p2", t0);
+  await expectAngle(page, "Virtual POV · Jordan", "3D", "5 / 5");
   await cut(page, "ArrowRight", "wide", t0); // wraps forward
-  await expectAngle(page, "Wide", "Real video", "1 / 4");
-  await cut(page, "ArrowLeft", "orbit", t0); // wraps back
-  await expectAngle(page, "Orbit", "2.5D", "4 / 4");
+  await expectAngle(page, "Wide", "Real video", "1 / 5");
+  await expect(page.getByTestId("pov-honesty")).toHaveCount(0);
+  await cut(page, "ArrowLeft", "pov:p1", t0); // wraps back, to the key player's POV
+  await cut(page, "ArrowLeft", "orbit", t0);
+  await expectAngle(page, "Orbit", "2.5D", "4 / 5");
 
   // Playing, with two cuts faster than a load: still playing, not reset to 0.
   await page.keyboard.press("Enter");

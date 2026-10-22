@@ -459,3 +459,44 @@ The M2 work is recorded in the M0 entry above (platform commit 5d9e44d: worker, 
   - The user does the console setup and the `put-parameter` (docs/alexa.md §2–3), then a Lambda rebuild and redeploy.
   - The TV side of the contract (pair panel, heartbeat, poll, `reel` phone job, long-press fallback) goes to the TV agent.
   - Untested on hardware: the Function URL accepted as a wildcard-cert endpoint, and Fire TV Stick voice reaching a dev skill.
+
+## Angles and POV for every upload (2026-10-22, D-84)
+
+- Root causes: the hfbox runner had no `REPLAY_WORKER_STAGES` (no upload got replays), the TV hid Angles/Free view when the nearest play had none, Tier B and Tier C shared the `broadcast_high` id, and a POV could show another player's eyes.
+- Fixed: stages default on (`hype,condensed,replays,scene,tierc_manifest`), a virtual POV per 3D player (`pov:<pid>`), `3d:` ids, Angles tile always in Do more, Player POV tile and chips, POVs share one cut slot (Up = next player), Moments "▼ Angles". Web Replay screen uses the same cut order.
+- Measured on hfbox, full extras forced: CC BY basketball (241 s) 693 s wall; local-only volleyball (240 s) about 13 min of stage time (21.6 min wall under box contention). 17–21 angles per play, scenes for Free view.
+- Evidence: TV web build against a local API on both real games (angles row, POV chips, next player, Free view orbit, Moments link). Volleyball screenshots stay local (D-76).
+- Left: user redeploys the Lambda (CDK), restarts the runner with the stages unset or set, and re-POSTs `/games/g_c8b6186280ac/process` to backfill the live game. Tier C team colours on real footage are approximate.
+
+## Follow player: client camera, pick on the video (2026-10-22, D-82)
+
+- Root causes: 59 short-lived track ids for about 10 players, so chips offered players who were not on court. The server crop path parked the camera on empty floor after an id ended. The camera only started after a ~2 s fetch. The ring ran at track rate, not frame rate. The clock jumped forward by the length of a pause after Play.
+- Fixed:
+  - tv-core `createFollowCam`: a spring camera with lead, eased zoom, a hold and widen through gaps, and conservative hand-offs.
+  - PlayerSurface: one animation-frame loop moves the camera and the ring, sending only changed values. The ring has grace, fade and a hand-off ease.
+  - Follow player: markers on the video, arrows move spatially, Select follows, Back cancels. Labels are the name or "Player N", in team colours. When the player is lost the chip says "Lost sight of X", and Select picks again.
+  - Clock: no time jump after a pause.
+  - Watch exposes `followedId` (and `data-followed`) for the player card.
+- Tests:
+  - tv-core unit tests in core.spec (camera motion and lead, hand-off cases, gaps, clock).
+  - TV-25-follow-pick replaces TV-25-follow-chips: it measures ring and camera response under 200 ms and checks the ring stays steady with no flicker through a gap.
+  - TV-01 and TV-03 updated.
+- Real games:
+  - Fire TV, CC BY basketball: ring and "Following" are on the first frame captured after Select, and the camera is zoomed in by the next capture. Jank is 0.5–0.8% in wide playback and 8–15% while following a moving player.
+  - Offline over 60 picks × 30 s on basketball and the local-only volleyball clip: the box is always inside the camera window. The ring is on 68% / 74% of the time; the rest is real track loss.
+- Left:
+  - Server-side re-identification (merging tracklets) is needed for continuity over minutes.
+  - The `crops` stage output is unused by the TV.
+  - The mock's motion is too small for an e2e pan check (the unit tests cover panning), and its 1 s gap is under the 1.5 s "lost" threshold, so the "Pick again" flow is checked on device and in the unit tests only.
+
+## TV text centring and UI polish (2026-10-22, D-85)
+
+- Root cause: Barlow plus Android font padding put text low in every rounded rect, by 1.5–2.5 px on the Fire TV. Fixed in `T` (ui.tsx), so every label in the app is corrected.
+- Polish found on the real games:
+  - Moments filter chips slide to keep focus on screen.
+  - Moment thumbnails have rounded corners, and labels have a shadow.
+  - Review box score is capped at 10 rows plus "and N more", with "Player N" names and wider columns.
+  - Five screens now sit in the safe zone.
+  - Radii are consistent, and badge fills are on Views.
+- Tests: new TV-33 (pixel-measured centring and the chip slide). TV suite 109 passed, 3 skipped. Before and after captures were taken on the Fire TV.
+- Left (other owners): the Do more follow-chip row clips its last chip, the ghosted transport title under top layers, Profile badges, and Players/Profile on `ui.screen`.

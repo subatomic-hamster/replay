@@ -56,6 +56,10 @@ NAMES = {
 MAX_OFF = np.radians(60)  # mean angle from the real camera's line of sight to the play
 PROXY = True  # cutouts turn into posed, textured body proxies at wide angles (proxy.py)
 _BODIES: dict = {}
+# a fixed virtual camera does not show anyone within 3.5 m of it (fading in to 4.5 m):
+# so close, a cutout or proxy is a few magnified pixels or a plain capsule. POVs keep
+# their own nearer fade (tierb.NEAR_FADE_M): there, people close by are the point.
+NEAR_M = 3.5
 
 
 def _real_centre(doc: dict) -> np.ndarray:
@@ -198,7 +202,7 @@ def render_angle(
     out = tierb.render_angle(
         game_dir, video, doc["play_id"], angle, out_path, size=size, progress=progress,
         views=views, hide=hide, tints=kit, label_fn=lambda c: label(c, angle, synthetic),
-        proxy=bodies if PROXY else None,
+        proxy=bodies if PROXY else None, near_m=0.0 if angle.startswith("pov") else NEAR_M,
     )  # fmt: skip
     out["wall_s"] = round(time.time() - started, 2)
     return out

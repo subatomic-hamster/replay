@@ -116,9 +116,13 @@ test("TV-31 no replays: Angles still there, says so, offers the views there are 
   );
   expect(await smallText(page)).toEqual([]);
   // the frame fills its 16:9 tile edge to edge (one storyboard cell, no text padding
-  // around it): the sprite sits on whole cells of its sheet
+  // around it): the sprite sits on whole cells of its sheet. Retried until it holds: the
+  // tile's and the sprite's boxes are two reads, and while Do more is still sliding in
+  // (or the storyboard, a deferred extra, is still arriving) they come from different
+  // frames, a couple of pixels apart (failed once in CI, 2.2 px).
   const sprite = page.getByTestId("angle-recorded").getByTestId("seek-sprite");
-  if (await sprite.count()) {
+  await expect(async () => {
+    if (!(await sprite.count())) return;
     const tile = (await sprite.locator("..").boundingBox())!;
     const s = (await sprite.boundingBox())!;
     const cellW = s.width / 10, // 10 columns of 320 x 180 frames
@@ -132,7 +136,7 @@ test("TV-31 no replays: Angles still there, says so, offers the views there are 
       const r = ((off % cell) + cell) % cell;
       expect(Math.min(r, cell - r)).toBeLessThan(1.5);
     }
-  }
+  }).toPass({ timeout: 5000 });
   await page.keyboard.press("Enter"); // the recorded camera is what is playing
   await expect(page.getByTestId("domore")).toHaveCount(0);
   await expect(page.getByTestId("replay")).toHaveCount(0);

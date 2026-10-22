@@ -48,6 +48,7 @@ NEAR_M = 0.3
 EZ = np.array([0.0, 0.0, 1.0])
 RELEASE_H_M = 2.3
 BALL_R_M = 0.12
+BALL_MIN_M = 3.0  # the ball is not drawn nearer the camera than this
 G = 9.81
 BG_TOP, BG_BOTTOM = (34, 26, 22), (12, 10, 9)
 
@@ -369,12 +370,13 @@ def ball_track(
 
 
 def draw_ball(canvas: np.ndarray, view: View, trail: np.ndarray) -> None:
-    pts = [p for p in trail if np.isfinite(p).all()]
-    if not pts:
+    """The modelled shot ball at its true size, with a short fading trail. Positions
+    nearer the camera than `BALL_MIN_M` are left out (a virtual camera beside the rim
+    would fill the frame with a disc), as is the whole ball once its last one is."""
+    pts = np.asarray([p for p in trail if np.isfinite(p).all()]).reshape(-1, 3)
+    if not len(pts) or view.depth(pts[-1:])[0] < BALL_MIN_M:
         return
-    pts = np.asarray(pts)
-    if (view.depth(pts) < NEAR_M).any():
-        return
+    pts = pts[view.depth(pts) >= BALL_MIN_M]
     px = view.project(pts)
     for j in range(1, len(px)):  # fading trail
         a = j / len(px)
@@ -533,12 +535,14 @@ def render_angle(
     tints: dict[str, tuple[int, int, int]] | None = None,
     label_fn=None,
     proxy=None,
+    near_m: float = 0.0,
 ) -> dict[str, Any]:
     """Tier B's angle `angle`; or, given `views` (one per frame), the image-based virtual
     views (avatars.imageview): `hide` players (a POV's own), `tints` kit colours the
     cutouts fade to at wide angles, `label_fn(canvas)` their burned-in label, `proxy`
     a `proxy(real, k1, src_size, masks, n)` that builds the posed body proxies the
-    cutouts cross-fade to instead (`avatars.proxy`)."""
+    cutouts cross-fade to instead (`avatars.proxy`). People nearer the camera than
+    `near_m` are not drawn; they fade in over the next metre."""
     gd = Path(game_dir)
     started = time.time()
     h = play(gd, play_id)
@@ -634,7 +638,9 @@ def render_angle(
                 if m is None:
                     continue
                 foot = np.array([court[p, f, 0], court[p, f, 1], 0.0])
-                people.append((float(view.depth(foot + 0.9 * EZ)[0]), foot, m, pid))
+                d = float(view.depth(foot + 0.9 * EZ)[0])
+                if d > near_m:  # (and their shadow)
+                    people.append((d, foot, m, pid))
             for _, foot, _, _ in people:
                 draw_shadow(canvas, view, foot)
             if rims:
@@ -646,16 +652,17 @@ def render_angle(
                 if net and d <= net_d and (i == 0 or people[i - 1][0] > net_d):
                     draw_net(canvas, view, net)
                 tint = None if tints is None else tints.get(pid, (150, 150, 150))
+                vis = float(np.clip(d - near_m, 0, 1)) if near_m else 1.0
                 if bodies is not None:  # the cutout fades into its posed, textured proxy
                     th = abs(turn(real, view, foot))
                     w = float(np.clip((PROXY_NONE - th) / (PROXY_NONE - PROXY_FULL), 0, 1))
-                    near = float(np.clip((d - 1.2) / NEAR_FADE_M, 0, 1))
+                    near = float(np.clip((d - 1.2) / NEAR_FADE_M, 0, 1)) * vis
                     if w < 1 and near > 0 and bodies.draw(canvas, view, f, frame, pid, masks,
                                                           near):  # fmt: skip
                         if w > 0:
                             billboard.draw(canvas, view, frame, foot, xy0, m, None, w * near)
                         continue
-                billboard.draw(canvas, view, frame, foot, xy0, m, tint)
+                billboard.draw(canvas, view, frame, foot, xy0, m, tint, vis)
             if net and (not people or people[-1][0] > net_d):
                 draw_net(canvas, view, net)
             drawn += len(people)

@@ -48,6 +48,7 @@ PARTS = (
 NU, NV = 32, 16  # atlas texels round x along each part
 SEEN_COS = 0.26  # the real camera sees a surface point within ~75° of its normal
 FADE_COS = 0.45  # ... and its pixel fully from here up
+MIN_TEXTURED = 0.5  # share of a proxy's visible pixels from real (now or past) pixels
 LIGHT = np.array([0.3, -0.4, 0.87]) / np.linalg.norm([0.3, -0.4, 0.87])
 
 
@@ -166,6 +167,7 @@ class Proxy:
             }  # fmt: skip
         self.atlas: dict[str, np.ndarray] = {}  # (F, P, NV, NU, 3) uint8
         self.mean: dict[str, np.ndarray] = {}  # (P, 3) float32, NaN = never seen
+        self.ever: dict[str, np.ndarray] = {}  # (P, NV, NU) texel seen in some frame
 
     def frame_caps(self, pid: str, f: int):
         q = self.players.get(pid)
@@ -299,6 +301,7 @@ class Proxy:
             with np.errstate(invalid="ignore"):
                 mean = (tot / cnt).astype(np.float32)  # NaN where a part was never seen
             self.mean[pid] = mean
+            self.ever[pid] = valid.any(0).reshape(len(PARTS), NV, NU)
             fill = np.where(np.isfinite(mean), mean, self.players[pid]["tint"])
             never = np.broadcast_to(fill[None, :, None], (n_f, len(PARTS), NV * NU, 3))
             out = np.where((src >= 0)[..., None], filled, never.reshape(n_f, -1, 3))
@@ -348,12 +351,16 @@ class Proxy:
                     + (at[kk, v1, u0w] * (1 - fu) + at[kk, v1, u1w] * fu) * fv)  # fmt: skip
             shade = 0.8 + 0.2 * np.clip(n @ LIGHT, -1, 1)
             hist *= shade[:, None]
+            textured = self.ever[pid][kk, v0, u0w]
             got = masks.get(pid, f)
             if got is not None:  # now: the real camera's pixel where it sees this point
                 m = cv2.erode(got[1].astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
                 w, px = self._seen(caps, kk, p, n, got[0], m)
                 if (w > 0).any():
                     hist = _sample(frame, px) * w[:, None] + hist * (1 - w[:, None])
+                    textured |= w > 0
+            if textured.mean() < MIN_TEXTURED:  # mostly a plain mannequin: not shown
+                return False
             col[hit] = hist
         gh, gw = xs.shape
         img = col.reshape(gh, gw, 3)

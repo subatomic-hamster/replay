@@ -1,5 +1,5 @@
 """D-88 body proxy: capsule ray test, and a proxy seen from the real camera shows the real
-pixels while its unseen back falls back to the colours it was seen in (not the kit)."""
+pixels, while one seen from where the camera never saw it is not drawn at all."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def _proxy(frame):
     return px, real
 
 
-def test_proxy_shows_real_pixels_frontally_and_seen_colours_behind():
+def test_proxy_shows_real_pixels_frontally_and_no_plain_mannequin_behind():
     yy, xx = np.mgrid[: SIZE[1], : SIZE[0]]
     frame = np.dstack([xx % 256, yy % 256, np.full_like(xx, 40)]).astype(np.uint8)
     px, real = _proxy(frame)
@@ -48,9 +48,10 @@ def test_proxy_shows_real_pixels_frontally_and_seen_colours_behind():
 
     plain = np.full((SIZE[1], SIZE[0], 3), (200, 60, 60), np.uint8)
     px, _ = _proxy(plain)
+    seen = px.mean["p1"][np.isfinite(px.mean["p1"][:, 0])]
+    assert len(seen) and np.allclose(seen, (200, 60, 60), atol=2)  # never-seen texels' fill
+    # from straight behind nothing was ever seen: no plain mannequin
     back = look_at(np.array([0.0, 8, 1.2]), np.array([0.0, 0, 1]), 800.0, SIZE)
     canvas[:] = 0
-    assert px.draw(canvas, back, 1, plain, "p1", _FullMasks())
-    u, v = back.project(np.array([[0.0, 0, 1.2]]))[0].round().astype(int)
-    b, g, r = canvas[v, u].astype(int)
-    assert b > 100 and g < 80 and r < 80  # the seen kit colour, shaded; not the green tint
+    assert not px.draw(canvas, back, 1, plain, "p1", _FullMasks())
+    assert canvas.max() == 0

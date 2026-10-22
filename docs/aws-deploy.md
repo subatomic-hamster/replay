@@ -170,8 +170,9 @@ Cost on hfbox: the opt-in stages add about 12–15 minutes of work per game (mea
 13 min of stage time). Most of it is the angle stages, measured 2026-10-22 on the CC BY
 basketball game's four highlights (about one per minute of game, `highlights_n`):
 SAM 2.1 segmentation 116 s (about 29 s per highlight on the shared GPU), Tier B 45 s,
-the Tier C scene 215 s, and 32 Tier C renders 202 s (6–8 s per image-based angle: wing,
-courtside and up to six POVs per highlight, D-88). The runner also runs one-stage
+the Tier C scene 215 s, and 32 Tier C renders 258 s with the posed body proxies (202 s
+without; 6–9 s per image-based angle: wing, courtside and up to six POVs per highlight,
+D-88). The runner also runs one-stage
 jobs the API queues (`reel`, `condensed`, `vertical`; job `params.stage`).
 
 Restart it only while it is idle (the log's last line is `finished ...`): a runner killed

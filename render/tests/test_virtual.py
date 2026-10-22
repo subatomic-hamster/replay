@@ -23,6 +23,16 @@ def test_push_in_starts_on_the_real_camera():
     )
 
 
+def test_ball_true_size_and_never_beside_the_camera():
+    view = tierb.look_at(np.zeros(3), np.array([0.0, 1, 0]), 1000.0, (1280, 720))
+    canvas = np.zeros((720, 1280, 3), np.uint8)
+    tierb.draw_ball(canvas, view, np.array([[0.0, 1.0, 0.0]]))  # 1 m away: not drawn
+    assert canvas.max() == 0
+    tierb.draw_ball(canvas, view, np.array([[0.0, 6.0, 0.0]]))  # 0.24 m at 6 m: r 20 px
+    width = (canvas[360].sum(1) > 0).sum()
+    assert 38 <= width <= 44
+
+
 @pytest.mark.parametrize("angle", ["orbit", "broadcast_high"])
 def test_paths_are_smooth_and_look_at_the_play(angle):
     centre = np.column_stack([np.linspace(-2, 2, 60), np.full(60, 14.0), np.ones(60)])

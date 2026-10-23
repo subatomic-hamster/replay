@@ -342,6 +342,17 @@ def stage_identity(
         players = identity.identify(
             str(out_dir / WIDE_REL), tracks, profile, variant, court_ok=court_ok
         )
+        # D-97: the detections a player's gaps leave free are theirs
+        calib = calib_mod.read_calib(out_dir / "calib.json")
+        size = calib.get("image_size")
+        players = identity.fill_gaps(
+            players,
+            read_dets(out_dir / "_work" / "dets.json"),
+            np.asarray(calib["H"], dtype=np.float64),
+            k1=float(calib.get("k1") or 0.0),
+            image_size=tuple(size) if size else None,
+            smooth_window=profile.tracking.smooth_window,
+        )
         identity.write_players(path, players, meta)
     progress("identity", 1.0)
     return path
@@ -360,8 +371,7 @@ def stage_tracks(
         times = times[times <= info.duration_s + 1e-6]
         rows: list[list[tuple[str, np.ndarray, np.ndarray, float]]] = [[] for _ in times]
         for p in players:
-            gap = identity.TRACKS_MAX_GAP_S if p.solved else np.inf
-            boxes, court, conf = resample(p.track, times, gap)
+            boxes, court, conf = resample(p.track, times, identity.max_gap_s(p))
             for i in range(len(times)):
                 if np.isfinite(boxes[i]).all():
                     rows[i].append((p.player_id, boxes[i], court[i], float(conf[i])))

@@ -98,6 +98,9 @@ class TrackingCfg(_Cfg):
     # is solved as that many identities, every piece of track assigned to one of them
     # by look under a no-two-places-at-once rule (identity.roster_pieces, D-89)
     roster_max: int = 0
+    # people on court besides `players.max` (referees) that the concurrency cap in
+    # identity keeps room for (D-97); officials are tracked like anyone else
+    officials: int = 0
     smooth_window: int = 5
     # Seated officials and the bench: alive this long without leaving a circle this
     # wide (p90 radius) is not a player. See court.stationary.

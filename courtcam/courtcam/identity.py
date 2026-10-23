@@ -7,20 +7,33 @@ mechanism, so nothing here tries to be clever.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import cv2
 import lap
 import numpy as np
 
-from .court import CourtTrack, bystander, resample, stationary, track_from_json, track_json
+from .court import (
+    CourtTrack,
+    bystander,
+    resample,
+    stationary,
+    to_court,
+    track_from_json,
+    track_json,
+)
 from .profiles import CourtTemplate, Profile
 from .schema import Player as PlayerModel
 from .schema import Team as TeamModel
-from .track import Tracklet
+from .track import Tracklet, box_iou
 
-H_BINS, S_BINS = 12, 4
+TEAM_BINS = (8, 4, 4)
+"""H, S, V bins of the torso (kit) histogram. With brightness the kits separate: on the CC
+BY Nottingham game (39 court tracklets matched to the hand-labelled player GT) k-means on
+H-S only put 11 of 20 red-kit tracklets with the 15 dark ones; H-S-V puts 19 of 20 red and
+14 of 15 dark apart (the referees fall in with the dark kit). A black kit and a grey shirt
+have no hue to speak of, only their value tells them from the floor."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +81,7 @@ def torso_rect(box: np.ndarray) -> tuple[int, int, int, int]:
 
 def _hist(crop: np.ndarray) -> np.ndarray:
     hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-    hist = cv2.calcHist([hsv], [0, 1], None, [H_BINS, S_BINS], [0, 180, 0, 256]).ravel()
+    hist = cv2.calcHist([hsv], [0, 1, 2], None, list(TEAM_BINS), [0, 180, 0, 256, 0, 256]).ravel()
     total = hist.sum()
     return hist / total if total else hist
 
@@ -156,7 +169,7 @@ def sample_appearance(
     finally:
         cap.release()
 
-    dim = H_BINS * S_BINS
+    dim = int(np.prod(TEAM_BINS))
     hist_arr = np.asarray(
         [np.mean(h, axis=0) if h else np.zeros(dim) for h in hists], dtype=np.float32
     )
@@ -706,6 +719,17 @@ out); longer, the id has no box. Unsolved players are interpolated across every 
 (D-89: on the full games that kept the ring on the right kit longer). CC BY 2v2 proxy,
 1000 picks: 0.3 s 93.7 % right while visible / 6.4 % wrong, 1 s 94.2 / 9.9, no cap
 95.3 / 12.5."""
+TRACKS_MAX_GAP_UNSOLVED_S = 2.0
+"""The same for players not solved box by box (D-97; was every gap). A straight line
+across a longer gap is a box on nobody: on the CC BY Nottingham game, hand-labelled
+instants, 2.2 such boxes an instant with no cap, 0.6 at 2 s, 0.2 at 1 s, for 0.9 and 2.6
+points of the players boxed. `fill_gaps` has already put in the boxes it could find."""
+
+
+def max_gap_s(p: PlayerTrack) -> float:
+    """Longest gap `tracks/` bridges for `p`."""
+    return TRACKS_MAX_GAP_S if p.solved else TRACKS_MAX_GAP_UNSOLVED_S
+
 
 BOX_SWITCH = 0.6
 """`roster_label` Viterbi cost of a tracklet's person changing, with a sample per box
@@ -995,6 +1019,14 @@ def _fits(span: tuple[float, float], accepted: list[tuple[float, float]], max_n:
     )
 
 
+def on_court_cap(profile: Profile) -> int:
+    """Most people identity keeps alive at once: the players plus the officials (D-97).
+    Referees are tracked like anyone else, so with a cap of `players.max` alone the three
+    referees of the CC BY Nottingham game held three of ten slots and 32 % of the players'
+    hand-labelled boxes had no id; with 13, 13 %."""
+    return profile.players.max + profile.tracking.officials
+
+
 def _cap_concurrent(
     merged: list[tuple[list[int], CourtTrack]], max_n: int, overlap_s: float = 0.0
 ) -> list[tuple[list[int], CourtTrack]]:
@@ -1056,7 +1088,8 @@ def _stitch(
     """
     cfg = profile.tracking
     use_app = body is not None and cfg.appearance_weight > 0
-    per_team = -(-profile.players.max // max(1, len(np.unique(teams))))
+    cap = on_court_cap(profile)
+    per_team = -(-cap // max(1, len(np.unique(teams))))
     lanes: list[list[int]] = []  # each lane is a list of group indices, in time order
     start = [tracks[g[0]].tracklet.t_start for g in groups]
     ends = [max(tracks[i].tracklet.t_end for i in g) for g in groups]
@@ -1080,7 +1113,7 @@ def _stitch(
                 reach = cfg.merge_max_dist_m + cfg.max_speed_mps * max(gap, STITCH_SLACK_S)
                 if d > reach or d >= best_d:
                     continue
-                if gap > 0 and not _fits((ends[ln[-1]], s), alive, profile.players.max):
+                if gap > 0 and not _fits((ends[ln[-1]], s), alive, cap):
                     continue
                 if use_app and (
                     app_distance(
@@ -1175,7 +1208,7 @@ def identify(
         # and the cap is on how many are alive at once. Ids follow the score of the
         # stitched players.
         merged.sort(key=lambda gc: gc[1].score, reverse=True)
-        merged = _cap_concurrent(merged, profile.players.max, profile.tracking.merge_overlap_s)
+        merged = _cap_concurrent(merged, on_court_cap(profile), profile.tracking.merge_overlap_s)
         # ponytail: no re-identification across gaps longer than _stitch's. A mutual-best,
         # margin-gated relink over these descriptors was built and measured (D-89): it
         # made 4-5 links per game and the ring sat on the right kit slightly less often.
@@ -1220,12 +1253,106 @@ def identify(
     return players
 
 
+# --- gap fill (D-97) --------------------------------------------------------
+
+FILL_MIN_IOU = 0.3
+"""A free detection continues a player's chain through a gap when it overlaps the chain's
+last box this much (one sampled frame apart, ~1/15 s: a sprinter moves a fraction of a box)."""
+FILL_SKIP = 3
+"""Sampled frames a chain may coast over without a box before it gives up."""
+
+
+def _chain(
+    frames: list[int], start: np.ndarray, by_f: dict[int, np.ndarray], free: dict[int, np.ndarray]
+) -> dict[int, int]:
+    """Follow free detections from `start` through `frames` by overlap with the last box
+    taken; claims what it takes. Returns frame -> detection row."""
+    last, miss, got = start, 0, {}
+    for f in frames:
+        a, ok = by_f[f], free[f]
+        if ok.any():
+            v = np.where(ok, box_iou(last, a), 0.0)
+            k = int(v.argmax())
+            if v[k] >= FILL_MIN_IOU:
+                got[f], last, miss = k, a[k, :4], 0
+                free[f][k] = False
+                continue
+        miss += 1
+        if miss > FILL_SKIP:
+            break
+    return got
+
+
+def fill_gaps(
+    players: list[PlayerTrack],
+    dets: dict,
+    h: np.ndarray,
+    *,
+    k1: float = 0.0,
+    image_size: tuple[int, int] | None = None,
+    smooth_window: int = 5,
+) -> list[PlayerTrack]:
+    """Fill each player's gaps with the detections no player holds (D-97).
+
+    Merging and stitching join a person's pieces across gaps, and `tracks/` used to draw a
+    straight line across each one: on the CC BY Nottingham game a third of the players'
+    slots at a hand-labelled instant were such a line, a box on nobody. The person is often
+    still detected there, in a tracklet too short to keep or one the concurrency cap
+    dropped, or as a box the tracker never gave an id. Here every detection in `dets` that
+    no player's box covers (IoU >= 0.5) is free; best-scored player first, a chain is
+    followed forward from the box before each gap, then backward from the box after it,
+    by overlap with the last box taken (`FILL_MIN_IOU`, coasting `FILL_SKIP` frames).
+    What is still missing stays a gap for `tracks/` to bridge."""
+
+    by_f = {
+        int(fr["f"]): np.asarray([r[1:6] for r in fr["d"]], dtype=np.float64).reshape(-1, 5)
+        for fr in dets["frames"]
+    }
+    t_of = {int(fr["f"]): float(fr["t"]) for fr in dets["frames"]}
+    free = {f: np.ones(len(a), dtype=bool) for f, a in by_f.items()}
+    for p in players:
+        t = p.track.tracklet
+        for f, b in zip(t.frames.tolist(), t.boxes, strict=True):
+            if f in by_f and len(by_f[f]):
+                free[f] &= box_iou(b, by_f[f]) < 0.5
+    ordered = np.asarray(sorted(by_f), dtype=np.int64)
+    out: list[PlayerTrack] = []
+    for p in players:
+        t = p.track.tracklet
+        add: dict[int, np.ndarray] = {}
+        for j in range(len(t.frames) - 1):
+            lo, hi = int(t.frames[j]), int(t.frames[j + 1])
+            a, b = np.searchsorted(ordered, lo, "right"), np.searchsorted(ordered, hi, "left")
+            gap = ordered[a:b].tolist()
+            if not gap:
+                continue
+            fwd = _chain(gap, t.boxes[j], by_f, free)
+            rest = [f for f in gap if f > max(fwd, default=lo)]
+            bwd = _chain(rest[::-1], t.boxes[j + 1], by_f, free)
+            add.update({f: by_f[f][k] for f, k in {**fwd, **bwd}.items()})
+        if not add:
+            out.append(p)
+            continue
+        fs = np.concatenate([t.frames, np.asarray(sorted(add), dtype=np.int64)])
+        o = np.argsort(fs, kind="stable")
+        new = Tracklet(
+            t.track_id,
+            fs[o],
+            np.concatenate([t.times, [t_of[f] for f in sorted(add)]])[o],
+            np.concatenate([t.boxes, [add[f][:4] for f in sorted(add)]])[o],
+            np.concatenate([t.confs, [add[f][4] for f in sorted(add)]])[o],
+        )
+        court_m = to_court([new], h, smooth_window=smooth_window, k1=k1, image_size=image_size)[0]
+        out.append(replace(p, track=CourtTrack(new, court_m, p.track.inside_fraction)))
+    return out
+
+
 def seen_s(p: PlayerTrack, rate_hz: int = 10) -> float:
     """Seconds `p` has a box in `tracks/`: the frames of the export's time grid
     (`pipeline.stage_tracks`: multiples of 1/rate_hz) its box is on, over rate_hz."""
     t = p.track.tracklet
     k = np.arange(np.ceil(t.t_start * rate_hz - 1e-6), np.floor(t.t_end * rate_hz + 1e-6) + 1)
-    boxes, _, _ = resample(p.track, k / rate_hz, TRACKS_MAX_GAP_S if p.solved else np.inf)
+    boxes, _, _ = resample(p.track, k / rate_hz, max_gap_s(p))
     return round(float(np.isfinite(boxes).all(axis=1).sum()) / rate_hz, 1)
 
 

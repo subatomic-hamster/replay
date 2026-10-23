@@ -1023,3 +1023,62 @@ Context: round 4 on D-95. The coordinator asked for two things:
   - Playwright S-58b: with no TV the clip plays on the card from t-4 and the TV is asked; with a TV showing the game the card says "Playing on the TV" and nothing plays on the phone.
 
 **Numbers:** no ball, event or highlight rule changed. The D-95 table stands, re-run on this code in box-test.
+
+## D-97 (2026-10-23) — Player tracks: room for the referees, kit colour with brightness, the detector's free boxes fill gaps, no ghost bridges over 2 s
+
+Context: the demo needs players boxed while they are visible, on the right team, without boxes on empty floor. Until now the only measure was identity on the 2v2 clips. A kit game had none.
+
+**Measure.** `samples/truth/nottingham_q1_players.json` is a hand-labelled ground truth (GT) for the CC BY Nottingham game (24–50 s, 14 instants, every 2 s).
+
+- yolo11x at 1920 proposed the person boxes. Each box was classed by eye: 113 players (red 56, dark 57), 25 referee, 24 ignore, 318 other.
+- Recall is against what yolo11x finds, which favours that detector. There are no identity labels.
+- `docs/evidence/D97-tracking/players_eval.py` scores a game's exported `tracks/` against it and adds whole-game proxies.
+
+**Where the players were lost** (deploy code, recall of the labelled players at each stage):
+
+| stage  | detections | on the court | identity | tracks |
+| ------ | ---------- | ------------ | -------- | ------ |
+| recall | 0.841      | 0.823        | 0.681    | 0.726  |
+
+- **The detector is not the bottleneck.** Single-frame yolo11m finds 94.7 % at 960 and 97.3 % at 1280. Raising imgsz or adding SAHI is not needed. 1280 with conf .10 scored _lower_ end to end (0.841, more ids) and took 95 s instead of 59 s to detect.
+- **Identity dropped a sixth of the players.** It keeps at most `players.max` (10) people alive at once, and the three referees took three of those places.
+
+**Changes**
+
+- **`tracking.officials` (basketball 3).** The concurrency cap in `_stitch` and `_cap_concurrent` is now `on_court_cap` = players.max + officials. Recall after identity goes 0.681 (cap 10), 0.796 (12), 0.867 (13). Other sports default to 0.
+- **Team colour with brightness.** `TEAM_BINS` is now (8, 4, 4) H×S×V; it was 12×4 H×S.
+  - Red and dark kits differ mostly in V. The old bins put both kits in one team: team agreement was 0.695, about chance.
+  - With the new bins it is 0.98. The referees fall in the dark cluster; they are still labelled as players.
+  - Jersey splits (`split_switches`) now fire on this game: 62 ids instead of 87 without them.
+- **The detector's free boxes.** `YoloDetector` keeps the boxes the ByteTrack tracker did not confirm, as `id` 0 rows in `dets.json`. Tracklet building drops ids ≤ 0, so this is backward-compatible.
+  - Rule: `identity.fill_gaps` puts a free box into a player's internal gap when it chains from the player's last box at IoU ≥ 0.3, with up to 3 frames skipped, forward and then backward. A box is free when no tracked box covers it at IoU ≥ 0.5.
+  - The identity stage now reads `dets.json` (worker Stage inputs), so its cache key includes it.
+- **No ghost bridges.** `tracks/` used to interpolate unsolved players across any gap. This put 2.2 boxes per instant on empty floor at cap 13.
+  - Gaps are now bridged up to `TRACKS_MAX_GAP_UNSOLVED_S` = 2 s.
+  - Results by limit: none: 0.867 recall, 2.21 ghosts per instant. 2 s: 0.858 and 0.57. 1 s: 0.841 and 0.21.
+  - Solved players keep the old behaviour.
+
+**Result** (same detections, `players_eval.py`):
+
+|                          | before  | after   |
+| ------------------------ | ------- | ------- |
+| player recall            | 0.726   | 0.876   |
+| referee recall           | 0.48    | 0.56    |
+| ghost boxes per instant  | 1.43    | 0.64    |
+| team accuracy            | 0.695   | 0.98    |
+| centre offset, px        | 2.6     | 2.4     |
+| ids (seen ≥ 5 s)         | 86 (60) | 62 (44) |
+| mean id life, s          | 27.3    | 40.5    |
+| box time on ids ≥ 30 s   | 0.759   | 0.871   |
+| gaps > 1 s per id-minute | 5.7     | 6.1     |
+
+- **2v2 clips** (D-89 harness, right while visible):
+  - Park: 93.7 % → 94.7 %.
+  - JaiArtHub: 64.1 % → 58.6–60.2 %, and purity falls from .838 to .728.
+  - Cause of the Jai drop: everyone there wears dark tops. With the old bins the jersey split cut 5 tracks; with the new bins it cuts 2.
+  - Gating the teams off when jersey agreement is low did not help (Jai agreement is 0.973), so it was dropped.
+  - Accepted, because a kit game is the common case. Players in alike outfits remain a known weakness.
+- **Runtime:** post-detect stages took 39.3 s before and 37.9 s after. Detection is unchanged.
+- **Tests:** `test_fill_gaps_takes_the_free_detections_in_a_players_gap`. The MERGE test profile sets `officials: 0`.
+
+**Not done** (research ranking): offline court-metre stitching, which needs identity GT on a kit game first; SAM 2.1 masks for the POV window; jersey OCR (skipped). OSNet re-id weights are research-only, so only an optional extra is allowed.

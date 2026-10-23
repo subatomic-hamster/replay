@@ -17,10 +17,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+import numpy as np
 from tqdm import tqdm
 
 from .extras import require
 from .profiles import DetectionCfg
+from .track import box_iou
 
 DETS_SCHEMA = "courtcam.dets.v1"
 
@@ -125,6 +127,16 @@ class YoloDetector:
         model = YOLO(self.weights)
         names = {v: k for k, v in model.names.items()}
         classes = [names[c] for c in self.cfg.classes if c in names] or None
+        # The tracker keeps only boxes it can give an id; the rest are kept too (id 0, which
+        # no tracklet takes) for identity.fill_gaps (D-97). Registered before `track` adds
+        # its own callback, so this sees the detector's boxes first.
+        raw: dict[str, np.ndarray] = {}
+
+        def keep_raw(predictor) -> None:
+            b = predictor.results[0].boxes  # stream mode: one frame per call
+            raw["xywh"], raw["conf"] = b.xywh.cpu().numpy(), b.conf.cpu().numpy()
+
+        model.add_callback("on_predict_postprocess_end", keep_raw)
         stream = model.track(
             source=str(video),
             stream=True,
@@ -158,7 +170,21 @@ class YoloDetector:
                     else:
                         tid = int(ids[j])
                     dets.append(Detection(tid, (cx - w / 2, cy - h / 2, w, h), float(confs[j])))
+            if boxes is not None and boxes.id is not None and raw:
+                dets += untracked(raw["xywh"], raw["conf"], [d.box for d in dets])
             yield FrameDets(index, index / self.fps, dets)
+
+
+def untracked(xywh: np.ndarray, conf: np.ndarray, kept: list) -> list[Detection]:
+    """The detector's boxes (centre xywh) that no tracked box in `kept` (xywh) overlaps at
+    IoU >= 0.5, as id-0 detections."""
+    held = np.asarray(kept, dtype=np.float64).reshape(-1, 4)
+    out = []
+    for (cx, cy, w, h), c in zip(xywh.tolist(), conf.tolist(), strict=True):
+        b = np.asarray([cx - w / 2, cy - h / 2, w, h])
+        if not len(held) or box_iou(b, held).max() < 0.5:
+            out.append(Detection(0, tuple(float(v) for v in b), float(c)))
+    return out
 
 
 class SyntheticDetector:

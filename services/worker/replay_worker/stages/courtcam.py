@@ -273,7 +273,7 @@ STAGES = [
         "identity",
         VERSION,
         run_identity,
-        inputs=(COURT, WIDE, "calib.json"),
+        inputs=(COURT, WIDE, "calib.json", DETS),  # dets: identity.fill_gaps (D-97)
         outputs=(PLAYERS,),
         params=("sport", "variant"),
         after=("court",),

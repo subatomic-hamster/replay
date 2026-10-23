@@ -14,7 +14,7 @@ PROFILE = load_profile("basketball")
 MERGE = PROFILE.model_copy(
     update={
         "tracking": PROFILE.tracking.model_copy(
-            update={"merge_max_gap_s": 1.5, "merge_max_dist_m": 2.0}
+            update={"merge_max_gap_s": 1.5, "merge_max_dist_m": 2.0, "officials": 0}
         )
     }
 )
@@ -460,3 +460,35 @@ def test_game_players_carry_seen_seconds_and_a_mixed_kit_flag(tmp_path):
     models, _ = to_models(back)
     got = {m.id: (m.seen_s, m.team_mixed) for m in models}
     assert got == {"p1": (4.1, False), "p2": (2.2, True), "p3": (2.1, None)}
+
+
+def test_fill_gaps_takes_the_free_detections_in_a_players_gap():
+    from courtcam.identity import PlayerTrack, fill_gaps
+
+    def track(tid, frames, x0, dx):
+        f = np.asarray(frames)
+        boxes = np.column_stack([x0 + dx * f, np.full(len(f), 100.0), np.full(len(f), 40.0),
+                                 np.full(len(f), 120.0)])  # fmt: skip
+        return CourtTrack(Tracklet(tid, f, f / 10.0, boxes, np.full(len(f), 0.9)),
+                          np.zeros((len(f), 2)), 1.0)  # fmt: skip
+
+    # p1 walks right 2 px a frame and has no box in frames 3-7; p2 stands still at x 500
+    p1 = track(1, [0, 1, 2, 8, 9], 100.0, 2.0)
+    p2 = track(2, list(range(10)), 500.0, 0.0)
+    walker = [[-1, 100.0 + 2 * f, 100.0, 40.0, 120.0, 0.6] for f in range(10)]
+    stander = [[7, 500.0, 100.0, 40.0, 120.0, 0.9] for _ in range(10)]
+    stray = [[-2, 900.0, 100.0, 40.0, 120.0, 0.5]]  # someone else, nowhere near p1
+    dets = {
+        "fps": 10.0,
+        "frames": [
+            {"f": f, "t": f / 10.0, "d": [walker[f], stander[f]] + (stray if f == 5 else [])}
+            for f in range(10)
+        ],
+    }
+    players = [PlayerTrack("p1", 0, "#FF0000", p1, (1,)), PlayerTrack("p2", 1, "#0000FF", p2, (2,))]
+    out = fill_gaps(players, dets, np.eye(3))
+    t1 = out[0].track.tracklet
+    assert t1.frames.tolist() == list(range(10))
+    assert np.allclose(t1.boxes[:, 0], 100.0 + 2 * np.arange(10))  # the walker, not the stray
+    assert np.allclose(out[0].track.court_m[3:8, 1], 220.0)  # feet projected (H = identity)
+    assert out[1] is players[1]  # nothing missing, untouched

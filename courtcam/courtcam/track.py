@@ -45,6 +45,14 @@ class Tracklet:
         return np.asarray([np.interp(t, self.times, self.boxes[:, i]) for i in range(4)])
 
 
+def box_iou(b: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    """IoU of one xywh box with each row of `boxes` (n x >=4, xywh)."""
+    iw = np.minimum(b[0] + b[2], boxes[:, 0] + boxes[:, 2]) - np.maximum(b[0], boxes[:, 0])
+    ih = np.minimum(b[1] + b[3], boxes[:, 1] + boxes[:, 3]) - np.maximum(b[1], boxes[:, 1])
+    inter = np.clip(iw, 0, None) * np.clip(ih, 0, None)
+    return inter / (b[2] * b[3] + boxes[:, 2] * boxes[:, 3] - inter + 1e-9)
+
+
 def read_dets(path: Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 

@@ -109,6 +109,9 @@ tracking:
   # CC BY 2v2 park clip, 4 people, 120 s vs a hand-checked GT: 21 ids -> 4, the ring on
   # the right person 47 % -> 83 % of a 30 s follow (someone else 29 % -> 17 %).
   roster_max: 6
+  # D-97: room for a three-person crew in the concurrency cap (players.max + officials).
+  # CC BY Nottingham, hand-labelled players at 14 instants: 72.6 % -> 86.7 % boxed.
+  officials: 3
   smooth_window: 5
 # Order matters: `possession` reads the shots (rebound vs steal, make vs miss).
 events: [shot, possession, hype]

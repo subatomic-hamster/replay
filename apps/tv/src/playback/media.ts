@@ -19,6 +19,8 @@ export interface MediaProps {
   muted?: boolean;
   /** Restart at the end (the Replay view loops a highlight). */
   loop?: boolean;
+  /** Playback speed (the replay angles' slow motion is 0.5); kept across a src swap. */
+  rate?: number;
   onEnded?: () => void;
   /** The source failed to load or play. */
   onError?: (message: string) => void;

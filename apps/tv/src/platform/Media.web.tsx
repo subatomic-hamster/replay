@@ -9,6 +9,7 @@ export function Media({
   src,
   muted,
   loop,
+  rate = 1,
   onEnded,
   onError,
   onReady,
@@ -67,6 +68,14 @@ export function Media({
       v.removeEventListener("playing", landed);
     };
   }, [tryPlay]);
+
+  // A new src's load resets playbackRate to defaultPlaybackRate: set both, per src.
+  useEffect(() => {
+    const v = video.current;
+    if (!v) return;
+    v.defaultPlaybackRate = rate;
+    v.playbackRate = rate;
+  }, [rate, src]);
 
   useEffect(() => {
     const v = video.current;

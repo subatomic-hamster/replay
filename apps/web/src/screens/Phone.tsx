@@ -249,11 +249,13 @@ function WindowVideo({
 
 function nearestMoment(moments: Moment[], t: number | null): Moment | null {
   if (t === null) return moments[0] ?? null;
-  const inside = moments.find((m) => m.t_start <= t && t <= m.t_end);
-  if (inside) return inside;
-  const best = [...moments].sort(
+  // nearest first: a steal's window can cover the basket that follows it
+  const byNear = [...moments].sort(
     (a, b) => Math.abs(a.t - t) - Math.abs(b.t - t),
-  )[0];
+  );
+  const inside = byNear.find((m) => m.t_start <= t && t <= m.t_end);
+  if (inside) return inside;
+  const best = byNear[0];
   return best && Math.abs(best.t - t) <= NEAR_S ? best : null;
 }
 

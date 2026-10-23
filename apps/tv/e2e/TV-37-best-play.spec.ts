@@ -82,6 +82,9 @@ test("TV-37 the phone's pick wins, even early in the game; names come from the r
     "true",
   );
   await page.keyboard.press("Enter");
+  // the Highlights list (TV-38): its first card, Play all, is the reel
+  await expect(page.getByTestId("highlights-play-all")).toBeVisible();
+  await page.keyboard.press("Enter");
 
   // the 11.5–15.5 s play first, then the picked 0.5–4.5 s one: out of time order, last
   const ind = page.getByTestId("way-indicator");

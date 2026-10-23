@@ -19,6 +19,9 @@ test("TV-22 Home → Highlights plays the top plays back to back with an indicat
     "true",
   );
   await page.keyboard.press("Enter");
+  // the Highlights list (TV-38): its first card, Play all, is the reel
+  await expect(page.getByTestId("highlights-play-all")).toBeVisible();
+  await page.keyboard.press("Enter");
 
   const ind = page.getByTestId("way-indicator");
   await expect(ind).toHaveText("Highlights · 1 of 2");

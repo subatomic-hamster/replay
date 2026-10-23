@@ -16,7 +16,9 @@
 // Ways to watch: Full game, Highlights (the top hype candidates, ≤13, back to back, ending
 // on the game's best play under a "★ Best play of the game" banner; or a highlight
 // query's clips) and Condensed (the condensed rendition, or the rallies back to
-// back while it renders). Everything polls every 10 s while the game is still processing,
+// back while it renders). Home's Highlights opens the Highlights list first
+// (HighlightsLayer: the same plays in game order, Play all = the reel; Back from a play
+// comes back to it, Back from it goes Home). Everything polls every 10 s while the game is still processing,
 // so moments arrive on the line and Do more's tiles light up.
 //
 // Do more (UI pass §4.3, at most 6 tiles): Follow a player (pauses on the frame with a
@@ -72,6 +74,10 @@ import type {
 import { api } from "../api";
 import { AngleView } from "../components/AngleView";
 import { DoMoreLayer, type Tile } from "../components/DoMoreLayer";
+import {
+  HighlightsLayer,
+  type HighlightItem,
+} from "../components/HighlightsLayer";
 import { MomentsLayer } from "../components/MomentsLayer";
 import { PhonePanel } from "../components/PhonePanel";
 import { PlayerCard } from "../components/PlayerCard";
@@ -118,7 +124,8 @@ import {
 } from "../ui";
 
 type Mode = "wide" | "select" | "follow";
-type Layer = "moments" | "domore" | "stats" | "phone" | "player" | null;
+type Layer =
+  "moments" | "domore" | "stats" | "phone" | "player" | "highlights" | null;
 /** A play's replay angles in place of the game video: the angle to open, or Free view. */
 interface Angle {
   playId: string;
@@ -306,13 +313,18 @@ export function Watch({
   const [mode, setMode] = useState<Mode>(
     initialMode === "select" || initialMode === "follow" ? initialMode : "wide",
   );
+  // Home's "Highlights" (or `/tv/:id/highlights`) opens the Highlights list over the
+  // paused game; a play picked there, or Play all, comes back to it on Back.
+  const listFirst = initialWay === "highlights" && !q && !initialCard;
+  const listBack = useRef(false);
+  const [listFocus, setListFocus] = useState(0); // the list's card played last
   const [layer, setLayer] = useState<Layer>(
-    initialCard ? "player" : (initialPanel ?? null),
+    initialCard ? "player" : listFirst ? "highlights" : (initialPanel ?? null),
   );
   const [layerT, setLayerT] = useState(0); // media time when the layer opened
   const [chrome, setChrome] = useState(true);
   const [way, setWay] = useState<Way>(
-    initialWay ?? (q ? "highlights" : "full"),
+    listFirst ? "full" : (initialWay ?? (q ? "highlights" : "full")),
   );
   const [reel, setReel] = useState<Reel | null>(null);
   const [condensedSrc, setCondensedSrc] = useState<string | null>(null);
@@ -354,7 +366,7 @@ export function Watch({
    *  open of the full game starts where it was left (resume.ts). */
   const pending = useRef<{ t: number | null; play: boolean } | null>(
     (() => {
-      const play = initialMode !== "select" && !initialCard;
+      const play = initialMode !== "select" && !initialCard && !listFirst;
       if (initialT !== undefined) return { t: initialT, play };
       const spot =
         (initialWay ?? "full") === "full" &&
@@ -589,6 +601,35 @@ export function Watch({
   }, [mode, focusId, players]);
 
   // ---------------------------------------------------------------- ways to watch
+  // The Highlights reel's plays (ending on the best play), and the same plays in game
+  // order for the Highlights list, each named by its moment (the best play's own).
+  const reelSegs = useMemo(() => endOnBest(topReel(hype), best), [hype, best]);
+  const highlightItems = useMemo(
+    (): HighlightItem[] =>
+      [...reelSegs]
+        .sort((a, b) => a.t_start - b.t_start)
+        .map((s) => {
+          const inside = moments.filter(
+            (m) => s.t_start <= m.t && m.t <= s.t_end,
+          );
+          const m =
+            (s.best && moments.find((x) => x.id === best?.moment_id)) ||
+            inside.filter((x) => x.kind === "score").pop() ||
+            inside[0];
+          return {
+            t_start: s.t_start,
+            t_end: s.t_end,
+            t: s.best && best ? best.t : (m?.t ?? s.t_start),
+            label:
+              (s.best && (best?.what ?? best?.sub_label)) ||
+              m?.label ||
+              "Highlight",
+            thumb: m?.thumb_url ?? null,
+            best: !!s.best,
+          };
+        }),
+    [reelSegs, moments, best],
+  );
   const startWay = useCallback(
     (w: Way) => {
       setLayer(null);
@@ -629,7 +670,7 @@ export function Watch({
           );
           return;
         }
-        play("Highlights", endOnBest(topReel(hype), best), true);
+        play("Highlights", reelSegs, true);
         return;
       }
       // Condensed: the rendition when it exists; else the rallies back to back, and ask
@@ -655,8 +696,32 @@ export function Watch({
         () => play("Condensed", []),
       );
     },
-    [condensedSrc, rallies, handle, goTo, gameId, q, hype, best],
+    [condensedSrc, rallies, handle, goTo, gameId, q, reelSegs],
   );
+
+  /** A play picked on the Highlights list: that play alone, as a one-play reel (its
+   *  banner when it is the best play); Back comes back to the list. */
+  const playHighlight = useCallback(
+    (h: HighlightItem) => {
+      listBack.current = true;
+      setLayer(null);
+      setWay("highlights");
+      setReel({
+        way: "highlights",
+        name: h.label,
+        segs: [
+          { t_start: h.t_start, t_end: h.t_end, best: h.best || undefined },
+        ],
+        i: 0,
+      });
+      goTo(h.t_start);
+    },
+    [goTo],
+  );
+  const playAllHighlights = useCallback(() => {
+    listBack.current = true;
+    startWay("highlights");
+  }, [startWay]);
 
   // The way the route asked for, once its data is in (hype and the best play answer or
   // fail).
@@ -862,7 +927,11 @@ export function Watch({
   }, [chrome, handle, layer, seekV, mode]);
 
   // The Stats panel and the phone layer cover the transport's corners: it steps aside.
-  const overlay = layer === "stats" || layer === "phone" || layer === "player";
+  const overlay =
+    layer === "stats" ||
+    layer === "phone" ||
+    layer === "player" ||
+    layer === "highlights";
   // Paused, it stays up however the pause came (a key, the end of a reel): a still
   // frame always says "Paused".
   const shown =
@@ -1126,6 +1195,14 @@ export function Watch({
           if (seeking) cancelSeek();
           else if (mode === "select") endSelect(null);
           else if (mode !== "wide") setMode("wide");
+          // a play from the Highlights list (or Play all): back to the list
+          else if (listBack.current) {
+            listBack.current = false;
+            handle.pause();
+            setReel(null);
+            setWay("full");
+            openLayer("highlights");
+          }
           // out of Highlights or Condensed into the full game, where the reel was
           else if (way !== "full") startWay("full");
           else leave(initialBack ?? "library");
@@ -1350,7 +1427,7 @@ export function Watch({
       color.accent
     );
   };
-  const nHype = endOnBest(topReel(hype), best).length;
+  const nHype = reelSegs.length;
   const hasRallies =
     (rallies?.n ?? 0) > 0 || rallies?.condensed.status === "done";
   const wayTiles: Tile[] = [
@@ -1505,7 +1582,11 @@ export function Watch({
     : null;
   const indicator = reel
     ? {
-        text: `${reel.name} · ${reel.i + 1} of ${reel.segs.length}`,
+        // one play from the Highlights list: just its name
+        text:
+          reel.segs.length > 1
+            ? `${reel.name} · ${reel.i + 1} of ${reel.segs.length}`
+            : reel.name,
         index: reel.i + 1,
         count: reel.segs.length,
       }
@@ -1728,6 +1809,21 @@ export function Watch({
               closeLayer();
               bookmark(layerT);
             }}
+          />
+        ) : null}
+        {layer === "highlights" ? (
+          <HighlightsLayer
+            title={info.title}
+            items={highlightItems}
+            loading={(!hype && !hypeError) || (!bestDoc && !bestError)}
+            storyboard={storyboard}
+            start={listFocus}
+            onPick={(i) => {
+              setListFocus(i);
+              if (i === 0) playAllHighlights();
+              else playHighlight(highlightItems[i - 1]);
+            }}
+            onClose={() => leave(initialBack ?? "library")}
           />
         ) : null}
         {layer === "domore" ? (

@@ -12,6 +12,7 @@ export function Media({
   src,
   muted,
   loop,
+  rate = 1,
   onEnded,
   onError,
   onReady,
@@ -75,6 +76,8 @@ export function Media({
       paused={paused || loadedSrc !== src}
       muted={muted}
       repeat={loop}
+      // ExoPlayer keeps the rate across a source swap (ReactExoplayerView re-applies it)
+      rate={rate}
       resizeMode="stretch"
       // PlayerSurface translates/scales this view (follow-cam crop); a SurfaceView can't be
       // transformed or clipped by its parent, a TextureView can.

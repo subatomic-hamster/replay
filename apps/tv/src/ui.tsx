@@ -431,9 +431,12 @@ export function Hint({
 export function KeyLegend({
   items,
   style,
+  max = 3,
 }: {
-  items: { k: string; label: string }[]; // k: "Back" | "Select" | "◀▶" | "▲" | "▼" | "▲▼" | "◀" | "Menu"
+  items: { k: string; label: string }[]; // k: "Back" | "Select" | "◀▶" | "▲" | "▼" | "▲▼" | "◀" | "◀◀" | "Menu"
   style?: StyleProp<ViewStyle>;
+  /** at most 3; the replay angles take 4 (their Slow-mo key) */
+  max?: number;
 }) {
   return (
     <View
@@ -446,7 +449,7 @@ export function KeyLegend({
         style,
       ]}
     >
-      {items.slice(0, 3).map(({ k, label }) => (
+      {items.slice(0, max).map(({ k, label }) => (
         <View
           key={k}
           testID={`legend-${k}`}

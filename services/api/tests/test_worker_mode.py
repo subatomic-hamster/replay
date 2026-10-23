@@ -95,3 +95,21 @@ def test_worker_stages_env_runs_opt_in_stages_after_the_defaults(tmp_path, monke
     asr = "openai/whisper-small"
     assert calls == [(None, asr), (["replays", "moments"], asr), (["condensed", "moments"], asr),
                      (["scene", "moments"], asr)]  # fmt: skip
+
+
+def test_broadcast_gets_the_commentary_narration_when_it_exists(tmp_path):
+    """REPLAY_WORKER_STAGES=commentary,director,broadcast: the broadcast mixes the
+    narration WAV the commentary stage wrote; without one it runs with game audio only."""
+    seen = []
+
+    def fake_run(game_dir, cfg, **kw):
+        seen.append((kw["stages"][0], cfg.get("narration")))
+        if kw["stages"][0] == "commentary":
+            (game_dir / "commentary").mkdir()
+            (game_dir / "commentary/narration.wav").write_bytes(b"RIFF")
+
+    adapter._run_extras(fake_run, tmp_path, {}, ("director", "broadcast"))
+    adapter._run_extras(fake_run, tmp_path, {}, ("commentary", "broadcast"))
+    wav = str(tmp_path / "commentary/narration.wav")
+    assert seen == [("director", None), ("broadcast", None), ("commentary", None),
+                    ("broadcast", wav)]  # fmt: skip

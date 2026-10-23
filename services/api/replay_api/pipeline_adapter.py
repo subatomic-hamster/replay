@@ -428,6 +428,10 @@ def _run_extras(run_worker, out_dir: Path, cfg: dict, extra: tuple[str, ...]) ->
     `_work/worker.jsonl` and leaves the game ready without that feature, never failed.
     `moments` reruns with them, so the hero uses the hype candidates when `hype` ran."""
     for stage in extra:
+        # the broadcast mixes the commentary voice under the game audio when it exists
+        narration = out_dir / "commentary/narration.wav"
+        if stage == "broadcast" and narration.is_file():
+            cfg = {**cfg, "narration": str(narration)}
         try:
             run_worker(out_dir, cfg, stages=[stage, "moments"], cpu_workers=1)
         except Exception as exc:  # noqa: BLE001 - the game itself is done

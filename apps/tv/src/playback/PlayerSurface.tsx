@@ -56,6 +56,8 @@ interface Props {
   muted?: boolean;
   /** Restart at the end instead of stopping (Replay view). */
   loop?: boolean;
+  /** Playback speed (1 normal, 0.5 slow motion). */
+  rate?: number;
   /** Viewport width / height; 16:9 except the 9:16 share-export preview. */
   aspect?: number;
   /** Overlays, laid out over the untransformed viewport. */
@@ -78,6 +80,7 @@ export function PlayerSurface({
   follow,
   muted,
   loop,
+  rate,
   aspect,
   children,
   poster,
@@ -269,6 +272,7 @@ export function PlayerSurface({
           src={src}
           muted={muted}
           loop={loop}
+          rate={rate}
           onError={(message) => setFailed({ src, message })}
           onReady={() => {
             setReadySrc(src);

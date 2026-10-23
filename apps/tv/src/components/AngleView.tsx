@@ -11,6 +11,8 @@
 // cut, the key player's first; Up on it switches to the next player's eyes. It is a
 // virtual view (the real players' cutouts on a reconstructed court, D-88), and the bug
 // says so.
+// Slow-mo: Rewind (◀◀) plays the angles at half speed ("0.5×" in the bug) and again back
+// at normal speed (Fast-forward also goes back to normal); it stays on through cuts.
 // Back: Free view → the angle → the game (Watch resumes it where it was). The top-left
 // breadcrumb names where Back goes.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -112,6 +114,7 @@ export function AngleView({
   );
   const [cam, setCam] = useState<CameraState | null>(null);
   const [preset, setPreset] = useState<string | null>("real");
+  const [slow, setSlow] = useState(false);
   const sceneTime = useRef(0);
   const resume = useRef<null | boolean>(null);
   // Free view chosen straight from Do more: Back from it goes back to the game.
@@ -210,7 +213,9 @@ export function AngleView({
       } else if ((a === "select" || a === "playpause") && handle) {
         handle.toggle();
         flash(!handle.paused());
-      } else if (a === "down" && scene) {
+      } else if (a === "seek-back") setSlow((s) => !s);
+      else if (a === "seek-fwd") setSlow(false);
+      else if (a === "down" && scene) {
         freeOnly.current = false;
         enterFree(scene, !(handle?.paused() ?? true));
       }
@@ -272,6 +277,7 @@ export function AngleView({
           : scene
             ? [{ k: "▼", label: "Free view" }]
             : []),
+        { k: "◀◀", label: "Slow-mo" },
         { k: "Back", label: "Game" },
       ];
 
@@ -288,6 +294,7 @@ export function AngleView({
         mode: inFree ? "free" : "angles",
         free: scene ? "true" : "false",
         play: m.play_id,
+        rate: slow ? 0.5 : 1,
         ...freeData,
       }}
     >
@@ -298,6 +305,7 @@ export function AngleView({
           poster={artFor(gameId)}
           muted
           loop
+          rate={slow ? 0.5 : 1}
         >
           {inFree ? (
             <FreeView
@@ -350,6 +358,13 @@ export function AngleView({
                   {inFree ? tierBadge("B") : tierBadge(angle.tier)}
                 </T>
               </View>
+              {slow && !inFree ? (
+                <View style={styles.rate}>
+                  <T style={styles.tierText} testID="replay-rate">
+                    0.5×
+                  </T>
+                </View>
+              ) : null}
               {inFree ? (
                 <T style={[type.meta, styles.dim]}>Free view</T>
               ) : (
@@ -381,7 +396,7 @@ export function AngleView({
           </View>
 
           {flashNode}
-          <KeyLegend items={legend} style={styles.legend} />
+          <KeyLegend items={legend} style={styles.legend} max={4} />
         </PlayerSurface>
       </View>
     </View>
@@ -455,6 +470,12 @@ const styles = StyleSheet.create({
     marginRight: sp(2),
   },
   tierText: { ...type.meta, color: color.floor, fontFamily: face.semibold },
+  rate: {
+    paddingHorizontal: sp(1.5),
+    borderRadius: radius.chip,
+    backgroundColor: color.scoreboard,
+    marginRight: sp(2),
+  },
   honesty: { marginTop: sp(1), color: color.bleacher },
 
   // A clamped envelope side: a thin amber bar on that screen edge.

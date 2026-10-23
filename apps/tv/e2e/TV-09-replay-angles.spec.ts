@@ -119,11 +119,11 @@ test("TV-09 Left/Right cut angles at the same time and play state, wrapping", as
   await openReplay(page);
   await expectAngle(page, "Wide", "Camera", "1 of 5");
   await expect(page.getByTestId("angle-honesty")).toHaveCount(0);
-  // The breadcrumb names the room; the legend has at most 3 keys, Back to the game.
+  // The breadcrumb names the room; the legend has 4 keys (Slow-mo, TV-39), Back to the game.
   await expect(page.getByTestId("context-chip")).toContainText(
     "Replay angles › Marcus — make (mock)",
   );
-  await expect(page.getByTestId("key-legend").locator("> *")).toHaveCount(3);
+  await expect(page.getByTestId("key-legend").locator("> *")).toHaveCount(4);
   await expect(page.getByTestId("legend-◀▶")).toHaveAttribute(
     "data-label",
     "Angles",

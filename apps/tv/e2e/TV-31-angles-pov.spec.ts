@@ -41,7 +41,7 @@ test("TV-31 Player's view: a cut in the room, Up switches player, honest label, 
     "data-label",
     "Next player",
   );
-  await expect(page.getByTestId("key-legend").locator("> *")).toHaveCount(3);
+  await expect(page.getByTestId("key-legend").locator("> *")).toHaveCount(4); // + Slow-mo (TV-39)
   expect(await smallText(page)).toEqual([]);
 
   await page.keyboard.press("ArrowUp"); // the next player's eyes

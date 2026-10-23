@@ -96,8 +96,9 @@ def test_scene_angles_and_manifest_then_cache_hits(env):
     m = json.loads((gd / "replays" / "ev_e1" / "manifest.json").read_text())
     assert [a["tier"] for a in m["angles"]] == ["A"] * 3 + ["B"] * 3 + ["C"] * 6
     c = [a for a in m["angles"] if a["tier"] == "C"]
-    assert [a["id"] for a in c] == ["3d:wing", "3d:courtside", "pov:p1", "pov:p2", "pov:p3",
-                                    "pov:p4"]  # fmt: skip
+    # POVs come in along-camera order (render tests cover the order itself)
+    assert [a["id"] for a in c[:2]] == ["3d:wing", "3d:courtside"]
+    assert sorted(a["id"] for a in c[2:]) == ["pov:p1", "pov:p2", "pov:p3", "pov:p4"]
     assert c[0]["label"] == "Virtual wing"
     # every angle has its own thumbnail (the TV's angle row), not one shared frame
     assert all((gd / a["poster"]).stat().st_size > 500 for a in m["angles"])

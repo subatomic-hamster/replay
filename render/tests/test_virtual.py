@@ -103,17 +103,67 @@ def test_a_cutout_right_at_the_camera_fades_out_but_one_at_arms_length_stays():
     foot = np.array([1.0, 12.0, 0.0])
     xy0, mask = _cutout(frame, foot)
 
-    def at(m: float) -> np.ndarray:
+    def at(m: float, max_h=None, z: float = 1.6) -> np.ndarray:
         d = (REAL.centre - foot)[:2] / np.linalg.norm((REAL.centre - foot)[:2])
         eye = np.r_[foot[:2] + m * d, 1.6]
-        view = tierb.look_at(eye, np.r_[foot[:2], 1.6], 300.0, SIZE)  # level, at them
+        view = tierb.look_at(eye, np.r_[foot[:2], z], 300.0, SIZE)  # at them, height z
         canvas = np.zeros_like(frame)
-        tierb.Billboard(REAL, 0.0, SIZE).draw(canvas, view, frame, foot, xy0, mask,
-                                              tint=(0, 0, 255))  # fmt: skip
+        tierb.Billboard(REAL, 0.0, SIZE, tierb.POV_SEEN, max_h).draw(
+            canvas, view, frame, foot, xy0, mask, tint=(0, 0, 255))  # fmt: skip
         return canvas
 
-    assert at(0.85).max() < 40  # brushing past: (almost) nothing, not a wall of pixels
-    assert at(1.6).max() > 150  # a defender at arm's length is there, solid (POV, D-88)
+    assert at(0.45).max() < 40  # brushing past: nothing, not a wall of pixels
+    assert at(1.1).max() > 150  # a defender at arm's length is there, solid (POV, D-88)
+    rows = np.flatnonzero(at(1.1, None, 0.9).max(axis=(1, 2)) > 100)
+    assert np.ptp(rows) > 0.75 * SIZE[1]  # uncapped: they fill most of the frame
+    rows = np.flatnonzero(at(1.1, tierb.POV_MAX_H, 0.9).max(axis=(1, 2)) > 100)
+    assert 0.3 * SIZE[1] < np.ptp(rows) <= (tierb.POV_MAX_H + 0.03) * SIZE[1]  # capped
+
+
+def test_a_pov_shows_real_pixels_from_behind_and_silhouettes_take_the_shirt_colour():
+    assert tierb.seen_weight(np.radians(179), tierb.POV_SEEN) == 1.0
+    crop = np.zeros((100, 20, 3), np.uint8)
+    crop[:] = (90, 140, 200)  # skin
+    crop[25:50] = (30, 30, 200)  # red shirt
+    mask = np.zeros((100, 20), bool)
+    mask[5:95] = True
+    assert tierb.kit_colour(crop, mask, (90, 140, 200)) == (30, 30, 200)
+
+
+def test_a_mask_that_leaked_onto_the_wall_is_not_a_cutout():
+    clean = np.full((200, 300, 3), (30, 60, 20), np.uint8)  # a dark green wall
+    frame = clean.copy()
+    frame[50:150, 100:120] = (40, 20, 20)  # a dark kit, 20 px wide
+    mask = np.zeros((100, 60), bool)
+    crop = frame[50:150, 80:140]
+    mask[:, 20:40] = True  # the person
+    assert not tierb.bad_cutout(crop, mask, clean, 80, 50)
+    assert not tierb.bad_cutout(crop, mask, None, 80, 50)  # no plate: no backdrop test
+    mask[:, 1:59] = True  # SAM took the whole box: two thirds of it is wall
+    assert tierb.bad_cutout(crop, mask, clean, 80, 50)
+    mask[:] = False
+    mask[10:90, :8] = True  # a sliver down the window's side: the person left the window
+    assert tierb.bad_cutout(crop, mask, None, 80, 50)
+    mask[:] = False
+    mask[5:95, 25:36] = True  # 11 x 90 inside the window: half a player behind another
+    assert tierb.bad_cutout(crop, mask, None, 80, 50)
+
+
+def test_a_mask_carried_on_after_sam_lost_the_player_is_not_live():
+    from replay_render.virtual.segment import Masks
+
+    def masks(stride):
+        m = Masks.__new__(Masks)
+        m.meta = {"stride": stride, "frames": 6, "players": {"p1": {"crop_wh": [8, 4]}}}
+        bits = np.zeros((6, 4, 8), bool)
+        for f, w in enumerate([2, 2, 3, 3, 3, 3]):  # SAM every 2nd frame, lost after 2
+            bits[f, :, :w] = True
+        m._cache = {"p1_mask": np.packbits(bits, axis=-1)}
+        return m
+
+    m = masks(2)
+    assert [m.held("p1", f) for f in range(6)] == [False, False, False, False, True, True]
+    assert not any(masks(1).held("p1", f) for f in range(6))  # the fake: every frame its own
 
 
 def test_bridge_keeps_a_person_through_a_gap_and_an_id_hand_over():

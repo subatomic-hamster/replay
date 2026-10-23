@@ -45,6 +45,7 @@ from ..virtual.tierb import View, look_at
 from . import proxy
 from . import render as stylized
 from .scene import joints_array
+from .skeleton import PELVIS
 
 ANGLES = ("wing", "courtside", "baseline")
 NAMES = {
@@ -212,7 +213,27 @@ def angles_for(doc_or_highlight: dict, size=(1280, 720)) -> list[str]:
     centre, real_c = _centre(doc, joints), _real_centre(doc)
     fixed = [a for a in ANGLES if off_angle(camera_views(a, doc, joints, size), centre, real_c)
              <= MAX_OFF]  # fmt: skip
-    return fixed + [f"pov_{p}" for p in stylized._pov_players(doc, key)]
+    # the key player's view first (the play is theirs), the rest best-looking first
+    key_pid, *rest = stylized._pov_players(doc, key)
+    return fixed + [f"pov_{p}" for p in [key_pid, *along_camera(doc, joints, rest)]]
+
+
+def along_camera(doc: dict, joints: list[np.ndarray], pids: list[str]) -> list[str]:
+    """`pids` best first for a player's view: by how nearly they face the way the real
+    camera looks (toward the middle of everyone else). Those see the others from the side
+    the camera filmed, so their view is the most real pixels; the TV offers the first."""
+    ids = [p["id"] for p in doc["players"]]
+    real_c = _real_centre(doc)[:2]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        pel = np.stack([j[:, PELVIS, :2] for j in joints])  # (P, F, 2)
+        score = {}
+        for pid in pids:
+            i = ids.index(pid)
+            rest = np.nanmean(np.delete(pel, i, axis=0), axis=0)
+            g, r = _unit(rest - pel[i]), _unit(pel[i] - real_c)
+            score[pid] = np.nan_to_num(np.nanmean((g * r).sum(axis=1)), nan=-2.0)
+    return sorted(pids, key=lambda p: -score[p])
 
 
 def tints(doc: dict) -> dict[str, tuple[int, int, int]]:
@@ -281,6 +302,7 @@ def render_angle(
         # are blocky mannequins (their 32x16 atlases magnified)
         proxy=None if pov or not PROXY else bodies, near_m=0.0 if pov else NEAR_M,
         seen=tierb.POV_SEEN if pov else (tierb.SEEN_FULL, tierb.SEEN_NONE),
+        max_h=tierb.POV_MAX_H if pov else None,
     )  # fmt: skip
     out["wall_s"] = round(time.time() - started, 2)
     return out

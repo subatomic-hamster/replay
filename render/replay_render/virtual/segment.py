@@ -273,6 +273,17 @@ class Masks:
         x0, y0 = self._arr(f"{pid}_xy")[f]
         return (int(x0), int(y0)), m
 
+    def held(self, pid: str, f: int) -> bool:
+        """True if frame `f`'s mask is not SAM's own: the same bits as `stride` frames
+        back (SAM lost the player; the last mask is carried along with the box for up to
+        HOLD frames, over whatever is behind it). With stride 1 (the box-ellipse fake)
+        neighbours match anyway: never held."""
+        s = int(self.meta.get("stride", 1))
+        if s < 2 or f < s or pid not in self.meta["players"]:
+            return False
+        pk = self._arr(f"{pid}_mask")
+        return bool(np.array_equal(pk[f], pk[f - s]))
+
     def _arr(self, key: str) -> np.ndarray:
         """An npz member is decompressed on every access: keep each one (packed bits,
         a few MB per player per play) after the first."""

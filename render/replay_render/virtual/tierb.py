@@ -403,10 +403,11 @@ SEEN_FULL, SEEN_NONE = np.radians(35), np.radians(75)  # real pixels: full / non
 # proxy there) and hands over by 55°, where it would turn into a silhouette (the two
 # bodies can stand ~0.3 m apart, so they ghost while both show: hence quickly)
 PROXY_FULL, PROXY_NONE = np.radians(45), np.radians(55)
-# image-based cutouts fade in from 0.9 m to 1.5 m from the camera: a POV's defender at
+# image-based cutouts fade in from 0.5 m to 1 m from the camera: a POV's defender at
 # arm's length stays solid (fading them from 3 m made people vanish whenever they came
-# close); fixed cameras do not show anyone that near at all (`render_angle(near_m=)`)
-NEAR_IN_M, NEAR_FADE_M = 0.9, 0.6
+# close; `POV_MAX_H` keeps them from filling the frame); fixed cameras do not show
+# anyone that near at all (`render_angle(near_m=)`)
+NEAR_IN_M, NEAR_FADE_M = 0.5, 0.5
 GAP_S = 2.0  # a person lost for up to this long (or picked up by another id) is bridged
 SPRINT_MS = 7.0  # ... if the gap could be crossed at a sprint (+1 m of box jitter)
 FADE_S = 0.3  # a person who appears / is lost for good fades in / out over this
@@ -483,11 +484,11 @@ def chain(links: list[tuple[int, int]], seeds) -> set[int]:
     return out
 
 
-# a player's view: real pixels to 75°, none past 135° (mirrored past 90°). Everyone
-# faces the eye on their billboard; a kit-coloured silhouette of someone 2 m away is a
-# blob of magnified source pixels in one colour, while their real pixels (the side the
-# camera saw) still read as that person
-POV_SEEN = (np.radians(75), np.radians(135))
+# a player's view: real pixels at every angle (mirrored past 90°). Everyone faces the
+# eye on their billboard; a one-colour silhouette read as a blob or a mannequin, while
+# their real pixels (the side the camera saw) still read as that person
+POV_SEEN = (np.pi, 2 * np.pi)
+POV_MAX_H = 0.6  # nobody stands taller than 60 % of a POV frame
 
 
 def seen_weight(th: float, seen=(SEEN_FULL, SEEN_NONE)) -> float:
@@ -502,6 +503,49 @@ def turn(real: View, view: View, foot: np.ndarray) -> float:
     virtual one."""
     dr, dv = (foot - real.centre)[:2], (foot - view.centre)[:2]
     return float(np.arctan2(dr[0] * dv[1] - dr[1] * dv[0], dr @ dv))
+
+
+BG_DIFF, BG_MIN_FG = 25, 0.45
+CUT_EDGE = 0.3  # a mask down a crop side for this share of its rows was cut off there
+SLIVER = 0.15  # a mask narrower than this x its height is a sliver (1 % of real masks)
+
+
+def bad_cutout(crop: np.ndarray, mask: np.ndarray, clean, x0: int, y0: int) -> bool:
+    """A SAM mask not to draw (the person's last good cutout stands in, `bridge`):
+    * cut off by its crop window: it runs down the window's left or right side (the
+      player left the window; up close it was a tall dark sliver);
+    * a sliver: narrower than SLIVER x its height (half a player behind another);
+    * mostly backdrop: under half of it differs from the empty court there (`clean`,
+      the plate's source-pixel median, `courtcam.plate`), it leaked onto the wall
+      (dark kits against a dark wall). Only a test: cutting the mask would punch holes
+      in dark kits."""
+    m = mask[: crop.shape[0], : crop.shape[1]]
+    rows = max(1, int(m.any(axis=1).sum()))
+    if max(m[:, 0].sum(), m[:, -1].sum()) > CUT_EDGE * rows:
+        return True
+    xs, ys = np.flatnonzero(m.any(axis=0)), np.flatnonzero(m.any(axis=1))
+    if len(xs) and (xs[-1] - xs[0] + 1) < SLIVER * (ys[-1] - ys[0] + 1):
+        return True
+    bg = clean[y0 : y0 + crop.shape[0], x0 : x0 + crop.shape[1]] if clean is not None else None
+    if bg is None or bg.shape != crop.shape:
+        return False
+    fg = np.abs(crop.astype(np.int16) - bg).max(axis=2) > BG_DIFF
+    fg = cv2.morphologyEx(fg.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    return bool(m.any()) and float(fg[m].mean()) < BG_MIN_FG
+
+
+def kit_colour(crop: np.ndarray, mask: np.ndarray, fallback=None) -> tuple[int, int, int]:
+    """BGR shirt colour of a cutout: the median of its own pixels over the torso (20-50 %
+    down its mask), so a silhouette is never a skin tone; else `fallback` / grey."""
+    m = mask[: crop.shape[0], : crop.shape[1]]
+    ys = np.flatnonzero(m.any(axis=1))
+    if len(ys):
+        y0, y1 = ys[0], ys[-1] + 1
+        band = slice(y0 + (y1 - y0) // 5, y0 + (y1 - y0) // 2 + 1)
+        px = crop[band][m[band]]
+        if len(px):
+            return tuple(int(c) for c in np.median(px, axis=0))
+    return tuple(fallback) if fallback is not None else (150, 150, 150)
 
 
 def _silhouette(rgb: np.ndarray, tint, w: float) -> np.ndarray:
@@ -519,8 +563,12 @@ class Billboard:
     """Player cutout -> virtual image through the plane at the foot point."""
 
     def __init__(self, real: View, k1: float, src_size: tuple[int, int],
-                 seen=(SEEN_FULL, SEEN_NONE)) -> None:  # fmt: skip
+                 seen=(SEEN_FULL, SEEN_NONE), max_h: float | None = None) -> None:  # fmt: skip
+        """`max_h`: the tallest a cutout may stand on screen, as a share of the frame
+        height; a nearer one is drawn further back along its line of sight (a POV's
+        `POV_MAX_H`: someone at arm's length is not a full-frame smear)."""
         self.real, self.k1, self.src_size, self.seen = real, k1, src_size, seen
+        self.max_h = max_h
 
     def _axis(self, cam: np.ndarray, foot: np.ndarray) -> np.ndarray:
         d = foot - cam
@@ -540,17 +588,13 @@ class Billboard:
         `at`, seen with the player standing at `src_foot`; it is drawn at `foot`."""
         src_foot = foot if src_foot is None else src_foot
         a_r = self._axis(self.real.centre, src_foot)
-        th = turn(self.real, view, foot)
-        c, s = np.cos(th), np.sin(th)
-        a_v = np.array([c * a_r[0] - s * a_r[1], s * a_r[0] + c * a_r[1], 0.0])
         dist = float(view.depth(foot + 0.9 * EZ)[0])
-        if dist < NEAR_M + 0.5:
+        if dist < max(NEAR_IN_M, NEAR_M):
             return
         opacity = fade * (1.0 if tint is None else near_alpha(dist))
         if opacity <= 0:
             return
         g_real = plane_homography(self.real.p, src_foot, a_r, EZ)
-        g_virt = plane_homography(view.p, foot, a_v, EZ)
         ys, xs = np.nonzero(mask)
         mx0, my0, mx1, my1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
         pad = 3
@@ -567,8 +611,21 @@ class Billboard:
         src = corners + [ox, oy]
         und = distortion.undistort_points(src, self.k1, self.src_size)
         h_crop = cv2.getPerspectiveTransform(corners.astype(np.float32), und.astype(np.float32))
-        total = g_virt @ np.linalg.inv(g_real) @ h_crop
-        dst = cv2.perspectiveTransform(corners.reshape(-1, 1, 2), total).reshape(-1, 2)
+        to_plane = np.linalg.inv(g_real) @ h_crop
+
+        def place(at_foot: np.ndarray):
+            th = turn(self.real, view, at_foot)
+            c, s = np.cos(th), np.sin(th)
+            a_v = np.array([c * a_r[0] - s * a_r[1], s * a_r[0] + c * a_r[1], 0.0])
+            total = plane_homography(view.p, at_foot, a_v, EZ) @ to_plane
+            return th, total, cv2.perspectiveTransform(corners.reshape(-1, 1, 2),
+                                                       total).reshape(-1, 2)  # fmt: skip
+
+        th, total, dst = place(foot)
+        tall = float(np.ptp(dst[:, 1])) / canvas.shape[0]
+        if self.max_h and tall > self.max_h:  # too near: stand them back along the view ray
+            eye = np.r_[view.centre[:2], 0.0]
+            th, total, dst = place(eye + (foot - eye) * tall / self.max_h)
         lo, hi = np.floor(dst.min(0)).astype(int), np.ceil(dst.max(0)).astype(int)
         x0, y0 = max(0, lo[0]), max(0, lo[1])
         x1, y1 = min(canvas.shape[1], hi[0]), min(canvas.shape[0], hi[1])
@@ -639,6 +696,7 @@ def render_angle(
     proxy=None,
     near_m: float = 0.0,
     seen: tuple[float, float] = (SEEN_FULL, SEEN_NONE),
+    max_h: float | None = None,
 ) -> dict[str, Any]:
     """Tier B's angle `angle`; or, given `views` (one per frame, or a function
     `views(pos, own)` of the bridged court positions (P, F, 2) and the track indices of
@@ -650,7 +708,8 @@ def render_angle(
     nearer the camera than `near_m` are not drawn; they fade in over the next metre.
     People stay on through short track gaps and id hand-overs (`bridge`). `seen`: the
     angles (rad) from the real camera up to which / past which a cutout shows its real
-    pixels (`seen_weight`; a POV's `POV_SEEN`)."""
+    pixels (`seen_weight`; a POV's `POV_SEEN`), `max_h` the on-screen height cap
+    (`Billboard`)."""
     gd = Path(game_dir)
     started = time.time()
     h = play(gd, play_id)
@@ -659,6 +718,7 @@ def render_angle(
     plate_meta = json.loads((gd / "plate" / "plate.json").read_text(encoding="utf-8"))
     floor = cv2.imread(str(gd / "plate" / plate_meta["floor"]["file"]))
     wall = cv2.imread(str(gd / "plate" / plate_meta["backdrop"]["file"]))
+    clean = cv2.imread(str(gd / "plate" / "plate.jpg"))  # the empty court, source pixels
     info = probe_video(video)
     src_size, fps = (info["width"], info["height"]), info["fps"]
     n = frame_count(h, fps)
@@ -720,7 +780,7 @@ def render_angle(
         if rel is not None and np.isfinite(rel).all():
             rim = min(rims, key=lambda r: np.hypot(r[0] - rel[0], r[1] - rel[1]))
             shot_ball = ball_track(s, rel, np.asarray(rim), times)
-    billboard = Billboard(real, k1, src_size, seen)
+    billboard = Billboard(real, k1, src_size, seen, max_h)
     feet = {pid: court[i] for i, pid in enumerate(tracks.ids)}
     bodies = proxy(real, k1, src_size, masks, n, feet) if proxy is not None else None
     room = room_planes(floor, wall, plate_meta) if tints is not None else []
@@ -747,17 +807,20 @@ def render_angle(
             for p, pid in enumerate(tracks.ids):
                 foot = np.array([pos[p, f, 0], pos[p, f, 1], 0.0])
                 m = masks.get(pid, f) if np.isfinite(court[p, f, 0]) else None
-                if m is not None:  # keep their cutout: it stands in while they are lost
+                if m is not None:
                     (x0, y0), mk = m
-                    held[pid] = (frame[y0 : y0 + mk.shape[0], x0 : x0 + mk.shape[1]].copy(),
-                                 (x0, y0), mk, foot)  # fmt: skip
+                    crop = frame[y0 : y0 + mk.shape[0], x0 : x0 + mk.shape[1]]
+                    if masks.held(pid, f) or bad_cutout(crop, mk, clean, x0, y0):
+                        m = None  # carried, cut off, a sliver or on the wall: last good one
+                    else:  # keep their cutout: it stands in while they are lost
+                        held[pid] = (crop.copy(), (x0, y0), mk, foot)
                 if not np.isfinite(foot[0]) or p in own or alpha[p, f] <= 0 or pid not in held:
                     continue
                 d = float(view.depth(foot + 0.9 * EZ)[0])
                 if d > near_m:  # (and their shadow)
                     people.append((d, foot, m is not None, pid, float(alpha[p, f])))
-            for _, foot, _, _, a in people:
-                draw_shadow(canvas, view, foot, a)
+            for d, foot, _, _, a in people:  # (not under the eye: a dark smear)
+                draw_shadow(canvas, view, foot, a * float(np.clip(d - 1.0, 0, 1)))
             if rims:
                 draw_hoops(canvas, view, rims, baselines)
             # painter's order; the net goes between the far-side and near-side players
@@ -768,11 +831,7 @@ def render_angle(
                     draw_net(canvas, view, net)
                 vis = a * (float(np.clip(d - near_m, 0, 1)) if near_m else 1.0)
                 crop, at, m, src_foot = held[pid]
-                tint = None
-                if tints is not None:  # (someone the 3D scene does not know: their own colour)
-                    px = crop[m[: crop.shape[0], : crop.shape[1]]]
-                    tint = tints.get(pid) or tuple(int(c) for c in (
-                        np.median(px, axis=0) if len(px) else (150, 150, 150)))  # fmt: skip
+                tint = None if tints is None else kit_colour(crop, m, tints.get(pid))
                 if live and bodies is not None:  # the cutout fades into its posed proxy
                     th = abs(turn(real, view, foot))
                     w = float(np.clip((PROXY_NONE - th) / (PROXY_NONE - PROXY_FULL), 0, 1))

@@ -3,7 +3,8 @@
 `replays/highlights.json` (replay.highlights.v1) is the fan-out list for the segment /
 Tier A / Tier B stages: the best few plays from `plays.json` (triggered ones first,
 then plays with a shot, then confidence), else shots and rallies from `events.json`.
-Each window is at most `MAX_S` long, ending shortly after the play's key moment.
+Each window is at most `MAX_S` long, ending shortly after the play's key moment; the
+best-ranked play's is `LONG_S` (a whole stretch for its player's views).
 Every angle of one play is rendered over exactly that window, so the videos are
 time-aligned and a TV cut keeps the playback position.
 """
@@ -24,6 +25,9 @@ HIGHLIGHTS_REL = "replays/highlights.json"
 HIGHLIGHTS_SCHEMA = "replay.highlights.v1"
 MANIFEST_SCHEMA = "replay.replay_manifest.v1"
 MAX_S = 8.0
+# the best play (a "Replay, clip that" trigger first, then a shot) gets a longer window,
+# reaching back before the play's start: a whole stretch to watch in a player's view
+LONG_S = 14.0
 MIN_S = 2.0
 POST_S = 1.5  # kept after the key moment (the ball dropping, the celebration)
 RELEASE_LEAD_S = 1.0  # a shot's release this long before the rim (courtcam ShotCfg)
@@ -40,9 +44,10 @@ LABELS = {
 }
 
 
-def _window(t_start: float, t_end: float, key: float, duration: float) -> tuple[float, float]:
+def _window(t_start: float, t_end: float, key: float, duration: float,
+            long: bool = False) -> tuple[float, float]:  # fmt: skip
     t1 = min(duration, max(t_end, key + POST_S) if key <= t_end else t_end)
-    t0 = max(t_start, t1 - MAX_S, 0.0)
+    t0 = max(t1 - LONG_S, 0.0) if long else max(t_start, t1 - MAX_S, 0.0)
     return round(t0, 3), round(t1, 3)
 
 
@@ -138,8 +143,9 @@ def _spread(cands: list[dict], n: int, duration: float) -> list[dict]:
     return sorted(out, key=lambda h: h["t_start"])
 
 
-def select(game: Game, n: int = 3) -> tuple[list[dict], str]:
-    """Up to `n` highlight windows and where they came from (`plays` | `events`)."""
+def select(game: Game, n: int = 3, long_first: bool = False) -> tuple[list[dict], str]:
+    """Up to `n` highlight windows and where they came from (`plays` | `events`);
+    `long_first`: the best-ranked one is `LONG_S` long (the replay angles, not the reel)."""
     by_id = {e.get("id"): e for e in game.events}
     cands: list[dict] = []
     if game.plays:
@@ -155,7 +161,8 @@ def select(game: Game, n: int = 3) -> tuple[list[dict], str]:
         for p in ranked:
             evs = [by_id[i] for i in p.get("event_ids") or [] if i in by_id]
             key = max([float(e["t_key"]) for e in evs] or [float(p["t_end"])])
-            t0, t1 = _window(float(p["t_start"]), float(p["t_end"]), key, game.duration)
+            t0, t1 = _window(float(p["t_start"]), float(p["t_end"]), key, game.duration,
+                             long=long_first and not cands)  # fmt: skip
             if t1 - t0 < MIN_S:
                 continue
             parts = list(dict.fromkeys(q["player_id"] for q in p.get("participants") or []))
@@ -166,9 +173,8 @@ def select(game: Game, n: int = 3) -> tuple[list[dict], str]:
     evs = [e for e in game.events if e.get("type") in ("shot", "rally", "point")]
     evs.sort(key=lambda e: (e["type"] != "shot", -(e["t_end"] - e["t_start"])))
     for e in evs:
-        t0, t1 = _window(
-            float(e["t_start"]) - 4.0, float(e["t_end"]), float(e["t_key"]), game.duration
-        )
+        t0, t1 = _window(float(e["t_start"]) - 4.0, float(e["t_end"]), float(e["t_key"]),
+                         game.duration, long=long_first and not cands)  # fmt: skip
         if t1 - t0 < MIN_S:
             continue
         pid = e.get("player_id")
@@ -188,7 +194,7 @@ def _present(game: Game, pid: str, t0: float, t1: float) -> float:
 def write_highlights(game_dir: Path, *, n: int | None = None, synthetic: bool = False) -> dict:
     """`n` plays, else `auto_n` of the game's length."""
     game = load_game(game_dir)
-    plays, source = select(game, n or auto_n(game.duration))
+    plays, source = select(game, n or auto_n(game.duration), long_first=True)
     for h in plays:
         # Tier A's player angles need a player who is actually tracked in the window
         if not h["primary"] or _present(game, h["primary"], h["t_start"], h["t_end"]) < 0.5:

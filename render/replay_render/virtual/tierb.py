@@ -271,7 +271,7 @@ def draw_room(canvas: np.ndarray, view: View, planes: list) -> None:
             draw_plane(canvas, tex, view, origin, ax_u, ax_v)
 
 
-def draw_shadow(canvas: np.ndarray, view: View, foot: np.ndarray) -> None:
+def draw_shadow(canvas: np.ndarray, view: View, foot: np.ndarray, strength: float = 1.0) -> None:
     ang = np.linspace(0, 2 * np.pi, 24, endpoint=False)
     ring = foot + np.column_stack([0.42 * np.cos(ang), 0.42 * np.sin(ang), np.zeros_like(ang)])
     if (view.depth(ring) < NEAR_M).any():
@@ -294,7 +294,7 @@ def draw_shadow(canvas: np.ndarray, view: View, foot: np.ndarray) -> None:
         m = cv2.resize(small, (m.shape[1], m.shape[0]), interpolation=cv2.INTER_LINEAR)
     else:
         m = cv2.GaussianBlur(m, (0, 0), sigma)
-    a = (m.astype(np.float32) / 255.0 * 0.45)[..., None]
+    a = (m.astype(np.float32) / 255.0 * 0.45 * strength)[..., None]
     roi = canvas[y0:y1, x0:x1]
     roi[:] = (roi * (1 - a)).astype(np.uint8)
 
@@ -302,7 +302,8 @@ def draw_shadow(canvas: np.ndarray, view: View, foot: np.ndarray) -> None:
 def draw_hoops(
     canvas: np.ndarray, view: View, rims: list, baseline_ys: tuple[float, float]
 ) -> None:
-    """Rim ring at 3.05 m and a translucent backboard 0.375 m behind it (FIBA)."""
+    """Rim ring at 3.05 m with a white net under it, and a translucent backboard 0.375 m
+    behind it (FIBA). No support: how a hoop is held up (wall, stanchion) is not known."""
     for rx, ry in rims:
         back = -1.0 if abs(ry - baseline_ys[0]) < abs(ry - baseline_ys[1]) else 1.0
         by = ry + back * 0.375
@@ -319,6 +320,15 @@ def draw_hoops(
         ring = np.column_stack(
             [rx + 0.225 * np.cos(ang), ry + 0.225 * np.sin(ang), np.full_like(ang, RIM_HEIGHT_M)]
         )
+        low = np.column_stack([rx + 0.13 * np.cos(ang), ry + 0.13 * np.sin(ang),
+                               np.full_like(ang, RIM_HEIGHT_M - 0.42)])  # fmt: skip
+        if (view.depth(np.vstack([ring, low])) > NEAR_M).all():  # the net: 12 cords
+            top, bot = view.project(ring), view.project(low)
+            for j in range(0, 32, 3):
+                a, b = np.round(top[j]).astype(int), np.round(bot[(j + 2) % 31]).astype(int)
+                cv2.line(canvas, tuple(a), tuple(b), (225, 225, 225), 1, cv2.LINE_AA)
+            cv2.polylines(canvas, [np.round(bot).astype(np.int32)], False, (225, 225, 225), 1,
+                          cv2.LINE_AA)  # fmt: skip
         if (view.depth(ring) > NEAR_M).all():
             cv2.polylines(
                 canvas,
@@ -393,13 +403,98 @@ SEEN_FULL, SEEN_NONE = np.radians(35), np.radians(75)  # real pixels: full / non
 # proxy there) and hands over by 55°, where it would turn into a silhouette (the two
 # bodies can stand ~0.3 m apart, so they ghost while both show: hence quickly)
 PROXY_FULL, PROXY_NONE = np.radians(45), np.radians(55)
-NEAR_FADE_M = 1.8  # image-based cutouts fade in from 1.2 m to 3.0 m from the camera
+# image-based cutouts fade in from 0.9 m to 1.5 m from the camera: a POV's defender at
+# arm's length stays solid (fading them from 3 m made people vanish whenever they came
+# close); fixed cameras do not show anyone that near at all (`render_angle(near_m=)`)
+NEAR_IN_M, NEAR_FADE_M = 0.9, 0.6
+GAP_S = 2.0  # a person lost for up to this long (or picked up by another id) is bridged
+SPRINT_MS = 7.0  # ... if the gap could be crossed at a sprint (+1 m of box jitter)
+FADE_S = 0.3  # a person who appears / is lost for good fades in / out over this
 
 
-def seen_weight(th: float) -> float:
+def near_alpha(d: float) -> float:
+    return float(np.clip((d - NEAR_IN_M) / NEAR_FADE_M, 0.0, 1.0))
+
+
+def bridge(court: np.ndarray, fps: float):
+    """Keep people present through a window's track gaps and id hand-overs.
+
+    `court` (P, F, 2) is NaN where a track is absent. A run of frames that ends before the
+    window does is linked to a run that starts within `GAP_S` after it, near enough to be
+    the same person (the same id after a short loss, or the next id the tracker gave
+    them), shortest gaps first. Returns `pos` (P, F, 2) with each linked gap filled along
+    a straight line (drawn as the run that ended: their last cutout, held), `alpha`
+    (P, F) with a `FADE_S` fade-in where a run starts unlinked and a fade-out (held in
+    place) where one ends unlinked, and `links` [(p_from, p_to)]."""
+    n_p, n_f = court.shape[:2]
+    ok = np.isfinite(court[..., 0])
+    runs = []
+    for p in range(n_p):
+        d = np.diff(np.r_[0, ok[p].astype(np.int8), 0])
+        runs += [(p, s, e - 1) for s, e in zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1),
+                                                strict=True)]  # fmt: skip
+    gap = round(GAP_S * fps)
+    cands = []
+    for a in runs:
+        for b in runs:
+            g = b[1] - a[2]
+            if a[2] >= n_f - 1 or b[1] == 0 or not 0 < g <= gap:
+                continue
+            dist = float(np.linalg.norm(court[b[0], b[1]] - court[a[0], a[2]]))
+            if dist <= 1.0 + SPRINT_MS * g / fps:
+                cands.append((g / fps + dist / SPRINT_MS, a, b))
+    pos, alpha = court.copy(), ok.astype(np.float32)
+    ended, started, links = set(), set(), []
+    for _, a, b in sorted(cands, key=lambda c: c[0]):
+        if a in ended or b in started:
+            continue
+        ended.add(a)
+        started.add(b)
+        links.append((a[0], b[0]))
+        k = np.arange(a[2] + 1, b[1])
+        free = k[~np.isfinite(pos[a[0], k, 0])]
+        u = ((free - a[2]) / (b[1] - a[2]))[:, None]
+        pos[a[0], free] = court[a[0], a[2]] * (1 - u) + court[b[0], b[1]] * u
+        alpha[a[0], free] = 1.0
+    fade = max(1, round(FADE_S * fps))
+    ramp = (np.arange(fade) + 1) / (fade + 1)
+    for p, s, e in runs:
+        if s > 0 and (p, s, e) not in started:
+            k = min(fade, e - s + 1)
+            alpha[p, s : s + k] *= ramp[:k]
+        if e < n_f - 1 and (p, s, e) not in ended:
+            k = np.arange(e + 1, min(n_f, e + 1 + fade))
+            k = k[~np.isfinite(pos[p, k, 0])]
+            pos[p, k] = court[p, e]
+            alpha[p, k] = ramp[::-1][: len(k)]
+    return pos, alpha, links
+
+
+def chain(links: list[tuple[int, int]], seeds) -> set[int]:
+    """Every track index linked (either way, transitively) to one of `seeds`."""
+    out, todo = set(seeds), list(seeds)
+    while todo:
+        q = todo.pop()
+        for a, b in links:
+            for x, y in ((a, b), (b, a)):
+                if x == q and y not in out:
+                    out.add(y)
+                    todo.append(y)
+    return out
+
+
+# a player's view: real pixels to 75°, none past 135° (mirrored past 90°). Everyone
+# faces the eye on their billboard; a kit-coloured silhouette of someone 2 m away is a
+# blob of magnified source pixels in one colour, while their real pixels (the side the
+# camera saw) still read as that person
+POV_SEEN = (np.radians(75), np.radians(135))
+
+
+def seen_weight(th: float, seen=(SEEN_FULL, SEEN_NONE)) -> float:
     """How much of a cutout's real pixels to show when the virtual line of sight is `th`
     radians (horizontal) from the real camera's: all up to 35°, none past 75°."""
-    return float(np.clip((SEEN_NONE - abs(th)) / (SEEN_NONE - SEEN_FULL), 0.0, 1.0))
+    full, none = seen
+    return float(np.clip((none - abs(th)) / (none - full), 0.0, 1.0))
 
 
 def turn(real: View, view: View, foot: np.ndarray) -> float:
@@ -413,6 +508,8 @@ def _silhouette(rgb: np.ndarray, tint, w: float) -> np.ndarray:
     """The crop blended toward a flat kit colour shaded by its own light (folds, arms and
     legs stay readable): weight `w` of the real pixels."""
     g = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    # the light, not the pixel noise (magnified up close, noise reads as blocks)
+    g = cv2.GaussianBlur(g, (0, 0), max(1.0, rgb.shape[0] / 60))
     shade = (0.55 + 0.45 * g / max(float(g.mean()), 1.0))[..., None]
     flat = np.clip(np.asarray(tint, np.float32) * shade, 0, 255)
     return (rgb.astype(np.float32) * w + flat * (1 - w)).astype(np.uint8)
@@ -421,8 +518,9 @@ def _silhouette(rgb: np.ndarray, tint, w: float) -> np.ndarray:
 class Billboard:
     """Player cutout -> virtual image through the plane at the foot point."""
 
-    def __init__(self, real: View, k1: float, src_size: tuple[int, int]) -> None:
-        self.real, self.k1, self.src_size = real, k1, src_size
+    def __init__(self, real: View, k1: float, src_size: tuple[int, int],
+                 seen=(SEEN_FULL, SEEN_NONE)) -> None:  # fmt: skip
+        self.real, self.k1, self.src_size, self.seen = real, k1, src_size, seen
 
     def _axis(self, cam: np.ndarray, foot: np.ndarray) -> np.ndarray:
         d = foot - cam
@@ -431,25 +529,27 @@ class Billboard:
         return a / np.linalg.norm(a)
 
     def draw(self, canvas, view: View, frame, foot: np.ndarray, xy0, mask: np.ndarray,
-             tint=None, fade: float = 1.0) -> None:  # fmt: skip
+             tint=None, fade: float = 1.0, src_foot=None, at=(0, 0)) -> None:  # fmt: skip
         """`tint`: None (the real pixels), or a BGR kit colour the cutout fades to as the
         virtual line of sight turns away from the real one (`seen_weight`): past ~45° a
         flat cutout reads wrong, so it becomes a kit-coloured, shaded silhouette of the
         same shape, mirrored once seen from behind. Never stretched garbage. With a tint
-        a cutout also fades out closer than `NEAR_FADE_M` (a POV brushing past someone
-        would fill the frame with a few dozen magnified source pixels). `fade` scales
-        its opacity (over a body proxy, `avatars.proxy`)."""
-        a_r = self._axis(self.real.centre, foot)
+        a cutout also fades out closer than `NEAR_IN_M` + `NEAR_FADE_M` (a POV brushing
+        past someone). `fade` scales its opacity (over a body proxy, `avatars.proxy`).
+        A held cutout (`bridge`): `frame` is its crop, whose top-left is source pixel
+        `at`, seen with the player standing at `src_foot`; it is drawn at `foot`."""
+        src_foot = foot if src_foot is None else src_foot
+        a_r = self._axis(self.real.centre, src_foot)
         th = turn(self.real, view, foot)
         c, s = np.cos(th), np.sin(th)
         a_v = np.array([c * a_r[0] - s * a_r[1], s * a_r[0] + c * a_r[1], 0.0])
         dist = float(view.depth(foot + 0.9 * EZ)[0])
         if dist < NEAR_M + 0.5:
             return
-        opacity = fade * (1.0 if tint is None else float(np.clip((dist - 1.2) / NEAR_FADE_M, 0, 1)))
+        opacity = fade * (1.0 if tint is None else near_alpha(dist))
         if opacity <= 0:
             return
-        g_real = plane_homography(self.real.p, foot, a_r, EZ)
+        g_real = plane_homography(self.real.p, src_foot, a_r, EZ)
         g_virt = plane_homography(view.p, foot, a_v, EZ)
         ys, xs = np.nonzero(mask)
         mx0, my0, mx1, my1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
@@ -457,7 +557,8 @@ class Billboard:
         mx0, my0 = max(0, mx0 - pad), max(0, my0 - pad)
         mx1, my1 = min(mask.shape[1], mx1 + pad), min(mask.shape[0], my1 + pad)
         ox, oy = xy0[0] + mx0, xy0[1] + my0
-        rgb = frame[oy : oy + (my1 - my0), ox : ox + (mx1 - mx0)]
+        lx, ly = ox - at[0], oy - at[1]
+        rgb = frame[ly : ly + (my1 - my0), lx : lx + (mx1 - mx0)]
         m = mask[my0:my1, mx0:mx1][: rgb.shape[0], : rgb.shape[1]]
         cw, ch = rgb.shape[1], rgb.shape[0]
         if cw < 2 or ch < 2:
@@ -474,7 +575,7 @@ class Billboard:
         if x1 <= x0 or y1 <= y0 or (x1 - x0) * (y1 - y0) > canvas.size:
             return
         if tint is not None:
-            w = seen_weight(th)
+            w = seen_weight(th, self.seen)
             if w < 1.0:
                 rgb = _silhouette(rgb, tint, w)
             if abs(th) > np.pi / 2:  # from behind: the person's left is on our left
@@ -537,13 +638,19 @@ def render_angle(
     label_fn=None,
     proxy=None,
     near_m: float = 0.0,
+    seen: tuple[float, float] = (SEEN_FULL, SEEN_NONE),
 ) -> dict[str, Any]:
-    """Tier B's angle `angle`; or, given `views` (one per frame), the image-based virtual
-    views (avatars.imageview): `hide` players (a POV's own), `tints` kit colours the
-    cutouts fade to at wide angles, `label_fn(canvas)` their burned-in label, `proxy`
-    a `proxy(real, k1, src_size, masks, n)` that builds the posed body proxies the
-    cutouts cross-fade to instead (`avatars.proxy`). People nearer the camera than
-    `near_m` are not drawn; they fade in over the next metre."""
+    """Tier B's angle `angle`; or, given `views` (one per frame, or a function
+    `views(pos, own)` of the bridged court positions (P, F, 2) and the track indices of
+    the `hide` players with every id `bridge` linked to them), the image-based virtual
+    views (avatars.imageview): `hide` players (a POV's own, under all their ids),
+    `tints` kit colours the cutouts fade to at wide angles, `label_fn(canvas)` their
+    burned-in label, `proxy` a `proxy(real, k1, src_size, masks, n)` that builds the
+    posed body proxies the cutouts cross-fade to instead (`avatars.proxy`). People
+    nearer the camera than `near_m` are not drawn; they fade in over the next metre.
+    People stay on through short track gaps and id hand-overs (`bridge`). `seen`: the
+    angles (rad) from the real camera up to which / past which a cutout shows its real
+    pixels (`seen_weight`; a POV's `POV_SEEN`)."""
     gd = Path(game_dir)
     started = time.time()
     h = play(gd, play_id)
@@ -572,8 +679,12 @@ def render_angle(
     with np.errstate(all="ignore"):  # per-frame extent of the players on court, metres
         extent = np.nanmax(court, axis=0) - np.nanmin(court, axis=0)  # (F, 2)
     spread = float(np.nanmedian(extent.max(axis=1))) if np.isfinite(extent).any() else 10.0
+    pos, alpha, links = bridge(court, fps)
+    own = chain(links, [i for p in hide if (i := tracks.index(p)) is not None])
     if views is None:
         views = camera_path(angle, real, src_size, centre, spread, size)
+    elif callable(views):
+        views = views(pos, sorted(own))
     fl = plate_meta["floor"]
     x0, _, _, y1 = fl["bounds_m"]
     ppm = fl["px_per_m"]
@@ -609,7 +720,7 @@ def render_angle(
         if rel is not None and np.isfinite(rel).all():
             rim = min(rims, key=lambda r: np.hypot(r[0] - rel[0], r[1] - rel[1]))
             shot_ball = ball_track(s, rel, np.asarray(rim), times)
-    billboard = Billboard(real, k1, src_size)
+    billboard = Billboard(real, k1, src_size, seen)
     feet = {pid: court[i] for i, pid in enumerate(tracks.ids)}
     bodies = proxy(real, k1, src_size, masks, n, feet) if proxy is not None else None
     room = room_planes(floor, wall, plate_meta) if tints is not None else []
@@ -622,6 +733,7 @@ def render_angle(
     proc = open_encoder(Path(out_path), size, fps)
     assert proc.stdin is not None
     drawn = 0
+    held: dict[str, tuple] = {}  # pid -> (crop, its source origin, mask, foot) last seen
     try:
         for f, (_, frame) in enumerate(read_window(video, h["t_start"], n)):
             view = views[min(f, len(views) - 1)]  # (a scene doc's frame count may round 1 short)
@@ -633,37 +745,45 @@ def render_angle(
             draw_plane(canvas, floor, view, f_origin, f_u, f_v)
             people = []
             for p, pid in enumerate(tracks.ids):
-                if not np.isfinite(court[p, f, 0]) or pid in hide:
+                foot = np.array([pos[p, f, 0], pos[p, f, 1], 0.0])
+                m = masks.get(pid, f) if np.isfinite(court[p, f, 0]) else None
+                if m is not None:  # keep their cutout: it stands in while they are lost
+                    (x0, y0), mk = m
+                    held[pid] = (frame[y0 : y0 + mk.shape[0], x0 : x0 + mk.shape[1]].copy(),
+                                 (x0, y0), mk, foot)  # fmt: skip
+                if not np.isfinite(foot[0]) or p in own or alpha[p, f] <= 0 or pid not in held:
                     continue
-                m = masks.get(pid, f)
-                if m is None:
-                    continue
-                foot = np.array([court[p, f, 0], court[p, f, 1], 0.0])
                 d = float(view.depth(foot + 0.9 * EZ)[0])
                 if d > near_m:  # (and their shadow)
-                    people.append((d, foot, m, pid))
-            for _, foot, _, _ in people:
-                draw_shadow(canvas, view, foot)
+                    people.append((d, foot, m is not None, pid, float(alpha[p, f])))
+            for _, foot, _, _, a in people:
+                draw_shadow(canvas, view, foot, a)
             if rims:
                 draw_hoops(canvas, view, rims, baselines)
             # painter's order; the net goes between the far-side and near-side players
             net_d = float(view.depth(np.mean(net, axis=0, keepdims=True))[0]) if net else -1.0
             people.sort(key=lambda q: -q[0])
-            for i, (d, foot, (xy0, m), pid) in enumerate(people):
+            for i, (d, foot, live, pid, a) in enumerate(people):
                 if net and d <= net_d and (i == 0 or people[i - 1][0] > net_d):
                     draw_net(canvas, view, net)
-                tint = None if tints is None else tints.get(pid, (150, 150, 150))
-                vis = float(np.clip(d - near_m, 0, 1)) if near_m else 1.0
-                if bodies is not None:  # the cutout fades into its posed, textured proxy
+                vis = a * (float(np.clip(d - near_m, 0, 1)) if near_m else 1.0)
+                crop, at, m, src_foot = held[pid]
+                tint = None
+                if tints is not None:  # (someone the 3D scene does not know: their own colour)
+                    px = crop[m[: crop.shape[0], : crop.shape[1]]]
+                    tint = tints.get(pid) or tuple(int(c) for c in (
+                        np.median(px, axis=0) if len(px) else (150, 150, 150)))  # fmt: skip
+                if live and bodies is not None:  # the cutout fades into its posed proxy
                     th = abs(turn(real, view, foot))
                     w = float(np.clip((PROXY_NONE - th) / (PROXY_NONE - PROXY_FULL), 0, 1))
-                    near = float(np.clip((d - 1.2) / NEAR_FADE_M, 0, 1)) * vis
+                    near = near_alpha(d) * vis
                     if w < 1 and near > 0 and bodies.draw(canvas, view, f, frame, pid, masks,
                                                           near):  # fmt: skip
                         if w > 0:
-                            billboard.draw(canvas, view, frame, foot, xy0, m, None, w * near)
+                            billboard.draw(canvas, view, crop, foot, at, m, None, w * near,
+                                           src_foot, at)  # fmt: skip
                         continue
-                billboard.draw(canvas, view, frame, foot, xy0, m, tint, vis)
+                billboard.draw(canvas, view, crop, foot, at, m, tint, vis, src_foot, at)
             if net and (not people or people[-1][0] > net_d):
                 draw_net(canvas, view, net)
             drawn += len(people)

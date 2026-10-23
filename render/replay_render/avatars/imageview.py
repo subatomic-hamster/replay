@@ -23,7 +23,7 @@ Angles: `wing` (a raised camera ~35° round from the real one), `courtside` (low
 just off the real line of sight), `baseline` (behind the target basket / the play's
 baseline, when within `MAX_OFF`), and `pov_<pid>` (the player's eyes from the 3D scene;
 their own cutout is hidden). Tier B keeps `broadcast_high`, `orbit` and `push_in`.
-Every frame is labelled "VIRTUAL VIEW".
+Every frame is labelled "VIRTUAL REPLAY" (the TV badge's words).
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from typing import Any
 
 import cv2
 import numpy as np
+from courtcam.calibrate import RIM_HEIGHT_M as RIM_M
 from courtcam.profiles import load_profile
 
 from ..camera import ease
@@ -51,7 +52,7 @@ NAMES = {
     "courtside": "COURTSIDE",
     "side": "SIDE",
     "baseline": "BASELINE",
-    "pov": "PLAYER POV",
+    "pov": "PLAYER'S VIEW",
 }
 MAX_OFF = np.radians(60)  # mean angle from the real camera's line of sight to the play
 PROXY = True  # cutouts turn into posed, textured body proxies at wide angles (proxy.py)
@@ -73,10 +74,86 @@ def _centre(doc: dict, joints: list[np.ndarray]) -> np.ndarray:
     return stylized.focus_centre(joints, focus, doc["fps"])
 
 
+POV_FOV = np.radians(80)  # horizontal: wide like a head, people not tiny
+POV_PITCH = np.radians(-7)  # a little down: the floor and the feet of people near show
+POV_MAX_PITCH = np.radians(20)  # looking up at the rim on a shot, never into the void
+EYE_OF_STATURE, EYE_DEFAULT_M = 0.93, 1.65
+
+
+def _unit(v: np.ndarray) -> np.ndarray:
+    return v / np.maximum(np.linalg.norm(v, axis=-1, keepdims=True), 1e-6)
+
+
+def pov_views(doc: dict, pos: np.ndarray, own: list[int], size, eye_m: float) -> list[View]:
+    """A player's eyes, one camera per frame. `pos` (P, F, 2) are the bridged tracked foot
+    points (`tierb.bridge`), `own` the POV player's track indices (all their ids).
+
+    The eye stands on their tracked court position (not the 3D lift's head, whose root
+    can sit a metre off and whose height bobs with a crouching pose) at a fixed
+    `eye_m`, smoothed over 0.25 s; before their track starts / after it ends it holds
+    the nearest position. They look at the play: the ball where the scene models it,
+    else the middle of everyone else on court, with a pull toward the nearest basket
+    (or the far baseline) so the gaze never spins when the others crowd round; the
+    direction is smoothed over 0.5 s. On a modelled shot the gaze turns up to the rim
+    from 1 s before the release to 0.8 s after it reaches the rim."""
+    fps, n = doc["fps"], pos.shape[1]
+    with warnings.catch_warnings():  # frames where nobody (else) is tracked stay NaN
+        warnings.simplefilter("ignore", RuntimeWarning)
+        me = np.nanmean(pos[own], axis=0) if own else np.full((n, 2), np.nan)
+        rest = [p for p in range(len(pos)) if p not in own]
+        others = np.nanmean(pos[rest], axis=0) if rest else np.full((n, 2), np.nan)
+    if not np.isfinite(me[:, 0]).any():
+        raise ValueError("the POV player is not tracked in this window")
+    me = tierb._smooth(stylized._fill(me), 0.25 * fps)
+    rims = [np.asarray(r, float) for r in doc["court"]["rims"]]
+    mid = me.mean(axis=0)
+    if rims:
+        goal = np.r_[min(rims, key=lambda r: np.linalg.norm(r - mid)), RIM_M]
+    else:  # net sport: across the net
+        tpl = load_profile(doc["sport"]).template(doc.get("variant"))
+        goal = np.r_[stylized._end(tpl, float(mid[1]), True), 1.0]
+    look = 0.15 * _unit(goal[:2] - me)
+    if np.isfinite(others[:, 0]).any():
+        to_c = tierb._smooth(stylized._fill(others), 0.5 * fps) - me
+        look += _unit(to_c) * np.clip(np.linalg.norm(to_c, axis=1, keepdims=True) / 3.0, 0, 1)
+    ball = doc.get("ball") or {}
+    bp = np.array([q if q else [np.nan] * 3 for q in (ball.get("positions") or [])[:n]],
+                  float).reshape(-1, 3)  # fmt: skip
+    if len(bp):
+        ok = np.isfinite(bp[:, 0])
+        look[: len(bp)][ok] += _unit(bp[ok, :2] - me[: len(bp)][ok])
+    look = _unit(tierb._smooth(look, 0.5 * fps))
+    k = np.zeros(n)
+    if ball.get("target") and ball.get("t_release") is not None:
+        times = doc["t_start"] + np.arange(n) / fps
+        t_rel = float(ball["t_release"])
+        t_rim = float(ball.get("t_rim") or t_rel + 1.0)
+        goal = np.asarray(ball["target"], float)
+        k = ease(np.clip((times - (t_rel - 1.0)) / 0.8, 0, 1)) * (
+            1 - ease(np.clip((times - (t_rim + 0.8)) / 0.8, 0, 1)))  # fmt: skip
+    to_g = goal[:2] - me
+    # under the basket the rim is overhead: looking up at it shows a wall, not the shot
+    k = k * np.clip((np.linalg.norm(to_g, axis=1) - 2.5) / 2.0, 0, 1)
+    dirs = _unit(look * (1 - k[:, None]) + _unit(to_g) * k[:, None])
+    up = np.arctan2(goal[2] - eye_m, np.maximum(np.linalg.norm(to_g, axis=1), 0.5))
+    pitch = POV_PITCH * (1 - k) + np.minimum(up, POV_MAX_PITCH) * k
+    f = size[0] / 2 / np.tan(POV_FOV / 2)
+    views = []
+    for i in range(n):
+        eye = np.r_[me[i], eye_m]
+        d = np.r_[np.cos(pitch[i]) * dirs[i], np.sin(pitch[i])]
+        views.append(look_at(eye, eye + d, f, size))
+    return views
+
+
+def eye_height(doc: dict, pid: str) -> float:
+    h = next((p.get("height_m") for p in doc["players"] if p["id"] == pid), None)
+    return EYE_OF_STATURE * float(h) if h and 1.5 <= float(h) <= 2.15 else EYE_DEFAULT_M
+
+
 def camera_views(angle: str, doc: dict, joints: list[np.ndarray], size) -> list[View]:
-    """One virtual camera per frame (court metres, like the tracks)."""
-    if angle.startswith("pov"):
-        return _level(stylized.camera_path(angle, doc, joints, size), size)
+    """One fixed virtual camera per frame (court metres, like the tracks). POVs follow
+    the tracks instead (`pov_views`)."""
     if angle not in ("wing", "courtside", "side"):
         return stylized.camera_path(angle, doc, joints, size)
     n, w = doc["frames"], size[0]
@@ -108,20 +185,6 @@ def camera_views(angle: str, doc: dict, joints: list[np.ndarray], size) -> list[
         e[:2] += (centre[i][:2] - t0[:2]) * 0.5  # truck along with the play
         views.append(look_at(e, centre[i] + [0, 0, 0.2], f, size))
     return views
-
-
-def _level(views: list[View], size, max_pitch: float = np.radians(20)) -> list[View]:
-    """A POV under the basket aims at the rim almost straight up, into the void over the
-    reconstructed walls: cap how far it looks up (continuous, so no jump at the cap)."""
-    out, hor = [], np.array([1.0, 0.0])
-    for v in views:
-        fwd = v.r[2]
-        h = np.linalg.norm(fwd[:2])
-        hor = fwd[:2] / h if h > 1e-3 else hor
-        p = min(float(np.arcsin(np.clip(fwd[2], -1, 1))), max_pitch)
-        d = np.r_[np.cos(p) * hor, np.sin(p)]
-        out.append(look_at(v.centre, v.centre + d, float(v.k[0, 0]), size))
-    return out
 
 
 def off_angle(views: list[View], centre: np.ndarray, real_c: np.ndarray) -> float:
@@ -169,7 +232,9 @@ def label(canvas: np.ndarray, angle: str, synthetic: bool) -> None:
     roi = canvas[at(0, 24)[1] : at(0, 98)[1], at(24, 0)[0] : at(404, 0)[0]]
     roi[:] = (roi * 0.3 + 10).astype(np.uint8)
     cv2.rectangle(canvas, at(24, 24), at(34, 98), (255, 190, 90), -1)
-    cv2.putText(canvas, "VIRTUAL VIEW", at(46, 54), font, 0.8 * s, (255, 210, 130), 1, cv2.LINE_AA)
+    cv2.putText(
+        canvas, "VIRTUAL REPLAY", at(46, 54), font, 0.8 * s, (255, 210, 130), 1, cv2.LINE_AA
+    )
     name = NAMES.get("pov" if angle.startswith("pov") else angle, angle.upper())
     cv2.putText(canvas, name, at(46, 86), font, 0.8 * s, (245, 245, 245), 1, cv2.LINE_AA)
     note = "real players' pixels on a reconstructed court" + ("  |  SYNTHETIC" if synthetic else "")
@@ -180,14 +245,23 @@ def label(canvas: np.ndarray, angle: str, synthetic: bool) -> None:
 
 def render_angle(
     game_dir: Path, video: Path, doc: dict, angle: str, out_path: Path, *, size=(1280, 720),
-    progress=None,
+    progress=None, plain: bool = False,
 ) -> dict[str, Any]:  # fmt: skip
+    """`plain`: no burned-in label, only as input to a later pass (a diffusion refine)
+    that labels its own output; everything shipped is labelled."""
     started = time.time()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         joints = joints_array(doc)
-    views = camera_views(angle, doc, joints, size)
-    hide = (stylized.pov_player(angle, doc),) if angle.startswith("pov") else ()
+    pov = angle.startswith("pov")
+    if pov:
+        pid = stylized.pov_player(angle, doc)
+        hide, eye_m = (pid,), eye_height(doc, pid)
+
+        def views(pos, own):
+            return pov_views(doc, pos, own, size, eye_m)
+    else:
+        hide, views = (), camera_views(angle, doc, joints, size)
     synthetic = bool(doc.get("synthetic"))
     kit = tints(doc)
 
@@ -201,8 +275,12 @@ def render_angle(
 
     out = tierb.render_angle(
         game_dir, video, doc["play_id"], angle, out_path, size=size, progress=progress,
-        views=views, hide=hide, tints=kit, label_fn=lambda c: label(c, angle, synthetic),
-        proxy=bodies if PROXY else None, near_m=0.0 if angle.startswith("pov") else NEAR_M,
+        views=views, hide=hide, tints=kit,
+        label_fn=(lambda c: None) if plain else (lambda c: label(c, angle, synthetic)),
+        # a POV shows everyone as their cutout, facing the eye: body proxies close up
+        # are blocky mannequins (their 32x16 atlases magnified)
+        proxy=None if pov or not PROXY else bodies, near_m=0.0 if pov else NEAR_M,
+        seen=tierb.POV_SEEN if pov else (tierb.SEEN_FULL, tierb.SEEN_NONE),
     )  # fmt: skip
     out["wall_s"] = round(time.time() - started, 2)
     return out

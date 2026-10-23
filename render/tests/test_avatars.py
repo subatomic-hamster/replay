@@ -249,15 +249,47 @@ def test_image_based_angles_stay_where_a_cutout_holds_up():
         assert min(v.centre[2] for v in views) > 1.0
 
 
-def test_a_pov_never_looks_up_more_than_twenty_degrees():
+def test_a_pov_stands_on_its_track_at_eye_height_and_looks_at_the_play():
     from replay_render.avatars import imageview
 
-    doc = _toy_doc()
-    j = np.asarray(doc["players"][0]["joints"])
-    doc["players"][0]["joints"] = (j + [0, -1.3, 0]).tolist()  # right under the rim
-    views = imageview.camera_views("pov_p1", doc, joints_array(doc), (320, 180))
+    doc = _toy_doc(n=60)
+    doc["ball"] = None
+    pos = np.full((3, 60, 2), np.nan)
+    pos[0, 10:] = np.column_stack([np.zeros(50), np.linspace(10.0, 12.0, 50)])  # the POV player
+    pos[1] = [4.0, 18.0]  # everyone else: ahead and to the right
+    pos[2] = [6.0, 20.0]
+    views = imageview.pov_views(doc, pos, [0], (320, 180), 1.7)
+    eyes = np.array([v.centre for v in views])
+    assert np.allclose(eyes[:, 2], 1.7)  # steady head height
+    assert np.allclose(eyes[:10, :2], [0.0, 10.0], atol=0.15)  # holds before the track
+    assert abs(eyes[-1, 1] - 12.0) < 0.2
+    fwd = np.array([v.r[2] for v in views])
+    to_play = np.array([5.0, 19.0]) - eyes[:, :2]
+    cos = (
+        (fwd[:, :2] * to_play).sum(1)
+        / np.linalg.norm(fwd[:, :2], axis=1)
+        / np.linalg.norm(to_play, axis=1)
+    )
+    assert (cos > np.cos(np.radians(30))).all()  # the play, not the rim behind them
+    pitch = np.degrees(np.arcsin(fwd[:, 2]))
+    assert np.ptp(pitch) < 1e-6 and -12 < pitch[0] < 0  # level, a little down
+    assert np.degrees(np.abs(np.diff(np.unwrap(np.arctan2(fwd[:, 1], fwd[:, 0]))))).max() < 3
+
+
+def test_a_pov_shot_never_looks_up_more_than_twenty_degrees():
+    from replay_render.avatars import imageview
+
+    doc = _toy_doc(n=60)
+    doc["ball"] = {"positions": [], "t_release": 1.0, "t_rim": 1.5, "target": [0.0, 1.575, 3.05]}
+    pos = np.full((2, 60, 2), np.nan)
+    pos[0] = [0.0, 6.2]  # 4.6 m out: the rim is 24° up from a low (1 m) eye
+    pos[1] = [3.0, 8.0]
+    views = imageview.pov_views(doc, pos, [0], (320, 180), 1.0)
     pitch = [np.degrees(np.arcsin(v.r[2][2])) for v in views]
-    assert max(pitch) <= 20.0 + 1e-6
+    assert max(pitch) == pytest.approx(20.0, abs=0.5)
+    pos[0] = [0.0, 2.2]  # right under it: keeps looking at the play, not up at a wall
+    views = imageview.pov_views(doc, pos, [0], (320, 180), 1.0)
+    assert max(np.degrees(np.arcsin(v.r[2][2])) for v in views) < 0
 
 
 def test_bones_table_covers_the_skeleton():

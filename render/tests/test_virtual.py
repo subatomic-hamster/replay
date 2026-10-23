@@ -98,15 +98,56 @@ def test_a_cutout_seen_from_the_side_becomes_its_kit_colour():
     assert tierb.seen_weight(np.radians(20)) == 1.0 and tierb.seen_weight(np.radians(80)) == 0.0
 
 
-def test_a_cutout_right_at_the_camera_fades_out():
+def test_a_cutout_right_at_the_camera_fades_out_but_one_at_arms_length_stays():
+    frame = np.full((toy.H, toy.W, 3), 200, np.uint8)
+    foot = np.array([1.0, 12.0, 0.0])
+    xy0, mask = _cutout(frame, foot)
+
+    def at(m: float) -> np.ndarray:
+        d = (REAL.centre - foot)[:2] / np.linalg.norm((REAL.centre - foot)[:2])
+        eye = np.r_[foot[:2] + m * d, 1.6]
+        view = tierb.look_at(eye, np.r_[foot[:2], 1.6], 300.0, SIZE)  # level, at them
+        canvas = np.zeros_like(frame)
+        tierb.Billboard(REAL, 0.0, SIZE).draw(canvas, view, frame, foot, xy0, mask,
+                                              tint=(0, 0, 255))  # fmt: skip
+        return canvas
+
+    assert at(0.85).max() < 40  # brushing past: (almost) nothing, not a wall of pixels
+    assert at(1.6).max() > 150  # a defender at arm's length is there, solid (POV, D-88)
+
+
+def test_bridge_keeps_a_person_through_a_gap_and_an_id_hand_over():
+    fps, n = 10.0, 60
+    court = np.full((3, n, 2), np.nan)
+    x = np.linspace(0, 6, n)
+    court[0, :20] = np.column_stack([x[:20], np.zeros(20)])  # p0, lost after frame 19 ...
+    court[1, 30:] = np.column_stack([x[30:], np.zeros(30)])  # ... picked up as p1 at 30
+    court[2, :40] = [[8.0, 8.0]] * 40  # far away, lost for good at 39
+    pos, alpha, links = tierb.bridge(court, fps)
+    assert links == [(0, 1)]
+    assert np.isfinite(pos[0, 20:30, 0]).all() and (alpha[0, 20:30] == 1).all()
+    assert np.allclose(pos[0, 25], [x[25], 0.0], atol=0.05)  # along the line between
+    assert alpha[1, 30] == 1.0  # a hand-over does not fade in
+    fade = round(tierb.FADE_S * fps)
+    assert (
+        np.allclose(pos[2, 40 : 40 + fade], 8.0) and (np.diff(alpha[2, 39 : 40 + fade]) < 0).all()
+    )
+    assert np.isnan(pos[2, 40 + fade :]).all()
+    assert tierb.chain(links, [1]) == {0, 1}
+
+
+def test_a_held_cutout_is_drawn_where_the_person_is_now():
     frame = np.zeros((toy.H, toy.W, 3), np.uint8)
     foot = np.array([1.0, 12.0, 0.0])
     xy0, mask = _cutout(frame, foot)
-    eye = foot + (REAL.centre - foot) * (1.3 / np.linalg.norm(REAL.centre - foot))
-    view = tierb.look_at(eye, foot + [0, 0, 1.0], 300.0, SIZE)
+    crop = frame[xy0[1] : xy0[1] + mask.shape[0], xy0[0] : xy0[0] + mask.shape[1]].copy()
+    now = foot + [1.5, 0, 0]
     canvas = np.zeros_like(frame)
-    tierb.Billboard(REAL, 0.0, SIZE).draw(canvas, view, frame, foot, xy0, mask, tint=(0, 0, 255))
-    assert canvas.max() < 40  # 1.3 m away: (almost) nothing, not a wall of blurred pixels
+    tierb.Billboard(REAL, 0.0, SIZE).draw(canvas, REAL, crop, now, xy0, mask, None, 1.0,
+                                          foot, xy0)  # fmt: skip
+    u = np.flatnonzero(canvas.max(axis=(0, 2)) > 100)
+    want = REAL.project(now[None])[0, 0]
+    assert len(u) and abs((u.min() + u.max()) / 2 - want) < 6
 
 
 def test_unseen_walls_fill_the_view_from_inside_and_vanish_from_outside():
@@ -179,4 +220,11 @@ def test_highlights_come_from_events_without_plays(tmp_path):
     for h in picked:
         assert h["t_end"] - h["t_start"] <= replays.MAX_S + 1e-6
         assert h["shot"]["t_rim"] <= h["t_end"]
+    # the replay angles' best play reaches back a whole stretch (its player's views)
+    got, _ = replays.select(load_game(gd), n=3, long_first=True)
+    dur = sorted(h["t_end"] - h["t_start"] for h in got)
+    assert dur[-1] > replays.MAX_S and dur[-1] <= replays.LONG_S + 1e-6
+    assert all(d <= replays.MAX_S + 1e-6 for d in dur[:-1])
+    assert replays._window(30.0, 34.0, 33.0, 240.0, long=True) == (20.5, 34.5)
+    assert replays._window(30.0, 34.0, 33.0, 240.0) == (30.0, 34.5)
     assert picked[0]["label"].startswith("Shot · Avery")

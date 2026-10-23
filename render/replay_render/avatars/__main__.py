@@ -3,7 +3,13 @@
 python -m replay_render.avatars scene  <game> <play> [--method auto|motionbert|analytic]
                                        [--kp auto|gt|yolo|poses] [--ground-truth gt.json]
 python -m replay_render.avatars render <game> <play> <angle> [--out x.mp4] [--size 1280x720]
+python -m replay_render.avatars view   <game> <play> <angle> [--out x.mp4] [--plain]
 python -m replay_render.avatars eval   <game> <play> --ground-truth gt.json --out dir
+
+`render` is the stylized research renderer; `view` the shipped image-based one (the TV's
+"Virtual ..." angles and player's views, e.g. `pov_p14`), over the play's whole window.
+`--plain` leaves out the burned-in label: only for feeding a refine pass that labels
+its own output.
 """
 
 from __future__ import annotations
@@ -31,6 +37,13 @@ def main() -> None:
     r.add_argument("angle")
     r.add_argument("--out", type=Path)
     r.add_argument("--size", default="1280x720")
+    v = sub.add_parser("view")
+    v.add_argument("game_dir", type=Path)
+    v.add_argument("play_id")
+    v.add_argument("angle")
+    v.add_argument("--out", type=Path)
+    v.add_argument("--size", default="1280x720")
+    v.add_argument("--plain", action="store_true")
     e = sub.add_parser("eval")
     e.add_argument("game_dir", type=Path)
     e.add_argument("play_id")
@@ -49,6 +62,15 @@ def main() -> None:
         out = a.out or a.game_dir / "replays" / a.play_id / f"tierc_{a.angle}.mp4"
         print(json.dumps(render.render_angle(scene.read(a.game_dir, a.play_id), a.angle, out,
                                              size=(w, h))))  # fmt: skip
+    elif a.cmd == "view":
+        from . import imageview
+
+        w, h = (int(v) for v in a.size.lower().split("x"))
+        out = a.out or a.game_dir / "replays" / a.play_id / f"tierc_{a.angle}.mp4"
+        res = imageview.render_angle(a.game_dir, a.game_dir / "media" / "wide.mp4",
+                                     scene.read(a.game_dir, a.play_id), a.angle, out,
+                                     size=(w, h), plain=a.plain)  # fmt: skip
+        print(json.dumps(res))
     else:
         res = evaluate.run(a.game_dir, a.play_id, a.game_dir / "media" / "wide.mp4",
                            a.ground_truth, a.out, a.methods.split(","))  # fmt: skip

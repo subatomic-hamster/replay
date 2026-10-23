@@ -82,6 +82,13 @@ def test_a_pickup_one_point_basket_is_not_a_free_throw():
     assert label({**shot, "cause": "free_throw"}, None, "basketball") == "Free throw"
 
 
+def test_a_lost_man_is_a_moment_named_for_the_defender():
+    from replay_api.moments import label
+
+    lapse = {"type": "lost_man", "player_id": "p3", "opponent_id": "p1", "max_sep_m": 8.0}
+    assert label(lapse, {"name": "Joseph"}, "basketball") == "Lost his man, Joseph"
+
+
 def test_review_queue_asks_who_untagged_players_are(client):
     gid = ready_game(client, client.app_settings)
     gd = client.app_settings.games_dir / gid
@@ -183,7 +190,8 @@ def test_highlight_reel_renders_once_per_plan(client, tmp_path, monkeypatch):
     assert client.get(got["url"]).status_code == 200
     segs = got["segments"]
     assert segs and got["duration_s"] > 0 and segs[0]["reel_t"] == 0.0
-    assert {s["kind"] for s in segs} <= {"top", "clip"}
+    assert {s["kind"] for s in segs} <= {"top", "clip", "best"}
+    assert segs[-1]["kind"] == "best"  # the reel ends on the game's best play
     again = client.post(f"/games/{gid}/exports/reel", json={"aspect": "16:9"})
     assert again.status_code == 200 and again.json()["id"] == rid
     # a bookmark changes the plan: a new reel, with the user's clip in it
@@ -196,6 +204,11 @@ def test_highlight_reel_renders_once_per_plan(client, tmp_path, monkeypatch):
     listed = client.get(f"/games/{gid}/exports/reel").json()["reels"]
     assert [x["id"] for x in listed] == [r2.json()["id"], rid]  # newest first
     assert client.get(f"/games/{gid}/exports/reel/r_..%2F..%2Fx").status_code == 404
+    # the user's own best-play pick (edits.json) is a new plan too: the reel ends on it
+    pick = {"t": 3.0, "t_start": 1.0, "t_end": 4.0}
+    assert client.put(f"/games/{gid}/best-play", json=pick).status_code == 200
+    r3 = client.post(f"/games/{gid}/exports/reel", json={"aspect": "9:16"})
+    assert r3.status_code == 202 and r3.json()["id"] != r2.json()["id"]
 
 
 def test_hype_is_computed_on_request(client):

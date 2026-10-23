@@ -55,6 +55,10 @@ class PlayerTrack:
     # share of the id's sampled torsos nearer the other kit (`jersey_color` only; None
     # elsewhere): above `TEAM_MIXED_SHARE` the UI does not show `team`
     off_kit: float | None = None
+    # where `team` came from: "kit" (shirt colours), "matchups" (who guards whom,
+    # `play_teams`), "user" (the phone's team pick, `apply_team_edits`), or the profile's
+    # team_rule ("net_side")
+    team_source: str | None = None
 
     @property
     def t_start(self) -> float:
@@ -877,6 +881,136 @@ def team_colors(teams: np.ndarray, profile: Profile, colors: np.ndarray | None) 
     }
 
 
+# --- teams from play (pickup games where every shirt differs) ----------------
+
+KIT_MAX_RATIO = 0.6
+"""Kits split the players only when teammates' torso histograms are this much closer
+than opponents' (mean teammate distance / mean opponent distance, `kit_ratio`). Two real
+kits put teammates near-identical; a pickup game where every shirt differs does not."""
+MATCHUP_STEP_S = 0.5
+MATCHUP_GUARD_M = 3.5
+"""A pair counts as guarding at an instant when they are this close (court metres)."""
+MATCHUP_SMOOTH_S = 5.5
+"""Roles are read off the nearer-the-basket difference averaged over this long: a cut
+to the rim flips it for a second, a possession lasts several."""
+MATCHUP_MIN_CORR = 0.2
+"""`matchup_teams` is believed when the defend/attack roles of its pairs agree at least
+this much (mean |correlation|, 0 = no relation). Owner's 2v2 game (tuned there, the only
+game measured): 0.40, the right teams; the sign was right for every guard distance and
+window tried (2.5-3.5 m, 0.5-10 s), the size 0.06-0.41. Matchup colours are fixed
+(`MATCHUP_COLORS`): a team of different shirts has no colour of its own."""
+MATCHUP_COLORS = ("#E8A33D", "#3D7BE8")
+
+
+def _nan_smooth(x: np.ndarray, n: int) -> np.ndarray:
+    """Centred mean over `n` samples, ignoring NaN; NaN where fewer than a third are seen."""
+    ok = np.isfinite(x)
+    k = np.ones(max(n, 1))
+    num = np.convolve(np.where(ok, x, 0.0), k, "same")
+    den = np.convolve(ok.astype(float), k, "same")
+    return np.where(den > len(k) / 3, num / np.maximum(den, 1.0), np.nan)
+
+
+def kit_ratio(hists: np.ndarray, teams: np.ndarray) -> float | None:
+    """Mean torso-histogram distance between teammates over that between opponents, one
+    histogram per player; None without both kinds of pair."""
+    d = np.linalg.norm(hists[:, None] - hists[None], axis=-1)
+    i, j = np.triu_indices(len(hists), 1)
+    same = teams[i] == teams[j]
+    if not same.any() or same.all():
+        return None
+    return float(d[i, j][same].mean() / max(d[i, j][~same].mean(), 1e-9))
+
+
+def _matchings(idx: list[int]) -> list[list[tuple[int, int]]]:
+    """Every way to split `idx` (even length) into pairs."""
+    if not idx:
+        return [[]]
+    a, rest = idx[0], idx[1:]
+    return [[(a, b), *m] for k, b in enumerate(rest) for m in _matchings(rest[:k] + rest[k + 1 :])]
+
+
+def matchup_teams(
+    tracks: list[CourtTrack], rims: list[tuple[float, float]], max_gap_s: float = 1.0
+) -> tuple[np.ndarray, float] | None:
+    """Teams from who guards whom, for a 2v2 or 3v3 where the shirts say nothing.
+
+    Defenders shadow their man, so over a game the pairing whose pairs stay closest
+    (median court distance) is the opponents. Which partner is whose teammate comes from
+    roles: while guarding, the defender is the one nearer the basket, and teammates defend
+    (and attack) at the same time. Returns (team per track, mean |role correlation|), or
+    None when the roster is not 4 or 6, there is no basket, or too little overlap.
+    """
+    n = len(tracks)
+    if n % 2 or not 4 <= n <= 6 or not rims:
+        return None
+    t0 = min(t.tracklet.t_start for t in tracks)
+    t1 = max(t.tracklet.t_end for t in tracks)
+    times = np.arange(t0, t1, MATCHUP_STEP_S)
+    pos = np.stack([resample(t, times, max_gap_s)[1] for t in tracks])  # (n, T, 2)
+    dist = np.linalg.norm(pos[:, None] - pos[None], axis=-1)  # (n, n, T)
+    seen = np.isfinite(dist)
+    if (seen.sum(axis=-1) + np.eye(n, dtype=int) * 10**9).min() < 20:
+        return None
+    med = np.nanmedian(np.where(seen, dist, np.nan), axis=-1)
+    pairs = min(_matchings(list(range(n))), key=lambda m: sum(med[a, b] for a, b in m))
+    rim = np.asarray(rims, dtype=np.float64)
+    roles = []
+    for a, b in pairs:
+        mid = (pos[a] + pos[b]) / 2
+        near = rim[np.argmin(np.linalg.norm(mid[:, None] - rim[None], axis=-1), axis=1)]
+        ra, rb = (np.linalg.norm(pos[k] - near, axis=1) for k in (a, b))
+        guarding = np.where(dist[a, b] < MATCHUP_GUARD_M, rb - ra, np.nan)
+        roles.append(np.sign(_nan_smooth(guarding, round(MATCHUP_SMOOTH_S / MATCHUP_STEP_S))))
+    corr = np.zeros((len(pairs), len(pairs)))
+    for i in range(len(pairs)):
+        for j in range(i + 1, len(pairs)):
+            both = np.isfinite(roles[i]) & np.isfinite(roles[j])
+            corr[i, j] = corr[j, i] = (
+                float(np.mean(roles[i][both] * roles[j][both])) if both.any() else 0.0
+            )
+    # flip +1: the pair's first player is on team 0. The flips whose roles agree most.
+    best = max(
+        (
+            np.array([1, *(1 - 2 * np.asarray(f, dtype=int))])
+            for f in np.ndindex(*(2,) * (len(pairs) - 1))
+        ),
+        key=lambda flips: float(flips @ corr @ flips),
+    )
+    teams = np.zeros(n, dtype=int)
+    for (a, b), f in zip(pairs, best, strict=True):
+        teams[a], teams[b] = (0, 1) if f > 0 else (1, 0)
+    iu = np.triu_indices(len(pairs), 1)
+    return teams, float(np.mean(np.abs(corr[iu])))
+
+
+def _player_means(merged: list[tuple[list[int], CourtTrack]], per_piece: np.ndarray) -> np.ndarray:
+    return np.stack([per_piece[g].mean(axis=0) for g, _ in merged])
+
+
+def play_teams(
+    merged: list[tuple[list[int], CourtTrack]],
+    kit_teams: np.ndarray,
+    hists: np.ndarray | None,
+    template: CourtTemplate,
+) -> np.ndarray | None:
+    """`matchup_teams` for the merged players when the kits do not split them: an uneven
+    split (3 v 1 in a 2v2) or teammates' shirts no closer than opponents' (`kit_ratio`).
+    None when the kits stand or the matchups are not clear."""
+    n = len(merged)
+    if n % 2 or not 4 <= n <= 6:
+        return None
+    even = np.bincount(kit_teams, minlength=2).tolist() == [n // 2, n // 2]
+    ratio = None if hists is None else kit_ratio(_player_means(merged, hists), kit_teams)
+    if even and (ratio is None or ratio < KIT_MAX_RATIO):
+        return None
+    rims = list(template.rims) or ([template.rim] if template.rim else [])
+    found = matchup_teams([c for _, c in merged], rims)
+    if found is None or found[1] < MATCHUP_MIN_CORR:
+        return None
+    return found[0]
+
+
 # --- merging ----------------------------------------------------------------
 
 # Link cost (merge_groups): court distance in units of LINK_SCALE_M + LINK_SPEED_MPS x gap
@@ -1140,17 +1274,22 @@ def identify(
     variant: str | None = None,
     *,
     court_ok: bool = True,
+    standard: str | None = None,
 ) -> list[PlayerTrack]:
     """Tracklets → `p1..pN` with team labels and team colours. `court_ok` false (the
     court fit disagrees with the people, `court.fit_check`): nobody is dropped as a
-    bystander for where they stand, only for standing still."""
+    bystander for where they stand, only for standing still. `standard`: the court
+    markings calib.json was fitted with.
+
+    Teams come from the kits (`team_source` "kit"); in a 2v2 or 3v3 the kits cannot split
+    (every shirt differs) from who guards whom ("matchups", `play_teams`)."""
     if not tracks:
         return []
     # Only `jersey_color` needs pixels, and decoding the clip for torso crops is the
     # expensive half of this stage — a net sport skips it entirely.
     need = profile.team_rule == "jersey_color" or profile.tracking.appearance_weight > 0
     hists, colors, body = sample_appearance(video, tracks) if need else (None, None, None)
-    teams = assign_teams(hists, tracks, profile, profile.template(variant))
+    teams = assign_teams(hists, tracks, profile, profile.template(variant, standard))
     kits = None  # (torso histograms, teams) the kit centroids come from, for `off_kit`
     if profile.team_rule == "jersey_color" and len(np.unique(teams)) == 2:
         kits = (hists, teams)
@@ -1188,10 +1327,11 @@ def identify(
             body = np.asarray(pieces)
         teams = teams[src]
         colors = None if colors is None else colors[src]
+        hists = None if hists is None else hists[src]
     colours = team_colors(teams, profile, colors)
     if not (0 < roster <= cfg.roster_max):
         groups = merge_groups(tracks, teams, profile, body)
-        polygon = profile.template(variant).polygon
+        polygon = profile.template(variant, standard).polygon
         merged = [
             (g, c)
             for g in groups
@@ -1219,22 +1359,28 @@ def identify(
         key=lambda gc: gc[1].score,
         reverse=True,
     )
-    off = [None] * len(merged)
+    team_of = np.asarray([int(np.bincount(teams[g]).argmax()) for g, _ in merged], dtype=int)
+    source = "kit" if profile.team_rule == "jersey_color" else profile.team_rule
     if kits is not None and merged:
+        by_play = play_teams(merged, team_of, hists, profile.template(variant, standard))
+        if by_play is not None:
+            team_of, source = by_play, "matchups"
+            colours = dict(enumerate(MATCHUP_COLORS))
+    off = [None] * len(merged)
+    if kits is not None and merged and source == "kit":
         lab, _ = jersey_labels(video, [c for _, c in merged], *kits, every=OFF_KIT_EVERY)
         off = [
-            round(float(np.mean([v != int(np.bincount(teams[g]).argmax()) for v in d.values()])), 3)
-            if d
-            else None
-            for (g, _), d in zip(merged, lab, strict=True)
+            round(float(np.mean([v != int(team_of[k]) for v in d.values()])), 3) if d else None
+            for k, d in enumerate(lab)
         ]
     players: list[PlayerTrack] = []
     for n, (group, track) in enumerate(merged, start=1):
-        team = int(np.bincount(teams[group]).argmax())
+        team = int(team_of[n - 1])
         players.append(
             PlayerTrack(
                 player_id=f"p{n}",
                 team=team,
+                team_source=source,
                 color_hex=colours[team],
                 track=track,
                 members=tuple(dict.fromkeys(tracks[i].track_id for i in group)),
@@ -1358,6 +1504,12 @@ def seen_s(p: PlayerTrack, rate_hz: int = 10) -> float:
 
 def to_models(players: list[PlayerTrack]) -> tuple[list[PlayerModel], list[TeamModel]]:
     teams = {p.team: p.color_hex for p in players}
+    # additive `team_source` (extra field): a team any of whose players the user placed
+    # is the user's; otherwise how the pipeline split it
+    sources: dict[int, str | None] = {}
+    for p in players:
+        was = sources.get(p.team)
+        sources[p.team] = "user" if "user" in (was, p.team_source) else was or p.team_source
     return (
         [
             PlayerModel(
@@ -1368,11 +1520,45 @@ def to_models(players: list[PlayerTrack]) -> tuple[list[PlayerModel], list[TeamM
                 tagged=False,
                 seen_s=seen_s(p),
                 team_mixed=None if p.off_kit is None else p.off_kit > TEAM_MIXED_SHARE,
+                team_source=p.team_source,
             )
             for p in players
         ],
-        [TeamModel(id=t, color_hex=c) for t, c in sorted(teams.items())],
+        [
+            TeamModel(id=t, color_hex=c, team_source=sources.get(t))
+            for t, c in sorted(teams.items())
+        ],
     )
+
+
+def apply_team_edits(game_dir: Path) -> bool:
+    """The user's team picks win (`PATCH /players/{pid}` with `team`, recorded in the
+    game's edits.json as a game.json patch): copied onto `_work/players.json`, which events,
+    plays and the score read, with `team_source` "user". Run after identity computes or
+    restores players.json, so a pick survives every re-process. Returns whether the file
+    changed; written tmp + rename (a worker cache may hard-link it)."""
+    edits, path = Path(game_dir) / "edits.json", Path(game_dir) / "_work" / "players.json"
+    if not edits.is_file() or not path.is_file():
+        return False
+    patch = (json.loads(edits.read_text(encoding="utf-8")).get("patch") or {}).get(
+        "game.json"
+    ) or {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    changed = False
+    for d in raw.get("players", []):
+        pick = (patch.get(d["player_id"]) or {}).get("team")
+        if pick is None or (int(pick) == d["team"] and d.get("team_source") == "user"):
+            continue
+        color = (patch.get(d["player_id"]) or {}).get("color_hex")
+        d.update(
+            team=int(pick), team_source="user", off_kit=None, color_hex=color or d["color_hex"]
+        )
+        changed = True
+    if changed:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(raw), encoding="utf-8")
+        tmp.replace(path)
+    return changed
 
 
 # --- io ---------------------------------------------------------------------
@@ -1397,6 +1583,7 @@ def write_players(path, players: list[PlayerTrack], meta: dict) -> Path:
                         "spans": [list(s) for s in p.spans],
                         "solved": p.solved,
                         "off_kit": p.off_kit,
+                        "team_source": p.team_source,
                         **track_json(p.track),
                     }
                     for p in players
@@ -1420,6 +1607,7 @@ def read_players(path: Path) -> tuple[list[PlayerTrack], dict]:
             spans=tuple((int(s[0]), float(s[1]), float(s[2])) for s in d.get("spans", ())),
             solved=bool(d.get("solved", False)),
             off_kit=d.get("off_kit"),
+            team_source=d.get("team_source"),
         )
         for d in raw["players"]
     ]

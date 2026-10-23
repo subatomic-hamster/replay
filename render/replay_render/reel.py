@@ -1,7 +1,9 @@
 """Highlight reel: one shareable MP4 of a game, the top plays and the user's own clips
 back to back, with a short dip to black between them and a caption on each.
 
-`plan(game)` picks the segments, in game time order:
+`plan(game)` picks the segments, in game time order, and ends on the game's best play
+(`virtual.replays.best_play`: the user's pick in edits.json, else the game winner, else
+the top hype play; kept first, so it is never skipped):
 
 * the user's clips first (they asked for them): `clips.json` ("Replay, clip that", the X
   sign and phone taps resolved to a play), triggers that found no play (the
@@ -103,8 +105,26 @@ def _overlap(s: dict, c: dict) -> float:
     return max(0.0, inter) / max(1e-6, min(s["t_end"] - s["t_start"], c["t_end"] - c["t_start"]))
 
 
+def best_segment(game: Game) -> dict | None:
+    """The game's best play (`virtual.replays.best_play`, the API's rule), at most
+    MAX_TOP_S ending where it pays off; always tagged BEST PLAY (a last make is not
+    known to have won the game)."""
+    from .virtual.replays import best_play
+
+    b = best_play(game)
+    if b is None:
+        return None
+    ev = b["event"] or {}
+    tag = "BEST PLAY"
+    a, z = b["t_start"], max(b["t_end"], b["t"])
+    return _seg(game, max(a, z - MAX_TOP_S), z, "best", tag, ev.get("player_id"),
+                {"best_play": b["source"], "event_id": ev.get("id")})  # fmt: skip
+
+
 def plan(game: Game, max_s: float = MAX_S) -> list[dict]:
-    chosen: list[dict] = []
+    """The segments in time order, then the best play last (the reel ends on it)."""
+    best = best_segment(game)
+    chosen: list[dict] = [best] if best else []
     for s in user_segments(game) + top_segments(game):
         if any(_overlap(s, c) > 0.5 for c in chosen):
             continue
@@ -114,7 +134,8 @@ def plan(game: Game, max_s: float = MAX_S) -> list[dict]:
         ):
             continue
         chosen.append(s)
-    return sorted(chosen, key=lambda s: s["t_start"])
+    rest = sorted((s for s in chosen if s is not best), key=lambda s: s["t_start"])
+    return rest + ([best] if best else [])
 
 
 def render_reel(

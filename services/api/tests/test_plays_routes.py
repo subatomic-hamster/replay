@@ -190,6 +190,46 @@ def test_voice_subject_follows_the_roster_and_clips_trim(client: TestClient):
     )
 
 
+def test_a_players_side_set_by_the_user_moves_their_baskets(client: TestClient):
+    gid = _seed(client)
+    client.patch(f"/games/{gid}/events/e_0001", json={"team": 0, "points": 3, "made": True})
+    assert client.get(f"/games/{gid}/score").json()["final"] == [3, 0]
+    # p1 shot e_0001; the user says p1 plays for the other side: the basket follows
+    assert client.patch(f"/games/{gid}/players/p1", json={"team": 1}).status_code == 200
+    assert client.get(f"/games/{gid}/score").json()["final"] == [0, 3]
+    # the pipeline's score.json is recounted the same way
+    sp = client.app_settings.games_dir / gid / "score.json"
+    sp.write_text(json.dumps({"schema": "replay.score.v1", "score": []}))
+    client.patch(f"/games/{gid}/players/p1", json={"team": 1})
+    assert json.loads(sp.read_text())["score"][-1]["scores"] == [0, 3]
+
+
+def test_pickup_scoring_counts_ones_and_twos(client: TestClient):
+    gid = _seed(client)
+    client.patch(f"/games/{gid}/events/e_0001", json={"team": 0, "points": 3, "made": True})
+    sp = client.app_settings.games_dir / gid / "score.json"
+    sp.write_text(json.dumps({"schema": "replay.score.v1", "score": []}))
+    assert client.get(f"/games/{gid}").json()["scoring"] == "standard"
+
+    r = client.put(f"/games/{gid}/scoring", json={"mode": "pickup"})
+    assert r.status_code == 200 and r.json() == {"scoring": "pickup"}
+    body = client.get(f"/games/{gid}/score").json()
+    assert body["final"] == [2, 0] and body["scoring"] == "pickup"  # a 3 is a pickup 2
+    assert json.loads(sp.read_text())["score"][-1]["scores"] == [2, 0]  # file readers
+    assert client.get(f"/games/{gid}").json()["scoring"] == "pickup"
+
+    def box_points():
+        return sum(r["points"] for r in client.get(f"/games/{gid}/stats").json()["box_score"])
+
+    pickup_pts = box_points()  # the TV's score by team sums these
+    # the detected values are untouched: back to 2s and 3s
+    client.put(f"/games/{gid}/scoring", json={"mode": "standard"})
+    assert box_points() == pickup_pts + 1  # the 3 was a pickup 2
+    assert client.get(f"/games/{gid}/score").json()["final"] == [3, 0]
+    assert json.loads(sp.read_text())["score"][-1]["scores"] == [3, 0]
+    assert client.put(f"/games/{gid}/scoring", json={"mode": "fiba"}).status_code == 422
+
+
 def test_score_from_events_and_user_corrections(client: TestClient):
     gid = _seed(client)
     # the fixture's shots carry no team/points: nothing scores yet
@@ -197,6 +237,7 @@ def test_score_from_events_and_user_corrections(client: TestClient):
         "schema": "replay.score.v1",
         "score": [],
         "final": [0, 0],
+        "scoring": "standard",
     }
     r = client.patch(f"/games/{gid}/events/e_0001", json={"team": 0, "points": 3, "made": True})
     assert r.status_code == 200, r.text

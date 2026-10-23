@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -44,6 +45,10 @@ class TapIn(BaseModel):
 class ClipTrim(BaseModel):
     t_start: float = Field(ge=0)
     t_end: float = Field(gt=0)
+
+
+class ScoringIn(BaseModel):
+    mode: Literal["standard", "pickup"]  # 2s and 3s, or 1s and 2s (adapter.with_scoring)
 
 
 class BestPlayIn(BaseModel):
@@ -197,13 +202,27 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
         storage = ctx(request).storage
         game = game_or_404(request, game_id)
         user = _user_scores(storage, game_id)
-        score = adapter.score_timeline(live_events(events_of(storage, game_id)), user,
-                                       game.get("sport"))  # fmt: skip
+        ov = edits.load(storage.game_dir_with(game_id, edits.REL))
+        events = adapter.with_scoring(live_events(events_of(storage, game_id)), ov)
+        score = adapter.score_timeline(events, user, game.get("sport"), adapter.user_teams(ov))
         return {
             "schema": "replay.score.v1",
             "score": score,
             "final": score[-1]["scores"] if score else [0, 0],
+            "scoring": ov.get("scoring") or "standard",
         }
+
+    @app.put("/games/{game_id}/scoring")
+    def put_scoring(request: Request, game_id: str, body: ScoringIn):
+        """What a basket is worth in this game: "standard" (2s and 3s) or "pickup" (1s and
+        2s). Kept in edits.json; the score and stats are recounted at read time (and
+        score.json rewritten for its file readers), no re-run."""
+        storage = ctx(request).storage
+        game_or_404(request, game_id)
+        gd = storage.game_dir_with(game_id, edits.REL, SCORE_REL, "events.json")
+        edits.record(gd, lambda ov: ov.update(scoring=body.mode))
+        edits.apply(gd, (SCORE_REL,))
+        return {"scoring": body.mode}
 
     @app.post("/games/{game_id}/score", status_code=201)
     def post_score(request: Request, game_id: str, body: ScoreIn):

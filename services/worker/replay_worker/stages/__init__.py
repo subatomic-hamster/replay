@@ -12,8 +12,8 @@ MODULES = [
     "replay_worker.stages.courtcam",
     "replay_worker.stages.broadcast",
     "replay_worker.stages.narrate",
+    "replay_worker.stages.discovery",  # hype before the replay angles pick their plays
     "replay_worker.stages.virtual",
-    "replay_worker.stages.discovery",
     "replay_worker.stages.tierc",
     "replay_worker.stages.faces",
     "replay_worker.stages.preview",

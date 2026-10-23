@@ -144,3 +144,63 @@ def test_the_barrelled_fit_is_deterministic():
     template = load_profile("badminton").template("doubles")
     runs = [homography(BADMINTON_AUDITORIUM, template)[1] for _ in range(3)]
     assert runs[0] == runs[1] == runs[2]
+
+
+def _camera_height(calib: dict) -> float:
+    """Height of the camera the fit implies (negative: below the floor, a mirror)."""
+    from courtcam.calibrate import focal_from_homography, pose_from_homography
+
+    h_inv = np.asarray(calib["H_inv"])
+    f = focal_from_homography(h_inv, (1280, 720)) or 1280.0
+    k = np.array([[f, 0, 640.0], [0, f, 360.0], [0, 0, 1.0]])
+    r, t = pose_from_homography(h_inv, k)
+    return float((-r.T @ t)[2])
+
+
+@pytest.mark.parametrize("variant", ["half", "full"])
+def test_left_right_labelled_as_a_mirror_are_swapped_back(variant: str):
+    """A user naming left/right as they see it labels the court's mirror image: it fits
+    exactly as well (every template is symmetric about its long axis) but puts the camera
+    under the floor, and the people check then distrusts the court (265 ids on the
+    owner's 2v2 game). calibrate swaps the labels back and keeps the user's names for
+    the residuals the uploader shows."""
+    from courtcam.calibrate import mirrored, swap_lr
+
+    clicks, template = _clicks(variant)
+    clicks["rim_top"] = (600.0, 200.0)
+    as_seen = {swap_lr(k): v for k, v in clicks.items()}
+    assert not mirrored(clicks, template) and mirrored(as_seen, template)
+
+    right, mirror = calibrate(clicks, PROFILE, variant), calibrate(as_seen, PROFILE, variant)
+    assert right["labels_swapped"] is False and mirror["labels_swapped"] is True
+    assert mirror["landmarks_px"] == right["landmarks_px"]  # the court's own names
+    assert np.allclose(mirror["H"], right["H"], atol=1e-6)
+    assert set(mirror["residuals_px"]) == set(as_seen) - {"rim_top"}  # the user's names
+    assert _camera_height(mirror) > 1.0
+
+
+def test_court_standard_is_picked_by_the_lane_and_kept_when_corners_cannot_tell():
+    """A 12 ft lane clicked on a US court: FIBA's 4.9 m lane is metres out, so the fit
+    switches; the four corners alone cannot tell the standards apart, so FIBA stands; a
+    standard the user picked is used as is."""
+    assert PROFILE.standards("half") == ["fiba", "nba", "ncaa", "nfhs"]
+    us = PROFILE.template("half", "nfhs")
+    assert us.landmarks["key_nr"][0] == pytest.approx(1.8288)  # 6 ft
+    assert us.landmarks["corner_fr"][1] == pytest.approx(12.8016)  # 42 ft
+    cam = make_camera(us, (1280, 720), np.zeros((0, 2)))
+    clicks = {n: tuple(cam.ground(np.asarray(xy)[None, :])[0]) for n, xy in us.landmarks.items()}
+
+    auto = calibrate(clicks, PROFILE, "half")
+    assert auto["standard"] == "nfhs" and auto["standard_source"] == "fit"
+    # FIBA alone fails the reprojection gate on these clicks (before standards: rejected)
+    assert "fiba" not in auto["standard_fit_px"] and auto["standard_fit_px"]["nfhs"] < 0.01
+    with pytest.raises(CalibrationError):
+        calibrate(clicks, PROFILE, "half", standard="fiba")
+    assert auto["rim_m"] == pytest.approx([0.0, 1.6002])
+
+    corners = {n: clicks[n] for n in ("corner_nl", "corner_nr", "corner_fl", "corner_fr")}
+    assert calibrate(corners, PROFILE, "half")["standard"] == "fiba"
+    picked = calibrate(corners, PROFILE, "half", standard="nfhs")
+    assert picked["standard"] == "nfhs" and picked["standard_source"] == "user"
+    # an old game.json without a standard, or "fiba", is the default template
+    assert PROFILE.template("half", None).name == PROFILE.template("half", "fiba").name

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -118,38 +119,156 @@ def max_reproj_px(
     return max(floor_px, MAX_REPROJ_SPAN_FRAC * span)
 
 
+def swap_lr(name: str) -> str:
+    """`corner_nl` <-> `corner_nr`, `centre_l` <-> `centre_r`; `rim`, `rim_top` unchanged."""
+    head, _, tail = name.rpartition("_")
+    if not head or not set(tail) <= {"n", "f", "l", "r"}:
+        return name
+    return f"{head}_{tail.translate(str.maketrans('lr', 'rl'))}"
+
+
+def mirrored(landmarks_px: dict[str, tuple[float, float]], template: CourtTemplate) -> bool:
+    """Are the clicks labelled as the mirror image of the court?
+
+    The template's axes are right-handed seen from above (+x to the `r` sideline, +y up
+    the court, z up), and a camera above the floor sees them that way round: with image
+    y pointing down, the pixel <- metre map reverses orientation (its Jacobian determinant
+    is negative). A user who names left and right as *they* see them - facing the basket,
+    or by where a point is in the picture - often labels the other way round, and every
+    court template is symmetric about its long axis, so that mirror fits exactly as well
+    and no residual shows it. Only the camera notices: the mirrored fit puts it below
+    the floor, so `court.fit_check` finds people the wrong height and stops trusting the
+    court (265 ids on a 2v2 game). The sign of det(J) = det(H) / w^3 at the clicks' centre
+    says which way round the labels are.
+    """
+    h, _ = homography(landmarks_px, template)
+    h_inv = np.linalg.inv(h)
+    names = [n for n in landmarks_px if n in template.landmarks]
+    c = template.landmark_array(names).mean(axis=0)
+    w = float(h_inv[2] @ np.array([c[0], c[1], 1.0]))
+    return bool(np.linalg.det(h_inv) * w > 0)
+
+
+def orient_labels(
+    landmarks_px: dict[str, tuple[float, float]],
+    template: CourtTemplate,
+    swap: bool | None = None,
+) -> tuple[dict[str, tuple[float, float]], bool]:
+    """The clicks with left and right swapped when they are labelled as the court's mirror
+    image (`mirrored`, or `swap` when the caller already knows), and whether they were. A
+    name whose swap the template does not know keeps its name; height landmarks
+    (`rim_top`) have no side."""
+    if not (mirrored(landmarks_px, template) if swap is None else swap):
+        return dict(landmarks_px), False
+    known = set(template.landmarks) | set(height_landmarks(template))
+    return {(swap_lr(k) if swap_lr(k) in known else k): v for k, v in landmarks_px.items()}, True
+
+
+STANDARD_SWITCH_RATIO = 0.6
+STANDARD_SWITCH_PX = 1.0
+"""Another court standard replaces the profile's default only when its fit is clearly
+better: RMS residual over every click below RATIO x the default's, minus PX. With only
+the four corners every standard fits about as well (they differ by centimetres), so the
+default stands; a lane-corner or free-throw click tells a 12 ft lane from FIBA's 4.9 m by
+metres. Owner's 2v2 gym (12 ft lane), user-labelled clicks: FIBA 22 px worst, NCAA/NFHS
+~1 px."""
+
+
+def rms_px(residuals: dict[str, float]) -> float:
+    return float(np.sqrt(np.mean(np.square(list(residuals.values()))))) if residuals else 0.0
+
+
+def pick_standard(fits: dict[str, float], default: str) -> str:
+    """The standard whose RMS residual (`fits`, ordered by preference) is clearly the best;
+    the default unless another beats it by the margins above."""
+    best = min(fits, key=lambda s: fits[s])
+    if default not in fits:
+        return best
+    clearly = fits[best] < STANDARD_SWITCH_RATIO * fits[default] - STANDARD_SWITCH_PX
+    return best if clearly else default
+
+
 def calibrate(
     landmarks_px: dict[str, tuple[float, float]],
     profile: Profile,
     variant: str | None = None,
     *,
     max_error_px: float = MAX_REPROJ_PX,
+    standard: str | None = None,
 ) -> dict[str, Any]:
     """Build the `calib.json` payload. Raises `CalibrationError` if reprojection is poor.
 
-    `max_error_px` is the *floor* of the gate; see `max_reproj_px`.
+    `max_error_px` is the *floor* of the gate; see `max_reproj_px`. `standard` is the
+    court markings the user picked (FIBA, NBA, ...); None fits every standard the profile
+    knows and keeps the clearly best (`pick_standard`). Left/right labelled as the mirror
+    image of the court are swapped back (`orient_labels`; `labels_swapped`).
     """
     variant = variant or profile.default_variant()
-    template = profile.template(variant)
-    h, residuals = homography(landmarks_px, template)
+    return fit_standards(
+        profile,
+        variant,
+        standard,
+        lambda std: calibrate_one(landmarks_px, profile, variant, std, max_error_px),
+    )
+
+
+def fit_standards(
+    profile: Profile,
+    variant: str,
+    standard: str | None,
+    fit_one: Callable[[str], dict[str, Any]],
+) -> dict[str, Any]:
+    """`fit_one(standard)` -> calib payload for the picked `standard`, else for every
+    standard the profile knows, keeping `pick_standard`'s. Raises the first
+    `CalibrationError` when none fits."""
+    candidates = [standard] if standard else profile.standards(variant)
+    fits: dict[str, dict[str, Any]] = {}
+    failure: CalibrationError | None = None
+    for std in candidates:
+        try:
+            fits[std] = fit_one(std)
+        except CalibrationError as exc:
+            failure = failure or exc
+    if not fits:
+        raise failure or CalibrationError("no court standard fits these clicks")
+    rms = {s: rms_px(c["residuals_px"]) for s, c in fits.items()}
+    calib = fits[pick_standard(rms, candidates[0])]
+    calib["standard_source"] = "user" if standard else "fit"
+    calib["standard_fit_px"] = {s: round(v, 2) for s, v in rms.items()}
+    return calib
+
+
+def calibrate_one(
+    landmarks_px: dict[str, tuple[float, float]],
+    profile: Profile,
+    variant: str,
+    standard: str | None,
+    max_error_px: float,
+) -> dict[str, Any]:
+    template = profile.template(variant, standard)
+    marks, swapped = orient_labels(landmarks_px, template)
+    h, residuals = homography(marks, template)
     err = fit_error_px(residuals)
-    limit = max_reproj_px(landmarks_px, max_error_px)
+    limit = max_reproj_px(marks, max_error_px)
     if err > limit:
         raise CalibrationError(
             f"reprojection error {err:.2f} px > {limit:.1f} px — re-click the landmarks"
         )
     h_inv = np.linalg.inv(h)
+    # residuals under the names the user clicked, so the uploader names the dot they placed
+    clicked = dict(zip(landmarks_px, marks, strict=True))
     return {
         "schema": "courtcam.calib.v1",
         "sport": profile.id,
         "variant": variant,
         "standard": template.standard,
-        "landmarks_px": {k: [float(v[0]), float(v[1])] for k, v in landmarks_px.items()},
+        "landmarks_px": {k: [float(v[0]), float(v[1])] for k, v in marks.items()},
+        "labels_swapped": swapped,
         "H": h.tolist(),
         "H_inv": h_inv.tolist(),
         "reproj_error_px": err,
         # Per-landmark, so the uploader can highlight the click that is off (bug 3).
-        "residuals_px": {k: round(v, 3) for k, v in residuals.items()},
+        "residuals_px": {k: round(residuals[m], 3) for k, m in clicked.items() if m in residuals},
         "court_polygon_m": template.polygon.tolist(),
         "court_polygon_px": project(template.polygon, h_inv).tolist(),
         "rim_m": list(template.rim) if template.rim else None,
@@ -275,7 +394,7 @@ def camera_calibration(
     """
     from . import distortion
 
-    template = profile.template(calib.get("variant"))
+    template = profile.template(calib.get("variant"), calib.get("standard"))
     world = world_landmarks(template)
     clicks = landmarks_px if landmarks_px is not None else calib.get("landmarks_px", {})
     names = [n for n in clicks if n in world]

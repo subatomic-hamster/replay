@@ -55,6 +55,10 @@ class CourtCfg(_Cfg):
     # Retired variant names that still load: an old game.json / landmarks.json keeps
     # its `variant`, and `template()` maps it onto the variant that replaced it.
     variant_aliases: dict[str, str] = Field(default_factory=dict)
+    # Other court markings than the default templates' (`standard` in each template):
+    # {standard: {variant: file}}. Basketball: the default is FIBA, and a US gym is NBA,
+    # college or high school (a 12 ft lane where FIBA's is 4.9 m).
+    standards: dict[str, dict[str, str]] = Field(default_factory=dict)
     landmarks: list[str] = Field(default_factory=list)
     landmarks_optional: list[str] = Field(default_factory=list)
     margin_m: float = 1.0
@@ -146,6 +150,10 @@ class ShotCfg(_Cfg):
     # arms up = both wrists this many torso lengths above the shoulders (None: above the nose)
     release_up_min: float | None = None
     max_range_m: float = 9.0
+    # ball shots (events._shooter): a wrist within hand_ball_rim rim diameters of where the
+    # ball's path into the rim starts is the shooter's. Final cut 2v2 (owner's game):
+    # shooters' wrists 0.3-0.9 from it, the nearest defender's 2.0-3.3.
+    hand_ball_rim: float = 1.2
     confirm_window_s: tuple[float, float] = (0.3, 2.2)
     confirm_sigma: float = 4.0
     # robust sigma floor (mean |frame diff| grey levels) for the hoop-ROI confirm
@@ -200,11 +208,18 @@ class BallCfg(_Cfg):
     rim_box: tuple[float, float, float] = (2.0, -2.2, 0.6)
     visit_gap_s: float = 0.6
     min_samples: int = 2
-    # a visit counts if the ball came down into the box (a sample within descent_s before
-    # it at least descent_v higher) or stayed for settle_samples (rolling on the rim)
-    descent_s: float = 0.8
+    # a visit counts if the ball's own path (`ball._path_back`: at most path_step rim
+    # diameters a frame, gaps up to path_gap_s) came at least descent_v down to the rim or
+    # up to it. Final cut 2v2 (owner's game): heads on the walkway behind the hoop moved
+    # 0.1-0.2 a frame at constant height and were 3 of 27 "shots"; balls 0.2-0.8 a frame.
     descent_v: float = 0.5
-    settle_samples: int = 6
+    path_step: float = 0.9
+    path_gap_s: float = 0.14
+    # no make when the ball is over the rim again within back_s of dropping through it
+    # (a near-side rim-out put back up), or arrives at that rim again within rearm_s
+    # (after a basket the ball is taken out first; final cut: rebounds 1.4-2.5 s later)
+    back_s: float = 2.0
+    rearm_s: float = 3.0
     after_s: float = 1.0  # how long after a visit its make may still show in the net
     # make (`ball._made`): crossing the plane plane_v under the rim downward between two
     # samples at most cross_dt apart, within cross_u of the middle, then a sample within
@@ -248,6 +263,27 @@ class PossessionCfg(_Cfg):
     min_gap_m: float = 0.6  # mean-distance difference below this is "unclear"
     rebound_window_s: float = 4.0  # flip within this of a shot: defensive rebound
     inbound_depth_m: float = 0.3  # a player this far behind the end line: inbound
+
+
+class LostManCfg(_Cfg):
+    """A defender losing their man (`events.detect_lost_man`). Thresholds picked on the
+    owner's 2v2 final cut (one labelled lapse: 1.4-2.1 m shadowing, then up to 8 m)."""
+
+    rate_hz: float = 5.0
+    guard_m: float = 2.5  # shadowing: median separation at most this ...
+    guard_s: float = 3.0  # ... over this long, the defender nearer the rim
+    lost_m: float = 3.5  # then more than this apart ...
+    lost_s: float = 2.0  # ... for at least this long
+    help_m: float = 2.0  # while not this close to another opponent (helping, switching)
+    # the man made the separation by cutting at least cut_m closer to the rim (from a
+    # second before the lapse to its widest point), during live play (players' median
+    # speed >= live_mps) and not within reset_s after a made basket: walking out after a
+    # stoppage is not a lapse. Final cut: the lapse cut 7 m at 1.26 m/s; stoppages walk
+    # away from the rim at 0.44-1.2 m/s.
+    cut_m: float = 3.0
+    live_mps: float = 0.75
+    reset_s: float = 6.0
+    margin_m: float = 1.0  # positions this far outside the court are tracking slips
 
 
 class PoseCfg(_Cfg):
@@ -307,6 +343,19 @@ class TriggerCfg(_Cfg):
     # around an uncrossed hands-together hold the arms must stay overhead this long
     # (= shot.release_max_s): shorter is a shot release with the ball overhead, not an X
     gesture_together_min_s: float = 0.9
+    # the gesturer faces the camera: nose or an eye scored at least this
+    gesture_face_min: float = 0.5
+    # the X's shape at any height (triggers.front_samples), lengths in torsos below the
+    # shoulders: wrists no lower than low_min, elbows no lower than low_elbow, elbows wider
+    # than the wrists by conv_min; chest_min bounds the touching wrists of an X on its way
+    # up. Set on the owner's 2v2 game (real chest X's: wrists -0.17..+0.15, elbows
+    # -0.14..-0.33; claps and hands at the mouth: elbows -0.36..-0.49). A chest X counts
+    # after front_hold_s, an X crossed at the chest and raised after front_hold_s of each.
+    gesture_front_hold_s: float = 0.4
+    gesture_low_min: float = -0.3
+    gesture_low_elbow: float = -0.3
+    gesture_conv_min: float = 0.2
+    gesture_chest_min: float = -0.7
     wake: str = "replay"
     command: str = "clip"
     fuzzy: float = 0.7  # difflib ratio for wake word / command / roster names
@@ -385,6 +434,7 @@ class Profile(_Cfg):
     scoring: ScoringCfg = Field(default_factory=ScoringCfg)
     rally: RallyCfg = Field(default_factory=RallyCfg)
     possession: PossessionCfg = Field(default_factory=PossessionCfg)
+    lost_man: LostManCfg = Field(default_factory=LostManCfg)
     pose: PoseCfg = Field(default_factory=PoseCfg)
     audio: AudioCfg = Field(default_factory=AudioCfg)
     triggers: TriggerCfg = Field(default_factory=TriggerCfg)
@@ -399,12 +449,26 @@ class Profile(_Cfg):
     def default_variant(self) -> str:
         return self.court.variants[0] if self.court.variants else "default"
 
-    def template(self, variant: str | None = None) -> CourtTemplate:
+    def standards(self, variant: str | None = None) -> list[str]:
+        """Court markings this variant comes in, the default templates' first."""
+        v = variant or self.default_variant()
+        v = self.court.variant_aliases.get(v, v)
+        return [self.template(v).standard] + [
+            s for s, files in self.court.standards.items() if v in files
+        ]
+
+    def template(self, variant: str | None = None, standard: str | None = None) -> CourtTemplate:
+        """The court for `variant` in court markings `standard` (None, unknown or the
+        default templates' own standard: the default templates)."""
         variant = variant or self.default_variant()
         variant = self.court.variant_aliases.get(variant, variant)
         if self.court.variants and variant not in self.court.variants:
             raise ValueError(f"{self.id}: unknown variant {variant!r}; have {self.court.variants}")
-        name = self.court.templates.get(variant) or self.court.template
+        name = (
+            (self.court.standards.get(standard or "") or {}).get(variant)
+            or self.court.templates.get(variant)
+            or self.court.template
+        )
         if not name:
             raise ValueError(f"{self.id}: no court template for variant {variant!r}")
         return load_template(self._dir / name)

@@ -597,8 +597,10 @@ def propose_template(
     variant: str | None = None,
     *,
     prior: dict[str, tuple[float, float]] | None = None,
+    standard: str | None = None,
 ) -> Proposal:
-    """Fit the court template to the painted lines and read the landmarks off the fit.
+    """Fit the court template (court markings `standard`, default the profile's) to the
+    painted lines and read the landmarks off the fit.
 
     Every landmark comes from one homography (and one `k1`), so the proposal is
     self-consistent by construction — which the two-pass model proposal never was.
@@ -609,7 +611,7 @@ def propose_template(
     """
     from .pipeline import calibrate_lens  # the commit path; imported late, it is heavy
 
-    template = profile.template(variant)
+    template = profile.template(variant, standard)
     quad = _prior_quad(prior, profile, variant) if prior else None
     h, w = frame_bgr.shape[:2]
     size = (w, h)
@@ -687,7 +689,7 @@ def propose_template(
         score=round(float(best.score), 3),
     )
     try:
-        calib = calibrate_lens(landmarks, profile, variant, size)
+        calib = calibrate_lens(landmarks, profile, variant, size, template.standard)
     except calib_mod.CalibrationError as exc:
         notes.append(str(exc))
     except Exception as exc:  # noqa: BLE001 - a bad fit is a UI state, not a crash
@@ -768,11 +770,13 @@ def autocalibrate(
     timeout_s: int = TIMEOUT_S,
     optional: bool = False,
     prior: dict[str, tuple[float, float]] | None = None,
+    standard: str | None = None,
 ) -> Proposal:
-    """Propose landmarks, snap them to the painted lines, and try to fit a homography."""
+    """Propose landmarks, snap them to the painted lines, and try to fit a homography.
+    `standard`: the court markings the user picked (template backend only)."""
     model_backend = _resolve_backend(backend)
     if model_backend == "template":
-        return propose_template(frame_bgr, profile, variant, prior=prior)
+        return propose_template(frame_bgr, profile, variant, prior=prior, standard=standard)
     if model_backend == "lines":
         return LineSnapper(frame_bgr).propose(frame_bgr, profile, variant)
 

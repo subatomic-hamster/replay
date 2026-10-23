@@ -216,9 +216,11 @@ def calibration_error(
     landmarks_px: dict,
     video: dict | None = None,
     frame_path: Path | None = None,
+    standard: str | None = None,
 ) -> dict:
     """What `POST /calibration` reports back: reprojection error, per-landmark residuals
-    and the lens model that produced them.
+    and the lens model that produced them. `standard` is the user's court-markings pick;
+    None fits every standard the variant has, and `standard` in the result says which won.
 
     The fit is the **lens-aware** one the pipeline itself runs (D-25), not bare
     `calibrate()`. On a barrelled clip the two disagree by two orders of magnitude — the
@@ -229,7 +231,13 @@ def calibration_error(
     Every value is None/empty when courtcam cannot compute it. Raises CalibrationRejected
     when the clicks are unusable.
     """
-    empty = {"reprojection_error_px": None, "residuals_px": {}, "k1": None, "lens_rms_px": None}
+    empty = {
+        "reprojection_error_px": None,
+        "residuals_px": {},
+        "k1": None,
+        "lens_rms_px": None,
+        "standard": standard,
+    }
     try:
         from courtcam.calibrate import CalibrationError, calibrate  # type: ignore
         from courtcam.pipeline import calibrate_lens  # type: ignore
@@ -244,9 +252,9 @@ def calibration_error(
         # No frame size, no radius to measure `k1` against — the plain pinhole fit, which
         # is what `k1 = 0` means anyway.
         calib = (
-            calibrate_lens(marks, profile, variant, size)
+            calibrate_lens(marks, profile, variant, size, standard=standard)
             if size
-            else calibrate(marks, profile, variant)
+            else calibrate(marks, profile, variant, standard=standard)
         )
     except CalibrationError as exc:
         raise CalibrationRejected(str(exc)) from exc
@@ -258,7 +266,22 @@ def calibration_error(
         "residuals_px": {k: float(v) for k, v in (calib.get("residuals_px") or {}).items()},
         "k1": float(calib.get("k1") or 0.0),
         "lens_rms_px": list(calib.get("lens_rms_px") or []) or None,
+        "standard": calib.get("standard") or standard,
     }
+
+
+PLAYERS_REL = "_work/players.json"  # courtcam identity's output, the events stage's input
+
+
+def apply_team_edits(game_dir: Path) -> bool:
+    """Carry the user's team fixes (edits.json) into identity's players.json, so a re-run
+    keys `events` on the corrected sides. A no-op where courtcam is not installed."""
+    try:
+        from courtcam.identity import apply_team_edits as apply  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        log.info("courtcam unavailable (%s); players.json keeps its teams", exc)
+        return False
+    return bool(apply(Path(game_dir)))
 
 
 EMPTY_PROPOSAL: dict = {
@@ -352,6 +375,8 @@ def run(
                 "sport": game.get("sport", "basketball"),
                 "variant": court.get("variant"),
                 "landmarks_px": court.get("landmarks_px") or None,
+                # the user's court-markings pick; None: courtcam fits each standard
+                "standard": court.get("standard_pick") or None,
                 "detector": detector,
                 "title": game.get("title"),
                 "game_id": game.get("id"),
@@ -385,6 +410,7 @@ def run(
                 sport=game.get("sport", "basketball"),
                 variant=court.get("variant"),
                 landmarks_px={k: tuple(v) for k, v in (court.get("landmarks_px") or {}).items()},
+                standard=court.get("standard_pick") or None,
                 detector=detector,
                 title=game.get("title"),
                 game_id=game.get("id"),
@@ -723,9 +749,13 @@ def user_notes(text: str) -> dict:
     return json.loads(log.model_dump_json(by_alias=True, exclude_none=True))
 
 
-def score_timeline(events: list[dict], user: list[dict], sport: str | None = None) -> list[dict]:
+def score_timeline(
+    events: list[dict], user: list[dict], sport: str | None = None, teams: dict | None = None
+) -> list[dict]:
     """The running score from made shots / won points, with user entries applied; games
-    to N (`scoring.to` of the sport's profile) restart at 0-0 after a win (D-90)."""
+    to N (`scoring.to` of the sport's profile) restart at 0-0 after a win (D-90). `teams`
+    (player id -> the side the user put them on) wins over the team a shot was detected
+    with (`user_teams`)."""
     from courtcam.plays import score_timeline as timeline
     from courtcam.profiles import load_profile
     from courtcam.schema import Event, ScoreEntry
@@ -744,5 +774,28 @@ def score_timeline(events: list[dict], user: list[dict], sport: str | None = Non
             evs.append(Event.model_validate(e))
         except ValueError:  # a bookmark or another API-only event type: not scoring
             continue
-    entries = timeline(evs, [ScoreEntry.model_validate(u) for u in user], to=to, win_by=win_by)
+    entries = timeline(evs, [ScoreEntry.model_validate(u) for u in user], to=to, win_by=win_by,
+                       teams=teams)  # fmt: skip
     return [s.model_dump(mode="json") for s in entries]
+
+
+PICKUP_POINTS = {2: 1, 3: 2}  # a full-court 2 (inside the arc) is a pickup 1, a 3 a 2
+
+
+def with_scoring(events: list[dict], overlay: dict) -> list[dict]:
+    """The events with each shot worth what the game's scoring (`scoring` in edits.json)
+    says: "standard" (2s and 3s, as detected) or "pickup" (1s and 2s)."""
+    if overlay.get("scoring") != "pickup":
+        return events
+    return [
+        {**e, "points": PICKUP_POINTS.get(e["points"], e["points"])}
+        if e.get("type") == "shot" and e.get("points") is not None
+        else e
+        for e in events
+    ]
+
+
+def user_teams(overlay: dict) -> dict[str, int]:
+    """player id -> team, for the players the user put on a side (edits.json)."""
+    patches = (overlay.get("patch") or {}).get("game.json") or {}
+    return {pid: int(f["team"]) for pid, f in patches.items() if f.get("team") is not None}

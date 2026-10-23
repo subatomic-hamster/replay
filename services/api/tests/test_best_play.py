@@ -33,7 +33,7 @@ def test_auto_game_winner_is_the_last_make_near_the_end(client: TestClient):
     gid = _game(client, hype=True)
     bp = client.get(f"/games/{gid}/best-play").json()["best_play"]
     assert bp["source"] == "auto:last_make" and bp["moment_id"] == "e_0003"
-    assert bp["label"] == "Best play of the game" and bp["sub_label"] == "Game winner"
+    assert bp["label"] == "Best play of the game" and bp["sub_label"] == "Last basket"
     assert bp["t"] == 15.5 and bp["t_start"] == 15.5 - moments.LEAD_S
     assert bp["t_end"] == 17.5 and bp["what"].endswith(", Alex")
 
@@ -93,6 +93,23 @@ def test_player_team_pick(client: TestClient):
     assert p1["name"] == "Marcus"  # a team pick keeps the name
     assert client.patch(f"/games/{gid}/players/p1", json={"team": 7}).status_code == 400
     assert client.patch(f"/games/{gid}/players/p1", json={}).status_code == 400
+
+
+def test_player_team_pick_reaches_identity_players_json(client: TestClient):
+    """The pick also lands in courtcam's _work/players.json, so a re-run's events re-key."""
+    import pytest
+
+    pytest.importorskip("courtcam")
+    gid = _game(client)
+    work = client.app_settings.games_dir / gid / "_work" / "players.json"
+    work.parent.mkdir(parents=True, exist_ok=True)
+    row = {"player_id": "p1", "team": 0, "color_hex": "#1F4FA0", "team_source": "matchups"}
+    work.write_text(json.dumps({"players": [row]}))
+    r = client.patch(f"/games/{gid}/players/p1", json={"team": 1})
+    assert r.status_code == 200, r.text
+    p1 = json.loads(work.read_text())["players"][0]
+    assert p1["team"] == 1 and p1["team_source"] == "user"
+    assert next(p for p in r.json()["players"] if p["id"] == "p1")["team_source"] == "user"
 
 
 def test_team_tracking_never_saw_gets_a_contrasting_colour(client: TestClient):

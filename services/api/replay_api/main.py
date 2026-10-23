@@ -105,6 +105,24 @@ class Calibration(BaseModel):
     # D-23: commit an ok=false auto-calibration proposal without moving a dot. Recorded
     # on the game's court as `low_confidence_override`.
     accept_low_confidence: bool = False
+    # The phone's "Court markings" pick (fiba/nba/ncaa/nfhs). None or "" is "not sure":
+    # courtcam fits every standard the variant has and keeps the best. Stored on the
+    # court as `standard_pick`; `standard` is what the fit chose.
+    standard: str | None = None
+
+
+def _standard_or_400(court: dict, variant: str, standard: str | None) -> str | None:
+    """`standard` when this variant comes in it, None for "not sure", else a 400."""
+    if not standard:
+        return None
+    v = (court.get("variant_aliases") or {}).get(variant, variant)
+    known = {court.get("standard")} | {
+        s for s, files in (court.get("standards") or {}).items() if v in files
+    }
+    known.discard(None)
+    if known and standard not in known:
+        raise HTTPException(400, f"standard must be one of {sorted(known)}")
+    return standard
 
 
 #: A posted point within this of the proposal's dot is the dot unmoved.
@@ -548,6 +566,9 @@ def _register_routes(app: FastAPI) -> None:
             _resolve_urls(_game_or_404(request, game_id), ctx.storage, base), ctx.jobs
         )
         game.update(_tv(game, ctx, base))
+        # what a basket is worth here (PUT /games/{id}/scoring): the phone shows the choice
+        ov = edits.load(ctx.storage.game_dir_with(game_id, edits.REL))
+        game["scoring"] = ov.get("scoring") or "standard"
         rend = game["renditions"]
         if game["watchable"] and not rend.get("wide"):  # mid-run: the stub has no wide yet
             rend["wide"] = ctx.storage.url(game_id, moments_mod.WIDE_REL, base)
@@ -656,6 +677,7 @@ def _register_routes(app: FastAPI) -> None:
     def calibrate(request: Request, game_id: str, body: Calibration):
         game = _game_or_404(request, game_id)
         court = _court_or_400(body.sport, body.variant)
+        pick = _standard_or_400(court, body.variant, body.standard)
 
         marks = body.landmarks_px
         # D-19: a homography needs 4 points the *template* knows, not specifically the 4
@@ -691,6 +713,7 @@ def _register_routes(app: FastAPI) -> None:
                 marks,
                 game.get("video"),
                 _ctx(request).storage.path(game_id, CALIB_REL),
+                pick,
             )
         except adapter.CalibrationRejected as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -698,7 +721,9 @@ def _register_routes(app: FastAPI) -> None:
         game["sport"] = body.sport
         game["court"] = {
             "variant": body.variant,
-            "standard": court.get("standard", "fiba"),
+            # the markings the fit used (the pick, else the best-fitting standard)
+            "standard": fit.get("standard") or pick or court.get("standard", "fiba"),
+            "standard_pick": pick,  # what the user said; None = "not sure"
             "landmarks_px": {k: list(v) for k, v in marks.items()},
         }
         if weak is not None:
@@ -824,17 +849,26 @@ def _register_routes(app: FastAPI) -> None:
         # events (a merge rewrites ids there: no alias map for every client to learn)
         # D-86: only the files this rewrites (a merge renumbers tracks, crops, events)
         merged_rels = ("tracks", "crops", EVENTS_REL) if body.merge_into is not None else ()
-        gd = ctx.storage.game_dir_with(game_id, edits.REL, *merged_rels)
+        # a side change moves that player's baskets: score.json is recounted from events
+        score_rels = (EVENTS_REL, "score.json") if body.team is not None else ()
+        # ...and identity's players.json takes the side too, so a re-run's events re-key
+        team_rels = (adapter.PLAYERS_REL,) if body.team is not None else ()
+        gd = ctx.storage.game_dir_with(game_id, edits.REL, *merged_rels, *score_rels, *team_rels)
         if body.name is not None:
             edits.patch(gd, "game.json", player_id, {"name": body.name, "tagged": True})
         if body.team is not None:
             edits.patch(gd, "game.json", player_id, {
                 "team": body.team, "color_hex": kits.get(body.team) or _other_kit(kits),
                 "team_mixed": None,  # the user said which side: no longer a guess
+                "team_source": "user",
             })  # fmt: skip
         if body.merge_into is not None:
             edits.merge(gd, player_id, body.merge_into)
             edits.apply(gd, ("tracks", "crops", EVENTS_REL))
+        if score_rels:
+            edits.apply(gd, ("score.json",))
+        if team_rels:
+            adapter.apply_team_edits(gd)
         game = edits.apply_game(game, edits.load(gd))
         ctx.index.save(game)
         return _resolve_urls(game, ctx.storage, _base(request))
@@ -920,9 +954,10 @@ def _register_routes(app: FastAPI) -> None:
     def game_stats(request: Request, game_id: str):
         ctx = _ctx(request)
         game = _game_or_404(request, game_id)
+        ov = edits.load(ctx.storage.game_dir_with(game_id, edits.REL))
         return stats_mod.compute(
             game,
-            live_events(_events(ctx.storage, game_id)),
+            adapter.with_scoring(live_events(_events(ctx.storage, game_id)), ov),
             _track_frames(ctx.storage, game_id),
             adapter.get_profile(game.get("sport", ""), (game.get("court") or {}).get("variant")),
         )

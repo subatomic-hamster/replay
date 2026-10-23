@@ -56,11 +56,16 @@ export interface Player {
   seen_s?: number;
   /** The id's box time is split between kits, so `team` is a guess (courtcam). */
   team_mixed?: boolean;
+  /** How the side was decided: shirt colours, who-guards-whom, or the user (courtcam). */
+  team_source?: TeamSource;
 }
+
+export type TeamSource = "kit" | "matchups" | "user";
 
 export interface Team {
   id: number;
   color_hex: string;
+  team_source?: TeamSource;
 }
 
 export interface Game extends TvReadiness {
@@ -103,7 +108,12 @@ export interface Game extends TvReadiness {
   /** Seek previews: GET it with `api.getStoryboard(game)` (key auth); absent until the
    *  worker's storyboard stage ran. */
   storyboard_url?: string;
+  /** What a basket is worth (PUT /games/{id}/scoring); the API adds it. Absent: standard. */
+  scoring?: ScoringMode;
 }
+
+/** "standard": 2s and 3s; "pickup": 1s and 2s (inside the arc 1, beyond it 2). */
+export type ScoringMode = "standard" | "pickup";
 
 /** Per-feature readiness keys (docs/ux/redesign.md "Tiered readiness"). */
 export type FeatureKey =
@@ -245,7 +255,9 @@ export type EventType =
   | "turnover"
   | "contact"
   | "block"
-  | "hype";
+  | "hype"
+  // a defender who lost their man (courtcam events.detect_lost_man)
+  | "lost_man";
 
 export interface GameEvent {
   id: string;
@@ -268,6 +280,9 @@ export interface GameEvent {
   points?: number | null;
   cause?: string | null;
   winner_side?: number | null;
+  /** lost_man: the man the defender (`player_id`) lost, and how far apart they got. */
+  opponent_id?: string;
+  max_sep_m?: number;
 }
 
 export interface EventsFile {

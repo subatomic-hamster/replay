@@ -23,7 +23,7 @@ import type {
   VerticalExport,
 } from "../../../../packages/tv-core/src/discovery";
 import type { Profile } from "../../../../packages/tv-core/src/profiles";
-import type { Game, Moment, QueryResult } from "./types";
+import type { Game, Moment, QueryResult, ScoringMode } from "./types";
 import { API_BASE, MOCK_API } from "../config";
 
 export const PHONE_HEADER = "X-Replay-Phone-Token";
@@ -51,6 +51,7 @@ export type PhoneApi = Pick<
   | "patchPlayer"
   | "getBestPlay"
   | "setBestPlay"
+  | "setScoring"
   | "mediaUrl"
   | "profileMediaUrl"
 >;
@@ -148,6 +149,10 @@ export function phoneHttpApi(apiBase: string, token: string): PhoneApi {
         "PUT",
         pick,
       ).then((r) => r.best_play),
+    setScoring: (id, mode) =>
+      req<{ scoring: ScoringMode }>(`${g(id)}/scoring`, "PUT", {
+        mode,
+      }).then((r) => r.scoring),
     getGameReel: (id, rid) =>
       req<ReelExport>(`${g(id)}/exports/reel/${encodeURIComponent(rid)}`),
     listProfiles: () =>

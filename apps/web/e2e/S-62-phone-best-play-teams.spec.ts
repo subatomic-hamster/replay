@@ -62,7 +62,7 @@ test("S-62 Clip: the best play now, then make the chosen moment the best play", 
   await page.goto(`/p/${GAME_ID}?job=clip&t=3#k=tok_phone`);
   const now = page.getByTestId("clip-best-now");
   await expect(now).toHaveAttribute("data-source", "auto:last_make");
-  await expect(now).toHaveText("★ Best play now: 0:17 · Basket (Game winner)");
+  await expect(now).toHaveText("★ Best play now: 0:17 · Basket (Last basket)");
 
   await expect(page.getByTestId("clip-moment")).toHaveValue("e_0001");
   await page.getByTestId("clip-best").click();

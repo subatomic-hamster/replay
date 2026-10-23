@@ -20,6 +20,7 @@ import type {
   QueryResult,
   RenderJob,
   SceneLayout,
+  ScoringMode,
   Session,
   SportProfile,
   Stats,
@@ -70,6 +71,8 @@ export interface CalibrationPayload {
   landmarks_px: Record<string, [number, number]>;
   /** D-23: commit an ok=false proposal's dots unmoved; the API records the override. */
   accept_low_confidence?: boolean;
+  /** Court markings the user picked (fiba/nba/ncaa/nfhs); absent = "not sure". */
+  standard?: string;
 }
 
 export interface ReplayApi {
@@ -184,6 +187,8 @@ export interface ReplayApi {
   getBestPlay(gameId: string): Promise<BestPlay | null>;
   /** "Make this the best play": one per game, replacing an earlier pick. */
   setBestPlay(gameId: string, pick: BestPlayPick): Promise<BestPlay | null>;
+  /** What a basket is worth in this game; the score and stats recount at once. */
+  setScoring(gameId: string, mode: ScoringMode): Promise<ScoringMode>;
   getRallies(gameId: string): Promise<RallyDoc>;
   renderCondensed(gameId: string): Promise<JobStatus>;
   exportVertical(
@@ -720,6 +725,8 @@ export function createHttpApi(
           variant: payload.court_variant,
           landmarks_px: payload.landmarks_px,
           accept_low_confidence: payload.accept_low_confidence ?? false,
+          // absent = "not sure": courtcam fits every standard and keeps the best
+          standard: payload.standard || undefined,
         },
       }).then(
         (r): CalibrationResult => ({
@@ -875,6 +882,11 @@ export function createHttpApi(
         method: "PUT",
         json: pick,
       }).then((r) => r.best_play),
+    setScoring: (gameId, mode) =>
+      req<{ scoring: ScoringMode }>(`/games/${gameId}/scoring`, {
+        method: "PUT",
+        json: { mode },
+      }).then((r) => r.scoring),
     getRallies: (gameId) =>
       reqUnlessUnavailable<RallyDoc>(`/games/${gameId}/rallies`).then((d) => ({
         ...d,

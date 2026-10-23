@@ -648,7 +648,7 @@ function mockBestPlay(g: Game): BestPlay | null {
       Math.max(0, Math.min(last.t_start, last.t - 4)), // moments.LEAD_S
       last.t_end,
       "auto:last_make",
-      "Game winner",
+      "Last basket",
       last,
     );
   const c = mockHype(MOCK_HYPE_PEAKS[g.id] ?? []).candidates[0];
@@ -1019,7 +1019,10 @@ export const mockApi: ReplayApi = {
           team: p.team,
           attempts: mine.length,
           makes: mine.filter((e) => e.made).length,
-          points: 2 * mine.filter((e) => e.made).length,
+          // the mock's makes are all inside the arc: 2s, or 1s in pickup scoring
+          points:
+            (g.scoring === "pickup" ? 1 : 2) *
+            mine.filter((e) => e.made).length,
           distance_m: distanceFor(p.id),
           confidence: mine.length
             ? Number(
@@ -1323,6 +1326,12 @@ export const mockApi: ReplayApi = {
       );
     bestPicks.set(gameId, { ...pick, moment_id: pick.moment_id ?? null });
     return delay(mockBestPlay(g));
+  },
+
+  setScoring(gameId, mode) {
+    log("PUT", `/games/${gameId}/scoring`, { mode });
+    needGame(gameId).scoring = mode;
+    return delay(mode);
   },
 
   getRallies(gameId) {

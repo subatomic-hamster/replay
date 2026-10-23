@@ -70,3 +70,41 @@ def test_user_edit_survives_rerun_and_rekeys_downstream(tmp_path, monkeypatch):
     assert _go(gd, cache, drop_first=True) == {"events": "miss", "made": "miss"}
     ev = json.loads((gd / "events.json").read_text())["events"]
     assert [(e["id"], e["t_key"], e["made"]) for e in ev] == [("e_0001", 6.0, True)]
+
+
+def _identity(ctx, item):
+    CALLS.append("identity")
+    work = ctx.game_dir / "_work"
+    work.mkdir(parents=True, exist_ok=True)
+    row = {"player_id": "p1", "team": 0, "color_hex": "#111111", "team_source": "matchups"}
+    (work / "players.json").write_text(json.dumps({"players": [row]}))
+
+
+def _side(ctx, item):
+    CALLS.append("side")
+    p1 = json.loads((ctx.game_dir / "_work/players.json").read_text())["players"][0]
+    (ctx.game_dir / "side.json").write_text(json.dumps(p1["team"]))
+
+
+def test_team_pick_reaches_restored_players_json(tmp_path, monkeypatch):
+    """A team picked on the phone is copied onto identity's players.json whether it was
+    computed or restored from the cache, so the stages keyed on it (events) re-key."""
+    import pytest
+
+    pytest.importorskip("courtcam")
+    monkeypatch.setenv("REPLAY_GPU_LOCK", str(tmp_path / "gpu.lock"))
+    reg = {
+        "identity": Stage("identity", "1", _identity, outputs=("_work/players.json",)),
+        "side": Stage("side", "1", _side, inputs=("_work/players.json",),
+                      outputs=("side.json",), after=("identity",)),
+    }  # fmt: skip
+    gd, cache = tmp_path / "game", Cache(tmp_path / "cache")
+    run(gd, {}, registry=reg, cache=cache)
+    assert json.loads((gd / "side.json").read_text()) == 0
+
+    edits.patch(gd, "game.json", "p1", {"team": 1, "color_hex": "#EEEEEE"})
+    recs = {r["stage"]: r["cache"] for r in run(gd, {}, registry=reg, cache=cache)}
+    assert recs == {"identity": "hit", "side": "miss"}
+    p1 = json.loads((gd / "_work/players.json").read_text())["players"][0]
+    assert (p1["team"], p1["team_source"], p1["color_hex"]) == (1, "user", "#EEEEEE")
+    assert json.loads((gd / "side.json").read_text()) == 1

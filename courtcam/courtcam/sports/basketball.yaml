@@ -8,6 +8,14 @@ court:
     half: basketball_half.json
     full: basketball_full.json
   variants: [half, full]
+  # The templates above are FIBA. US gyms: NBA (16 ft lane, 23.75 ft three), NCAA (12 ft
+  # lane, 22.15 ft three) and NFHS high school (12 ft lane, 19.75 ft three, 84 ft long).
+  # All US: free-throw line 19 ft from the baseline, rim centre 5.25 ft. `calibrate`
+  # fits every standard and keeps the clearly best one unless the user picked one.
+  standards:
+    nba: { half: basketball_half_nba.json, full: basketball_full_nba.json }
+    ncaa: { half: basketball_half_ncaa.json, full: basketball_full_ncaa.json }
+    nfhs: { half: basketball_half_nfhs.json, full: basketball_full_nfhs.json }
   landmarks: [corner_nl, corner_nr, corner_fl, corner_fr, rim]
   # Optional extras for clips where a corner is off-frame or occluded (real footage
   # routinely is). Any of these present in a landmarks.json is folded into the
@@ -114,7 +122,7 @@ tracking:
   officials: 3
   smooth_window: 5
 # Order matters: `possession` reads the shots (rebound vs steal, make vs miss).
-events: [shot, possession, hype]
+events: [shot, possession, lost_man, hype]
 # M4 play grammar (courtcam.plays): possession start -> shot or turnover. A steal both
 # ends the old possession and starts the new one; a put-back after an offensive rebound
 # (a shot while no possession is open) is a one-shot play.
@@ -122,8 +130,10 @@ plays:
   - name: possession
     start: [possession_change]
     end: [shot, turnover]
-    same_team: true
-    orphan_end: true
+    # any team's shot or turnover is a natural break that ends the open play: event teams
+    # can be wrong (half court: both teams shoot at one hoop), and a play that runs on
+    # past a basket swallows the next clip (D-50 needs a play ending just before an X)
+    orphan_end: [shot] # a lone turnover is no play of its own
     max_s: 40
     roles:
       possession_change.inbound: inbounder
@@ -131,6 +141,12 @@ plays:
       possession_change.defensive_rebound: rebounder
       shot: shooter
       turnover: turnover
+  # a defender losing their man (events.detect_lost_man) is a play of its own, so the
+  # highlights can replay it from the defender's eyes
+  - name: lost_man
+    start: [lost_man]
+    end: [lost_man]
+    roles: { lost_man: defender }
 shot:
   two_pt_zones: [three_point, three_point_far]
   rim_radius_m: 7.0

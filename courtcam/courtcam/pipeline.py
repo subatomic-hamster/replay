@@ -191,6 +191,7 @@ def calibrate_lens(
     profile: Profile,
     variant: str | None,
     image_size: tuple[int, int],
+    standard: str | None = None,
 ) -> dict[str, Any]:
     """`calibrate.calibrate()` on lens-corrected clicks, plus the `k1` that corrected them.
 
@@ -201,13 +202,34 @@ def calibrate_lens(
 
     * `H` / `H_inv` map **undistorted** pixels ↔ metres, so anything projecting a pixel
       through them undistorts first (`court.to_court`);
-    * `landmarks_px` stays as the user clicked it, because the uploader draws dots on it;
+    * `landmarks_px` stays where the user clicked, because the uploader draws dots on it
+      (under the court's own names: left/right swapped back when `labels_swapped`);
     * `court_polygon_px` and `rim_px` are bent back onto the frame, so the overlay, and
       the D-20 court pixel width that sizes the follow-cam, are in frame coordinates.
 
+    `standard`: the court markings the user picked; None tries each (`fit_standards`),
+    each with its own `k1` (a FIBA lane on a 12 ft-lane gym would otherwise be "fixed"
+    by bending the lens).
+
     `k1 = 0` on an undistorted lens reproduces the old payload exactly (D-24 gate).
     """
-    template = profile.template(variant or profile.default_variant())
+    variant = variant or profile.default_variant()
+    return calib_mod.fit_standards(
+        profile,
+        variant,
+        standard,
+        lambda std: _calibrate_lens_one(landmarks_px, profile, variant, image_size, std),
+    )
+
+
+def _calibrate_lens_one(
+    landmarks_px: dict[str, tuple[float, float]],
+    profile: Profile,
+    variant: str,
+    image_size: tuple[int, int],
+    standard: str,
+) -> dict[str, Any]:
+    template = profile.template(variant, standard)
     names = [n for n in landmarks_px if n in template.landmarks]
     pts = np.asarray([landmarks_px[n] for n in names], dtype=np.float64)
     k1, rms_before, rms_after = distortion.estimate_k1(
@@ -217,12 +239,15 @@ def calibrate_lens(
         n: (float(p[0]), float(p[1]))
         for n, p in zip(names, distortion.undistort_points(pts, k1, image_size), strict=True)
     }
-    calib = calib_mod.calibrate({**landmarks_px, **straight}, profile, variant)
+    calib = calib_mod.calibrate_one(
+        {**landmarks_px, **straight}, profile, variant, standard, calib_mod.MAX_REPROJ_PX
+    )
     h_inv = np.asarray(calib["H_inv"], dtype=np.float64)
     calib["k1"] = k1
     calib["image_size"] = [int(image_size[0]), int(image_size[1])]
     calib["lens_rms_px"] = [round(rms_before, 3), round(rms_after, 3)]
-    calib["landmarks_px"] = {k: [float(v[0]), float(v[1])] for k, v in landmarks_px.items()}
+    clicks, _ = calib_mod.orient_labels(landmarks_px, template, calib["labels_swapped"])
+    calib["landmarks_px"] = {k: [float(v[0]), float(v[1])] for k, v in clicks.items()}
     calib["court_polygon_px"] = polygon_px(
         template.polygon, h_inv, k1=k1, image_size=image_size
     ).tolist()
@@ -241,9 +266,11 @@ def stage_calibrate(
     force: bool,
     progress: Progress,
     low_confidence_override: dict[str, Any] | None = None,
+    standard: str | None = None,
 ) -> dict[str, Any]:
     """`low_confidence_override`: the `autocalib` block of an ok=false proposal the user
-    explicitly accepted; it is kept in calib.json so the choice stays visible."""
+    explicitly accepted; it is kept in calib.json so the choice stays visible. `standard`:
+    the court markings the user picked (None: the best-fitting one, `calibrate_lens`)."""
     path = out_dir / "calib.json"
     progress("calibrate", 0.0)
     if path.exists() and not force:
@@ -251,7 +278,7 @@ def stage_calibrate(
     else:
         if not landmarks_px:
             raise ValueError("calibration needs --landmarks (or an existing out/calib.json)")
-        calib = calibrate_lens(landmarks_px, profile, variant, image_size)
+        calib = calibrate_lens(landmarks_px, profile, variant, image_size, standard)
         if low_confidence_override is not None:
             calib["low_confidence_override"] = low_confidence_override
         calib_mod.write_calib(path, calib)
@@ -339,11 +366,16 @@ def stage_identity(
         # `team_rule: net_side` reads the net line off *this variant's* template, so the
         # variant has to come along — badminton singles and doubles are different courts.
         court_ok = (meta.get("fit") or {}).get("trusted", True)
+        calib = calib_mod.read_calib(out_dir / "calib.json")
         players = identity.identify(
-            str(out_dir / WIDE_REL), tracks, profile, variant, court_ok=court_ok
+            str(out_dir / WIDE_REL),
+            tracks,
+            profile,
+            variant,
+            court_ok=court_ok,
+            standard=calib.get("standard"),
         )
         # D-97: the detections a player's gaps leave free are theirs
-        calib = calib_mod.read_calib(out_dir / "calib.json")
         size = calib.get("image_size")
         players = identity.fill_gaps(
             players,
@@ -354,6 +386,7 @@ def stage_identity(
             smooth_window=profile.tracking.smooth_window,
         )
         identity.write_players(path, players, meta)
+    identity.apply_team_edits(out_dir)  # the user's team picks win, cached or not
     progress("identity", 1.0)
     return path
 
@@ -643,12 +676,14 @@ def run(
     asr_model: str | None = None,
     roster: dict[str, str] | None = None,
     accept_low_confidence: bool = False,
+    standard: str | None = None,
 ) -> Path:
     """Run the pipeline and return the path to `out_dir/game.json`.
 
     `stages` runs exactly those stages (and forces them to recompute); omitted, every
     stage runs but skips itself if its output is already on disk. `progress(stage,
-    fraction)` is called throughout.
+    fraction)` is called throughout. `standard`: the court markings the user picked
+    (None: the best-fitting one).
     """
     input_path, out_dir = Path(input_path), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -703,6 +738,7 @@ def run(
         force=force and "calibrate" in requested,
         progress=report,
         low_confidence_override=override,
+        standard=standard,
     )
     game.court = CourtInfo(
         variant=calib_data.get("variant", variant),

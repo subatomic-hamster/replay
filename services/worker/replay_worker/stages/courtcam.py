@@ -92,6 +92,8 @@ def run_calibrate(ctx: Ctx, item: str | None) -> None:
         force=True,
         progress=ctx.progress,
         low_confidence_override=ctx.cfg.get("low_confidence_override"),
+        # the phone's "Court markings" pick; None ("not sure") fits each standard
+        standard=ctx.cfg.get("standard") or None,
     )
 
 
@@ -245,7 +247,7 @@ STAGES = [
         run_calibrate,
         inputs=(WIDE,),
         outputs=("calib.json",),
-        params=("sport", "variant", "landmarks_px", "low_confidence_override"),
+        params=("sport", "variant", "landmarks_px", "low_confidence_override", "standard"),
         after=("ingest",),
     ),
     Stage(

@@ -66,6 +66,8 @@ def label(e: dict, player: dict | None, sport: str) -> str | None:
         base = None if cause == "steal" else "Turnover"  # the steal is its own moment
     elif typ == "block":
         base = "Block"
+    elif typ == "lost_man":  # the defender's lapse; `player` is the defender
+        base = "Lost his man"
     elif typ == "point":
         # whose fault an out / net ball was is not in the event: name only the winner
         base = {"winner": "Winner", "out": "Point, ball out", "net": "Point, into the net"}
@@ -230,7 +232,7 @@ def best_play(rows: list[dict], hype: dict | None, duration: float | None,
               user: dict | None = None) -> dict | None:  # fmt: skip
     """The game's one best play (`GET /games/{id}/best-play`), from `all_moments` rows:
     the user's own pick (edits.json `best_play`), else the last make when it falls in the
-    final WINNER_S of the video ("Game winner"), else the top hype candidate. `source`
+    final WINNER_S of the video ("Last basket": we can't know it won the game), else the top hype candidate. `source`
     says which (`user`, `auto:last_make`, `auto:hype`); `what` is the moment's own label
     (current names) when the play is a moment. None when nothing qualifies."""
     by_id = {m["id"]: m for m in rows}
@@ -248,7 +250,7 @@ def best_play(rows: list[dict], hype: dict | None, duration: float | None,
     last = max(scores, key=lambda m: (m["t"], m["id"]), default=None)
     if last and duration and last["t"] >= float(duration) - WINNER_S:
         a = max(0.0, min(last["t_start"], last["t"] - LEAD_S))  # the build-up too
-        return out(last["t"], a, last["t_end"], "auto:last_make", "Game winner", last)
+        return out(last["t"], a, last["t_end"], "auto:last_make", "Last basket", last)
     cands = (hype or {}).get("candidates") or []
     if not cands:
         return None

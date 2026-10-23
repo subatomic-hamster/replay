@@ -153,6 +153,12 @@ def _apply_edits(game_dir: Path, outputs: list[str]) -> None:
     from replay_api import edits  # services/api on the path, as for the narrate stages
 
     edits.apply(game_dir, outputs)
+    if "_work/players.json" in outputs:
+        # a team the user fixed on the phone lives in game.json's patch; identity's
+        # players.json carries it too so `events` (keyed on players.json) re-keys
+        from courtcam import identity
+
+        identity.apply_team_edits(game_dir)
 
 
 def _execute(r: _Run, stage: Stage, item: str | None) -> dict:

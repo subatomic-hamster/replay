@@ -492,3 +492,90 @@ def test_fill_gaps_takes_the_free_detections_in_a_players_gap():
     assert np.allclose(t1.boxes[:, 0], 100.0 + 2 * np.arange(10))  # the walker, not the stray
     assert np.allclose(out[0].track.court_m[3:8, 1], 220.0)  # feet projected (H = identity)
     assert out[1] is players[1]  # nothing missing, untouched
+
+
+def _pickup_2v2(seed: int = 0) -> list[CourtTrack]:
+    """Synthetic half-court 2v2, labelled synthetic: players 0 and 2 are one team, 1 and
+    3 the other; 1 guards 0 and 3 guards 2. Possessions of 15 s alternate; the attacker
+    wanders 5-7 m out and the defender stays ~1 m goal-side of him, sometimes beaten."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(0.0, 180.0, 1 / 15)
+    rim = np.array([0.0, 1.575])
+    pos = np.zeros((4, len(t), 2))
+    for pair, side in ((0, -1.0), (1, 1.0)):
+        ang = np.pi / 2 + side * 0.7 + np.cumsum(rng.normal(0, 0.02, len(t)))
+        far = 6.0 + np.sin(t / 3.0 + pair)
+        man = rim + np.c_[np.cos(ang), np.sin(ang)] * far[:, None]
+        guard = (
+            rim
+            + np.c_[np.cos(ang), np.sin(ang)] * (far - 1.0 + rng.normal(0, 0.6, len(t)))[:, None]
+        )
+        offence = (t // 15) % 2 == 0  # team (0, 2) attacks first
+        a, b = 2 * pair, 2 * pair + 1
+        pos[a] = np.where(offence[:, None], man, guard)
+        pos[b] = np.where(offence[:, None], guard, man)
+    tracks = []
+    for k in range(4):
+        boxes = np.column_stack([pos[k] * 50, np.full((len(t), 2), 100.0)])
+        tl = Tracklet(k, np.arange(len(t)), t, boxes, np.full(len(t), 0.9))
+        tracks.append(CourtTrack(tl, pos[k], 1.0))
+    return tracks
+
+
+def test_matchups_split_a_pickup_game_whose_shirts_say_nothing():
+    from courtcam.identity import matchup_teams, play_teams
+
+    tracks = _pickup_2v2()
+    teams, corr = matchup_teams(tracks, [(0.0, 1.575)])
+    assert teams[0] == teams[2] != teams[1] == teams[3]
+    assert corr > 0.5
+    assert matchup_teams(tracks[:3], [(0.0, 1.575)]) is None  # not a 2v2 / 3v3
+    assert matchup_teams(tracks, []) is None  # no basket, no roles
+
+    merged = [([k], tr) for k, tr in enumerate(tracks)]
+    template = PROFILE.template("half")
+    shirts = np.eye(4)  # four different shirts: teammates no closer than opponents
+    kits = np.array([0, 0, 0, 1])  # what k-means made of them: 3 v 1
+    assert (play_teams(merged, kits, shirts, template) == teams).all()
+    # two real kits split evenly and teammates look alike: the kits stand
+    two_kits = np.array([[1.0, 0], [0, 1.0], [1.0, 0.05], [0.05, 1.0]])
+    assert play_teams(merged, np.array([0, 1, 0, 1]), two_kits, template) is None
+
+
+def test_the_users_team_pick_wins_over_the_pipelines(tmp_path):
+    import json
+
+    from courtcam.identity import (
+        PlayerTrack,
+        apply_team_edits,
+        read_players,
+        to_models,
+        write_players,
+    )
+
+    tr = _track(1, 0.0, 2.0, (1, 1), (1, 1))
+    players = [
+        PlayerTrack("p1", 0, "#E8A33D", tr, (1,), team_source="matchups"),
+        PlayerTrack("p2", 1, "#3D7BE8", tr, (2,), team_source="matchups"),
+    ]
+    (tmp_path / "_work").mkdir()
+    write_players(tmp_path / "_work" / "players.json", players, {})
+    assert not apply_team_edits(tmp_path)  # no edits.json: nothing to do
+    (tmp_path / "edits.json").write_text(
+        json.dumps(
+            {
+                "patch": {
+                    "game.json": {"p2": {"team": 0, "color_hex": "#E8A33D"}, "p1": {"name": "Ravi"}}
+                }
+            }
+        )
+    )
+    assert apply_team_edits(tmp_path)
+    assert not apply_team_edits(tmp_path)  # idempotent
+    back, _ = read_players(tmp_path / "_work" / "players.json")
+    assert [(p.team, p.team_source, p.color_hex) for p in back] == [
+        (0, "matchups", "#E8A33D"),
+        (0, "user", "#E8A33D"),
+    ]
+    _, teams = to_models(back)
+    assert [(t.id, t.team_source) for t in teams] == [(0, "user")]

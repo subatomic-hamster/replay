@@ -65,6 +65,7 @@ PHONE_ROUTES = (
     ("GET", "/games/{g}/best-play"),
     ("PUT", "/games/{g}/best-play"),  # "Make this the best play"
     ("DELETE", "/games/{g}/best-play"),  # back to the automatic pick
+    ("PUT", "/games/{g}/scoring"),  # 2s & 3s or pickup 1s & 2s
 )
 _PHONE_RES = tuple(
     (

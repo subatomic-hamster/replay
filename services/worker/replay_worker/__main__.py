@@ -41,6 +41,9 @@ def build_cfg(args: argparse.Namespace) -> tuple[Path, dict]:
         "sport": args.sport or game.get("sport") or "basketball",
         "variant": args.variant or court.get("variant"),
         "landmarks_px": court.get("landmarks_px") or None,
+        # the user's "Court markings" pick (the API keeps it apart from court.standard,
+        # which is what the fit chose); None: courtcam fits each standard
+        "standard": court.get("standard_pick") or None,
         "detector": args.detector,
         "ground_truth": args.ground_truth,
         "backend": args.backend,

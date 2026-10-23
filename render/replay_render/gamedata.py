@@ -305,7 +305,12 @@ def load_game(game_dir: Path) -> Game:
     events = _list(read_json(gd / "events.json"), "events")
     # team for events that lack it: the player's team from the roster
     team_of = {p["id"]: p.get("team") for p in game.get("players") or []}
-    for e in events:
+    for i, e in enumerate(events):
+        # the story events' contract (lost_man / save / forced_out) says kind, t, t0, t1
+        for k, alias in (("type", "kind"), ("t_key", "t"), ("t_start", "t0"), ("t_end", "t1")):
+            if e.get(k) is None and e.get(alias) is not None:
+                e[k] = e[alias]
+        e.setdefault("id", f"e_{e.get('type')}_{i}")
         if e.get("team") is None and e.get("player_id") in team_of:
             e["team"] = team_of[e["player_id"]]
     score_doc = read_json(gd / "score.json")

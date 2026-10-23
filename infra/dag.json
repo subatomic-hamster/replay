@@ -205,6 +205,46 @@
   "default": false
  },
  {
+  "name": "hype",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "condensed",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": false,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "vertical",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
+  "name": "reel",
+  "after": [
+   "game"
+  ],
+  "resource": "cpu",
+  "fanout": true,
+  "cached": true,
+  "default": false
+ },
+ {
   "name": "camera",
   "after": [
    "calibrate"
@@ -228,7 +268,8 @@
  {
   "name": "highlights",
   "after": [
-   "game"
+   "game",
+   "hype"
   ],
   "resource": "io",
   "fanout": false,
@@ -286,46 +327,6 @@
   "resource": "io",
   "fanout": true,
   "cached": false,
-  "default": false
- },
- {
-  "name": "hype",
-  "after": [
-   "game"
-  ],
-  "resource": "cpu",
-  "fanout": false,
-  "cached": true,
-  "default": false
- },
- {
-  "name": "condensed",
-  "after": [
-   "game"
-  ],
-  "resource": "cpu",
-  "fanout": false,
-  "cached": true,
-  "default": false
- },
- {
-  "name": "vertical",
-  "after": [
-   "game"
-  ],
-  "resource": "cpu",
-  "fanout": true,
-  "cached": true,
-  "default": false
- },
- {
-  "name": "reel",
-  "after": [
-   "game"
-  ],
-  "resource": "cpu",
-  "fanout": true,
-  "cached": true,
   "default": false
  },
  {

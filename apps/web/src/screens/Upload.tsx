@@ -8,7 +8,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { api, type ReplayApi } from "../api/client";
+import { api, type CalibrationPayload, type ReplayApi } from "../api/client";
 import { API_BASE } from "../config";
 import { navigate, useLocation } from "../router";
 import { ApiErrorBanner, useAsync } from "../ui";
@@ -43,15 +43,67 @@ const PART: Record<string, string> = {
   short: "short service line end",
   singles: "singles line end",
   centre: "centre line end",
+  rim: "spot on the floor right under the hoop",
   rim_top: "top of the hoop",
 };
-function pointName(id: string): string {
+// A basketball court is filmed from the side, so "near-left" means nothing: both ends
+// are as near as each other, and left/right flips with where you stand. Name the ends by
+// what is there and the sides by the camera. Any consistent labelling works, because
+// courtcam swaps left and right back when the clicks are a mirror image of the court
+// (calibrate.orient_labels); these words just keep one person consistent.
+const COURT_WORDS: Record<
+  string,
+  { end: Record<string, string>; side: Record<string, string> }
+> = {
+  half: {
+    end: { n: "baseline (under the basket)", f: "half-way line" },
+    side: { l: "far sideline", r: "camera-side sideline" },
+  },
+  full: {
+    end: {
+      n: "baseline at the left-hand basket",
+      f: "baseline at the right-hand basket",
+    },
+    side: { l: "far sideline", r: "camera-side sideline" },
+  },
+};
+function pointName(id: string, variant?: string): string {
   const words = id.split("_");
-  const side = SIDE[words[words.length - 1]];
+  const tail = words[words.length - 1];
+  const court = variant ? COURT_WORDS[variant] : undefined;
+  if (court && words.length > 1 && /^[nf]?[lr]?$/.test(tail) && tail) {
+    const head = words.slice(0, -1).join("_");
+    const end = court.end[tail[0]];
+    const side = court.side[tail[tail.length - 1]];
+    if (head === "corner" && end && side)
+      return `corner where the ${end} meets the ${side}`;
+    if (head === "key" && end && side)
+      return `corner of the key on the ${end}, ${side} side`;
+    if (head === "ft" && end && side)
+      return (
+        `end of the free-throw line on the ${side} side` +
+        (variant === "full" ? `, by the ${end}` : "")
+      );
+    if (head === "centre" && side) return `half-way line end on the ${side}`;
+  }
+  const side = SIDE[tail];
   const rest = side ? words.slice(0, -1).join("_") : id;
   const part = PART[rest] ?? rest.replace(/_/g, " ");
   return side ? `${side} ${part}` : part;
 }
+
+// Court markings (courtcam sports/basketball.yaml `standards`). "Not sure" sends none:
+// courtcam fits each and keeps the one the lines clearly agree with, else FIBA.
+const STANDARDS: Record<string, [string, string][]> = {
+  half: [
+    ["", "Court markings: not sure"],
+    ["fiba", "International (FIBA)"],
+    ["nba", "NBA"],
+    ["ncaa", "US college"],
+    ["nfhs", "US high school"],
+  ],
+};
+STANDARDS.full = STANDARDS.half;
 
 /** `/upload` — create a game (S-02, S-09). */
 export function UploadCreate() {
@@ -353,6 +405,10 @@ export function Calibrate({
   const variant = pickedVariant ?? variants[0];
   const variantRef = useRef(variant);
   variantRef.current = variant;
+  // "" = not sure: courtcam picks the markings the clicks fit
+  const [standard, setStandard] = useState("");
+  const standardRef = useRef(standard);
+  standardRef.current = standard;
   const required = useMemo(() => profile?.landmarks ?? [], [profile]);
   const optional = useMemo(() => profile?.landmarks_optional ?? [], [profile]);
   const names = useMemo(
@@ -375,13 +431,18 @@ export function Calibrate({
         setResult(null);
         return;
       }
+      // `standard`: the court markings; absent = "not sure" (courtcam picks)
+      const payload: CalibrationPayload = {
+        sport: profile.id,
+        court_variant: variantRef.current,
+        landmarks_px: pts,
+        accept_low_confidence: confirmLowRef.current,
+        ...(standardRef.current && STANDARDS[variantRef.current]
+          ? { standard: standardRef.current }
+          : {}),
+      };
       client
-        .calibrate(game.id, {
-          sport: profile.id,
-          court_variant: variantRef.current,
-          landmarks_px: pts,
-          accept_low_confidence: confirmLowRef.current,
-        })
+        .calibrate(game.id, payload)
         .then((r) =>
           setResult(
             r.ok
@@ -398,11 +459,11 @@ export function Calibrate({
     [game, profile, client],
   );
 
-  // Re-validate when the variant changes, once the required walk is behind us.
+  // Re-validate when the variant or the markings change, once the required walk is behind us.
   useEffect(() => {
     if (pendingFrom(required, step, marks, skipped).length === 0) submit(marks);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant]);
+  }, [variant, standard]);
 
   // D-23: ask for a proposal as soon as the page has a game and a sport, and poll for
   // it. The model call is 10-180 s, so this is a queue + poll, not a request.
@@ -586,6 +647,21 @@ export function Calibrate({
               {v}
             </label>
           ))}
+          {/* same row as the variant: the Adjust panel must still fit a 1080p screen */}
+          {STANDARDS[variant] ? (
+            <select
+              aria-label="Court markings"
+              data-testid="court-standard"
+              value={standard}
+              onChange={(e) => setStandard(e.target.value)}
+            >
+              {STANDARDS[variant].map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          ) : null}
         </div>
       ) : null}
 
@@ -681,9 +757,9 @@ export function Calibrate({
         {selected === HOOP
           ? 'Tap the middle of the hoop (the ring, not the board), or "Not visible".'
           : selected
-            ? `Tap where the ${pointName(selected)} really is, or "Not visible" if it is off the frame.`
+            ? `Tap where the ${pointName(selected, variant)} really is, or "Not visible" if it is off the frame.`
             : next
-              ? `Tap the ${pointName(next)} — point ${names.indexOf(next) + 1} of ${names.length}`
+              ? `Tap the ${pointName(next, variant)} — point ${names.indexOf(next) + 1} of ${names.length}`
               : "All landmarks placed."}
       </p>
 
@@ -723,7 +799,7 @@ export function Calibrate({
                     ? `0 0 0 4px hsl(${Math.round(conf * 120)} 85% 45%)`
                     : undefined,
                 }}
-                title={pointName(name)}
+                title={pointName(name, variant)}
               >
                 {/* numbered in the full list: a proposal can hold optional points the
                     walk has not reached, which would otherwise all read "0" */}
@@ -734,7 +810,7 @@ export function Calibrate({
                   type="button"
                   className={`landmark-handle${selected === name ? " selected" : ""}`}
                   data-testid={`landmark-handle-${name}`}
-                  aria-label={`Move the ${pointName(name)}`}
+                  aria-label={`Move the ${pointName(name, variant)}`}
                   aria-pressed={selected === name}
                   style={handleAt}
                   onPointerDown={(e) => {
@@ -804,7 +880,7 @@ export function Calibrate({
               aria-pressed={selected === name}
               onClick={() => setSelected(selected === name ? null : name)}
             >
-              {pointName(name)}
+              {pointName(name, variant)}
             </button>
           ))}
         </div>
@@ -824,7 +900,8 @@ export function Calibrate({
         </p>
         {worst ? (
           <p className="calib-worst" data-testid="calib-worst">
-            worst point: {pointName(worst[0])} · {worst[1].toFixed(1)} px
+            worst point: {pointName(worst[0], variant)} · {worst[1].toFixed(1)}{" "}
+            px
           </p>
         ) : null}
         <button

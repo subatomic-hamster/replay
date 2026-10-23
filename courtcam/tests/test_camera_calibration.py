@@ -66,7 +66,9 @@ def test_noisy_clicks_stay_close():
 
 def test_mirrored_labels_keep_the_camera_above_the_floor():
     """l/r swapped clicks: a 2D homography takes them, a real camera cannot be below the
-    floor — the mirror goes into R (det -1) and P still maps the template's points."""
+    floor. calibrate swaps the labels back (`labels_swapped`), so the camera is a proper
+    one; clicks that reach camera_calibration still mirrored (a calib.json from before)
+    get the mirror folded into R (det -1), and P still maps the template's points."""
     doc, profile, variant = _truth("badminton", "doubles")
     swap = {"l": "r", "r": "l"}  # every badminton name ending in l/r is a side
     clicks = {
@@ -75,10 +77,20 @@ def test_mirrored_labels_keep_the_camera_above_the_floor():
         if doc["landmarks_world"][n][2] == 0
     }
     calib = P.calibrate_lens(clicks, profile, variant, tuple(doc["image_size"]))
+    assert calib["labels_swapped"]
     cal = C.camera_calibration(calib, profile)
-    assert cal["mirrored"] and np.linalg.det(np.asarray(cal["R"])) < 0
+    assert not cal["mirrored"] and np.linalg.det(np.asarray(cal["R"])) > 0
     assert cal["camera_position_m"][2] > 1.0
     assert cal["reproj_err_px"] < 0.05
+
+    legacy = {**calib, "landmarks_px": clicks, "H": None}
+    h_inv = np.diag([-1.0, 1.0, 1.0])  # the mirrored fit an old calib.json holds
+    legacy["H_inv"] = (np.asarray(calib["H_inv"]) @ h_inv).tolist()
+    legacy["H"] = np.linalg.inv(legacy["H_inv"]).tolist()
+    old = C.camera_calibration(legacy, profile)
+    assert old["mirrored"] and np.linalg.det(np.asarray(old["R"])) < 0
+    assert old["camera_position_m"][2] > 1.0
+    assert old["reproj_err_px"] < 0.05
 
 
 def test_height_landmarks_come_from_the_template():

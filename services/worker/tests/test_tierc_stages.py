@@ -77,8 +77,10 @@ def test_scene_angles_and_manifest_then_cache_hits(env):
     by = {r["stage"]: r for r in recs}
     assert by["tierc_scene"]["resource"] == "cpu"  # ground truth + analytic: no GPU
     items = sorted(r["item"] for r in recs if r["stage"] == "tierc")
-    # a virtual POV for every player in the 3D scene, not only the key player
-    povs = ("pov_p1", "pov_p2", "pov_p3", "pov_p4")
+    # the best play (the toy's last make, the "game winner") gets 2 POVs: the shooter's
+    # and the best-looking other player's (replays.POVS), not one per player in 3D
+    povs = sorted(i.removeprefix("ev_e1/tierc_") for i in items if "pov_" in i)
+    assert len(povs) == 2 and "pov_p1" in povs
     # image-based (D-86): no baseline, it would face the toy's sideline camera head-on
     assert items == sorted(f"ev_e1/tierc_{a}" for a in ("wing", "courtside", *povs))
 
@@ -94,11 +96,12 @@ def test_scene_angles_and_manifest_then_cache_hits(env):
     assert ball["made"] is True and ball["target"][2] == pytest.approx(3.05)
 
     m = json.loads((gd / "replays" / "ev_e1" / "manifest.json").read_text())
-    assert [a["tier"] for a in m["angles"]] == ["A"] * 3 + ["B"] * 3 + ["C"] * 6
+    assert [a["tier"] for a in m["angles"]] == ["A"] * 3 + ["B"] * 3 + ["C"] * 4
     c = [a for a in m["angles"] if a["tier"] == "C"]
     # POVs come in along-camera order (render tests cover the order itself)
     assert [a["id"] for a in c[:2]] == ["3d:wing", "3d:courtside"]
-    assert sorted(a["id"] for a in c[2:]) == ["pov:p1", "pov:p2", "pov:p3", "pov:p4"]
+    assert [a["id"] for a in c[2:]] == [f"pov:{p.removeprefix('pov_')}" for p in
+                                        ["pov_p1"] + [p for p in povs if p != "pov_p1"]]  # fmt: skip
     assert c[0]["label"] == "Virtual wing"
     # every angle has its own thumbnail (the TV's angle row), not one shared frame
     assert all((gd / a["poster"]).stat().st_size > 500 for a in m["angles"])
@@ -112,3 +115,21 @@ def test_scene_angles_and_manifest_then_cache_hits(env):
     assert {r["cache"] for r in again if r["stage"] in ("tierc_scene", "tierc")} == {"hit"}
     m2 = json.loads((gd / "replays" / "ev_e1" / "manifest.json").read_text())
     assert m2["angles"] == m["angles"]
+
+
+def test_fill_plays_get_no_3d_angles_and_povs_are_capped(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from replay_render.avatars import imageview
+
+    plays = [{"play_id": "a", "lite": True, "max_pov": 0},
+             {"play_id": "b", "primary": "p2", "participants": ["p2", "p4"], "max_pov": 2}]  # fmt: skip
+    (tmp_path / "replays").mkdir()
+    (tmp_path / virtual.HIGHLIGHTS).write_text(json.dumps({"plays": plays}))
+    ctx = SimpleNamespace(game_dir=tmp_path)
+    assert virtual._plays(ctx) == ["a", "b"] and virtual._full(ctx) == ["b"]
+    monkeypatch.setattr(imageview, "angles_for", lambda d: ["wing", "pov_p2", "pov_p1", "pov_p3",
+                                                            "pov_p4"])  # fmt: skip
+    assert tierc._angles_of(tmp_path, "a") == []
+    # the key player's view, then the play's other participant (a lost man's attacker)
+    assert tierc._angles_of(tmp_path, "b") == ["wing", "pov_p2", "pov_p4"]

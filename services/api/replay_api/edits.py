@@ -228,13 +228,15 @@ def _apply_list(gd: Path, ov: dict, rel: str) -> None:
 
 def _apply_score(gd: Path, ov: dict) -> None:
     """score.json = the running score over the live (corrected, undismissed) events plus
-    the user's own score entries: what `GET /games/{id}/score` answers."""
-    user = ov.get("score") or []
+    the user's own score entries, baskets counted for the side the user put the shooter
+    on: what `GET /games/{id}/score` answers."""
+    from .pipeline_adapter import score_timeline, user_teams, with_scoring
+
+    user, teams = ov.get("score") or [], user_teams(ov)
     events_edited = bool((ov.get("patch") or {}).get("events.json"))
     path = gd / "score.json"
-    if not (user or (events_edited and path.is_file())):
+    if not (user or ((events_edited or teams or ov.get("scoring")) and path.is_file())):
         return
-    from .pipeline_adapter import score_timeline  # courtcam's timeline
 
     ev_path = gd / "events.json"
     events = (
@@ -247,6 +249,7 @@ def _apply_score(gd: Path, ov: dict) -> None:
         json.loads(game_p.read_text(encoding="utf-8")).get("sport") if game_p.is_file() else None
     )
     doc = {"schema": "replay.score.v1",
-           "score": score_timeline([e for e in events if not e.get("dismissed")], user, sport)}  # fmt: skip
+           "score": score_timeline(with_scoring([e for e in events if not e.get("dismissed")], ov),
+                                   user, sport, teams)}  # fmt: skip
     if not path.is_file() or json.loads(path.read_text(encoding="utf-8")) != doc:
         _write(path, doc)

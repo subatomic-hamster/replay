@@ -43,8 +43,15 @@ VID = re.compile(r"^v_[0-9a-f]{12}$")
 REEL_DIR = "exports/reel"
 RID = re.compile(r"^r_[0-9a-f]{12}$")
 # what a reel's plan is made from (replay_render.reel): a change to any is a new reel
-REEL_INPUTS = ("game.json", "events.json", "plays.json", "hype.json", "clips.json",
-               "triggers.json")  # fmt: skip
+REEL_INPUTS = (
+    "game.json",
+    "events.json",
+    "plays.json",
+    "hype.json",
+    "clips.json",
+    "triggers.json",
+    "edits.json",
+)  # fmt: skip (edits.json: the best-play pick)
 
 
 class VerticalIn(BaseModel):

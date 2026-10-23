@@ -33,7 +33,7 @@ from pathlib import Path
 from ..dag import Ctx, Stage
 from . import broadcast as bc
 from . import courtcam as cc
-from .virtual import HIGHLIGHTS, _plays, _width
+from .virtual import HIGHLIGHTS, _full, _plays, _width
 
 LABELS = {"wing": "Virtual wing", "courtside": "Virtual courtside",
           "baseline": "Virtual baseline", "pov": "Virtual POV"}  # fmt: skip
@@ -70,17 +70,27 @@ def _lift_available(cfg: dict) -> bool:
 
 def _angles_of(gd: Path, play_id: str) -> list[str]:
     """A play's Tier C angles from its 3D scene (a virtual POV per reconstructed player),
-    else from the highlight (the key player's POV)."""
+    else from the highlight (the key player's POV); none for a `lite` fill play. At most
+    the highlight's `max_pov` POVs: the key player's first, then the play's other
+    participants (a lost man's attacker), then the best-looking."""
     from replay_render.avatars import scene
     from replay_render.avatars.imageview import angles_for
     from replay_render.virtual.replays import play
 
+    h = play(gd, play_id)
+    if h.get("lite"):
+        return []
     has_scene = (gd / scene.SCENE_REL.format(play_id=play_id)).is_file()
-    return angles_for(scene.read(gd, play_id) if has_scene else play(gd, play_id))
+    angles = angles_for(scene.read(gd, play_id) if has_scene else h)
+    povs = [a for a in angles if a.startswith("pov_")]
+    parts = h.get("participants") or []
+    povs = povs[:1] + sorted(povs[1:], key=lambda a: a.removeprefix("pov_") not in parts)
+    fixed = [a for a in angles if not a.startswith("pov_")]
+    return fixed + povs[: h.get("max_pov", len(povs))]
 
 
 def _angles(ctx: Ctx) -> list[str]:
-    return [f"{p}/tierc_{a}" for p in _plays(ctx) for a in _angles_of(ctx.game_dir, p)]
+    return [f"{p}/tierc_{a}" for p in _full(ctx) for a in _angles_of(ctx.game_dir, p)]
 
 
 def run_scene(ctx: Ctx, item: str | None) -> None:
@@ -165,7 +175,7 @@ STAGES = [
         params=("tierc_method", "tierc_kp", "pose_model"),
         after=("highlights", "camera"),
         resource=_resource,
-        fanout=_plays,
+        fanout=_full,
         key_extra=_lift_available,
         default=False,
     ),

@@ -14,8 +14,9 @@
   render the 2.5D scene live (docs/scene-format.md)
 
 None is in the default DAG (the default run must not need render/ or a GPU model):
-`--stages replays` runs the lot. Run-config knobs: `highlights_n` (default: about one
-per minute of game, 3 to 10, spread over it; replays.auto_n),
+`--stages replays` runs the lot. Run-config knobs: `highlights_n` (how many plays at
+least, with top hype plays as fill; default about 1.5 per minute of game, 3 to 10:
+replays.auto_n; the best play, the user's and the story events always count),
 `segment_fake=1` (elliptical masks from the boxes, no model: CPU tests), `sam_model`.
 Synthetic input (`detector=synthetic`) labels every output SYNTHETIC.
 """
@@ -57,11 +58,18 @@ def _video(ctx: Ctx) -> Path:
     return ctx.game_dir / cc.WIDE
 
 
-def _plays(ctx: Ctx) -> list[str]:
+def _plays(ctx: Ctx, full: bool = False) -> list[str]:
+    """The highlights' play ids; `full`: only those with 3D angles (masks, Tier B, the
+    scene, Tier C), not the `lite` fill plays (real-video angles only)."""
     path = ctx.game_dir / HIGHLIGHTS
     if not path.exists():
         return []
-    return [p["play_id"] for p in json.loads(path.read_text(encoding="utf-8"))["plays"]]
+    plays = json.loads(path.read_text(encoding="utf-8"))["plays"]
+    return [p["play_id"] for p in plays if not (full and p.get("lite"))]
+
+
+def _full(ctx: Ctx) -> list[str]:
+    return _plays(ctx, full=True)
 
 
 def _angles(ctx: Ctx, tier: str) -> list[str]:
@@ -181,10 +189,19 @@ STAGES = [
         "highlights",
         _version("replays"),
         run_highlights,
-        inputs=("events.json", "tracks", "game.json", *OPTIONAL),
+        # the best play: the user's pick (edits.json), the game winner, else the top hype
+        inputs=(
+            "events.json",
+            "tracks",
+            "game.json",
+            *OPTIONAL,
+            "hype.json?",
+            "clips.json?",
+            "edits.json?",
+        ),
         outputs=(HIGHLIGHTS,),
         params=("highlights_n", "detector"),
-        after=("game",),
+        after=("game", "hype"),
         resource="io",
         default=False,
     ),
@@ -197,7 +214,7 @@ STAGES = [
         params=("segment_fake", "sam_model"),
         after=("highlights",),
         resource=lambda cfg: "cpu" if _fake(cfg) else "gpu",
-        fanout=_plays,
+        fanout=_full,
         default=False,
     ),
     Stage(
@@ -239,7 +256,7 @@ STAGES = [
         ),
         outputs=("replays/{item}/scene",),
         after=("segment", "plate"),
-        fanout=_plays,
+        fanout=_full,
         default=False,
     ),
     Stage(

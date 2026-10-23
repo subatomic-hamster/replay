@@ -137,6 +137,7 @@ STAGES = [
             "hype.json?",
             "clips.json?",
             "triggers.json?",
+            "edits.json?",  # the user's best-play pick: the reel ends on it
         ),
         outputs=(f"{REEL_DIR}/{{item}}.mp4", f"{REEL_DIR}/{{item}}.plan.json"),
         after=("game",),

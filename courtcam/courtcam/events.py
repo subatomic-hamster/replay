@@ -290,11 +290,39 @@ def _releases(players: list[PlayerTrack], signals: Signals, cfg) -> list[tuple[f
     return sorted(out, key=lambda r: r[0])
 
 
-def _shooter(t_rim, rim, players, rels, cfg) -> tuple[PlayerTrack | None, float]:
-    """Who shot the ball that reached `rim` at `t_rim`, and when they let go: the latest
-    release in range of the rim 0.15-2.5 s before (of two arms-up within 0.5 s, the one
-    farther from the rim: the shooter, not the contest); else whoever stood nearest the
-    rim half a second before."""
+def _hand_on(signals: Signals, players, t: float, xy: np.ndarray, scale: float):
+    """(player, distance in `scale` units) of the wrist nearest pixel `xy` at time `t`."""
+    best = (None, np.inf)
+    for p in players:
+        ts, kp = signals.kp_px(p.player_id, t - 0.05, t + 0.05)
+        if len(kp):
+            k = kp[np.argmin(np.abs(ts - t))][[L_WR, R_WR]]
+            k = k[k[:, 2] >= 0.3]
+            if len(k):
+                d = float(np.linalg.norm(k[:, :2] - xy, axis=1).min()) / scale
+                if d < best[1]:
+                    best = (p, d)
+    return best
+
+
+def _shooter(
+    t_rim, rim, players, rels, cfg, ball=None, signals=None
+) -> tuple[PlayerTrack | None, float]:
+    """Who shot the ball that reached `rim` at `t_rim`, and when they let go.
+
+    With the ball's path into the rim (`ball` = (launch (t, u, v) in rim units, hoop px,
+    rim px), `courtcam.ball`): a wrist within `hand_ball_rim` rim diameters of where that
+    path starts is the shooter's — the ball still in their hands (put-backs, layups,
+    shots in the paint; the defender's hands are a step behind). Otherwise (a jump shot
+    the hoop camera only sees in flight) the latest release in range of the rim 0.15-2.5
+    s before — of two arms-up within 0.5 s, the one farther from the rim: the shooter,
+    not the contest; else whoever stood nearest the rim half a second before."""
+    if ball is not None and ball[0] is not None and signals is not None:
+        (t_seen, u, v), hoop_px, rim_px = ball
+        launch = np.asarray(hoop_px, dtype=float) + np.array([u, v]) * rim_px
+        p, d = _hand_on(signals, players, t_seen, launch, rim_px)
+        if p is not None and d <= cfg.hand_ball_rim:
+            return p, t_seen
     cands = []
     for t, p in rels:
         if t_rim - 2.5 <= t <= t_rim - 0.15 and p.t_start <= t <= p.t_end:
@@ -313,7 +341,7 @@ def _shooter(t_rim, rim, players, rels, cfg) -> tuple[PlayerTrack | None, float]
 
 
 def _ft_spot(rim, profile, calib) -> np.ndarray:
-    tpl = profile.template(calib.get("variant"))
+    tpl = profile.template(calib.get("variant"), calib.get("standard"))
     toward = 1.0 if rim[1] < tpl.size[1] / 2 else -1.0
     return np.array([rim[0], rim[1] + toward * FT_FROM_RIM_M])
 
@@ -358,7 +386,9 @@ def _ball_shots(video, players, profile, calib, signals, labeler, zones) -> list
         shooter, t_rel = _ft_shooter(a.t, rim, players, profile, calib), a.t - FT_FLIGHT_S
         ft = shooter is not None
         if not ft:
-            shooter, t_rel = _shooter(a.t, rim, players, rels, cfg)
+            h = signals.ball["hoops"][a.hoop]
+            seen = (a.launch, h.get("px"), h.get("rim_px")) if h.get("px") else None
+            shooter, t_rel = _shooter(a.t, rim, players, rels, cfg, seen, signals)
         spot = shooter.track.court_at(t_rel) if shooter else None
         court = (round(float(spot[0]), 3), round(float(spot[1]), 3)) if spot is not None else None
         ft = ft or (spot is not None and _free_throw(spot, rim, t_rel, players, profile, calib))
@@ -482,7 +512,7 @@ def _rims(profile: Profile, calib: dict[str, Any]) -> list[tuple[np.ndarray, Any
         return out
     h_inv = calib.get("H_inv")
     try:
-        tpl = profile.template(calib.get("variant"))
+        tpl = profile.template(calib.get("variant"), calib.get("standard"))
     except (ValueError, KeyError):
         return out
     if h_inv is None:
@@ -577,7 +607,7 @@ def _two_pt_zones(profile: Profile, calib: dict[str, Any]) -> list[np.ndarray]:
     """`shot.two_pt_zones` features of this variant's template, as closed polygons."""
     if not profile.shot.two_pt_zones:
         return []
-    tpl = profile.template(calib.get("variant"))
+    tpl = profile.template(calib.get("variant"), calib.get("standard"))
     return [
         np.asarray(tpl.features[name], dtype=np.float32)
         for name in profile.shot.two_pt_zones
@@ -783,7 +813,7 @@ def detect_rallies(
         for hits in fuse_rallies(-np.inf, np.inf, free, cfg):
             if len(hits) >= cfg.audio_only_min_contacts:
                 out += _rally(*bounds(hits), 0.4, hits, players, signals, cfg)
-    tpl = profile.template(calib.get("variant"))
+    tpl = profile.template(calib.get("variant"), calib.get("standard"))
     assign_winners(out, players, tpl, cfg)
     if cfg.one_touch:
         alternate_contacts(out, players, signals, tpl, cfg)
@@ -1005,7 +1035,7 @@ def detect_possessions(
     * else -> `steal`, plus a `turnover` for the old offense.
     Shots before an inbound / a rebound are then labelled made / missed (`label_makes`)."""
     cfg = profile.possession
-    tpl = profile.template(calib.get("variant"))
+    tpl = profile.template(calib.get("variant"), calib.get("standard"))
     rims = np.asarray(tpl.rims or ([tpl.rim] if tpl.rim else []), dtype=np.float64)
     if not len(rims) or not players:
         return []
@@ -1107,6 +1137,84 @@ def label_makes(shots: list[Event], changes: list[Event], window_s: float) -> No
             s.made = False
 
 
+def detect_lost_man(
+    video: Path,
+    players: list[PlayerTrack],
+    profile: Profile,
+    calib: dict[str, Any],
+    *,
+    events: list[Event] | None = None,
+    **_: Any,
+) -> list[Event]:
+    """A defender who stops guarding their man (`lost_man`): for `guard_s` they shadowed
+    an opponent (median separation <= `guard_m`, the defender the nearer of the two to the
+    attacked rim: defenders stand between their man and the basket), then the two were
+    more than `lost_m` apart for at least `lost_s` while the defender was not within
+    `help_m` of another opponent (helping on the ball or switching is not a lapse), the
+    man having cut `cut_m` closer to the rim, in live play (`live_mps`) and not in the
+    `reset_s` after a made basket (`events`: the shots found before). One event per lapse:
+    `player_id` the defender, `opponent_id` the man, `t_key` the widest separation
+    (`max_sep_m`). Needs both teams: a team split of 0/1 per player. Positions more than
+    `margin_m` outside the court are tracking slips and break a run.
+    ponytail: no ball outside the hoop box, so "helping on the ball" is "near another
+    opponent", and a man drifting out for an open three is not a lapse here."""
+    cfg = profile.lost_man
+    tpl = profile.template(calib.get("variant"), calib.get("standard"))
+    rims = np.asarray(tpl.rims or ([tpl.rim] if tpl.rim else []), dtype=np.float64)
+    on = [p for p in players if p.team in (0, 1)]
+    if not len(rims) or len({p.team for p in on}) < 2:
+        return []
+    times = np.arange(0.0, max(p.t_end for p in on) + 1e-9, 1.0 / cfg.rate_hz)
+    _, rim_i, pos = team_geometry(on, rims, times)
+    w, h = float(tpl.size[0]) / 2, float(tpl.size[1])
+    x, y = pos[..., 0], pos[..., 1]
+    out_of_court = (np.abs(x) > w + cfg.margin_m) | (y < -cfg.margin_m) | (y > h + cfg.margin_m)
+    pos[out_of_court] = np.nan
+    to_rim = np.linalg.norm(pos - rims[rim_i][None], axis=2)  # (P, n)
+    _, live = court_activity(on, rate_hz=cfg.rate_hz, smooth_s=1.0, max_speed_mps=8.0)
+    k_guard = max(1, int(round(cfg.guard_s * cfg.rate_hz)))
+    k_back = int(round(cfg.rate_hz))  # a second before the lapse
+    k_lost = max(1, int(round(cfg.lost_s * cfg.rate_hz)))
+    reset = np.zeros(len(times), bool)  # after a basket the ball is taken out: no defense
+    for e in events or []:
+        if e.type == "shot" and e.made:
+            reset |= (times >= e.t_key) & (times <= e.t_key + cfg.reset_s)
+    out: list[Event] = []
+    for i, d in enumerate(on):
+        foes = [j for j, a in enumerate(on) if a.team != d.team]
+        for j in foes:
+            sep = np.linalg.norm(pos[i] - pos[j], axis=1)  # NaN where either is unseen
+            helping = np.zeros(len(times), bool)
+            for k in foes:
+                if k != j:
+                    with np.errstate(invalid="ignore"):
+                        helping |= np.linalg.norm(pos[i] - pos[k], axis=1) <= cfg.help_m
+            with np.errstate(invalid="ignore"):
+                lost = (sep > cfg.lost_m) & ~helping & ~reset
+            for n, m in _runs(np.arange(len(times)), lost, 1):
+                n, m = int(n), int(m)
+                before = slice(n - k_guard, n)
+                if (
+                    m - n + 1 < k_lost
+                    or n < k_guard
+                    or np.isfinite(sep[before]).sum() < k_guard // 2
+                    or not np.nanmedian(sep[before]) <= cfg.guard_m
+                    or not np.nanmedian(to_rim[i, before]) < np.nanmedian(to_rim[j, before])
+                    or np.median(live[n : m + 1]) < cfg.live_mps
+                ):
+                    continue
+                k = n + int(np.nanargmax(sep[n : m + 1]))
+                if not to_rim[j, max(0, n - k_back)] - to_rim[j, k] >= cfg.cut_m:
+                    continue  # the man did not cut toward the rim (or was unseen)
+                conf = min(0.9, 0.4 + 0.1 * (float(sep[k]) - cfg.lost_m))
+                out.append(
+                    _ev("lost_man", float(times[n]), float(times[k]), float(times[m]), conf,
+                        player_id=d.player_id, team=d.team, opponent_id=on[j].player_id,
+                        max_sep_m=round(float(sep[k]), 2))
+                )  # fmt: skip
+    return out
+
+
 # --- volleyball block ------------------------------------------------------------
 
 
@@ -1127,7 +1235,7 @@ def detect_blocks(
     jumping together is an attack met by a block: the side with more jumpers (the later
     apex on a tie) is the block.
     Not validated: no synthetic or labelled real footage has a block yet."""
-    tpl = profile.template(calib.get("variant"))
+    tpl = profile.template(calib.get("variant"), calib.get("standard"))
     if tpl.net_y is None or not players:
         return []
     signals = signals or Signals()
@@ -1210,6 +1318,7 @@ DETECTORS: dict[str, Callable[..., list[Event]]] = {
     "shot": detect_shots,
     "rally": detect_rallies,
     "possession": detect_possessions,
+    "lost_man": detect_lost_man,
     "block": detect_blocks,
     "hype": detect_hype,
 }

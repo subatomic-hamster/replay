@@ -45,7 +45,7 @@ test("TV-37 the game winner: ★ on the line, on its moment, and last in Highlig
   await expect(banner).toBeVisible();
   await expect(banner).toHaveAttribute("data-source", "auto:last_make");
   await expect(banner).toContainText("★ Best play of the game");
-  await expect(page.getByTestId("best-play-sub")).toHaveText("Game winner");
+  await expect(page.getByTestId("best-play-sub")).toHaveText("Last basket");
   await expect
     .poll(async () => (await media(page)).t)
     .toBeGreaterThanOrEqual(11.4);

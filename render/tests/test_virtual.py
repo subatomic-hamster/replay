@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 from replay_render import testing as toy
@@ -250,31 +252,92 @@ def test_ball_parabola_meets_release_and_rim():
     assert np.isnan(b[-1]).all()
 
 
-def test_plays_with_angles_scale_with_the_game_and_spread_over_it():
-    assert [replays.auto_n(s) for s in (60, 241, 3600)] == [3, 4, 10]
-
-    def w(t: float) -> dict:
-        return {"play_id": f"at{t:g}", "t_start": t, "t_end": t + 6}
-
-    ranked = [w(200), w(203), w(210), w(10), w(100)]  # the best plays bunch at the end
-    got = replays._spread(ranked, 3, 240.0)
-    assert [h["play_id"] for h in got] == ["at10", "at100", "at200"]
-    # fewer stretches with a play: the rest come from the ranking, never overlapping
-    assert [h["play_id"] for h in replays._spread(ranked[:3], 3, 240.0)] == ["at200", "at210"]
-
-
-def test_highlights_come_from_events_without_plays(tmp_path):
-    gd = toy.make_toy_game(tmp_path / "g", duration=24.0, video=False)
-    picked, source = replays.select(load_game(gd), n=3)
-    assert source == "events" and [h["play_id"] for h in picked] == ["ev_e1", "ev_e2"]
-    for h in picked:
-        assert h["t_end"] - h["t_start"] <= replays.MAX_S + 1e-6
-        assert h["shot"]["t_rim"] <= h["t_end"]
-    # the replay angles' best play reaches back a whole stretch (its player's views)
-    got, _ = replays.select(load_game(gd), n=3, long_first=True)
-    dur = sorted(h["t_end"] - h["t_start"] for h in got)
-    assert dur[-1] > replays.MAX_S and dur[-1] <= replays.LONG_S + 1e-6
-    assert all(d <= replays.MAX_S + 1e-6 for d in dur[:-1])
-    assert replays._window(30.0, 34.0, 33.0, 240.0, long=True) == (20.5, 34.5)
+def test_plays_with_angles_scale_with_the_game():
+    assert [replays.auto_n(s) for s in (60, 241, 3600)] == [3, 6, 10]
     assert replays._window(30.0, 34.0, 33.0, 240.0) == (30.0, 34.5)
-    assert picked[0]["label"].startswith("Shot · Avery")
+    assert replays._long(30.0, 35.0, 240.0) == (19.0, 35.0)  # at least LONG_MIN_S
+    assert replays._long(5.0, 35.0, 240.0) == (15.0, 35.0)  # at most LONG_MAX_S
+    assert replays._long(30.0, 35.0, 33.0) == (17.0, 33.0)  # inside the video
+
+
+def test_the_game_winner_gets_a_long_window_and_the_shooters_view(tmp_path):
+    gd = toy.make_toy_game(tmp_path / "g", duration=24.0, video=False)
+    game = load_game(gd)
+    b = replays.best_play(game)  # the last make (19 s) is in the final 30 s: the winner
+    assert b["source"] == "auto:last_make" and b["event"]["id"] == "e2"
+    picked, source = replays.select(game, n=3)
+    assert source == "events"
+    h = picked[0]
+    assert (h["play_id"], h["why"], h["primary"], h["lite"]) == ("ev_e2", "best", "p3", False)
+    # 16-20 s, ending 2 s after the make: a whole Player's view of it
+    assert (h["t_start"], h["t_end"]) == (5.0, 21.0) and h["max_pov"] == 2
+    # e1 (9 s) is inside the winner's window: its moment already has angles
+    assert [p["play_id"] for p in picked] == ["ev_e2"]
+    assert h["label"] == "Shot · Player 3 (make)"
+    # a fill play gets real-video angles only
+    assert [a for _, a, _ in replays.angle_files({**h, "lite": True})] == [
+        "wide", "follow:p3", "tight:p3"]  # fmt: skip
+
+
+def test_story_events_the_users_pick_and_hype_fill(tmp_path):
+    gd = toy.make_toy_game(tmp_path / "g", duration=60.0, video=False)
+    game = load_game(gd)
+    assert replays.best_play(game) is None  # no make in the last 30 s, no hype, no pick
+    got, _ = replays.select(game, n=3)
+    assert [(h["play_id"], h["why"], h["lite"]) for h in got] == [
+        ("ev_e1", "fill", True), ("ev_e2", "fill", True)]  # fmt: skip
+    # TEST FIXTURE (synthetic): a lost-man event in the events contract's own keys
+    ev = json.loads((gd / "events.json").read_text())
+    ev["events"].append({"id": "e9", "kind": "lost_man", "t": 40.0, "t0": 36.0, "t1": 44.0,
+                         "player_id": "p2", "opponent_id": "p4", "max_sep_m": 4.1})  # fmt: skip
+    (gd / "events.json").write_text(json.dumps(ev))
+    (gd / "hype.json").write_text(json.dumps({"candidates": [
+        {"t": 20.0, "score": 0.5, "t_start": 15.0, "t_end": 21.0, "play_id": None},
+        {"t": 10.0, "score": 0.9, "t_start": 5.0, "t_end": 11.0, "play_id": None}]}))  # fmt: skip
+    (gd / "edits.json").write_text(json.dumps({"best_play": {
+        "t": 56.0, "t_start": 53.0, "t_end": 57.0, "moment_id": None}}))  # fmt: skip
+    game = load_game(gd)
+    got, _ = replays.select(game, n=3)
+    by = {h["why"]: h for h in got}
+    assert [h["why"] for h in got] == ["fill", "event", "best"]  # in time order
+    assert by["best"]["play_id"] == "best_560" and by["best"]["t_end"] == 58.0
+    lost = by["event"]
+    assert (lost["play_id"], lost["primary"], lost["participants"]) == ("ev_e9", "p2", ["p2", "p4"])
+    assert lost["t_start"] <= 34.0 and lost["t_end"] == 46.0  # the whole separation
+    assert 16.0 <= lost["t_end"] - lost["t_start"] <= 20.0 and lost["max_pov"] == 2
+    assert lost["label"] == "Lost his man · Player 2"
+    assert by["fill"]["play_id"] == "hype_100"  # the top hype play first
+    # the user's pick is the best play; without it, the top hype play is
+    (gd / "edits.json").unlink()
+    b = replays.best_play(load_game(gd))
+    assert (b["source"], b["t"], b["event"]["id"]) == ("auto:hype", 9.0, "e1")
+
+
+def test_only_the_widest_lost_men_get_a_long_view(tmp_path):
+    gd = toy.make_toy_game(tmp_path / "g", duration=120.0, video=False)
+    ev = json.loads((gd / "events.json").read_text())
+    for i, (t, sep) in enumerate([(30.0, 3.0), (60.0, 5.0), (90.0, 4.0)]):  # synthetic
+        ev["events"].append({"id": f"lm{i}", "type": "lost_man", "t_key": t, "t_start": t - 3,
+                             "t_end": t + 3, "player_id": "p2", "opponent_id": "p4",
+                             "max_sep_m": sep})  # fmt: skip
+    (gd / "events.json").write_text(json.dumps(ev))
+    got = {h["play_id"]: h for h in replays.select(load_game(gd), n=3)[0]}
+    span = {k: (round(h["t_end"] - h["t_start"]), h["max_pov"]) for k, h in got.items()
+            if k.startswith("ev_lm")}  # fmt: skip
+    assert span == {"ev_lm0": (8, 1), "ev_lm1": (16, 2), "ev_lm2": (16, 2)}
+
+
+def test_the_reel_ends_on_the_best_play(tmp_path):
+    from replay_render import reel
+
+    gd = toy.make_toy_game(tmp_path / "g", duration=24.0, video=False)
+    (gd / "hype.json").write_text(json.dumps({"candidates": [
+        {"t": 20.0, "score": 0.9, "t_start": 14.0, "t_end": 21.0}]}))  # fmt: skip
+    (gd / "edits.json").write_text(json.dumps({"best_play": {
+        "t": 9.0, "t_start": 5.0, "t_end": 11.0, "moment_id": "e1"}}))  # fmt: skip
+    segs = reel.plan(load_game(gd))
+    assert [s["kind"] for s in segs] == ["top", "best"]  # the earlier play last
+    assert (segs[-1]["tag"], segs[-1]["player_id"]) == ("BEST PLAY", "p1")
+    (gd / "edits.json").unlink()
+    segs = reel.plan(load_game(gd))
+    assert segs[-1]["tag"] == "BEST PLAY" and segs[-1]["t_end"] == 21.0

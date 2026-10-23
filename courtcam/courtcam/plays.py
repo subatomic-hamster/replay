@@ -8,9 +8,10 @@ kinds:
   and starts the next), `member` events join it, an `end` event closes it, and an open
   play older than `max_s` is closed at its last event. `same_team` makes `end` events of
   the other team not count (a defender's block is not the end of my possession);
-  `orphan_end` turns an end event seen while IDLE into a one-event play (a put-back
-  after an offensive rebound). Basketball: possession_change -> shot | turnover;
-  net sports: serve -> point with contacts as members.
+  `orphan_end` (true, or a list of selectors) turns an end event seen while IDLE into
+  a one-event play (a put-back after an offensive rebound). Basketball:
+  possession_change -> shot | turnover; net sports: serve -> point with contacts as
+  members.
 * `sequence` — `count` consecutive `match` events on one team, each within
   `max_step_s` of the previous: volleyball's pass -> set -> attack is three same-side
   contacts.
@@ -63,6 +64,7 @@ def run_machine(events: list[Event], g: dict[str, Any], sport: str) -> list[Play
     start, end = g.get("start", []), g.get("end", [])
     member, roles = g.get("member", []), g.get("roles", {})
     max_s, last_n = float(g.get("max_s", 60.0)), g.get("last_n")
+    orphans = end if g.get("orphan_end") is True else g.get("orphan_end") or []
     out: list[Play] = []
     state, cur, team, t0 = IDLE, [], None, 0.0
 
@@ -97,7 +99,7 @@ def run_machine(events: list[Event], g: dict[str, Any], sport: str) -> list[Play
                 close(e.t_end)
         elif state == OPEN and _match(e, member):
             cur.append(e)
-        elif state == IDLE and g.get("orphan_end") and _match(e, end):
+        elif state == IDLE and g.get("orphan_end") and _match(e, orphans):
             t0, team = e.t_start, e.team
             cur = [e]
             close(e.t_end)
@@ -155,18 +157,26 @@ def build_plays(events: list[Event], grammars: list[dict[str, Any]], sport: str)
 
 
 def score_timeline(
-    events: list[Event], user: Iterable[ScoreEntry] = (), *, to: int | None = None, win_by: int = 1
+    events: list[Event],
+    user: Iterable[ScoreEntry] = (),
+    *,
+    to: int | None = None,
+    win_by: int = 1,
+    teams: dict[str, int] | None = None,
 ) -> list[ScoreEntry]:
     """The running score: every made shot with `points` (basketball) or `point` with a
     `winner_side` adds `points` (unset: 1, rally scoring; 0: a side-out rally the
-    receivers won) to its team; a user entry sets the score outright from its time on,
-    and later automatic entries add on top of it. With `to` (pickup: game to 11 or 21,
-    `profile.scoring`), the entry that wins a game shows the final score and the next
-    basket starts the next game from 0-0."""
+    receivers won) to its team — for a shot, the shooter's side in `teams` (the user's
+    own team corrections) when it is there, else the team the events stage inferred; a
+    user entry sets the score outright from its time on, and later automatic entries add
+    on top of it. With `to` (pickup: game to 11 or 21, `profile.scoring`), the entry that
+    wins a game shows the final score and the next basket starts the next game from 0-0."""
+    teams = teams or {}
     items: list[tuple[float, int, Any]] = []
     for e in events:
-        if e.type == "shot" and e.made and e.points and e.team in (0, 1):
-            items.append((e.t_key, 1, (e.team, e.points, e.id)))
+        team = teams.get(e.player_id or "", e.team) if e.type == "shot" else e.team
+        if e.type == "shot" and e.made and e.points and team in (0, 1):
+            items.append((e.t_key, 1, (team, e.points, e.id)))
         elif e.type == "point" and e.winner_side in (0, 1) and e.points != 0:
             items.append((e.t_key, 1, (e.winner_side, e.points or 1, e.id)))
     for u in user:

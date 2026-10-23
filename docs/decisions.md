@@ -1082,3 +1082,19 @@ Context: the demo needs players boxed while they are visible, on the right team,
 - **Tests:** `test_fill_gaps_takes_the_free_detections_in_a_players_gap`. The MERGE test profile sets `officials: 0`.
 
 **Not done** (research ranking): offline court-metre stitching, which needs identity GT on a kit game first; SAM 2.1 masks for the POV window; jersey OCR (skipped). OSNet re-id weights are research-only, so only an optional extra is allowed.
+
+## D-98 (2026-10-23) — The demo game: trusted court labels, teams from matchups, X signs facing the camera, lost-man plays, pickup scoring, the best play last
+
+Context: the official demo is the owner's own 2v2 pickup game (6:37, local only, never committed). A hand list of 9 moments (`samples/real/final_cut.moments.json`, gitignored, evaluation only) is scored by `scripts/eval_moments.py`. The baseline run missed the teams, 3 of 5 X signs, two shooters and the "lost his man" moment, and put the best play nowhere.
+
+**Changes**
+
+- **Court labels.** Landmarks the user taps are trusted. When their left/right labels are mirrored against the image, `calibrate.orient_labels` swaps them. Court templates per marking standard (`basketball_{half,full}_{nba,ncaa,nfhs}.json`); `fit_standards` picks the best fit and the upload page offers a "Court markings" choice. The pick (`court.standard_pick`) is part of the calibrate cache key.
+- **Teams.** In 2v2 and 3v3 with alike kits, teams come from who guards whom (`identity` `team_source: matchups`). A team set on the phone wins (`team_source: user`, `apply_team_edits`). The phone says "Teams guessed from who guards whom".
+- **X sign.** `triggers.faces_camera` keeps only front-facing samples; low and chest-height X's count when held 0.4 s (`TriggerCfg`). On this game: 5/5 X's, 0 false. Thresholds were tuned on this one video, so treat them as a starting point.
+- **Shots.** The shooter is the player whose wrist is at the start of the ball's path back from the rim (`Arrival.launch`), not the nearest player at the rim. Bounces merge; a make followed by a miss re-arms. 25/25 shot precision on this game; two shooters (49.1 s, 330.8 s) are still wrong.
+- **Lost his man.** `events.detect_lost_man`: a defender drifts away from their matchup while the offence has the ball. New event type `lost_man` and a basketball play; the label reads "Lost his man, <defender>". Saves and forced-outs are not built: the ball is only tracked near the hoop.
+- **Pickup scoring.** `PUT /games/{id}/scoring {mode: standard|pickup}` stores the mode in edits.json; score, stats and the game read it at read time. The phone's Names tab has "Scoring 2s & 3s" / "Scoring 1s & 2s". Result: 11–0, the right winner; it includes one dead-ball shot (213.1 s). There is no general rule yet to drop dead-ball shots.
+- **Best play.** An automatic last make is labelled "Last basket" and the reel tags it "BEST PLAY": we cannot know it won the game. Highlights give it 16–20 s with two Player's views, then the triggered plays and the top two lost-man moments; fill plays use real video only; at most 10. The reel ends on it.
+
+**Result** on the demo game: replays cover 6 of 9 moments and highlights 9 of 9. Replay stages take about 12 min on hfbox.

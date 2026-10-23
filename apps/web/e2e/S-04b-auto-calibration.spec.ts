@@ -232,7 +232,7 @@ test("S-04b the manual walk is still there for anyone who wants it", async ({
   await expect(page.locator('[data-testid^="landmark-"]')).toHaveCount(0);
   await expect(page.getByTestId("autocalib-status")).toContainText("by hand");
   await expect(page.getByTestId("calib-prompt")).toContainText(
-    "Tap the near-left corner",
+    "Tap the corner where the baseline (under the basket) meets the far sideline",
   );
   await expect(page.getByTestId("start-processing")).toBeDisabled();
 
@@ -273,7 +273,7 @@ test("S-04b-7 in Adjust, a selected point can be marked not visible and the rest
 
   // The walk carries on with what the proposal left uncommitted: `rim` is hollow.
   await expect(page.getByTestId("calib-prompt")).toContainText(
-    "Tap the rim — point 5 of 5",
+    "Tap the spot on the floor right under the hoop — point 5 of 5",
   );
   await expect(page.getByTestId("calib-skip")).toBeEnabled();
   // One chip per point: the list way to pick one, whatever the walk is waiting for.

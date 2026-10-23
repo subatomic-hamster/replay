@@ -35,16 +35,19 @@ def test_basketball_possessions_become_plays():
         # the turnover ends team 1's possession, the steal at the same instant starts ours
         ev("e4", "turnover", 12.0, 1),
         ev("e5", "possession_change", 12.0, 0, "d", cause="steal"),
-        ev("e6", "shot", 14.0, 1, "c"),  # the other team's shot does not end our play
-        ev("e7", "shot", 16.0, 0, "d"),
+        # any team's shot ends the play (teams can be wrong; a basket is a natural break)
+        ev("e6", "shot", 14.0, 1, "c"),
+        ev("e7", "shot", 16.0, 0, "d"),  # a put-back: a play of its own
+        ev("e8", "turnover", 18.0, 0),  # a lone turnover is no play
     ]
     plays = build_plays(events, load_profile("basketball").plays, "basketball")
     assert [(p.t_start, p.t_end, p.team) for p in plays] == [
         (1.0, 5.0, 0),
         (7.0, 12.0, 1),
-        (12.0, 16.0, 0),
+        (12.0, 14.0, 0),
+        (16.0, 16.0, 0),
     ]
-    assert [p.id for p in plays] == ["pl_0001", "pl_0002", "pl_0003"]
+    assert [p.id for p in plays] == ["pl_0001", "pl_0002", "pl_0003", "pl_0004"]
     assert [(x.player_id, x.role) for x in plays[0].participants] == [
         ("a", "inbounder"),
         ("b", "shooter"),

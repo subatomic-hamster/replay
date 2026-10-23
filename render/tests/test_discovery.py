@@ -121,14 +121,18 @@ def test_reel_plan_puts_the_users_clips_first(tmp_path):
 
     gd = make_toy_game(tmp_path / "g_toy", duration=24.0, video=False)
     _with_user_clips(gd)
-    segs = reel.plan(load_game(gd))
+    game = load_game(gd)
+    user = [(s["kind"], s["tag"], s["t_start"], s["t_end"]) for s in reel.user_segments(game)]
+    # the X sign found no play: the 8 s before it
+    assert ("clip", "YOUR CLIP (X SIGN)", 15.0, 23.0) in user
+    segs = reel.plan(game)
     got = [(s["kind"], s["tag"], s["t_start"], s["t_end"]) for s in segs]
     assert got[0] == ("clip", "YOUR CLIP (VOICE)", 0.0, 3.0)
-    # the X sign found no play: the 8 s before it; it wins over the 19 s shot it covers
-    assert ("clip", "YOUR CLIP (X SIGN)", 15.0, 23.0) in got
-    assert [s["t_end"] for s in segs if s["kind"] == "top"] == [11.0]  # the 9 s shot
+    # the reel ends on the best play: here the last make (19 s, in the final 30 s), which
+    # wins over the X sign's clip of the same play
+    assert got[-1] == ("best", "BEST PLAY", 15.0, 21.0)
     assert all(reel._overlap(a, b) <= 0.5 for a, b in combinations(segs, 2))
-    assert [s["t_start"] for s in segs] == sorted(s["t_start"] for s in segs)
+    assert [s["t_start"] for s in segs[:-1]] == sorted(s["t_start"] for s in segs[:-1])
 
 
 @needs_ffmpeg

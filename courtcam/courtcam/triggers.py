@@ -2,10 +2,9 @@
 
 Three trigger sources, one resolution rule:
 
-* **gesture** — arms crossed overhead in an X, held >= `gesture_hold_s`, from the 2D
-  keypoints of a tracked player (`poses/`): both wrists above the head and the forearms
-  crossed (the wrists sit on the opposite sides of the elbows, or the forearm segments
-  intersect). The identity is the track's player id.
+* **gesture** — forearms crossed in an X, from the 2D keypoints of a tracked player
+  (`poses/`) facing the camera: overhead (held >= `gesture_hold_s`), or in front of the
+  chin or chest (held >= `gesture_front_hold_s`). The identity is the track's player id.
 * **voice** — ASR over the 16 kHz audio, then a fuzzy match (difflib) of "replay ...
   clip <that | name>" against the roster; the subject is the named player. Who spoke is
   known only through an opt-in voice enrollment (`speaker` callable), never guessed.
@@ -28,8 +27,13 @@ import numpy as np
 
 from .events import (
     L_EL,
+    L_HIP,
+    L_SH,
     L_WR,
+    NOSE,
     R_EL,
+    R_HIP,
+    R_SH,
     R_WR,
     Signals,
     arms_up,
@@ -72,6 +76,64 @@ def gesture_samples(kp: np.ndarray, cfg: TriggerCfg) -> tuple[np.ndarray, np.nda
     return crossed, together
 
 
+L_EYE, R_EYE = 1, 2
+
+
+def faces_camera(kp: np.ndarray, min_score: float) -> np.ndarray:
+    """(n,) bool: the nose or an eye is scored, so the player faces the camera (front or
+    side-on). The X is shown to the camera; from behind, hands clasped on the head are an
+    overhead X in 2D (YOLO pose on the owner's game: nose and eyes 0.04-0.31 from behind,
+    0.86-0.99 on every real X)."""
+    if not len(kp):
+        return np.zeros(0, bool)
+    return kp[:, [NOSE, L_EYE, R_EYE], 2].max(axis=1) >= min_score
+
+
+def front_samples(kp: np.ndarray, cfg: TriggerCfg) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(low, high, chest): (n,) bools per pose sample (`kp` (n, 17, 3) px), lengths in
+    torsos.
+
+    The X's shape at any height: touching wrists (<= `gesture_gap_max` apart) no more
+    than `gesture_low_min` below the shoulders, each above its own elbow, elbows lifted
+    (no more than `gesture_low_elbow` below the shoulders) and wider than the wrists by
+    `gesture_conv_min` (the forearms converge). A pose model labels wrists by side, so the
+    crossing itself shows up as two wrists touching. `low` is that shape below the
+    overhead line (`gesture_up_min`: in front of the chin or chest), `high` above it.
+    Hands together at the chin with the elbows down by the sides is a clap or a hand to
+    the mouth, not an X (real footage: elbows 0.36-0.49 below the shoulders there,
+    0.14-0.33 on real chest X's); a ball held at the chin keeps the wrists a ball apart.
+
+    `chest`: wrists touching between chest height (the lower wrist no more than
+    `gesture_chest_min` below the shoulders) and the overhead line, any elbows: arms
+    crossed in front of the chest, maybe on their way up to an overhead X."""
+    if not len(kp):
+        z = np.zeros(0, bool)
+        return z, z, z
+    ok = (kp[:, [L_SH, R_SH, L_EL, R_EL, L_WR, R_WR, L_HIP, R_HIP], 2] >= cfg.gesture_min_kp).all(
+        axis=1
+    )
+    sh_y = kp[:, [L_SH, R_SH], 1].mean(axis=1)
+    torso = kp[:, [L_HIP, R_HIP], 1].mean(axis=1) - sh_y
+    ok &= torso > 0
+    torso = np.where(ok, torso, 1.0)
+    up = (sh_y - kp[:, [L_WR, R_WR], 1].max(axis=1)) / torso  # the lower wrist
+    # in 2D: the wrists of an X meet at the crossing, a throw's follow-through passes
+    # them by at different heights
+    gap = np.hypot(*(kp[:, L_WR, :2] - kp[:, R_WR, :2]).T) / torso
+    touch = ok & (gap <= cfg.gesture_gap_max) & (up >= cfg.gesture_chest_min)
+    elbow_up = (sh_y - kp[:, [L_EL, R_EL], 1].mean(axis=1)) / torso
+    rise = np.minimum(kp[:, L_EL, 1] - kp[:, L_WR, 1], kp[:, R_EL, 1] - kp[:, R_WR, 1])
+    shape = (
+        touch
+        & (up >= cfg.gesture_low_min)
+        & (rise > 0)
+        & (elbow_up >= cfg.gesture_low_elbow)
+        & (elbow_spread(kp) - gap >= cfg.gesture_conv_min)
+    )
+    high = up >= cfg.gesture_up_min
+    return shape & ~high, shape & high, touch & ~high
+
+
 def held(ts: np.ndarray, hit: np.ndarray, hold: float, vote: float, max_gap: float):
     """[(first, last)] hit times of every hold: a window of `hold` s in which at least
     `vote` of the pose samples hit. Overlapping windows (or ones `max_gap` apart) merge.
@@ -103,18 +165,28 @@ def _span(ts: np.ndarray, up: np.ndarray, a: float, b: float) -> float:
 
 
 def detect_gestures(signals: Signals, cfg: TriggerCfg) -> list[Trigger]:
-    """One trigger per held X: t_start = first X sample, t = last one.
+    """One trigger per held X: t_start = first X sample, t = last one. Only a player
+    facing the camera (`faces_camera`) counts.
 
-    A hold of uncrossed hands-together samples counts only if the arms stay overhead for
-    `gesture_together_min_s` around it: the shot detector calls arms up for up to
-    `shot.release_max_s` a release, and a jump shot with the ball overhead is exactly hands
-    together, elbows out (GT-pose synthetic shots hold it 0.5-0.8 s; the X is held ~1 s)."""
+    A hold of uncrossed hands-together samples overhead counts only if the arms stay
+    overhead for `gesture_together_min_s` around it: the shot detector calls arms up for
+    up to `shot.release_max_s` a release, and a jump shot or a catch with the ball
+    overhead is exactly hands together, elbows out (GT-pose synthetic shots hold it
+    0.5-0.8 s, a real catch and set point 0.5 s; the X is held ~1 s). The front-on X
+    (`front_samples`) adds two forms no ball pose takes, each held `gesture_front_hold_s`
+    (real ones last 0.4-0.6 s): crossed in front of the chin or chest with the elbows
+    lifted (`low`), and crossed at the chest (`chest`), then raised overhead (`high`) or
+    the reverse, both parts held within one hold (a shot's gather holds the ball, wrists
+    apart, and is over in a sample or two)."""
     out: list[Trigger] = []
+    short = (cfg.gesture_front_hold_s, cfg.gesture_vote, cfg.gesture_max_gap_s)
     for pid in sorted(signals.poses):
         ts, kp = signals.kp_px(pid, -np.inf, np.inf)
         if not len(ts):
             continue
-        crossed, together = gesture_samples(kp, cfg)
+        face = faces_camera(kp, cfg.gesture_face_min)
+        crossed, together = (s & face for s in gesture_samples(kp, cfg))
+        low, high, chest = (s & face for s in front_samples(kp, cfg))
         args = (cfg.gesture_hold_s, cfg.gesture_vote, cfg.gesture_max_gap_s)
         # how long the arms stay overhead around the hold (an unscored sample is no
         # evidence they came down); the hands may drift apart now and then meanwhile
@@ -125,6 +197,12 @@ def detect_gestures(signals: Signals, cfg: TriggerCfg) -> list[Trigger]:
             for a, b in held(ts, crossed | together, *args)
             if _span(ts, up, a, b) >= cfg.gesture_together_min_s - 1e-6
         ]
+        holds += held(ts, low, *short)
+        over = crossed | together | high
+        for a, b in held(ts, over | chest, *short):
+            m = (ts >= a) & (ts <= b)
+            if held(ts[m], over[m], *short) and held(ts[m], chest[m], *short):
+                holds.append((a, b))
         merged: list[list[float]] = []
         for a, b in sorted(holds):
             if merged and a <= merged[-1][1] + cfg.gesture_max_gap_s:

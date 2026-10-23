@@ -18,9 +18,10 @@ at `RATE_HZ`:
   a block, a steal. A quiet gym with a good camera is all plays; a loud one adds the
   cheer on top. Nottingham Q1 (CC BY): top-5 precision 0.2 -> 0.4 (docs/decisions.md D-90).
 
-Candidates are local maxima of the fused series, at least `MIN_GAP_S` apart, each mapped
-to the play that ended just before the peak (the cheer follows the play), else a window
-around the peak. Heuristic, uncalibrated: weights are reasoned, not fitted.
+Candidates are local maxima of the fused series, at least `MIN_GAP_S` apart, each a
+window around the detected event the peak follows (the best in the `PLAY_LOOKBACK_S`
+before it: the cheer follows the play), else the play that ended just before the peak,
+else a window around the peak. Heuristic, uncalibrated: weights are reasoned, not fitted.
 """
 
 from __future__ import annotations
@@ -39,7 +40,9 @@ WEIGHTS = {"audio": 0.85, "arms_up": 0.6, "speed": 0.35, "plays": 0.9}
 # D-90: what the detected play is worth on its own, by points scored (a free throw is
 # rarely a highlight), and a block or steal; held for PLAY_HOLD_S from the play's key time
 PLAY_VALUE = {1: 0.25, 2: 0.7, 3: 0.9}
-NOTABLE_VALUE = {"block": 0.7, "steal": 0.6}
+# the story events (a defender losing his man, a save, a forced out-of-bounds): reasoned,
+# not fitted; a lost man is worth a look like a steal, a save or a forced out a little less
+NOTABLE_VALUE = {"block": 0.7, "steal": 0.6, "lost_man": 0.6, "save": 0.5, "forced_out": 0.5}
 PLAY_HOLD_S = 3.0
 UNKNOWN_SHARE = 0.5  # a shot of unknown outcome: half a make's value (D-92)
 PLAY_FIRST = 0.3  # candidates with a play worth this much rank first (not a free throw)
@@ -48,6 +51,7 @@ CANDIDATE_MIN = 0.4
 MIN_GAP_S = 8.0
 MAX_CANDIDATES = 12
 PLAY_LOOKBACK_S = 8.0  # a cheer this long after a play ends still belongs to it
+EVENT_LEAD_S, EVENT_TAIL_S = 6.0, 2.0  # a candidate around its event: the build-up, the ball
 REL = "hype.json"
 
 
@@ -173,22 +177,24 @@ def play_score(grid: np.ndarray, events: list[dict], outside: int = 3) -> np.nda
     pickup game's 1-point basket is an inside make, not a free throw."""
     out = np.zeros(len(grid))
     for e in events:
-        if e.get("dismissed"):
-            continue
-        kind = e.get("type")
-        if kind == "shot" and e.get("made") is not False:
-            pts = int(e.get("points") or 0)
-            v = PLAY_VALUE[1 if e.get("cause") == "free_throw" else 3 if pts >= outside else 2]
-            if e.get("made") is None:
-                v *= UNKNOWN_SHARE
-        elif kind in NOTABLE_VALUE:
-            v = NOTABLE_VALUE[kind]
-        else:
-            continue
-        tk = float(e.get("t_key") or 0.0)
-        m = (grid >= tk) & (grid <= tk + PLAY_HOLD_S)
-        out[m] = np.maximum(out[m], v)
+        v = play_value(e, outside)
+        if v:
+            tk = float(e.get("t_key") or 0.0)
+            m = (grid >= tk) & (grid <= tk + PLAY_HOLD_S)
+            out[m] = np.maximum(out[m], v)
     return out
+
+
+def play_value(e: dict, outside: int = 3) -> float:
+    """What one detected event is worth on its own (`play_score`); 0 for the rest."""
+    kind = e.get("type")
+    if e.get("dismissed") or e.get("t_key") is None:
+        return 0.0
+    if kind == "shot" and e.get("made") is not False:
+        pts = int(e.get("points") or 0)
+        v = PLAY_VALUE[1 if e.get("cause") == "free_throw" else 3 if pts >= outside else 2]
+        return v * UNKNOWN_SHARE if e.get("made") is None else v
+    return NOTABLE_VALUE.get(kind, 0.0)
 
 
 def candidates(t: np.ndarray, hype: np.ndarray, comps: dict, game: Game) -> list[dict]:
@@ -202,13 +208,26 @@ def candidates(t: np.ndarray, hype: np.ndarray, comps: dict, game: Game) -> list
         if len(taken) >= MAX_CANDIDATES:
             break
     plays = sorted(game.plays, key=lambda p: p["t_end"])
+    outside = _outside_points(game)
+    keyed = [e for e in game.events if play_value(e, outside) > 0]
     out = []
     for i in taken:
         tp = float(t[i])
-        play = next(
-            (p for p in reversed(plays) if tp - PLAY_LOOKBACK_S <= p["t_end"] <= tp + 1.0), None
-        )
-        t0, t1 = (play["t_start"], play["t_end"] + 1.0) if play else (tp - 6.0, tp + 2.0)
+        # the detected play the cheer follows: its window is around that make / block /
+        # lost man (a whole possession can run 30 s and end long after it)
+        near = [e for e in keyed if tp - PLAY_LOOKBACK_S <= float(e["t_key"]) <= tp + 1.0]
+        ev = max(near, key=lambda e: (play_value(e, outside), float(e["t_key"])), default=None)
+        if ev:
+            tk = float(ev["t_key"])
+            t0 = min(float(ev.get("t_start", tk)), tk - EVENT_LEAD_S)
+            t1 = max(float(ev.get("t_end", tk)), tk + EVENT_TAIL_S)
+            play = next((p for p in plays if ev.get("id") in (p.get("event_ids") or [])), None)
+        else:
+            play = next(
+                (p for p in reversed(plays) if tp - PLAY_LOOKBACK_S <= p["t_end"] <= tp + 1.0),
+                None,
+            )
+            t0, t1 = (play["t_start"], play["t_end"] + 1.0) if play else (tp - 6.0, tp + 2.0)
         out.append(
             {
                 "t": round(tp, 2),

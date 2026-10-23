@@ -71,13 +71,16 @@ test("S-04/S-06 five landmarks give a reprojection error and unlock Start", asyn
   await expect(page.getByTestId("calib-error")).toContainText(
     "need 5 more points",
   );
+  // A side-on court in plain words: ends by what is there, sides by the camera.
   await expect(page.getByTestId("calib-prompt")).toContainText(
-    "Tap the near-left corner",
+    "Tap the corner where the baseline (under the basket) meets the far sideline",
   );
 
   await clickLandmarks(page, 4);
   await expect(page.getByTestId("start-processing")).toBeDisabled();
-  await expect(page.getByTestId("calib-prompt")).toContainText("rim");
+  await expect(page.getByTestId("calib-prompt")).toContainText(
+    "spot on the floor right under the hoop",
+  );
 
   await clickLandmarks(page, 1);
   await expect(page.locator('[data-testid^="landmark-"]')).toHaveCount(5);
@@ -194,6 +197,41 @@ test("S-05 the full-court variant is carried in the calibration body", async ({
   );
   const body = calib.at(-1)!.body as { court_variant: string };
   expect(body.court_variant).toBe("full");
+});
+
+test("S-05c court markings: not sure sends none, a pick is carried and re-checks the fit", async ({
+  page,
+}) => {
+  await createAndUpload(page);
+  const pick = page.getByTestId("court-standard");
+  await expect(pick).toHaveValue("");
+  await expect(pick.locator("option")).toHaveText([
+    "Court markings: not sure",
+    "International (FIBA)",
+    "NBA",
+    "US college",
+    "US high school",
+  ]);
+  await clickLandmarks(page, 5);
+  await expect(page.getByTestId("calib-error")).toHaveAttribute(
+    "data-ok",
+    "true",
+  );
+  const calls = async () =>
+    (await mockCalls(page)).filter((c) => c.path.endsWith("/calibration"));
+  expect((await calls()).at(-1)?.body).not.toHaveProperty("standard");
+
+  // picking after the walk re-validates with the markings (US high school: 12 ft lane)
+  await pick.selectOption("nfhs");
+  await expect.poll(async () => (await calls()).length).toBe(2);
+  expect((await calls()).at(-1)?.body).toMatchObject({
+    court_variant: "half",
+    standard: "nfhs",
+  });
+
+  // a net sport has no markings to pick
+  await createAndUpload(page, "pickleball");
+  await expect(page.getByTestId("court-standard")).toHaveCount(0);
 });
 
 test("S-04 undo removes the last landmark and reshuts the gate", async ({

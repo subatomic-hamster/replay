@@ -58,6 +58,9 @@ class Arrival:
     made: bool | None
     confidence: float
     samples: int  # ball samples at the rim
+    # (t, u, v) of the first sample of the ball's own path into the rim (`_path_back`):
+    # where the hoop camera first saw it, e.g. in the shooter's hands on a put-back
+    launch: tuple[float, float, float] | None = None
 
 
 def projector(calib: dict[str, Any], profile: Profile) -> Callable[[np.ndarray], Any]:
@@ -92,7 +95,7 @@ def hoops(calib: dict[str, Any], profile: Profile) -> list[Hoop]:
             for h in calib["hoops_px"]
         ]
     try:
-        tpl = profile.template(calib.get("variant"))
+        tpl = profile.template(calib.get("variant"), calib.get("standard"))
     except (ValueError, KeyError):
         return []
     rims = tpl.rims or ([tpl.rim] if tpl.rim else [])
@@ -379,6 +382,13 @@ def _made(p: np.ndarray, cfg: BallCfg) -> bool | None:
     times, counts = np.unique(t[near], return_counts=True)
     busy = set(times[counts > cfg.cross_max_blobs].tolist())
     unsure = False
+
+    def back_up(tc: float) -> bool:
+        """The ball over the rim again soon after the 'make': it fell off the near side
+        and was put back up (a make leaves through the net for the floor)."""
+        m = (t > tc + 0.4) & (t <= tc + cfg.back_s) & (np.abs(u) <= 1.0) & (v <= 0.0)
+        return int(m.sum()) >= 3
+
     for i in np.nonzero(v <= cfg.plane_v)[0]:
         if t[i] in busy:
             continue
@@ -394,7 +404,7 @@ def _made(p: np.ndarray, cfg: BallCfg) -> bool | None:
             low = (t > t[j]) & (t <= t[j] + cfg.drop_s)
             low &= v >= max(v[j], cfg.plane_v + 0.4) + cfg.fall_v
             low &= np.abs(u - uc) <= 0.4 + 0.6 * (v - cfg.plane_v)
-            if not low.any():
+            if not low.any() or back_up(t[j]):
                 continue
             if abs(uc) <= cfg.cross_u and t[j] - t[i] <= cfg.cross_dt:
                 return True
@@ -402,10 +412,34 @@ def _made(p: np.ndarray, cfg: BallCfg) -> bool | None:
     return None if unsure else False
 
 
+def _path_back(p: np.ndarray, t: float, u: float, v: float, cfg: BallCfg) -> np.ndarray:
+    """The ball's own path into the sample (t, u, v), earliest first: back in time, the
+    nearest sample at most `path_step` rim diameters per frame away, across gaps up to
+    `path_gap_s`. Other blobs in the box (hands, heads, a walker behind the hoop) are
+    left out unless the ball passes right by them."""
+    out = [(t, u, v)]
+    while True:
+        c = p[(p[:, 0] < out[-1][0] - 1e-3) & (p[:, 0] >= out[-1][0] - cfg.path_gap_s)]
+        if not len(c):
+            break
+        frames = np.maximum(1.0, (out[-1][0] - c[:, 0]) * 30.0)
+        step = np.hypot(c[:, 1] - out[-1][1], c[:, 2] - out[-1][2]) / frames
+        k = int(np.argmin(step))
+        if step[k] > cfg.path_step:
+            break
+        out.append((float(c[k, 0]), float(c[k, 1]), float(c[k, 2])))
+    return np.asarray(out[::-1])
+
+
 def arrivals(doc: dict[str, Any], cfg: BallCfg) -> list[Arrival]:
     """One arrival per visit of the ball to a rim (samples within `rim_box` of it, gaps
-    under `visit_gap_s` bridged), at least `min_samples` long. `made` from `_made` over
-    the visit and the `after_s` that follow; the confidence grows with the samples seen."""
+    under `visit_gap_s` bridged), at least `min_samples` long. It starts at the first
+    sample whose path (`_path_back`) came at least `descent_v` down to the rim or up to
+    it (a put-back): a blob that only moved across, like a head on a walkway behind the
+    hoop, is not the ball. A path that leads back into the last visit is the same shot
+    bouncing (merged). `made` from `_made` over the visit and the `after_s` that follow,
+    but no make when the ball is back at that rim within `rearm_s`: after a basket the
+    ball is taken out, so that was a rebound. Confidence grows with the samples seen."""
     out: list[Arrival] = []
     u_max, v_lo, v_hi = cfg.rim_box
     for k, h in enumerate(doc.get("hoops") or []):
@@ -421,15 +455,20 @@ def arrivals(doc: dict[str, Any], cfg: BallCfg) -> list[Arrival]:
                 visits[-1][2] += 1
             else:
                 visits.append([t, t, 1])
+        mine: list[Arrival] = []
         for t0, t1, n in visits:
             if n < cfg.min_samples:
                 continue
-            # a shot comes down to the rim; a pass at hoop height goes across it
-            first = near[near[:, 0] >= t0][0]
-            before = p[(p[:, 0] >= t0 - cfg.descent_s) & (p[:, 0] < t0)]
-            fell = (before[:, 2] <= first[2] - cfg.descent_v).any() if len(before) else False
-            if not fell and n < cfg.settle_samples:
+            path = None
+            for s in near[(near[:, 0] >= t0) & (near[:, 0] <= t1)]:
+                cand = _path_back(p, *s[:3], cfg)
+                if np.ptp(cand[:, 2]) >= cfg.descent_v:
+                    path = cand
+                    break
+            if path is None:
                 continue
+            t0 = float(path[-1][0])
+            n = int(((near[:, 0] >= t0) & (near[:, 0] <= t1)).sum())
             # a body under the rim: many blobs at once in much of the visit (3x3 proxy
             # 11.0 s, 32% of frames; real visits up to 11%) (D-92)
             w = p[(p[:, 0] >= t0) & (p[:, 0] <= t1)]
@@ -437,10 +476,19 @@ def arrivals(doc: dict[str, Any], cfg: BallCfg) -> list[Arrival]:
             _, per_frame = np.unique(w[:, 0], return_counts=True)
             if np.mean(per_frame > cfg.cross_max_blobs) > cfg.visit_max_busy:
                 continue
+            launch = tuple(round(float(x), 3) for x in path[0])
+            if mine and path[0][0] <= mine[-1].t_end + 1e-3:  # the last shot, bouncing
+                last = mine.pop()
+                t0, n, launch = last.t, n + last.samples, last.launch
             seen = p[(p[:, 0] >= t0 - 0.2) & (p[:, 0] <= t1 + cfg.after_s)]
             made = _made(seen, cfg)
             conf = float(min(0.95, 0.35 + 0.04 * n))
-            out.append(Arrival(k, round(t0, 3), round(t1, 3), made, round(conf, 3), int(n)))
+            mine.append(Arrival(k, round(t0, 3), round(t1, 3), made, round(conf, 3), int(n),
+                                launch))  # fmt: skip
+        for a, b in zip(mine, mine[1:], strict=False):
+            if a.made and b.t - a.t_end < cfg.rearm_s:
+                a.made = False
+        out += mine
     out.sort(key=lambda a: a.t)
     # one ball: visits to two rims at once are something else moving at one of them
     # (a person, a flicker); keep the better-seen one

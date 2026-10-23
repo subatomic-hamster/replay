@@ -12,7 +12,7 @@
 // on the server, then a link to save or share it.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isExpired, phoneApi, phoneToken, type PhoneApi } from "../api/phone";
-import type { Game, Moment, Player } from "../api/types";
+import type { Game, Moment, Player, ScoringMode } from "../api/types";
 import { Avatar } from "../components/Avatar";
 import { setQuery, useLocation } from "../router";
 import { useAsync } from "../ui";
@@ -778,11 +778,49 @@ function TagJob({ api, game, moments, fail }: JobProps) {
     }
   };
 
+  // What a basket is worth: the score on the TV recounts from the same baskets
+  const [scoring, setScoring] = useState(game.scoring ?? "standard");
+  const pickScoring = async (mode: ScoringMode) => {
+    setBusy(true);
+    setNote("");
+    try {
+      setScoring(await api.setScoring(game.id, mode));
+      setNote(`Scoring ${mode === "pickup" ? "1s & 2s" : "2s & 3s"}.`);
+    } catch (e) {
+      setNote(`Not saved: ${fail(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!players.length)
     return <p data-testid="tag-empty">No players found in this game yet.</p>;
   return (
     <>
+      {game.sport === "basketball" ? (
+        <div className="segmented" role="radiogroup" aria-label="Scoring">
+          {(["standard", "pickup"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={scoring === mode}
+              data-testid="scoring-pick"
+              data-mode={mode}
+              disabled={busy}
+              onClick={() => void pickScoring(mode)}
+            >
+              {mode === "pickup" ? "Scoring 1s & 2s" : "Scoring 2s & 3s"}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <p className="dim">Pick a player, then say who it is.</p>
+      {players.some((p) => p.team_source === "matchups") ? (
+        <p className="dim" data-testid="tag-teams-guessed">
+          Teams guessed from who guards whom. Tap a player to fix a side.
+        </p>
+      ) : null}
       {note ? (
         <p role="status" data-testid="tag-note">
           {note}

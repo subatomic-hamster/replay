@@ -143,6 +143,9 @@ EventType = Literal[
     "contact",
     "block",
     "hype",
+    # a defender who stopped guarding their man (`events.detect_lost_man`); extra keys
+    # `opponent_id` (the man) and `max_sep_m` (their widest separation)
+    "lost_man",
 ]
 EventSource = Literal["heuristic", "vlm", "user"]
 

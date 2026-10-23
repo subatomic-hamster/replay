@@ -139,6 +139,20 @@ def test_calibration_stores_court(client: TestClient):
     assert err is None or err < 5.0
     court = client.get(f"/games/{gid}").json()["court"]
     assert court["landmarks_px"]["rim"] == [641.1, 583.2]
+    assert court["standard_pick"] is None  # no pick sent: "not sure"
+
+
+def test_calibration_court_markings_pick(client: TestClient):
+    """The phone's "Court markings" pick is kept apart from the standard the fit used."""
+    gid = new_game(client)
+    r = client.post(f"/games/{gid}/calibration", json={**CALIB, "standard": "nba"})
+    assert r.status_code == 200, r.text
+    court = client.get(f"/games/{gid}").json()["court"]
+    assert court["standard_pick"] == "nba" and court["standard"] == "nba"
+    r = client.post(f"/games/{gid}/calibration", json={**CALIB, "standard": "wnba-ish"})
+    assert r.status_code == 400 and "standard" in r.json()["detail"]
+    r = client.post(f"/games/{gid}/calibration", json={**CALIB, "standard": ""})
+    assert r.status_code == 200 and r.json()["court"]["standard_pick"] is None
 
 
 def test_process_requires_upload_and_calibration(client: TestClient):

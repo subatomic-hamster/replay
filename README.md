@@ -1,5 +1,9 @@
 # Replay
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+Replay is open source under the [MIT License](LICENSE).
+
 Film a pickup court game with one phone on a tripod, upload it from the phone, and watch it on Fire TV like a broadcast.
 
 ![Following a player on Fire TV](docs/media/tv-follow.gif)
@@ -137,4 +141,4 @@ The full runbook, including bootstrap, secrets and outputs, is in [docs/aws-depl
 
 ## License
 
-`courtcam/` is MIT licensed. The licenses of the third-party models and dependencies Replay uses are listed in [docs/licenses.md](docs/licenses.md).
+Replay is released under the [MIT License](LICENSE), and so is `courtcam/`. Third-party models and dependencies keep their own licenses, listed in [docs/licenses.md](docs/licenses.md).

@@ -31,10 +31,11 @@ test("TV-22 Home → Highlights plays the top plays back to back with an indicat
   await expect
     .poll(async () => (await media(page)).t, { timeout: 15_000 })
     .toBeGreaterThan(0.5);
-  // 4.5 s: the first play ends, the second starts at 11.5 s.
+  // 4.5 s: the first play ends, the second (the best play) starts at 11.5 s.
   await expect(ind).toHaveText("Highlights · 2 of 2", { timeout: 10_000 });
   expect((await media(page)).t).toBeGreaterThanOrEqual(11.4);
-  // After the last play (15.5 s) the full game takes over, paused, transport up.
+  // After the last play (the best play, 17 s, joined with the 14.5 s one: 11.5–18.5 s,
+  // TV-37) the full game takes over, paused, transport up.
   await expect(ind).toHaveCount(0, { timeout: 10_000 });
   await expect(page.getByTestId("watch")).toHaveAttribute("data-way", "full");
   await expect.poll(async () => (await media(page)).paused).toBe(true);

@@ -13,8 +13,9 @@
 // the playhead, and playback resumes at the stop after the release. Rew/FF scrub at 2/4/8/16×,
 // Select or Play commits. Prev/Next jump moments (or a reel's plays).
 //
-// Ways to watch: Full game, Highlights (the top hype candidates, ≤13, back to back, or a
-// highlight query's clips) and Condensed (the condensed rendition, or the rallies back to
+// Ways to watch: Full game, Highlights (the top hype candidates, ≤13, back to back, ending
+// on the game's best play under a "★ Best play of the game" banner; or a highlight
+// query's clips) and Condensed (the condensed rendition, or the rallies back to
 // back while it renders). Everything polls every 10 s while the game is still processing,
 // so moments arrive on the line and Do more's tiles light up.
 //
@@ -39,6 +40,7 @@ import {
   broadcastOf,
   captionAt,
   commentaryLines,
+  endOnBest,
   rallyAtCondensed,
   rallyOrder,
   type Hype,
@@ -125,6 +127,8 @@ interface Angle {
 interface Seg {
   t_start: number;
   t_end: number;
+  /** the game's best play (the Highlights reel ends on it, under its banner) */
+  best?: boolean;
 }
 /** A way to watch played as back-to-back segments of the game. */
 interface Reel {
@@ -279,6 +283,16 @@ export function Watch({
     () => (extras ? api.getHype(gameId) : Promise.resolve(null)),
     [gameId, extras],
   );
+  // The game's best play (the user's pick, else the game winner, else the top hype play):
+  // a ★ on the line, a chip on its moment, and the Highlights reel ends on it.
+  const { data: bestDoc, error: bestError } = useAsync(
+    () =>
+      extras
+        ? api.getBestPlay(gameId).then((b) => ({ b }))
+        : Promise.resolve(null),
+    [gameId, extras],
+  );
+  const best = bestDoc?.b ?? null;
   // The game re-read while it is processing: readiness, features, the storyboard URL.
   const [live, setLive] = useState<Game | null>(null);
   const info = live ?? game;
@@ -595,8 +609,9 @@ export function Watch({
         }
         return;
       }
-      const play = (name: string, segs: Seg[]) => {
-        const list = mergeSegs(segs);
+      // `inOrder`: the segments are already the reel's (Highlights ends on the best play)
+      const play = (name: string, segs: Seg[], inOrder = false) => {
+        const list = inOrder ? segs : mergeSegs(segs);
         if (!list.length) {
           setWay("full");
           setReel(null);
@@ -614,7 +629,7 @@ export function Watch({
           );
           return;
         }
-        play("Highlights", topReel(hype));
+        play("Highlights", endOnBest(topReel(hype), best), true);
         return;
       }
       // Condensed: the rendition when it exists; else the rallies back to back, and ask
@@ -640,17 +655,19 @@ export function Watch({
         () => play("Condensed", []),
       );
     },
-    [condensedSrc, rallies, handle, goTo, gameId, q, hype],
+    [condensedSrc, rallies, handle, goTo, gameId, q, hype, best],
   );
 
-  // The way the route asked for, once its data is in (hype answers or fails).
+  // The way the route asked for, once its data is in (hype and the best play answer or
+  // fail).
   const started = useRef(false);
   useEffect(() => {
     if (started.current || !game || !handle) return;
     if (way === "highlights" && !q && !hype && !hypeError) return;
+    if (way === "highlights" && !q && !bestDoc && !bestError) return;
     started.current = true;
     if (way !== "full") startWay(way);
-  }, [game, handle, way, q, hype, hypeError, startWay]);
+  }, [game, handle, way, q, hype, hypeError, bestDoc, bestError, startWay]);
 
   // A reel plays its segments back to back, then hands over to the full game.
   useEffect(() => {
@@ -674,7 +691,12 @@ export function Watch({
   const inReel = useCallback(
     (to: number): number => {
       if (!reel) return to;
-      const i = reel.segs.findIndex((s) => to < s.t_end);
+      // the segment `to` is in (the best play comes last, out of time order), else the
+      // next one
+      const inside = reel.segs.findIndex(
+        (s) => s.t_start <= to && to < s.t_end,
+      );
+      const i = inside >= 0 ? inside : reel.segs.findIndex((s) => to < s.t_end);
       if (i < 0) {
         setReel(null);
         setWay("full");
@@ -1328,7 +1350,7 @@ export function Watch({
       color.accent
     );
   };
-  const nHype = topReel(hype).length;
+  const nHype = endOnBest(topReel(hype), best).length;
   const hasRallies =
     (rallies?.n ?? 0) > 0 || rallies?.condensed.status === "done";
   const wayTiles: Tile[] = [
@@ -1633,11 +1655,30 @@ export function Watch({
             seek={seekV}
             storyboard={condensedSrc ? null : storyboard}
             playing={seekV ? seekV.resume : playing}
+            best={condensedSrc ? null : best}
           />
         </Animated.View>
         {flashNode}
 
         {legend ? <KeyLegend items={legend} /> : null}
+
+        {best && reel?.segs[reel.i]?.best && !layer ? (
+          // the Highlights reel's last play: its banner for as long as it plays
+          <View style={styles.bestWrap} pointerEvents="none">
+            <View
+              style={styles.bestCard}
+              testID="best-play-card"
+              dataSet={{ source: best.source }}
+            >
+              <T style={[type.title, styles.bestTitle]}>★ {best.label}</T>
+              {best.sub_label || best.what ? (
+                <T style={[type.meta, styles.bestSub]} testID="best-play-sub">
+                  {best.sub_label ?? best.what}
+                </T>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
 
         {caption ? (
           // M7 grounded commentary as captions, timed by the clock (audio_t / audio_s).
@@ -1681,6 +1722,7 @@ export function Watch({
             onPlayPause={toggle}
             hasAngles={momentHasAngles}
             onAngles={momentAngles}
+            bestId={best?.moment_id ?? null}
             title={momentsOf ? `Moments · ${targetName(momentsOf)}` : undefined}
             onBookmark={() => {
               closeLayer();
@@ -1893,4 +1935,23 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     backgroundColor: "rgba(18, 26, 35, 0.84)",
   },
+  // top centre: the context chip holds the top-left corner
+  bestWrap: {
+    position: "absolute",
+    top: safe.y,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  bestCard: {
+    alignItems: "center",
+    paddingHorizontal: sp(4),
+    paddingVertical: sp(1.5),
+    borderRadius: radius.card,
+    borderWidth: px(3),
+    borderColor: color.scoreboard,
+    backgroundColor: "rgba(18, 26, 35, 0.84)",
+  },
+  bestTitle: { color: color.scoreboard, marginBottom: 0 },
+  bestSub: { color: color.chalk },
 });

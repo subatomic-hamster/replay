@@ -222,6 +222,44 @@ def all_moments(events: list[dict], game: dict, triggers: list[dict] | None = No
     return out
 
 
+BEST_LABEL = "Best play of the game"
+WINNER_S = 30.0  # a last make this close to the end of the video is the game winner
+
+
+def best_play(rows: list[dict], hype: dict | None, duration: float | None,
+              user: dict | None = None) -> dict | None:  # fmt: skip
+    """The game's one best play (`GET /games/{id}/best-play`), from `all_moments` rows:
+    the user's own pick (edits.json `best_play`), else the last make when it falls in the
+    final WINNER_S of the video ("Game winner"), else the top hype candidate. `source`
+    says which (`user`, `auto:last_make`, `auto:hype`); `what` is the moment's own label
+    (current names) when the play is a moment. None when nothing qualifies."""
+    by_id = {m["id"]: m for m in rows}
+
+    def out(t, a, b, source, sub, m):
+        return {"t": round(float(t), 3), "t_start": round(float(a), 3),
+                "t_end": round(float(b), 3), "source": source, "label": BEST_LABEL,
+                "sub_label": sub, "moment_id": m["id"] if m else None,
+                "what": m["label"] if m else None}  # fmt: skip
+
+    if user:
+        m = by_id.get(user.get("moment_id") or "")
+        return out(user["t"], user["t_start"], user["t_end"], "user", None, m)
+    scores = [m for m in rows if m["kind"] == "score"]
+    last = max(scores, key=lambda m: (m["t"], m["id"]), default=None)
+    if last and duration and last["t"] >= float(duration) - WINNER_S:
+        a = max(0.0, min(last["t_start"], last["t"] - LEAD_S))  # the build-up too
+        return out(last["t"], a, last["t_end"], "auto:last_make", "Game winner", last)
+    cands = (hype or {}).get("candidates") or []
+    if not cands:
+        return None
+    c = max(cands, key=lambda c: float(c.get("score") or 0.0))
+    t = float(c["t"])
+    a, b = float(c.get("t_start", t - 3.0)), float(c.get("t_end", t + 1.0))
+    inside = [m for m in scores if a <= m["t"] <= b]  # the candidate's basket, if any
+    m = max(inside, key=lambda m: m["t"]) if inside else None
+    return out(m["t"] if m else t, a, b, "auto:hype", None, m)
+
+
 def hero_time(events: list[dict], game: dict, hype: dict | None, duration: float):
     """(t, why): the frame the library shows for this game."""
     live = {m["id"]: m for m in moments(events, game)}

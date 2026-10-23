@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from . import edits
+from . import moments as moments_mod
 from . import pipeline_adapter as adapter
 
 PLAYS_REL, TRIGGERS_REL, CLIPS_REL, SCORE_REL = (
@@ -26,6 +27,7 @@ PLAYS_REL, TRIGGERS_REL, CLIPS_REL, SCORE_REL = (
 )
 NOTES_REL = "notes.json"  # the uploader's play log (D-90); = moments.NOTES_REL
 NOTES_MAX_BYTES = 1_000_000
+HYPE_REL = "hype.json"  # the `hype` stage's (= discovery_routes.HYPE_REL)
 SCHEMAS = {
     PLAYS_REL: ("replay.plays.v1", "plays"),
     TRIGGERS_REL: ("replay.triggers.v1", "triggers"),
@@ -42,6 +44,15 @@ class TapIn(BaseModel):
 class ClipTrim(BaseModel):
     t_start: float = Field(ge=0)
     t_end: float = Field(gt=0)
+
+
+class BestPlayIn(BaseModel):
+    """The user's best play: a window, the time to mark, and the moment it is (optional)."""
+
+    t_start: float = Field(ge=0)
+    t_end: float = Field(gt=0)
+    t: float = Field(ge=0)
+    moment_id: str | None = Field(default=None, max_length=64)
 
 
 class ScoreIn(BaseModel):
@@ -210,6 +221,56 @@ def register(app: FastAPI, game_or_404, events_of, live_events) -> None:
         # the file stays the whole timeline (the broadcast renderer reads it as is)
         edits.apply(gd, (SCORE_REL,))
         return entry
+
+    # ------------------------------------------------------------ best play
+
+    def _best(storage, game_id: str, game: dict) -> dict:
+        """Computed at read time from the live moments, hype.json and the user's pick in
+        edits.json, so a rename, a dismissal or a new pick shows without a re-run."""
+        notes_p = storage.path(game_id, NOTES_REL)
+        rows = moments_mod.all_moments(
+            events_of(storage, game_id), game, _load(storage, game_id, TRIGGERS_REL),
+            _load(storage, game_id, CLIPS_REL),
+            json.loads(notes_p.read_text()) if notes_p.is_file() else None,
+        )  # fmt: skip
+        hype_p = storage.path(game_id, HYPE_REL)
+        hype = json.loads(hype_p.read_text()) if hype_p.is_file() else None
+        user = edits.load(storage.game_dir_with(game_id, edits.REL)).get("best_play")
+        duration = (game.get("video") or {}).get("duration_s")
+        return {"best_play": moments_mod.best_play(rows, hype, duration, user)}
+
+    @app.get("/games/{game_id}/best-play")
+    def get_best_play(request: Request, game_id: str):
+        """The game's best play: the user's pick, else the game winner, else the top hype
+        play; `source` says which. `best_play` is null when nothing qualifies."""
+        game = game_or_404(request, game_id)
+        return _best(ctx(request).storage, game_id, game)
+
+    @app.put("/games/{game_id}/best-play")
+    def put_best_play(request: Request, game_id: str, body: BestPlayIn):
+        """ "Make this the best play" (phone): one per game, replacing an earlier pick.
+        Recorded in edits.json, so it survives worker re-runs (D-61)."""
+        storage = ctx(request).storage
+        game = game_or_404(request, game_id)
+        duration = (game.get("video") or {}).get("duration_s")
+        if body.t_end <= body.t_start or (duration and body.t_end > duration + 1e-6):
+            raise HTTPException(400, "need 0 <= t_start < t_end <= the video's duration")
+        if not body.t_start <= body.t <= body.t_end:
+            raise HTTPException(400, "t must be inside t_start..t_end")
+        pick = {"t": round(body.t, 3), "t_start": round(body.t_start, 3),
+                "t_end": round(body.t_end, 3), "moment_id": body.moment_id}  # fmt: skip
+        gd = storage.game_dir_with(game_id, edits.REL)
+        edits.record(gd, lambda ov: ov.update(best_play=pick))
+        return _best(storage, game_id, game)
+
+    @app.delete("/games/{game_id}/best-play")
+    def delete_best_play(request: Request, game_id: str):
+        """Drop the user's pick: the automatic rule chooses again."""
+        storage = ctx(request).storage
+        game = game_or_404(request, game_id)
+        gd = storage.game_dir_with(game_id, edits.REL)
+        edits.record(gd, lambda ov: ov.pop("best_play", None))
+        return _best(storage, game_id, game)
 
     @app.post("/games/{game_id}/notes", status_code=201)
     async def post_notes(request: Request, game_id: str):

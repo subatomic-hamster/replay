@@ -22,6 +22,7 @@ const PREVIEW_W = px(400);
 /** Line + gap + the times row: what sits under a preview or the Moments row. */
 export const TIMELINE_H = LINE_H + sp(2) + px(48);
 const LABEL_H = px(48);
+const STAR = px(44);
 const PREVIEW_BOTTOM = TIMELINE_H + sp(1);
 
 export interface SeekView {
@@ -47,6 +48,8 @@ interface Props {
   storyboard: Storyboard | null;
   /** Playing (or, while seeking, playing again once the seek lands). */
   playing: boolean;
+  /** The game's best play: a ★ on the line at its time. */
+  best?: { t: number } | null;
 }
 
 export function Timeline({
@@ -56,6 +59,7 @@ export function Timeline({
   seek,
   storyboard,
   playing,
+  best,
 }: Props) {
   const X = (s: number) =>
     duration > 0 ? Math.max(0, Math.min(1, s / duration)) * LINE_W : 0;
@@ -116,6 +120,15 @@ export function Timeline({
             />
           );
         })}
+        {best && duration > 0 ? (
+          <T
+            testID="best-play-mark"
+            dataSet={{ t: best.t }}
+            style={[styles.star, { left: X(best.t) - STAR / 2 }]}
+          >
+            ★
+          </T>
+        ) : null}
         <View
           testID="timeline-playhead"
           style={[styles.head, { left: x - HEAD / 2 }]}
@@ -299,6 +312,20 @@ const styles = StyleSheet.create({
     width: px(12),
     height: px(12),
     transform: [{ rotate: "45deg" }],
+  },
+  // the best play: bigger than any notch, Scoreboard amber with a dark edge so it reads
+  // on the played and the unplayed line alike
+  star: {
+    position: "absolute",
+    top: (LINE_H - STAR) / 2,
+    width: STAR,
+    fontSize: STAR,
+    lineHeight: STAR,
+    textAlign: "center",
+    color: color.scoreboard,
+    textShadowColor: color.floor,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: px(6),
   },
   head: {
     position: "absolute",

@@ -31,6 +31,8 @@ import type { ReplayManifest, ReplaySummary } from "./replays";
 import { fetchRetrying, idempotent } from "./retry";
 import type {
   Advice,
+  BestPlay,
+  BestPlayPick,
   Commentary,
   Hype,
   JobStatus,
@@ -118,7 +120,7 @@ export interface ReplayApi {
   patchPlayer(
     gameId: string,
     pid: string,
-    body: { name?: string; merge_into?: string },
+    body: { name?: string; merge_into?: string; team?: number },
   ): Promise<Player>;
   getEvents(game: Game): Promise<GameEvent[]>;
   createEvent(gameId: string, body: Partial<GameEvent>): Promise<GameEvent>;
@@ -177,6 +179,11 @@ export interface ReplayApi {
   tap(gameId: string, t: number): Promise<TapResult>;
   /** M11 (D-45..D-48). */
   getHype(gameId: string): Promise<Hype>;
+  /** The game's best play (the user's pick, else the game winner, else the top hype
+   *  play); null when nothing qualifies. */
+  getBestPlay(gameId: string): Promise<BestPlay | null>;
+  /** "Make this the best play": one per game, replacing an earlier pick. */
+  setBestPlay(gameId: string, pick: BestPlayPick): Promise<BestPlay | null>;
   getRallies(gameId: string): Promise<RallyDoc>;
   renderCondensed(gameId: string): Promise<JobStatus>;
   exportVertical(
@@ -859,6 +866,15 @@ export function createHttpApi(
         json: { t },
       }),
     getHype: (gameId) => reqUnlessUnavailable<Hype>(`/games/${gameId}/hype`),
+    getBestPlay: (gameId) =>
+      req<{ best_play: BestPlay | null }>(`/games/${gameId}/best-play`).then(
+        (r) => r.best_play,
+      ),
+    setBestPlay: (gameId, pick) =>
+      req<{ best_play: BestPlay | null }>(`/games/${gameId}/best-play`, {
+        method: "PUT",
+        json: pick,
+      }).then((r) => r.best_play),
     getRallies: (gameId) =>
       reqUnlessUnavailable<RallyDoc>(`/games/${gameId}/rallies`).then((d) => ({
         ...d,

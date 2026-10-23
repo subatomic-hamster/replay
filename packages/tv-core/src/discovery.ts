@@ -217,6 +217,50 @@ export interface Hype {
   candidates: HypeCandidate[];
 }
 
+// ---------------------------------------------------------------- best play
+
+/** GET /games/{id}/best-play: the game's one best play. `source` says who chose it: the
+ *  user ("Make this the best play" on the phone), the last make in the final 30 s (the
+ *  game winner), or the top hype play. `what` is its moment's own label when it is one. */
+export interface BestPlay {
+  t: number;
+  t_start: number;
+  t_end: number;
+  source: "user" | "auto:last_make" | "auto:hype";
+  label: string;
+  sub_label: string | null;
+  moment_id: string | null;
+  what: string | null;
+}
+
+export interface BestPlayPick {
+  t_start: number;
+  t_end: number;
+  t: number;
+  moment_id?: string | null;
+}
+
+/** The Highlights reel ends on the best play: `segs` (in time order) as they are, except
+ *  that a play overlapping the best one joins it (no second plays twice), and the best
+ *  play comes last. */
+export function endOnBest(
+  segs: { t_start: number; t_end: number }[],
+  best: BestPlay | null | undefined,
+): { t_start: number; t_end: number; best?: true }[] {
+  if (!best) return segs;
+  const over = (s: { t_start: number; t_end: number }) =>
+    s.t_end > best.t_start && s.t_start < best.t_end;
+  const joined = segs.filter(over);
+  return [
+    ...segs.filter((s) => !over(s)),
+    {
+      t_start: Math.min(best.t_start, ...joined.map((s) => s.t_start)),
+      t_end: Math.max(best.t_end, ...joined.map((s) => s.t_end)),
+      best: true,
+    },
+  ];
+}
+
 /** Max-pool the series into `n` bars for the scrubber (a peak must never vanish). */
 export function hypeBars(values: number[], n: number): number[] {
   if (!values.length || n <= 0) return [];

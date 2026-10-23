@@ -135,6 +135,9 @@ class PlayerPatch(BaseModel):
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)] | None
     ) = None
     merge_into: str | None = None
+    # the user's own side for this player (the phone's Names tab): a team id of the game,
+    # or 0 / 1 when tracking found only one kit
+    team: int | None = Field(default=None, ge=0, le=9)
 
 
 class BookmarkCreate(BaseModel):
@@ -169,6 +172,14 @@ def _game_or_404(request: Request, game_id: str) -> dict:
     if game is None:
         raise HTTPException(404, f"game {game_id} not found")
     return game
+
+
+def _other_kit(kits: dict) -> str:
+    """A colour for a team tracking never saw (every id read as one kit): light against a
+    dark kit, dark against a light one, so the two sides still read apart on the TV."""
+    seen = next((c for c in kits.values() if c), "#1f4fa0")
+    light = sum(int(seen[i : i + 2], 16) for i in (1, 3, 5)) > 384
+    return "#1f2937" if light else "#e8e8e8"
 
 
 def _relabel(m: dict, game: dict) -> dict:
@@ -796,8 +807,11 @@ def _register_routes(app: FastAPI) -> None:
         player = next((p for p in players if p["id"] == player_id), None)
         if player is None:
             raise HTTPException(404, f"player {player_id} not found")
-        if body.name is None and body.merge_into is None:
-            raise HTTPException(400, "provide `name` and/or `merge_into`")
+        if body.name is None and body.merge_into is None and body.team is None:
+            raise HTTPException(400, "provide `name`, `team` and/or `merge_into`")
+        kits = {t["id"]: t.get("color_hex") for t in game.get("teams") or []}
+        if body.team is not None and body.team not in kits and body.team not in (0, 1):
+            raise HTTPException(400, f"team {body.team} is not one of this game's teams")
 
         if body.merge_into is not None:
             target = next((p for p in players if p["id"] == body.merge_into), None)
@@ -813,6 +827,11 @@ def _register_routes(app: FastAPI) -> None:
         gd = ctx.storage.game_dir_with(game_id, edits.REL, *merged_rels)
         if body.name is not None:
             edits.patch(gd, "game.json", player_id, {"name": body.name, "tagged": True})
+        if body.team is not None:
+            edits.patch(gd, "game.json", player_id, {
+                "team": body.team, "color_hex": kits.get(body.team) or _other_kit(kits),
+                "team_mixed": None,  # the user said which side: no longer a guess
+            })  # fmt: skip
         if body.merge_into is not None:
             edits.merge(gd, player_id, body.merge_into)
             edits.apply(gd, ("tracks", "crops", EVENTS_REL))

@@ -62,6 +62,9 @@ PHONE_ROUTES = (
     ("POST", "/games/{g}/search"),
     ("POST", "/games/{g}/query"),  # search's fallback without embeddings
     ("POST", "/games/{g}/tv/play"),  # play a search hit on the TV
+    ("GET", "/games/{g}/best-play"),
+    ("PUT", "/games/{g}/best-play"),  # "Make this the best play"
+    ("DELETE", "/games/{g}/best-play"),  # back to the automatic pick
 )
 _PHONE_RES = tuple(
     (

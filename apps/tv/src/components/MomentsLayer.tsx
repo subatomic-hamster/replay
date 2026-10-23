@@ -5,7 +5,8 @@
 // "+ Bookmark m:ss" action. Left/Right walk (the line marks the focused card's time),
 // Select jumps there and closes, Up goes to the filter row and from there closes the
 // layer, Down opens the replay angles of a moment's play (the focused card says
-// "▼ Replay angles" when it has them), Back closes. Owns the remote while it is open.
+// "▼ Replay angles" when it has them), Back closes. The game's best play's card carries
+// "★ Best play". Owns the remote while it is open.
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { fmtDuration } from "../../../../packages/tv-core/src/display";
@@ -60,7 +61,10 @@ export function MomentsLayer({
   onAngles,
   onBookmark,
   title,
+  bestId,
 }: {
+  /** the game's best play's moment: its card carries "★ Best play" */
+  bestId?: string | null;
   moments: Moment[];
   /** The playhead when the layer opened: the row starts on the nearest moment. */
   t: number;
@@ -207,11 +211,12 @@ export function MomentsLayer({
             at={(lo + n) * PITCH}
             on={zone === "cards" && lo + n === i}
             angles={!!hasAngles?.(m)}
+            best={m.id === bestId}
           />
         ))}
       </View>
     );
-  }, [list, first, i, zone, hasAngles]);
+  }, [list, first, i, zone, hasAngles, bestId]);
 
   const legend =
     zone === "chips"
@@ -257,12 +262,15 @@ const MomentCard = memo(function MomentCard({
   at,
   on,
   angles,
+  best,
 }: {
   m: Moment;
   at: number;
   on: boolean;
   /** the moment's play has replay angles (Down opens them) */
   angles: boolean;
+  /** the game's best play */
+  best: boolean;
 }) {
   return (
     <View style={[styles.slot, { left: at }]}>
@@ -277,6 +285,7 @@ const MomentCard = memo(function MomentCard({
           t: m.t,
           focused: on ? "true" : "false",
           angles: angles ? "true" : "false",
+          best: best ? "true" : "false",
         }}
       >
         <View style={styles.thumb}>
@@ -289,6 +298,11 @@ const MomentCard = memo(function MomentCard({
               resizeMode="cover"
               resizeMethod="resize"
             />
+          ) : null}
+          {best ? (
+            <View style={styles.best} testID="moment-best">
+              <T style={styles.bestText}>★ Best play</T>
+            </View>
           ) : null}
           <View style={styles.time} testID="moment-time">
             <T style={styles.timeText}>{fmtDuration(m.t)}</T>
@@ -354,6 +368,15 @@ const styles = StyleSheet.create({
     backgroundColor: color.scoreboard,
   },
   anglesText: { ...type.meta, color: color.floor },
+  best: {
+    position: "absolute",
+    left: sp(1),
+    top: sp(1),
+    paddingHorizontal: sp(1.5),
+    borderRadius: radius.chip,
+    backgroundColor: color.scoreboard,
+  },
+  bestText: { ...type.meta, color: color.floor },
   // rides the video under the scrim: on a bright floor (a real gym's, lit) Bleacher alone
   // washed out, so the same soft shadow as the seek readout
   label: {

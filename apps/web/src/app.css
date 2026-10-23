@@ -1910,6 +1910,20 @@ body,
   box-shadow: inset 0 0 0 3px var(--accent);
   color: var(--accent);
 }
+/* the team's kit colour beside its name (Names tab) */
+.team-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: -1px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+/* the best play line and its button (Clip tab) */
+.best-play {
+  margin: 16px 0 0;
+}
 .phone .wide-btn {
   width: 100%;
 }

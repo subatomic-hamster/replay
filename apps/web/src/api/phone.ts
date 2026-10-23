@@ -14,6 +14,7 @@ import {
   idempotent,
 } from "../../../../packages/tv-core/src/retry";
 import type {
+  BestPlay,
   PlayClip,
   ReelExport,
   ReviewQuestion,
@@ -47,6 +48,9 @@ export type PhoneApi = Pick<
   | "answerReview"
   | "search"
   | "playOnTv"
+  | "patchPlayer"
+  | "getBestPlay"
+  | "setBestPlay"
   | "mediaUrl"
   | "profileMediaUrl"
 >;
@@ -123,6 +127,27 @@ export function phoneHttpApi(apiBase: string, token: string): PhoneApi {
       req<{ tv?: boolean }>(`${g(id)}/tv/play`, "POST", { t }).then(
         (r) => r?.tv === true,
       ),
+    // the API answers with the whole game; the caller wants the one player it touched
+    patchPlayer: (id, pid, body) =>
+      req<Game>(
+        `${g(id)}/players/${encodeURIComponent(pid)}`,
+        "PATCH",
+        body,
+      ).then((game) => {
+        const p = game.players.find((x) => x.id === pid);
+        if (!p) throw new ApiError(404, `player ${pid} not found`);
+        return p;
+      }),
+    getBestPlay: (id) =>
+      req<{ best_play: BestPlay | null }>(`${g(id)}/best-play`).then(
+        (r) => r.best_play,
+      ),
+    setBestPlay: (id, pick) =>
+      req<{ best_play: BestPlay | null }>(
+        `${g(id)}/best-play`,
+        "PUT",
+        pick,
+      ).then((r) => r.best_play),
     getGameReel: (id, rid) =>
       req<ReelExport>(`${g(id)}/exports/reel/${encodeURIComponent(rid)}`),
     listProfiles: () =>

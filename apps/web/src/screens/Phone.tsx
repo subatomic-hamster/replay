@@ -18,6 +18,7 @@ import { setQuery, useLocation } from "../router";
 import { useAsync } from "../ui";
 import { Problem } from "./QrUpload";
 import {
+  fmtDuration,
   highlightQueries,
   isShortTrack,
   MIN_SEEN_S,
@@ -29,6 +30,7 @@ import {
   nudgeTrim,
   optionTestId,
   TRIM_STEP_S,
+  type BestPlay,
   type PlayClip,
   type ReelExport,
   type ReviewOption,
@@ -288,6 +290,34 @@ function ClipJob({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const wide = api.mediaUrl(game, game.renditions.wide);
+  // The game's best play (one per game): what it is now, and "Make this the best play".
+  const [best, setBest] = useState<BestPlay | null>(null);
+  const [bestNote, setBestNote] = useState("");
+  useEffect(() => {
+    api.getBestPlay(game.id).then(setBest, () => {});
+  }, [api, game.id]);
+  const makeBest = async () => {
+    setBusy(true);
+    setBestNote("");
+    try {
+      const inside = moment && win.t_start <= moment.t && moment.t <= win.t_end;
+      setBest(
+        await api.setBestPlay(game.id, {
+          t_start: win.t_start,
+          t_end: win.t_end,
+          t: moment && inside ? moment.t : r1((win.t_start + win.t_end) / 2),
+          moment_id: moment?.id ?? null,
+        }),
+      );
+      setBestNote(
+        "This is now the best play of the game. Highlights on the TV end with it.",
+      );
+    } catch (e) {
+      setBestNote(`Not saved: ${fail(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // 9:16: poll the render until it lands.
   useEffect(() => {
@@ -494,6 +524,35 @@ function ClipJob({
       {link ? (
         <ShareLink url={link} title={game.title} tall={aspect === "9:16"} />
       ) : null}
+
+      {best ? (
+        <p
+          className="dim best-play"
+          data-testid="clip-best-now"
+          data-source={best.source}
+          data-moment-id={best.moment_id ?? ""}
+        >
+          ★ Best play now: {fmtDuration(best.t)}
+          {best.what ? ` · ${best.what}` : ""}
+          {best.source === "user"
+            ? " (your pick)"
+            : ` (${best.sub_label ?? "picked automatically"})`}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        className="secondary wide-btn"
+        data-testid="clip-best"
+        disabled={busy}
+        onClick={() => void makeBest()}
+      >
+        ★ Make this the best play
+      </button>
+      {bestNote ? (
+        <p role="status" data-testid="clip-best-note">
+          {bestNote}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -680,6 +739,23 @@ function TagJob({ api, game, moments, fail }: JobProps) {
   const nShort = players.filter(isShortTrack).length;
   const shown = showShort ? players : players.filter((p) => !isShortTrack(p));
 
+  // The two sides: the game's teams, or Team 1 / Team 2 when tracking saw only one kit.
+  const teams = game.teams.length >= 2 ? game.teams.map((x) => x.id) : [0, 1];
+  const teamName = (id: number) => `Team ${teams.indexOf(id) + 1}`;
+  const setTeam = async (p: Player, team: number) => {
+    setBusy(true);
+    setNote("");
+    try {
+      const out = await api.patchPlayer(game.id, p.id, { team });
+      setPlayers((ps) => ps.map((x) => (x.id === p.id ? out : x)));
+      setNote(`${label(p)} is on ${teamName(team)}.`);
+    } catch (e) {
+      setNote(`Not saved: ${fail(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const tag = async (pid: string, profile: Profile | null) => {
     setBusy(true);
     setNote("");
@@ -727,9 +803,38 @@ function TagJob({ api, game, moments, fail }: JobProps) {
               <PlayerThumb game={game} player={p} moments={moments} />
               <span className="row-text">{label(p)}</span>
               {p.profile_id ? <span className="dim">Linked</span> : null}
+              {p.team_mixed ? null : (
+                <span className="dim" data-testid="tag-team" data-team={p.team}>
+                  {teamName(p.team)}
+                </span>
+              )}
             </button>
             {pick === p.id ? (
               <div className="tag-panel" data-testid="tag-panel">
+                <div className="segmented" role="radiogroup" aria-label="Team">
+                  {teams.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="radio"
+                      aria-checked={!p.team_mixed && p.team === id}
+                      data-testid="tag-team-pick"
+                      data-team={id}
+                      disabled={busy}
+                      onClick={() => void setTeam(p, id)}
+                    >
+                      <span
+                        className="team-dot"
+                        style={{
+                          background:
+                            game.teams.find((x) => x.id === id)?.color_hex ??
+                            "var(--line)",
+                        }}
+                      />
+                      {teamName(id)}
+                    </button>
+                  ))}
+                </div>
                 <h2>Who is {label(p)}?</h2>
                 {error ? (
                   <p className="error">

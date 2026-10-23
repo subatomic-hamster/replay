@@ -40,6 +40,8 @@ import type { ReplayAngle, ReplayManifest } from "./replays";
 import { REVIEW_CONFIDENCE_THRESHOLD } from "./display";
 import type {
   Advice,
+  BestPlay,
+  BestPlayPick,
   Commentary,
   Hype,
   JobStatus,
@@ -609,6 +611,54 @@ function mockMoments(g: Game, list: GameEvent[]): Moment[] {
     .sort((a, b) => a.t - b.t);
 }
 
+/** The user's "Make this the best play" per game (services/api keeps it in edits.json). */
+const bestPicks = new Map<string, Required<BestPlayPick>>();
+
+/** The same rule as services/api moments.best_play, on the mock's synthetic moments and
+ *  hype: the user's pick, else the last make in the final 30 s, else the top hype play. */
+function mockBestPlay(g: Game): BestPlay | null {
+  const rows = mockMoments(g, events.get(g.id) ?? []);
+  const out = (
+    t: number,
+    a: number,
+    b: number,
+    source: BestPlay["source"],
+    sub: string | null,
+    m: Moment | undefined,
+  ): BestPlay => ({
+    t,
+    t_start: a,
+    t_end: b,
+    source,
+    label: "Best play of the game",
+    sub_label: sub,
+    moment_id: m?.id ?? null,
+    what: m?.label ?? null,
+  });
+  const pick = bestPicks.get(g.id);
+  if (pick) {
+    const m = rows.find((r) => r.id === pick.moment_id);
+    return out(pick.t, pick.t_start, pick.t_end, "user", null, m);
+  }
+  const scores = rows.filter((m) => m.kind === "score");
+  const last = scores[scores.length - 1];
+  if (last && last.t >= g.video.duration_s - 30)
+    return out(
+      last.t,
+      Math.max(0, Math.min(last.t_start, last.t - 4)), // moments.LEAD_S
+      last.t_end,
+      "auto:last_make",
+      "Game winner",
+      last,
+    );
+  const c = mockHype(MOCK_HYPE_PEAKS[g.id] ?? []).candidates[0];
+  if (!c) return null;
+  const a = c.t_start ?? c.t - 3;
+  const b = c.t_end ?? c.t + 1;
+  const m = scores.filter((s) => a <= s.t && s.t <= b).pop();
+  return out(m?.t ?? c.t, a, b, "auto:hype", null, m);
+}
+
 /** Stand-in for S3's ListParts: GET the part URL's object with `?uploadId=`; a Playwright
  *  spec answers it (page.route) with the parts its fake S3 received. Anything else = gone. */
 async function mockListParts(
@@ -865,6 +915,13 @@ export const mockApi: ReplayApi = {
     if (body.name !== undefined) {
       p.name = body.name;
       p.tagged = true;
+    }
+    if (body.team !== undefined) {
+      // as services/api: the team's kit colour, and no longer a mixed-kit guess
+      p.team = body.team;
+      p.color_hex =
+        g.teams.find((x) => x.id === body.team)?.color_hex ?? p.color_hex;
+      delete p.team_mixed;
     }
     return delay(structuredClone(p));
   },
@@ -1249,6 +1306,23 @@ export const mockApi: ReplayApi = {
     log("GET", `/games/${gameId}/hype`);
     needGame(gameId);
     return delay<Hype>(mockHype(MOCK_HYPE_PEAKS[gameId] ?? []));
+  },
+
+  getBestPlay(gameId) {
+    log("GET", `/games/${gameId}/best-play`);
+    return delay(mockBestPlay(needGame(gameId)));
+  },
+
+  setBestPlay(gameId, pick) {
+    log("PUT", `/games/${gameId}/best-play`, pick);
+    const g = needGame(gameId);
+    if (pick.t_end <= pick.t_start || pick.t_end > g.video.duration_s + 1e-6)
+      throw new ApiError(
+        400,
+        "need 0 <= t_start < t_end <= the video's duration",
+      );
+    bestPicks.set(gameId, { ...pick, moment_id: pick.moment_id ?? null });
+    return delay(mockBestPlay(g));
   },
 
   getRallies(gameId) {

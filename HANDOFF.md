@@ -133,7 +133,6 @@ A fresh clone lacks these:
 | `infra/build/`, `infra/cdk.out/` | laptop repo copy                                                                                      | The **current deploy artifacts** for ed48534. Copy these too, or rebuild them (§5).                                                          |
 | API and worker keys              | hfbox `/workspace/wt/replay-env/{api-key,worker-key}` (0600)                                          | Never print, log or commit them. The APK embeds the API key, so never commit or upload the APK.                                              |
 | `yolo11n.pt`                     | repo root, gitignored (`*.pt`)                                                                        | Auto-downloaded by ultralytics.                                                                                                              |
-| Agent memory                     | `~/.claude/projects/-home-sdash-Documents-projects-hackathon-projects-firestick-replay/memory/`       | Notes the old agent kept. Everything in them that still matters is folded into this file.                                                    |
 
 To move the laptop state as is, copy the whole directory, not a clone:
 `rsync -a --exclude node_modules --exclude .venv <old>/ <new>/`.

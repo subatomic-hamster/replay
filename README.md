@@ -1,185 +1,140 @@
 # Replay
 
-**One phone on a tripod in; a directed, graphics-rich, replay-filled game on your Fire TV out.**
+Film a pickup court game with one phone on a tripod, upload it from the phone, and watch it on Fire TV like a broadcast.
 
-Replay turns an amateur recording of a court-sports game (basketball first; pickleball,
-badminton and volleyball through sport profiles) into something that watches like a
-broadcast: pick any player with the remote and the camera follows them, switch on
-broadcast mode for an auto-directed cut with a score bug, instant replays and grounded
-play-by-play, say or tap "Replay, clip that" to clip the play that just ended, cut
-between virtual replay angles, and browse highlights, rallies, a box score and player
-cards — all from the D-pad.
+![Following a player on Fire TV](docs/media/tv-follow.gif)
 
-Built for the Amazon Developer Hackathon (Fire TV track; AWS Builder and Open Source
-mini challenges). The computer-vision core is [`courtcam/`](courtcam/README.md), an
-MIT-licensed library published separately (D-36).
+Replay is our entry in the Amazon Developer Hackathon (Fire TV track). The phone uploads the full game straight to S3. A GPU worker on Amazon EC2 turns it into tracked players, plays, highlights, replay angles and commentary. The Fire TV app, driven entirely by the D-pad, plays it back.
 
-| | |
-|---|---|
-| ![Broadcast rendition: sting into a 0.5x replay](docs/evidence/M13/demo_broadcast_replay.gif) | ![Broadcast mode with commentary captions on the TV app](docs/evidence/M13/tv-demo/01-watch-broadcast-captions.png) |
-| The `make demo` broadcast rendition: score bug, sting, 0.5× REPLAY | Broadcast mode on the TV app with commentary captions and the hype meter |
-| ![Follow-cam on the TV](docs/evidence/M13/tv-demo/04-follow.png) | ![Tier C overhead replay](docs/evidence/M9/synth_bb_pl_0002_make_overhead.gif) |
-| Follow mode: pick a player, the camera follows; court inset bottom right | Tier C: stylized 3D reconstruction, overhead angle, ball through the rim (outcome set from synthetic truth, M9) |
+The computer-vision core is [courtcam](https://github.com/subatomic-hamster/courtcam), an MIT-licensed library published as its own repository (also vendored here in `courtcam/`).
 
-![Eleven replay angles of one play](docs/evidence/M13/demo_replay_angles_pl_0001.jpg)
-*One highlight of the `make demo` game at the same instant from all 11 pre-rendered
-angles: Tier A (real video: wide, follow, tight), Tier B (2.5D cutouts: broadcast high,
-orbit, push-in), Tier C (3D mannequins: broadcast high, baseline, overhead, reverse,
-shooter's POV). On the TV, Left/Right cuts between them at the same media time.*
+## On the TV
 
-Every image above is **synthetic** (generated mannequins on a rendered court) — see
-"Honest limitations".
+Native React Native for TV (`react-native-tvos` 0.87 and `react-native-video`) on a Fire TV Stick. Every screen is reachable with the D-pad and Back.
 
-## Quickstart: `make demo`
+|                                                                                                       |                                                                                                           |
+| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| ![Home](docs/media/tv-home.jpg)                                                                       | ![Highlights list](docs/media/tv-highlights.jpg)                                                          |
+| **Home.** The game with Play, Highlights and Condensed.                                               | **Highlights.** Every play as a card, with the ★ Best play card last, and Play all.                       |
+| ![Following Anshul](docs/media/tv-follow.jpg)                                                         | ![Replay angles with 0.5x slow motion](docs/media/tv-slowmo.jpg)                                          |
+| **Follow a player.** Pick a player and the camera follows them ("Following Anshul").                  | **Replay angles.** Real camera angles and virtual ones, with 0.5× slow motion on the remote's Rewind key. |
+| ![Player's view](docs/media/tv-pov.jpg)                                                               | ![Commentary mode](docs/media/tv-commentary.jpg)                                                          |
+| **Player's view.** A recreated player's-eye view, one of the virtual replay angles (alongside Orbit). | **Commentary mode.** A broadcast rendition with a score bug, captions and spoken play-by-play.            |
+| ![Best play banner](docs/media/tv-bestplay.jpg)                                                       | ![Clip this play QR code](docs/media/tv-share.jpg)                                                        |
+| **Best play.** The highlights end on the best play of the game, labelled Last basket.                 | **On your phone.** QR codes for Clip this play, Names, Review, Search and the Highlight reel.             |
 
-All compute runs on a shared ROCm GPU box (`hfbox`, docs/compute.md); the laptop edits,
-syncs and views.
+Also on the TV:
 
-```sh
-make demo          # sync → build the demo games on the box → serve API + TV app + phone companion
-make demo-tunnel   # second terminal: forward the ports here
-#   TV     http://localhost:5190/            arrows = D-pad, Enter = select, Esc = back
-#   phone  http://localhost:5191/companion   pair with the code the TV shows
-make demo-stop
-```
+- A Moments browser for jumping to plays, such as "Lost his man, Joseph".
+- A condensed version of the game.
+- Voice clips: say "Replay, clip that" and Whisper picks it up.
+- Spoken play-by-play from Kokoro TTS, fed into the broadcast stage.
+- Alexa: "Alexa, ask Replay Court to clip that" or "... to export a highlight reel". The custom skill (`alexa/skill-package/`) calls the Lambda API at `/alexa`, which verifies the signed request and queues the command, and the TV shows the clip or reel. Pairing links an Echo or the Fire TV remote's mic to the TV.
 
-`make demo` generates two **synthetic** games with `courtcam synth` (basketball full
-court and pickleball doubles, 60 s each, fixed seeds) and runs them through the worker:
-ingest → calibrate → detect → track → court → identity → crops → audio → pose → events
-→ triggers → plays, then grounded commentary (template text; Kokoro TTS narration if
-available, else captions), hype meter, auto-director + broadcast rendition, Tier A/B/C
-replays for the top 3 highlights, a 9:16 export, a SigLIP search index (if available),
-and the condensed game + rally browser for pickleball. It does not need real footage.
-Everything is cached by content hash, so a second `make demo` is all cache hits; times
-are in [docs/perf.md](docs/perf.md). The build runs detached on the box (log:
-`<copy>/data/demo-build.log`); if your ssh session drops, run `make demo` again. The 3–4 minute walk-through is
-[docs/demo-script.md](docs/demo-script.md).
+## On the phone
 
-Other entry points: `make test` (every suite on the box, `scripts/box-test.sh`),
-`python -m replay_worker run <video>` (services/worker/README.md), `courtcam run`
-(courtcam/README.md).
+A React and Vite web app served by CloudFront. Scan a QR code from the TV and it opens.
 
-### Developing without the box
-
-```sh
-uv sync                                   # workspace venv (courtcam[yolo] + api + worker + render), CPU torch
-REPLAY_PIPELINE=fake uv run --package replay-api uvicorn replay_api.main:app --port 8000
-cd apps/tv && pnpm install && VITE_MOCK_API=1 pnpm web    # TV app on the in-browser mock API
-uv run pytest courtcam/tests services/api/tests services/worker/tests render/tests -q
-```
-
-API env vars are in services/api/README.md; the TV/phone apps read `VITE_REPLAY_API_BASE`.
+|                                                                                 |                                                                                               |                                                                       |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| ![Upload progress](docs/media/phone-upload.jpg)                                 | ![Court calibration](docs/media/phone-calib.jpg)                                              | ![Shared clip](docs/media/phone-share.jpg)                            |
+| **Upload.** The full game goes straight to S3 with presigned multipart uploads. | **Calibrate.** Auto court fit, then a tap-to-check. Processing starts with a live stage list. | **Share.** Open a clip from the TV QR, trim it, save it and share it. |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  phone["Phone companion<br/>apps/web: upload, calibrate,<br/>pair, tap-to-clip, search"] -->|HTTP + WS| api
-  tv["Fire TV app<br/>apps/tv: react-native-tvos<br/>(+ web build for tests)"] -->|HTTP, range MP4| api
-  api["services/api<br/>FastAPI + providers<br/>local now / AWS stubs"] -->|jobs| worker
-  worker["services/worker<br/>stage DAG over a<br/>content-hash cache"] --> courtcam
-  worker --> render
-  courtcam["courtcam (MIT)<br/>ingest · calibrate · detect · track<br/>identity · pose · events · plays · crops"]
-  render["render/ replay_render<br/>director · broadcast · hype · condensed<br/>vertical · Tier A/B/C replays"]
-  worker --> models["model runner (subprocess)<br/>Kokoro TTS · SigLIP · Whisper<br/>SAM 2.1 · MotionBERT · Qwen3 LLM"]
-  api --> disk[("data/games/{id}/<br/>game.json, tracks, events,<br/>plays, renditions, replays")]
-  worker --> disk
+  phone["Phone<br/>React + Vite web app"] -->|loads app, share links| cf["CloudFront<br/>+ CloudFront Function"]
+  cf --> web[("S3<br/>web app")]
+  cf --> media[("S3<br/>uploads, processed outputs")]
+  phone -->|presigned multipart upload| media
+  phone -->|HTTPS| api
+  tv["Fire TV app<br/>React Native for TV"] -->|HTTPS| api["Lambda API<br/>FastAPI via Mangum<br/>Function URL"]
+  api <-->|presigned URLs, job state| media
+  api -->|secrets| ssm["SSM Parameter Store"]
+  gpu["EC2 GPU worker<br/>services/worker + courtcam + render"] -->|/worker/claim, progress, finish| api
+  gpu <-->|pull game, presigned PUT results| media
 ```
 
-- **TV app** (`apps/tv`, D-37): react-native-tvos 0.87 + react-native-video; pure logic
-  shared in `packages/tv-core`; platform code only behind `PlayerSurface` / `platform/`;
-  overlays sync to one media clock; every screen reachable with D-pad + Back; never
-  branches on the sport (reads the profile's `sport_ui`).
-- **API** (`services/api`): FastAPI; eleven providers (storage, index, jobs, labeler,
-  query, tts, llm, embeddings, face, speaker, profiles), each a working local implementation plus an
-  AWS stub (D-35). AWS map: [docs/aws-integrations.md](docs/aws-integrations.md).
-- **Worker** (`services/worker`, D-34): named, versioned stages with declared inputs and
-  outputs, cached by content hash, GPU tasks under a box-wide lock; the local stand-in
-  for Step Functions + SageMaker Processing (`infra/dag.json` mirrors it).
-- **Contracts**: every JSON file carries `"schema": "replay.<name>.v1"` (D-49, D-56, D-59).
+- **Lambda API.** Python 3.12, FastAPI behind Mangum, exposed through a Lambda Function URL. It hands out presigned URLs, tracks jobs and serves game data.
+- **S3.** Holds uploads, processed outputs and the web app.
+- **CloudFront.** Serves the phone app and share links, with a CloudFront Function at the edge.
+- **EC2 GPU worker.** Does the heavy processing. It claims a job from the API (`/worker/claim`), pulls the game from S3, reports progress per stage, uploads results with presigned PUTs, then finishes the job. Moving processing to EC2 GPU instances made it significantly faster.
+- **SSM Parameter Store** keeps the secrets. IAM roles are least-privilege and logs go to CloudWatch Logs.
+- **AWS CDK (TypeScript).** The stack is `ReplayCloud` in `infra/lib/cloud-stack.ts`.
 
-## Feature status
+The worker protocol is documented at the top of `services/api/replay_api/cloud_routes.py`.
 
-Per-milestone detail, commands and measured numbers: [docs/progress.md](docs/progress.md).
-Decisions: [docs/decisions.md](docs/decisions.md).
+## Vision and ML pipeline
 
-| feature | status | notes |
-|---|---|---|
-| Upload, calibration (taps + template auto-fit), full camera K/R/t | works | D-19, D-24, D-53 |
-| Detection + tracking + identity | works, weak on small players | YOLO11m + BoT-SORT; synthetic basketball IDF1 0.25–0.31 |
-| Watch: wide, select, follow, spotlight, court inset, tagging | works (web build) | M3; APK not run on a device |
-| Events, play grammars, score | works on synthetic, partial on real | shots 21/27 at P 1.00 synthetic; real shot recall 3/6 |
-| "Replay, clip that": tap / gesture / voice | tap works; gesture + voice on synthetic only | gesture recall 0.41 (synthetic far players, `--pose vit`), voice 37/37 synthetic |
-| Broadcast mode (director, graphics, replays, audio) | works | D-42, D-43 |
-| Grounded commentary, advice, query | works | template 28/28 grounded; LLM paraphrase optional |
-| Tier A / B / C replay angles + TV angle switching | works, approximations labelled | D-54..D-59 |
-| Hype meter, condensed game, rally browser, 9:16 export, review queue, box score | works | M11 + TV integration |
-| Semantic search | works with SigLIP; keyword fallback | weak on synthetic frames |
-| Profiles, cards, cross-game links, opt-in faces | works (backend, TV Players/Profile screens, phone create/edit/photo/consent); web build only, synthetic | D-58, D-65 |
-| AWS (S3, DynamoDB, Step Functions, Bedrock, Polly, Rekognition) | stubs + CDK skeleton only | nothing calls AWS |
-| Tier D (Gaussian splats, generative views) | experiments only | experiments/, docs/tier-d.md |
+The worker runs a cached stage pipeline:
 
-## Honest limitations
+- YOLO11 detection and ByteTrack tracking.
+- Court calibration to metres.
+- Identity and teams.
+- Follow-cam crop paths.
+- Pose.
+- Events and plays: shots, makes, steals and "Lost his man".
+- SAM 2 cutouts for Player's view and the virtual angles.
+- Whisper for voice clips and Kokoro for speech.
+- FFmpeg rendering.
 
-- **The demo and all committed media are synthetic.** Real-footage runs happened only
-  on YouTube-licensed local clips (never committed, D-7) and a few Creative-Commons
-  clips (docs/test-data.md). Accuracy on real rec-league video is below the synthetic
-  numbers: tracking fragments small far players, real shot recall is low, and voice
-  triggers are untested on real game audio. The X-gesture is measured on synthetic far
-  players only (recall 0.41 with `--pose vit`/ViTPose, 0/22 with the default YOLO pose);
-  there is no real-footage gesture recall.
-- **No device testing.** The Fire TV APK builds but has never run on a Fire TV or an
-  emulator; playback, key codes and performance on Fire OS are unverified.
-- **Tier B/C are honest approximations**, labelled on every frame: flat cutouts,
-  plate ghosts, flattened jumps, monocular depth, stylized mannequins (no body model).
-- **Shot outcome** in replays and stats is "unknown" until a user answers the review
-  question; net-sport auto score needs a detected point winner.
-- **Local only.** No AWS deployment; providers fall back to local models on one box.
-
-## Privacy notes
-
-- **Phone voice queries use the browser's speech service.** The companion's Speak button
-  (`apps/web/src/screens/Companion.tsx`) calls the browser's `webkitSpeechRecognition`
-  (Chrome/Edge only; the button is hidden elsewhere). In Chrome and on Android that is the
-  browser vendor's speech service, so the audio leaves the device; Replay does not control
-  or see where it goes. It starts only when the user taps Speak (one utterance, `en-US`);
-  nothing listens in the background.
-- **There is no local-ASR route for the phone mic.** The API has no transcription
-  endpoint. Whisper (whisper-small, `courtcam[asr]`) runs only inside the worker's
-  `triggers` stage on a game's own audio track, on the box. The private way to search from
-  the phone today is to type the query (the text box next to Speak).
-- Face and speaker enrollment are opt-in and consent-gated, store one mean embedding per
-  profile and no photos or audio (D-58, `docs/licenses.md`).
-
-## Licences
-
-- Replay's own code: see each package. `courtcam/` is **MIT**; its core depends only on
-  permissive packages. The YOLO backend is the optional `courtcam[yolo]` extra
-  (ultralytics, **AGPL-3.0**); the replay app installs it by default, so a distributed
-  build of the whole app carries the AGPL unless the detector is swapped.
-- Models: Kokoro-82M, SAM 2.1, SigLIP, Whisper, ViTPose, YuNet/SFace are permissive;
-  MotionBERT (Apache-2.0 weights trained on academic-only Human3.6M) and the face/voice
-  models are opt-in and replay-side only; no SMPL, no InsightFace, no non-commercial
-  wake-word models. Full table: [docs/licenses.md](docs/licenses.md).
-- Font: Barlow Condensed (SIL OFL 1.1). Footage: synthetic (ours) or CC BY 3.0 with
-  attribution in docs/test-data.md.
+Sport-specific behavior lives in sport profiles, and core code never branches on the sport.
 
 ## Repo layout
 
 ```
-courtcam/        MIT CV library + CLI (synth, run, calibrate, eval, overlay, render)
-services/api/    FastAPI backend + providers (local / AWS stubs)
-services/worker/ stage DAG + content-hash cache; `python -m replay_worker run|status|perf|dag`
-render/          replay_render: director, broadcast compositor, hype, condensed, vertical, Tier A/B/C
-apps/tv/         Fire TV app (react-native-tvos) + its web build
-apps/web/        phone companion + uploader (+ the original browser TV harness)
-packages/tv-core shared TV logic (API client, spatial focus, media clock, follow math)
-infra/           AWS CDK skeleton (never deployed)
-samples/         synthetic/ (generator outputs + goldens); real/ is local-only, gitignored
-scripts/         box-test.sh, box-demo.sh, split-courtcam.sh, eval tools
-docs/            decisions, progress, perf, compute, licenses, test-data, demo-script,
-                 friction-log, aws-integrations, evidence/<milestone>/
+apps/tv/          Fire TV app (react-native-tvos) and its web build
+apps/web/         phone web app: upload, calibration, clip and share
+services/api/     FastAPI backend (runs on Lambda)
+services/worker/  stage pipeline, runs on EC2 GPU instances
+render/           replay_render: director, broadcast, condensed, replay angles
+courtcam/         MIT computer-vision library and CLI
+packages/tv-core  shared TV logic (API client, focus, media clock, follow math)
+infra/            AWS CDK app (ReplayCloud stack)
+alexa/            Alexa skill package
+scripts/          eval tools and smoke tests
+docs/             decisions, deploy runbook, licenses, evidence
 ```
 
-Docs worth reading next: [docs/compute.md](docs/compute.md) (the box and its rules),
-[docs/friction-log.md](docs/friction-log.md), [docs/evidence/README.md](docs/evidence/README.md).
+## Local development
+
+```sh
+uv sync                                   # workspace venv (courtcam[yolo] + api + worker + render)
+REPLAY_PIPELINE=fake uv run --package replay-api uvicorn replay_api.main:app --port 8000
+cd apps/tv && pnpm install && VITE_MOCK_API=1 pnpm web    # TV app on the in-browser mock API
+uv run pytest courtcam/tests services/api/tests services/worker/tests render/tests -q
+```
+
+API environment variables are in `services/api/README.md`. The TV and phone apps read `VITE_REPLAY_API_BASE`.
+
+## Tests
+
+- pytest suites for `courtcam`, `services/api`, `services/worker` and `render` (the command above).
+- Playwright end-to-end tests for the TV app (`cd apps/tv && pnpm e2e`) and the web app (`apps/web`).
+- CI runs on GitHub Actions: `.github/workflows/ci.yml`.
+
+## Deploy
+
+Build the API Lambda bundle and the web apps with `infra/scripts/build-api-lambda.sh` and `infra/scripts/build-web.sh`. Create the three SSM SecureString secrets, then deploy with your AWS profile and region set in the environment:
+
+```sh
+export AWS_PROFILE=<your-profile> AWS_REGION=us-east-1
+cd infra && npm ci
+npx cdk deploy ReplayCloud --outputs-file build/outputs.json
+```
+
+The full runbook, including bootstrap, secrets and outputs, is in [docs/aws-deploy.md](docs/aws-deploy.md).
+
+## Documentation
+
+- [docs/aws-deploy.md](docs/aws-deploy.md): deploy runbook for `ReplayCloud`
+- [docs/decisions.md](docs/decisions.md): design decisions
+- [docs/progress.md](docs/progress.md): per-milestone detail
+- [docs/licenses.md](docs/licenses.md): model and dependency licenses
+- [docs/alexa.md](docs/alexa.md): the Alexa skill and how it reaches the TV
+- [devpost_submission/](devpost_submission/): feature requests and the friction log from the build
+
+## License
+
+`courtcam/` is MIT licensed. The licenses of the third-party models and dependencies Replay uses are listed in [docs/licenses.md](docs/licenses.md).
